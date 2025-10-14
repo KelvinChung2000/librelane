@@ -628,6 +628,10 @@ class Variable:
                 raise ValueError(
                     f"Value provided for variable '{key_path}' of type {validating_type.__name__} is invalid: '{value}'"
                 )
+        elif not inspect.isclass(validating_type):
+            raise ValueError(
+                f"Variable '{key_path}' has an unsupported type: '{validating_type}'"
+            )
         elif issubclass(validating_type, Enum):
             if type(value) == validating_type:
                 return value
