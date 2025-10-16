@@ -13,8 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import sys
-from reader import click_odb, click, odb
+
 import grt as GRT
+from reader import click, click_odb, odb
 
 
 @click.command()
@@ -46,7 +47,7 @@ def cli(reader):
         target = reader.block.findInst(name_escaped)
         if target is None:
             print(
-                f"[ERROR] Instance '{target_name}' not found.",
+                f"[ERROR] Instance '{target_name}' not found. Only the following is available: {[inst.getName() for inst in reader.block.getInsts()]}",
                 file=sys.stderr,
             )
             exit(-1)
