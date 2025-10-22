@@ -13,73 +13,72 @@
 # limitations under the License.
 from __future__ import annotations
 
-import os
-import sys
-import json
-import time
-import psutil
-import shutil
-import textwrap
 import datetime
+import json
+import os
+import shutil
 import subprocess
-from signal import Signals
-from decimal import Decimal
-from io import TextIOWrapper
-from threading import Thread
-from inspect import isabstract
-from itertools import zip_longest
-from abc import abstractmethod, ABC
+import sys
+import textwrap
+import time
+from abc import ABC, abstractmethod
 from concurrent.futures import Future
+from decimal import Decimal
+from inspect import isabstract
+from io import TextIOWrapper
+from itertools import zip_longest
+from signal import Signals
+from threading import Thread
 from typing import (
     Any,
-    List,
     Callable,
-    Optional,
-    Set,
-    Union,
-    Tuple,
-    Sequence,
-    Dict,
     ClassVar,
-    Type,
+    Dict,
     Generic,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Type,
     TypeVar,
+    Union,
 )
 
+import psutil
 from rich.markup import escape
 
+from .. import logging
+from ..__version__ import __version__
+from ..common import (
+    GenericDict,
+    GenericDictEncoder,
+    GenericImmutableDict,
+    Path,
+    RingBuffer,
+    Toolbox,
+    copy_recursive,
+    final,
+    format_elapsed_time,
+    format_size,
+    mkdirp,
+    protected,
+    slugify,
+)
 from ..config import (
     Config,
     Variable,
     universal_flow_config_variables,
 )
-from ..state import DesignFormat, State, InvalidState, StateElement
-from ..common import (
-    GenericDict,
-    GenericImmutableDict,
-    GenericDictEncoder,
-    Toolbox,
-    Path,
-    RingBuffer,
-    mkdirp,
-    slugify,
-    final,
-    protected,
-    copy_recursive,
-    format_size,
-    format_elapsed_time,
-)
-from .. import logging
 from ..logging import (
+    debug,
+    err,
+    info,
     rule,
     verbose,
-    info,
     warn,
-    err,
-    debug,
 )
-from ..__version__ import __version__
-
+from ..state import DesignFormat, InvalidState, State, StateElement
 
 VT = TypeVar("VT")
 
@@ -730,8 +729,9 @@ class Step(ABC):
 
             IPython.display.display(IPython.display.Markdown(Self.get_help_md()))
         except NameError:
-            from ..logging import console
             from rich.markdown import Markdown
+
+            from ..logging import console
 
             console.log(Markdown(Self.get_help_md()))
 
@@ -745,12 +745,12 @@ class Step(ABC):
             """
         state_in = self.state_in.result()
 
-        assert (
-            self.start_time is not None
-        ), "Start time not set even though self.state_out exists"
-        assert (
-            self.end_time is not None
-        ), "End time not set even though self.state_out exists"
+        assert self.start_time is not None, (
+            "Start time not set even though self.state_out exists"
+        )
+        assert self.end_time is not None, (
+            "End time not set even though self.state_out exists"
+        )
         result = f"#### Time Elapsed: {'%.2f' % (self.end_time - self.start_time)}s\n"
 
         views_updated = []
@@ -1297,6 +1297,8 @@ class Step(ABC):
         mkdirp(report_dir)
 
         log_path = log_to or self.get_log_path()
+        # Open the log file early; we'll pass it directly to the subprocess so
+        # output is written by the child process without Python reading PIPEs.
         log_file = open(log_path, "w")
         cmd_str = [str(arg) for arg in cmd]
 
@@ -1307,8 +1309,10 @@ class Step(ABC):
         kwargs = kwargs.copy()
         if "stdin" not in kwargs:
             kwargs["stdin"] = open(os.devnull, "r")
+        # Route child output directly to the log file by default to avoid
+        # contention on Python's GIL from reading PIPEs in multiple threads.
         if "stdout" not in kwargs:
-            kwargs["stdout"] = subprocess.PIPE
+            kwargs["stdout"] = log_file
         if "stderr" not in kwargs:
             kwargs["stderr"] = subprocess.STDOUT
 
@@ -1350,7 +1354,6 @@ class Step(ABC):
 
         process = _popen_callable(
             cmd_str,
-            encoding="utf8",
             env=env,
             **kwargs,
         )
@@ -1358,21 +1361,19 @@ class Step(ABC):
         process_stats_thread = ProcessStatsThread(process)
         process_stats_thread.start()
 
-        line_buffer = RingBuffer(str, 10)
-        if process_stdout := process.stdout:
-            try:
-                for line in process_stdout:
-                    log_file.write(line)
-                    line_buffer.push(line)
-                    for processor in output_processors:
-                        if processor.process_line(line):
-                            break
-            except UnicodeDecodeError as e:
-                raise StepException(f"Subprocess emitted non-UTF-8 output: {e}")
+        # Wait for process to finish; the child writes directly to the log file.
+        result: Dict[str, Any] = {}
+        returncode = process.wait()
+        # Ensure the log file is flushed/closed before reading it for processing.
+        try:
+            log_file.flush()
+        except Exception:
+            pass
+        log_file.close()
+
+        # Finish resource collection and write stats.
         process_stats_thread.join()
-
         json_stats = f"{os.path.splitext(log_path)[0]}.process_stats.json"
-
         with open(json_stats, "w") as f:
             json.dump(
                 process_stats_thread.stats_as_dict(),
@@ -1380,9 +1381,19 @@ class Step(ABC):
                 indent=4,
             )
 
-        result: Dict[str, Any] = {}
-        returncode = process.wait()
-        log_file.close()
+        # Offline process the log so output processing does not contend with
+        # concurrent subprocess I/O. Also collect last N lines for error context.
+        line_buffer = RingBuffer(str, 10)
+        try:
+            with open(log_path, "r", encoding="utf8") as lf:
+                for line in lf:
+                    line_buffer.push(line)
+                    for processor in output_processors:
+                        if processor.process_line(line):
+                            break
+        except UnicodeDecodeError as e:
+            raise StepException(f"Subprocess emitted non-UTF-8 output: {e}")
+
         result["returncode"] = returncode
         result["log_path"] = log_path
 
