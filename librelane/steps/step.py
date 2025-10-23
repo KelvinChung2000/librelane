@@ -180,8 +180,8 @@ class DefaultOutputProcessor(OutputProcessor[Dict[str, Any]]):
             # No echo- the timing reports especially can be very large
             # and terminal emulators will slow the flow down.
             self.current_rpt.write(line)
-        elif not self.silent:
-            logging.subprocess(line.strip())
+        # elif not self.silent:
+        #     logging.subprocess(line.strip())
         return True
 
     def result(self) -> Dict[str, Any]:
