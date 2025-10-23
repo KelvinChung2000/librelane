@@ -13,10 +13,9 @@
 # limitations under the License.
 import re
 from dataclasses import dataclass
-from typing import Literal, Optional, Protocol, List, runtime_checkable
+from typing import List, Literal, Optional, Protocol, runtime_checkable
 
 from .step import OutputProcessor
-
 
 openroad_alert_rx = re.compile(r"^\[(WARNING|ERROR)(?:\s+([A-Z]+\-\d+))?\]\s*(.+)")
 
@@ -67,15 +66,12 @@ class OpenROADOutputProcessor(OutputProcessor):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.alerts: List[OpenROADAlert] = []
-        if not isinstance(self.step, SupportsOpenROADAlerts):
-            raise ValueError(
-                "OpenROADOutputProcessor is only compatible with steps implementing the SupportsOpenROADAlerts protocol"
-            )
+        # Check if step supports alerts; if not, just skip callbacks (soft validation)
+        self._supports_alerts = isinstance(self.step, SupportsOpenROADAlerts)
 
     def process_line(self, line: str):
         """
-        If a line contains an OpenROAD error/warning, it is processed and handed
-        over to the step's ``on_alert`` method.
+        If a line contains an OpenROAD error/warning, it is processed.
 
         :param line: The line in question
         :returns: ``True`` if the line has alerts, ``False`` if the line has
@@ -88,8 +84,9 @@ class OpenROADOutputProcessor(OutputProcessor):
                 code = match[2]
             message = match[3]
             alert = OpenROADAlert(cls, code, message)  # type: ignore
-            assert isinstance(self.step, SupportsOpenROADAlerts)
-            alert = self.step.on_alert(alert)
+            # Only call on_alert if step truly supports it (not in worker with mock)
+            if self._supports_alerts:
+                alert = self.step.on_alert(alert)  # type: ignore
             self.alerts.append(alert)
 
             return True  # munch
