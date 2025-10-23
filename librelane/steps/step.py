@@ -22,13 +22,14 @@ import sys
 import textwrap
 import time
 from abc import ABC, abstractmethod
-from concurrent.futures import Future
+from concurrent.futures import Future, ProcessPoolExecutor
+from dataclasses import dataclass
 from decimal import Decimal
 from inspect import isabstract
 from io import TextIOWrapper
 from itertools import zip_longest
 from signal import Signals
-from threading import Thread
+from threading import Lock, Thread
 from typing import (
     Any,
     Callable,
@@ -55,7 +56,6 @@ from ..common import (
     GenericDictEncoder,
     GenericImmutableDict,
     Path,
-    RingBuffer,
     Toolbox,
     copy_recursive,
     final,
@@ -242,6 +242,125 @@ METRIC_LOCUS = "%OL_METRIC"
 GlobalToolbox = Toolbox(os.path.join(os.getcwd(), "librelane_run", "tmp"))
 ViewsUpdate = Dict[DesignFormat, StateElement]
 MetricsUpdate = Dict[str, Any]
+
+# Global process pool for log parsing and JSON writing to avoid GIL contention
+_log_processing_executor: Optional[ProcessPoolExecutor] = None
+_executor_lock = Lock()
+
+
+def _get_log_processing_executor() -> ProcessPoolExecutor:
+    """Lazily initialize a process pool for log parsing."""
+    global _log_processing_executor
+    with _executor_lock:
+        if _log_processing_executor is None:
+            # Use max_workers=4 to limit concurrent parsing without overwhelming the system
+            _log_processing_executor = ProcessPoolExecutor(max_workers=4)
+        return _log_processing_executor
+
+
+@dataclass
+class ProcessorContext:
+    """
+    Lightweight context for OutputProcessors that can be pickled and sent to worker processes.
+    Replaces the need to pass the entire Step object.
+    """
+
+    step_dir: Optional[str]
+    report_dir: str
+    silent: bool
+    step_id: str
+    step_name: str
+
+
+def _process_log_in_worker(
+    log_path: str,
+    processor_classes: List[str],
+    context: ProcessorContext,
+) -> Dict[str, Any]:
+    """
+    Worker function that runs in a separate process to parse logs and run OutputProcessors.
+
+    :param log_path: Path to the log file to process
+    :param processor_classes: List of fully qualified processor class names
+    :param context: Processor context with step metadata
+    :returns: Dictionary of processor results keyed by processor.key
+    """
+    from ..common import RingBuffer
+
+    # Create a minimal mock Step object that satisfies OutputProcessor requirements
+    class _MockStep:
+        def __init__(self, ctx: ProcessorContext):
+            self.step_dir = ctx.step_dir
+            self.id = ctx.step_id
+            self.name = ctx.step_name
+
+        def err(self, msg: str):
+            # In worker, we can't call step.err(), just pass
+            pass
+
+    mock_step = _MockStep(context)
+
+    # Reconstitute processor instances
+    processors = []
+    for class_path in processor_classes:
+        module_path, class_name = class_path.rsplit(".", 1)
+        module = __import__(module_path, fromlist=[class_name])
+        cls = getattr(module, class_name)
+        # Create processor normally, passing the mock step
+        processor = cls(mock_step, context.report_dir, context.silent)
+        processors.append(processor)
+
+    # Process the log file line by line
+    line_buffer = RingBuffer(str, 10)
+    try:
+        with open(log_path, "r", encoding="utf8") as lf:
+            for line in lf:
+                line_buffer.push(line)
+                for processor in processors:
+                    if processor.process_line(line):
+                        break
+    except UnicodeDecodeError as e:
+        raise RuntimeError(f"Subprocess emitted non-UTF-8 output: {e}")
+
+    # Close any open report files
+    for processor in processors:
+        if hasattr(processor, "current_rpt") and processor.current_rpt is not None:
+            processor.current_rpt.close()
+
+    # Collect results
+    results = {}
+    for processor in processors:
+        result_value = processor.result()
+        # Serialize dataclass instances for pickling
+        if isinstance(result_value, list):
+            serialized = []
+            for item in result_value:
+                if hasattr(item, "__dataclass_fields__"):
+                    # Convert dataclass to dict for serialization
+                    from dataclasses import asdict
+
+                    serialized.append(asdict(item))
+                else:
+                    serialized.append(item)
+            results[processor.key] = serialized
+        else:
+            results[processor.key] = result_value
+
+    # Add the ring buffer for error reporting
+    results["_line_buffer"] = list(line_buffer)
+
+    return results
+
+
+def _write_json_stats_in_worker(stats_dict: Dict[str, Any], json_path: str) -> None:
+    """
+    Worker function to write JSON stats file in a separate process.
+
+    :param stats_dict: Dictionary to serialize
+    :param json_path: Path to write JSON file
+    """
+    with open(json_path, "w") as f:
+        json.dump(stats_dict, f, indent=4)
 
 
 class ProcessStatsThread(Thread):
@@ -1371,34 +1490,52 @@ class Step(ABC):
             pass
         log_file.close()
 
-        # Finish resource collection and write stats.
+        # Finish resource collection
         process_stats_thread.join()
+        stats_dict = process_stats_thread.stats_as_dict()
         json_stats = f"{os.path.splitext(log_path)[0]}.process_stats.json"
-        with open(json_stats, "w") as f:
-            json.dump(
-                process_stats_thread.stats_as_dict(),
-                f,
-                indent=4,
-            )
 
-        # Offline process the log so output processing does not contend with
-        # concurrent subprocess I/O. Also collect last N lines for error context.
-        line_buffer = RingBuffer(str, 10)
+        # Submit JSON writing and log parsing to process pool to avoid GIL bottleneck
+        executor = _get_log_processing_executor()
+
+        # Create processor context for worker
+        processor_context = ProcessorContext(
+            step_dir=self.step_dir,
+            report_dir=report_dir,
+            silent=silent,
+            step_id=self.id,
+            step_name=self.name,
+        )
+
+        # Get fully qualified names for processor classes
+        processor_class_names = [
+            f"{cls.__module__}.{cls.__name__}" for cls in output_processing
+        ]
+
+        # Submit both tasks to process pool
+        json_future = executor.submit(
+            _write_json_stats_in_worker, stats_dict, json_stats
+        )
+        log_parse_future = executor.submit(
+            _process_log_in_worker,
+            str(log_path),
+            processor_class_names,
+            processor_context,
+        )
+
+        # Wait for both to complete and get results
         try:
-            with open(log_path, "r", encoding="utf8") as lf:
-                for line in lf:
-                    line_buffer.push(line)
-                    for processor in output_processors:
-                        if processor.process_line(line):
-                            break
-        except UnicodeDecodeError as e:
-            raise StepException(f"Subprocess emitted non-UTF-8 output: {e}")
+            json_future.result()  # Just wait for completion, no return value
+            processor_results = log_parse_future.result()
+        except Exception as e:
+            raise StepException(f"Error during log processing: {e}") from e
+
+        # Extract line buffer for error reporting
+        line_buffer = processor_results.pop("_line_buffer", [])
 
         result["returncode"] = returncode
         result["log_path"] = log_path
-
-        for processor in output_processors:
-            result[processor.key] = processor.result()
+        result.update(processor_results)
 
         if check and returncode != 0:
             if returncode > 0:
