@@ -253,8 +253,9 @@ def _get_log_processing_executor() -> ProcessPoolExecutor:
     global _log_processing_executor
     with _executor_lock:
         if _log_processing_executor is None:
-            # Use max_workers=4 to limit concurrent parsing without overwhelming the system
-            _log_processing_executor = ProcessPoolExecutor(max_workers=4)
+            # Use None (CPU count) for max_workers to allow full parallelism
+            # Each worker parses a log file independently, minimal memory overhead
+            _log_processing_executor = ProcessPoolExecutor(max_workers=None)
         return _log_processing_executor
 
 
@@ -1448,9 +1449,6 @@ class Step(ABC):
 
         if output_processing is None:
             output_processing = self.output_processors
-        output_processors = []
-        for cls in output_processing:
-            output_processors.append(cls(self, report_dir, silent))
 
         hyperlinks = (
             os.getenv(
