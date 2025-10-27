@@ -22,14 +22,14 @@ import sys
 import textwrap
 import time
 from abc import ABC, abstractmethod
-from concurrent.futures import Future, ProcessPoolExecutor
+from concurrent.futures import Future
 from dataclasses import dataclass
 from decimal import Decimal
 from inspect import isabstract
 from io import TextIOWrapper
 from itertools import zip_longest
 from signal import Signals
-from threading import Lock, Thread
+from threading import Thread
 from typing import (
     Any,
     Callable,
@@ -242,22 +242,6 @@ METRIC_LOCUS = "%OL_METRIC"
 GlobalToolbox = Toolbox(os.path.join(os.getcwd(), "librelane_run", "tmp"))
 ViewsUpdate = Dict[DesignFormat, StateElement]
 MetricsUpdate = Dict[str, Any]
-
-# Global process pool for log parsing and JSON writing to avoid GIL contention
-_log_processing_executor: Optional[ProcessPoolExecutor] = None
-_executor_lock = Lock()
-
-
-def _get_log_processing_executor() -> ProcessPoolExecutor:
-    """Lazily initialize a process pool for log parsing."""
-    global _log_processing_executor
-    with _executor_lock:
-        if _log_processing_executor is None:
-            # Use None (CPU count) for max_workers to allow full parallelism
-            # Each worker parses a log file independently, minimal memory overhead
-            _log_processing_executor = ProcessPoolExecutor(max_workers=None)
-        return _log_processing_executor
-
 
 @dataclass
 class ProcessorContext:
@@ -1481,11 +1465,6 @@ class Step(ABC):
         # Wait for process to finish; the child writes directly to the log file.
         result: Dict[str, Any] = {}
         returncode = process.wait()
-        # Ensure the log file is flushed/closed before reading it for processing.
-        try:
-            log_file.flush()
-        except Exception:
-            pass
         log_file.close()
 
         # Finish resource collection
@@ -1494,7 +1473,10 @@ class Step(ABC):
         json_stats = f"{os.path.splitext(log_path)[0]}.process_stats.json"
 
         # Submit JSON writing and log parsing to process pool to avoid GIL bottleneck
-        executor = _get_log_processing_executor()
+        # Use the global executor (same one used for async step execution)
+        from ..common.executor import get_executor
+
+        executor = get_executor()
 
         # Create processor context for worker
         processor_context = ProcessorContext(

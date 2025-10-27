@@ -59,5 +59,6 @@ from .types import (
 from .toolbox import Toolbox
 from .drc import DRC, Violation, BoundingBox
 from . import cli
-from .tpe import get_tpe, set_tpe
+# tpe module removed - use executor module instead
+# from .executor import get_executor  # Import directly if needed
 from .ring_buffer import RingBuffer

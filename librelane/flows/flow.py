@@ -61,7 +61,6 @@ from ..logging import (
     options,
 )
 from ..common import (
-    get_tpe,
     mkdirp,
     protected,
     final,
@@ -69,6 +68,63 @@ from ..common import (
     Toolbox,
     get_latest_file,
 )
+from ..common.executor import get_executor
+
+
+def _run_step_async(step, *args, **kwargs):
+    """
+    Wrapper for running step.start() in a subprocess via ProcessPoolExecutor.
+
+    Handles reconstruction of non-picklable objects like Toolbox and sets up
+    logging context for the worker process.
+
+    :param step: The Step instance to run
+    :param args: Positional arguments for step.start()
+    :param kwargs: Keyword arguments for step.start(), including:
+        - toolbox_path: Path to reconstruct Toolbox
+        - log_queue: Queue for cross-process logging
+        - job_id: Identifier for this async job
+        - step_dir: Directory for this step
+    :returns: State object returned by step.start()
+    """
+    # Reconstruct toolbox if path provided
+    if "toolbox_path" in kwargs:
+        toolbox_path = kwargs.pop("toolbox_path")
+        if toolbox_path:
+            kwargs["toolbox"] = Toolbox(toolbox_path)
+
+    # Set up logging context for this worker
+    log_queue = kwargs.pop("log_queue", None)
+    job_id = kwargs.pop("job_id", None)
+    if log_queue is not None:
+        _setup_worker_logging(log_queue, job_id, step.id)
+
+    return step.start(*args, **kwargs)
+
+
+def _setup_worker_logging(log_queue, job_id, step_id):
+    """
+    Configure logging for worker process to send logs to main process via queue.
+
+    :param log_queue: multiprocessing.Queue for sending log records
+    :param job_id: Identifier for this async job
+    :param step_id: Step ID for log context
+    """
+    from logging.handlers import QueueHandler
+
+    # Add queue handler to send logs to main process
+    queue_handler = QueueHandler(log_queue)
+
+    # Add filter to include job context in log records
+    class JobContextFilter(logging.Filter):
+        def filter(self, record):
+            record.job_id = job_id or f"proc-{os.getpid()}"
+            record.step_id = step_id
+            return True
+
+    queue_handler.addFilter(JobContextFilter())
+    logging.getLogger().addHandler(queue_handler)
+    logging.getLogger().setLevel(logging.DEBUG)
 
 
 class FlowError(RuntimeError):
@@ -658,19 +714,75 @@ class Flow(ABC):
         # Stored until next start()
         self.toolbox = Toolbox(os.path.join(self.run_dir, "tmp"))
 
+        # Initialize debug tracker (enabled via LIBRELANE_DEBUG_TRACKING=1)
+        from .debug_tracker import DebugTracker
+
+        self.debug_tracker = DebugTracker(get_executor())
+
+        # Set up multiprocessing manager and queue for cross-process logging
+        from multiprocessing import Manager
+        from logging.handlers import QueueHandler, QueueListener
+
+        self.log_manager = Manager()
+        self.log_queue = self.log_manager.Queue()
+
+        # Create file handlers for different log levels
+        log_handlers = []
+
+        # Warning and error logs
         for level in ["WARNING", "ERROR"]:
             path = os.path.join(self.run_dir, f"{level.lower()}.log")
             handler = logging.FileHandler(path, mode="a+")
             handler.setLevel(level)
             handler.addFilter(LevelFilter([level]))
-            handlers.append(handler)
-            register_additional_handler(handler)
+            log_handlers.append(handler)
 
+        # Unified flow.log with job context formatting
         path = os.path.join(self.run_dir, "flow.log")
-        handler = logging.FileHandler(path, mode="a+")
-        handler.setLevel("VERBOSE")
-        handlers.append(handler)
-        register_additional_handler(handler)
+        flow_handler = logging.FileHandler(path, mode="a+")
+        flow_handler.setLevel("VERBOSE")
+
+        # Custom formatter to show job context in unified log
+        class JobContextFormatter(logging.Formatter):
+            def format(self, record):
+                job_id = getattr(record, "job_id", "main")
+                step_id = getattr(record, "step_id", "")
+                if step_id:
+                    prefix = f"[{job_id}:{step_id}] "
+                else:
+                    prefix = f"[{job_id}] "
+
+                # Prepend prefix to message
+                original_msg = record.getMessage()
+                record.msg = prefix + original_msg
+                record.args = ()
+
+                return super().format(record)
+
+        flow_handler.setFormatter(JobContextFormatter())
+        log_handlers.append(flow_handler)
+
+        # Set up QueueListener to receive logs from worker processes
+        self.queue_listener = QueueListener(
+            self.log_queue, *log_handlers, respect_handler_level=True
+        )
+        self.queue_listener.start()
+
+        # Add QueueHandler for main process logging
+        main_queue_handler = QueueHandler(self.log_queue)
+
+        # Add job context for main process
+        class MainProcessFilter(logging.Filter):
+            def filter(self, record):
+                if not hasattr(record, "job_id"):
+                    record.job_id = "main"
+                if not hasattr(record, "step_id"):
+                    record.step_id = ""
+                return True
+
+        main_queue_handler.addFilter(MainProcessFilter())
+        handlers.append(main_queue_handler)
+        register_additional_handler(main_queue_handler)
 
         try:
             self.config_resolved_path = os.path.join(self.run_dir, "resolved.json")
@@ -694,6 +806,19 @@ class Flow(ABC):
             return final_state
         finally:
             self.progress_bar.end()
+
+            # Export debug report if tracking was enabled
+            if hasattr(self, "debug_tracker"):
+                debug_report_path = os.path.join(self.run_dir, "debug_report.json")
+                self.debug_tracker.export_report(debug_report_path)
+
+            # Clean up logging
+            if hasattr(self, "queue_listener"):
+                self.queue_listener.stop()
+
+            if hasattr(self, "log_manager"):
+                self.log_manager.shutdown()
+
             for registered_handlers in handlers:
                 deregister_additional_handler(registered_handlers)
             if len(warning_handler.warnings):
@@ -777,6 +902,9 @@ class Flow(ABC):
         """
         An asynchronous equivalent to :meth:`start_step`.
 
+        Uses ProcessPoolExecutor to run steps in separate processes,
+        avoiding GIL contention and eliminating nested executor deadlocks.
+
         :param step: The step object to run
         :param args: Arguments to `step.start`
         :param kwargs: Keyword arguments to `step.start`
@@ -784,11 +912,24 @@ class Flow(ABC):
             as an input to the next step (where the next step will wait for the
             ``Future`` to be realized before calling :meth:`Step.run`)
         """
-
-        kwargs["toolbox"] = self.toolbox
+        # Prepare picklable arguments
         kwargs["step_dir"] = self.dir_for_step(step)
 
-        return get_tpe().submit(step.start, *args, **kwargs)
+        # Pass toolbox as path, will be reconstructed in worker process
+        if self.toolbox:
+            kwargs["toolbox_path"] = self.toolbox.root
+
+        # Pass logging queue for cross-process logging
+        job_id = f"job-{id(step)}"
+        if hasattr(self, "log_queue"):
+            kwargs["log_queue"] = self.log_queue
+            kwargs["job_id"] = job_id
+
+        # Track job submission for debug tracking
+        if hasattr(self, "debug_tracker"):
+            self.debug_tracker.track_submit(job_id, step.id)
+
+        return get_executor().submit(_run_step_async, step, *args, **kwargs)
 
     def _save_snapshot_ef(self, path: Union[str, os.PathLike]):
         if (

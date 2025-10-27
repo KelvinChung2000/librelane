@@ -18,7 +18,7 @@
 import os
 import sys
 from functools import partial, wraps
-from concurrent.futures import ThreadPoolExecutor
+# ProcessPoolExecutor import removed - now configured via env var
 from typing import Optional, Union
 
 from click import (
@@ -42,7 +42,7 @@ from cloup.constraints import (
 from cloup.typing import Decorator
 
 from .flow import Flow
-from ..common import set_tpe, cli, get_pdk_hash, _get_process_limit
+from ..common import cli, get_pdk_hash, _get_process_limit
 from ..logging import set_log_level, verbose, err, options, LogLevels
 from ..state import State, InvalidState
 
@@ -140,7 +140,8 @@ def set_worker_count_cb(
     if value is None:
         return None
 
-    set_tpe(ThreadPoolExecutor(max_workers=value))
+    # Set worker count via environment variable (used by ProcessPoolExecutor)
+    os.environ["_OPENLANE_MAX_CORES"] = str(value)
 
 
 def initial_state_cb(

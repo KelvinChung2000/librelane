@@ -24,7 +24,7 @@ import textwrap
 import pathlib
 from abc import abstractmethod
 from base64 import b64encode
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ProcessPoolExecutor
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -733,7 +733,7 @@ class MultiCornerSTA(OpenSTAStep):
         kwargs, env = self.extract_env(kwargs)
         env = self.prepare_env(env, state_in)
 
-        tpe = ThreadPoolExecutor(
+        tpe = ProcessPoolExecutor(
             max_workers=self.config["STA_THREADS"] or _get_process_limit()
         )
 
@@ -1991,7 +1991,7 @@ class RCX(OpenROADStep):
 
             return out
 
-        tpe = ThreadPoolExecutor(
+        tpe = ProcessPoolExecutor(
             max_workers=self.config["STA_THREADS"] or _get_process_limit()
         )
 
