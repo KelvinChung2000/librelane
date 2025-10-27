@@ -243,6 +243,7 @@ GlobalToolbox = Toolbox(os.path.join(os.getcwd(), "librelane_run", "tmp"))
 ViewsUpdate = Dict[DesignFormat, StateElement]
 MetricsUpdate = Dict[str, Any]
 
+
 @dataclass
 class ProcessorContext:
     """
@@ -335,17 +336,6 @@ def _process_log_in_worker(
     results["_line_buffer"] = list(line_buffer)
 
     return results
-
-
-def _write_json_stats_in_worker(stats_dict: Dict[str, Any], json_path: str) -> None:
-    """
-    Worker function to write JSON stats file in a separate process.
-
-    :param stats_dict: Dictionary to serialize
-    :param json_path: Path to write JSON file
-    """
-    with open(json_path, "w") as f:
-        json.dump(stats_dict, f, indent=4)
 
 
 class ProcessStatsThread(Thread):
@@ -1472,13 +1462,13 @@ class Step(ABC):
         stats_dict = process_stats_thread.stats_as_dict()
         json_stats = f"{os.path.splitext(log_path)[0]}.process_stats.json"
 
-        # Submit JSON writing and log parsing to process pool to avoid GIL bottleneck
-        # Use the global executor (same one used for async step execution)
-        from ..common.executor import get_executor
+        # Process logs synchronously in the same worker process
+        # This avoids nested executor calls that cause deadlocks when running
+        # many async jobs (45+ on 32 cores). Since step.start() already runs
+        # in a subprocess via ProcessPoolExecutor, log processing here doesn't
+        # block the main process.
 
-        executor = get_executor()
-
-        # Create processor context for worker
+        # Create processor context for log processing
         processor_context = ProcessorContext(
             step_dir=self.step_dir,
             report_dir=report_dir,
@@ -1492,21 +1482,20 @@ class Step(ABC):
             f"{cls.__module__}.{cls.__name__}" for cls in output_processing
         ]
 
-        # Submit both tasks to process pool
-        json_future = executor.submit(
-            _write_json_stats_in_worker, stats_dict, json_stats
-        )
-        log_parse_future = executor.submit(
-            _process_log_in_worker,
-            str(log_path),
-            processor_class_names,
-            processor_context,
-        )
-
-        # Wait for both to complete and get results
+        # Write JSON stats synchronously
         try:
-            json_future.result()  # Just wait for completion, no return value
-            processor_results = log_parse_future.result()
+            with open(json_stats, "w") as f:
+                json.dump(stats_dict, f, indent=4)
+        except Exception as e:
+            raise StepException(f"Error writing JSON stats: {e}") from e
+
+        # Parse logs synchronously
+        try:
+            processor_results = _process_log_in_worker(
+                str(log_path),
+                processor_class_names,
+                processor_context,
+            )
         except Exception as e:
             raise StepException(f"Error during log processing: {e}") from e
 
