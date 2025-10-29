@@ -13,12 +13,12 @@
 # limitations under the License.
 import os
 import re
-import uuid
 import shutil
-import tempfile
 import subprocess
-from enum import IntEnum
+import tempfile
+import uuid
 from decimal import Decimal
+from enum import IntEnum
 from functools import lru_cache
 from typing import (
     Any,
@@ -26,26 +26,130 @@ from typing import (
     Dict,
     FrozenSet,
     Iterable,
+    List,
     Literal,
     Mapping,
     Optional,
     Sequence,
     Tuple,
-    List,
     Union,
 )
 
 import libparse
 from deprecated.sphinx import deprecated
 
-
-from .misc import mkdirp, gzopen
-from .types import Path
-from .metrics import aggregate_metrics
-from .generic_dict import GenericImmutableDict, is_string
-from ..state import DesignFormat
 from ..common import Filter
-from ..logging import debug, warn, err
+from ..logging import debug, err, warn
+from ..state import DesignFormat
+from .generic_dict import GenericImmutableDict, is_string
+from .metrics import aggregate_metrics
+from .misc import gzopen, mkdirp
+from .types import Path
+
+
+# Global caches for expensive operations that should be shared across all Toolbox instances
+@lru_cache(maxsize=32)
+def _cached_filter_lib_content(
+    input_lib_files: FrozenSet[str],
+    excluded_cells: FrozenSet[str],
+) -> Dict[str, str]:
+    """
+    Cached version of the lib filtering logic.
+    Returns a mapping from input file path to filtered content.
+    This avoids re-processing the same lib files with the same exclusions.
+    """
+    from ..common import Filter
+
+    class State(IntEnum):
+        initial = 0
+        cell = 10
+        excluded_cell = 11
+
+    cell_start_rx = re.compile(r"(\s*)cell\s*\(\"?(.*?)\"?\)\s*\{")
+    results = {}
+
+    excluded_cells_filter = Filter(excluded_cells)
+
+    for file in input_lib_files:
+        input_lib_stream = gzopen(file)
+        lines = []
+        state = State.initial
+        brace_count = 0
+
+        for line in input_lib_stream:
+            if state == State.initial:
+                cell_m = cell_start_rx.search(line)
+                if cell_m is not None:
+                    whitespace = cell_m[1]
+                    cell_name = cell_m[2]
+                    if excluded_cells_filter.match(cell_name):
+                        state = State.excluded_cell
+                        lines.append(f"{whitespace}/* removed {cell_name} */\n")
+                    else:
+                        state = State.cell
+                        lines.append(line)
+                    brace_count = 1
+                else:
+                    lines.append(line)
+            elif state in [State.cell, State.excluded_cell]:
+                if "{" in line:
+                    brace_count += 1
+                if "}" in line:
+                    brace_count -= 1
+                if state == State.cell:
+                    lines.append(line)
+                if brace_count == 0:
+                    state = State.initial
+
+        results[file] = "".join(lines)
+
+    return results
+
+
+@lru_cache(maxsize=16)
+def _cached_process_blackbox_models(
+    input_models: Tuple[str, ...],
+    defines: FrozenSet[str],
+) -> Dict[str, str]:
+    """
+    Cached version of the blackbox model processing logic.
+    Returns a mapping from input model to processed content.
+    This avoids re-processing the same models with the same defines.
+    """
+    results = {}
+
+    for model in input_models:
+        bad_yosys_line = re.compile(r"^\s+(\w+|(\\\S+?))\s*\(.*\).*;")
+        stack: List[Literal["specify", "primitive"]] = []
+        lines = []
+
+        try:
+            for line in open(model, "r", encoding="utf8"):
+                if len(stack) == 0:
+                    if line.strip().startswith("specify"):
+                        stack.append("specify")
+                    elif line.strip().startswith("primitive"):
+                        stack.append("primitive")
+                    elif bad_yosys_line.search(line) is None:
+                        lines.append(line.strip("\n"))
+                else:
+                    if line.strip().startswith("endspecify"):
+                        current = stack.pop()
+                        if current != "specify":
+                            raise ValueError(f"Invalid specify block in {model}")
+                        lines.append("/* removed specify */")
+                    elif line.strip().startswith("endprimitive"):
+                        current = stack.pop()
+                        if current != "primitive":
+                            raise ValueError(f"Invalid primitive block in {model}")
+                        lines.append("/* removed primitive */")
+            lines.append("")
+        except ValueError as e:
+            err(f"Failed to pre-process input models for linting: {e}")
+
+        results[model] = "\n".join(lines)
+
+    return results
 
 
 class Toolbox(object):
@@ -60,9 +164,6 @@ class Toolbox(object):
         # Only create before use, otherwise users will end up with
         # "librelane_run/tmp" created in their PWD because of the global toolbox
         self.tmp_dir = tmp_dir
-
-        self.remove_cells_from_lib = lru_cache(16, True)(self.remove_cells_from_lib)  # type: ignore
-        self.create_blackbox_model = lru_cache(16, True)(self.create_blackbox_model)  # type: ignore
 
     @deprecated(
         version="2.0.0b1",
@@ -336,9 +437,9 @@ class Toolbox(object):
         state_in: GenericImmutableDict[str, Any],
     ) -> Optional[bytes]:  # pragma: no cover
         try:
-            from ..steps import KLayout, StepError
             from ..config import Config, InvalidConfig
             from ..state import State
+            from ..steps import KLayout, StepError
 
             # I'm too damn tired to figure out a way to forward-declare those two,
             # have fun if you want to
@@ -376,53 +477,13 @@ class Toolbox(object):
         :returns: A path to the lib file with the removed cells.
         """
         mkdirp(self.tmp_dir)
-
-        class State(IntEnum):
-            initial = 0
-            cell = 10
-            excluded_cell = 11
-
-        cell_start_rx = re.compile(r"(\s*)cell\s*\(\"?(.*?)\"?\)\s*\{")
+        filtered_contents = _cached_filter_lib_content(input_lib_files, excluded_cells)
         out_paths = []
 
-        excluded_cells_filter = Filter(excluded_cells)
-
-        for file in input_lib_files:
-            input_lib_stream = gzopen(file)
-            # can't be gzip -- abc cannot read gzipped lib files
+        for input_file, content in filtered_contents.items():
             out_path = os.path.join(self.tmp_dir, f"{uuid.uuid4().hex}.lib")
-
-            state = State.initial
-            brace_count = 0
-            output_file_handle = open(out_path, "w")
-            write = lambda x: print(x, file=output_file_handle, end="")
-            for line in input_lib_stream:
-                if state == State.initial:
-                    cell_m = cell_start_rx.search(line)
-                    if cell_m is not None:
-                        whitespace = cell_m[1]
-                        cell_name = cell_m[2]
-                        if excluded_cells_filter.match(cell_name):
-                            state = State.excluded_cell
-                            write(f"{whitespace}/* removed {cell_name} */\n")
-                        else:
-                            state = State.cell
-                            write(line)
-                        brace_count = 1
-                    else:
-                        write(line)
-                elif state in [State.cell, State.excluded_cell]:
-                    if "{" in line:
-                        brace_count += 1
-                    if "}" in line:
-                        brace_count -= 1
-                    if state == State.cell:
-                        write(line)
-                    if brace_count == 0:
-                        state = State.initial
-
-            output_file_handle.close()
-
+            with open(out_path, "w", encoding="utf8") as f:
+                f.write(content)
             out_paths.append(out_path)
 
         return out_paths
@@ -434,39 +495,20 @@ class Toolbox(object):
     ) -> str:
         mkdirp(self.tmp_dir)
         out_path = os.path.join(self.tmp_dir, f"{uuid.uuid4().hex}.bb.v")
-        debug(f"Creating cell models for {input_models} at '{out_path}'…")
-        bad_yosys_line = re.compile(r"^\s+(\w+|(\\\S+?))\s*\(.*\).*;")
 
-        stack: List[Literal["specify", "primitive"]] = []
+        # Convert frozenset to tuple for caching (frozenset is not hashable for lru_cache)
+        models_tuple = (
+            tuple(sorted(input_models))
+            if isinstance(input_models, frozenset)
+            else input_models
+        )
+
+        processed_contents = _cached_process_blackbox_models(models_tuple, defines)
+
+        debug(f"Creating cell models for {input_models} at '{out_path}'…")
         with open(out_path, "w", encoding="utf8") as out:
-            for model in input_models:
-                try:
-                    for line in open(model, "r", encoding="utf8"):
-                        if len(stack) == 0:
-                            if line.strip().startswith("specify"):
-                                stack.append("specify")
-                            elif line.strip().startswith("primitive"):
-                                stack.append("primitive")
-                            elif bad_yosys_line.search(line) is None:
-                                print(line.strip("\n"), file=out)
-                        else:
-                            if line.strip().startswith("endspecify"):
-                                current = stack.pop()
-                                if current != "specify":
-                                    raise ValueError(
-                                        f"Invalid specify block in {model}"
-                                    )
-                                print("/* removed specify */", file=out)
-                            elif line.strip().startswith("endprimitive"):
-                                current = stack.pop()
-                                if current != "primitive":
-                                    raise ValueError(
-                                        f"Invalid primitive block in {model}"
-                                    )
-                                print("/* removed primitive */", file=out)
-                    print("", file=out)
-                except ValueError as e:
-                    err(f"Failed to pre-process input models for linting: {e}")
+            for content in processed_contents.values():
+                out.write(content)
 
         yosys = shutil.which("yosys") or shutil.which("yowasp-yosys")
 
