@@ -943,7 +943,7 @@ class Flow(ABC):
 
         # Pass toolbox as path, will be reconstructed in worker process
         if self.toolbox:
-            kwargs["toolbox_path"] = self.toolbox.root
+            kwargs["toolbox_path"] = self.toolbox.tmp_dir
 
         # Pass logging queue for cross-process logging
         job_id = f"job-{id(step)}"
