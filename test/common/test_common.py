@@ -203,16 +203,25 @@ def test_copy_recursive_visitor():
     assert deep_dict_copy["i"]["j"][1].v == "MY_l", "Copy_recursive visitor not working"
 
 
+def _test_executor_job():
+    """Helper function for testing executor (must be at module level for pickling)."""
+    return 42
+
+
 def test_tpe():
-    from librelane.common import get_tpe, set_tpe
+    """Test the global executor (now ProcessPoolExecutor instead of ThreadPoolExecutor)."""
+    from librelane.common.executor import get_executor
+    from concurrent.futures import ProcessPoolExecutor
 
-    tpe = get_tpe()
-    assert tpe._max_workers == os.cpu_count(), "TPE was not initialized properly"
+    executor = get_executor()
+    assert isinstance(
+        executor, ProcessPoolExecutor
+    ), "Executor should be ProcessPoolExecutor"
 
-    tpe = ThreadPoolExecutor(1)
-    set_tpe(tpe)
-
-    assert get_tpe() == tpe, "Failed to set TPE properly"
+    # Verify the executor can execute jobs correctly
+    future = executor.submit(_test_executor_job)
+    result = future.result()
+    assert result == 42, "Executor should execute jobs correctly"
 
 
 def test_immutable_dict():

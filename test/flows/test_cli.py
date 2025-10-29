@@ -90,24 +90,33 @@ def test_log_level_flag(caplog: pytest.LogCaptureFixture):
 @pytest.mark.usefixtures("_chdir_tmp")
 def test_worker_count_cb():
     import click
+    import os
 
     from librelane.flows import cloup_flow_opts
-    from librelane.common import get_tpe, set_tpe
 
     @click.command()
     @cloup_flow_opts(volare_by_default=False)
     def cli_fn(**kwargs):
         return kwargs
 
-    tpe_backup = get_tpe()
+    # Backup original env var
+    original_cores = os.environ.get("_OPENLANE_MAX_CORES")
 
     cli_fn(
         ["-j", "3", "--pdk-root", "."],
         standalone_mode=False,
     )
-    assert get_tpe()._max_workers == 3, "--jobs callback failed"
 
-    set_tpe(tpe_backup)
+    # The --jobs callback should set the env var
+    assert (
+        os.environ.get("_OPENLANE_MAX_CORES") == "3"
+    ), "--jobs callback failed to set _OPENLANE_MAX_CORES"
+
+    # Restore original
+    if original_cores is not None:
+        os.environ["_OPENLANE_MAX_CORES"] = original_cores
+    else:
+        os.environ.pop("_OPENLANE_MAX_CORES", None)
 
 
 @pytest.mark.usefixtures("_chdir_tmp")

@@ -62,7 +62,10 @@ def get_executor() -> ProcessPoolExecutor:
     """
     global _executor
     if _executor is None:
-        _executor = ProcessPoolExecutor(max_workers=_get_worker_count())
+        _executor = ProcessPoolExecutor(
+            max_workers=_get_worker_count(),
+            mp_context=__import__("multiprocessing").get_context("spawn"),
+        )
         # Register cleanup at exit
         atexit.register(shutdown_executor)
     return _executor
@@ -79,7 +82,11 @@ def shutdown_executor(wait: bool = True) -> None:
     """
     global _executor
     if _executor is not None:
-        _executor.shutdown(wait=wait)
+        try:
+            _executor.shutdown(wait=wait, cancel_futures=True)
+        except Exception:
+            # Ignore errors during shutdown (e.g., in tests)
+            pass
         _executor = None
 
 

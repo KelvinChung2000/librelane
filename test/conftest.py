@@ -14,17 +14,29 @@
 import logging
 import os
 import tempfile
-from shutil import rmtree
-from unittest import mock
 from decimal import Decimal
-from typing import Any, Literal, Optional, Iterable, Callable, List, Dict
+from shutil import rmtree
+from typing import Any, Callable, Dict, Iterable, List, Literal, Optional
+from unittest import mock
 
 import pytest
-from pyfakefs.fake_filesystem_unittest import Patcher
 from _pytest.fixtures import SubRequest
+from pyfakefs.fake_filesystem_unittest import Patcher
 
-from librelane.config import Variable, Macro
-from librelane.common import Path, GenericDict
+from librelane.common import GenericDict, Path
+from librelane.config import Macro, Variable
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_executor():
+    """Clean up the global ProcessPoolExecutor after each test to prevent deadlocks."""
+    yield
+    # Shutdown executor after test completes, but skip if pyfakefs is active to avoid conflicts
+    if os.getenv("PYFAKEFS_ACTIVE"):
+        return
+    from librelane.common.executor import shutdown_executor
+
+    shutdown_executor(wait=False)
 
 
 def pytest_assertrepr_compare(op, left, right):
@@ -43,50 +55,71 @@ def pytest_assertrepr_compare(op, left, right):
 
 @pytest.fixture
 def _mock_conf_fs():
-    with Patcher() as patcher:
-        rmtree("/run", ignore_errors=True)
-        patcher.fs.create_dir("/cwd/src")
-        patcher.fs.create_file("/cwd/src/a.v")
-        patcher.fs.create_file("/cwd/src/b.v")
-        patcher.fs.create_dir("/cwd/spef")
-        patcher.fs.create_file("/cwd/spef/b.spef")
-        patcher.fs.create_file(
-            "/pdk/dummy/libs.tech/librelane/config.tcl",
-            contents="""
-            if { ![info exists ::env(STD_CELL_LIBRARY)] } {
-                set ::env(STD_CELL_LIBRARY) "dummy_scl"
-            }
-            set ::env(TECH_LEF) "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
-            set ::env(LIB_SYNTH) "sky130_fd_sc_hd__tt_025C_1v80.lib"
-            """,
-        )
-        patcher.fs.create_file(
-            "/pdk/dummy2/libs.tech/librelane/config.tcl",
-            contents="""
-            if { ![info exists ::env(STD_CELL_LIBRARY)] } {
-                set ::env(STD_CELL_LIBRARY) "dummy2_scl"
-            }
-            set ::env(TECH_LEF) "/pdk/dummy2/libs.ref/techlef/dummy2_scl/dummy_tech_lef.tlef"
-            set ::env(LIB_SYNTH) "sky130_fd_sc_hd__tt_025C_1v80.lib"
-            """,
-        )
-        patcher.fs.create_file(
-            "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef",
-        )
-        patcher.fs.create_file(
-            "/pdk/dummy2/libs.ref/techlef/dummy2_scl/dummy_tech_lef.tlef",
-        )
-        patcher.fs.create_file(
-            "/pdk/dummy/libs.tech/librelane/dummy_scl/config.tcl",
-            contents="",
-        )
-        patcher.fs.create_file(
-            "/pdk/dummy2/libs.tech/librelane/dummy2_scl/config.tcl",
-            contents="",
-        )
+    from concurrent.futures import ProcessPoolExecutor
+    from unittest import mock
 
-        os.chdir("/cwd")
-        yield
+    # Mock the executor to avoid multiprocessing issues with pyfakefs
+    mock_executor = mock.Mock(spec=ProcessPoolExecutor)
+    # Save original env var value
+    original_pyfakefs_active = os.environ.get("PYFAKEFS_ACTIVE")
+    try:
+        with (
+            Patcher() as patcher,
+            mock.patch(
+                "librelane.common.executor.get_executor", return_value=mock_executor
+            ),
+        ):
+            # Set env var to indicate pyfakefs is active
+            os.environ["PYFAKEFS_ACTIVE"] = "1"
+            rmtree("/run", ignore_errors=True)
+            patcher.fs.create_dir("/cwd/src")
+            patcher.fs.create_file("/cwd/src/a.v")
+            patcher.fs.create_file("/cwd/src/b.v")
+            patcher.fs.create_dir("/cwd/spef")
+            patcher.fs.create_file("/cwd/spef/b.spef")
+            patcher.fs.create_file(
+                "/pdk/dummy/libs.tech/librelane/config.tcl",
+                contents="""
+                if { ![info exists ::env(STD_CELL_LIBRARY)] } {
+                    set ::env(STD_CELL_LIBRARY) "dummy_scl"
+                }
+                set ::env(TECH_LEF) "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
+                set ::env(LIB_SYNTH) "sky130_fd_sc_hd__tt_025C_1v80.lib"
+                """,
+            )
+            patcher.fs.create_file(
+                "/pdk/dummy2/libs.tech/librelane/config.tcl",
+                contents="""
+                if { ![info exists ::env(STD_CELL_LIBRARY)] } {
+                    set ::env(STD_CELL_LIBRARY) "dummy2_scl"
+                }
+                set ::env(TECH_LEF) "/pdk/dummy2/libs.ref/techlef/dummy2_scl/dummy_tech_lef.tlef"
+                set ::env(LIB_SYNTH) "sky130_fd_sc_hd__tt_025C_1v80.lib"
+                """,
+            )
+            patcher.fs.create_file(
+                "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef",
+            )
+            patcher.fs.create_file(
+                "/pdk/dummy2/libs.ref/techlef/dummy2_scl/dummy_tech_lef.tlef",
+            )
+            patcher.fs.create_file(
+                "/pdk/dummy/libs.tech/librelane/dummy_scl/config.tcl",
+                contents="",
+            )
+            patcher.fs.create_file(
+                "/pdk/dummy2/libs.tech/librelane/dummy2_scl/config.tcl",
+                contents="",
+            )
+
+            os.chdir("/cwd")
+            yield
+    finally:
+        # Restore original env var value
+        if original_pyfakefs_active is not None:
+            os.environ["PYFAKEFS_ACTIVE"] = original_pyfakefs_active
+        else:
+            os.environ.pop("PYFAKEFS_ACTIVE", None)
 
 
 class chdir(object):
