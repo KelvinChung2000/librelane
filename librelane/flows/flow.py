@@ -938,6 +938,18 @@ class Flow(ABC):
             as an input to the next step (where the next step will wait for the
             ``Future`` to be realized before calling :meth:`Step.run`)
         """
+        # Resolve the Future to avoid pickling threading locks
+        resolved_state = step.state_in.result()
+
+        # Create a new step instance with the resolved state to make it pickleable
+        picklable_step = type(step)(
+            config=step.config,
+            state_in=resolved_state,  # Pass resolved State instead of Future
+            id=getattr(step, "id", None),
+            name=getattr(step, "name", None),
+            long_name=getattr(step, "long_name", None),
+        )
+
         # Prepare picklable arguments
         kwargs["step_dir"] = self.dir_for_step(step)
 
@@ -955,7 +967,7 @@ class Flow(ABC):
         if hasattr(self, "debug_tracker"):
             self.debug_tracker.track_submit(job_id, step.id)
 
-        return get_executor().submit(_run_step_async, step, *args, **kwargs)
+        return get_executor().submit(_run_step_async, picklable_step, *args, **kwargs)
 
     def _save_snapshot_ef(self, path: Union[str, os.PathLike]):
         if (
