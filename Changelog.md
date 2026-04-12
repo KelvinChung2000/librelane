@@ -1005,6 +1005,12 @@ Style Notes
   * `yosys-ghdl` inclusion is decided by `lib.meta.availableOn`, which honours
     `meta.badPlatforms`, rather than by searching `meta.platforms`.
 
+## Tool Updates
+
+* Updated OpenROAD to `aec50a45`
+* Updated OpenSTA to `a56edf27`
+* Updated OpenROAD-ABC to `17cadca0`
+
 ## Misc. Enhancements/Bugfixes
 
 * **Fixed:** a job continues past a deferred error with the deferring step's
