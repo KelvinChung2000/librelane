@@ -1,7 +1,7 @@
 from typing import Optional, Union
 
 from librelane.common import GenericDict
-from librelane.config.variable import Variable
+from librelane.config import Variable
 
 
 def test_optional_and_pep604_produce_equivalent_variables():

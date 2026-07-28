@@ -202,6 +202,31 @@ def test_step_create(mock_run, mock_config):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([step])
+def test_step_typed_config_model(mock_run, mock_config):
+    from librelane.config import variable
+    from librelane.steps import Step
+    from librelane.state import State
+
+    class TypedStep(Step):
+        inputs = []
+        outputs = []
+        run = mock_run
+        id = "Test.TypedStep"
+
+        class Config(Step.Config):
+            RETRIES: int = variable(2, description="Retry count.")
+
+    instance = TypedStep(
+        config=mock_config,
+        state_in=State(),
+        RETRIES=4,
+    )
+    assert instance.config.RETRIES == 4
+    assert TypedStep.config_vars[0].name == "RETRIES"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
 def test_step_optional_inputs(mock_run, mock_config):
     from librelane.steps import Step, StepException
     from librelane.state import DesignFormat, State

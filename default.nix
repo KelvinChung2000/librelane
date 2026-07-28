@@ -40,6 +40,7 @@ let
     ps:
     [
       ps.click
+      ps.pydantic
       ps.rich
       ps.pyyaml
     ]

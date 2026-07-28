@@ -223,3 +223,25 @@ def test_preprocess_dict():
         },
     }
     assert preprocessed == expected, "Preprocessor produced a different result"
+
+
+def test_forward_reference_and_cycle():
+    from librelane.config.preprocessor import SymbolCycleError, resolve_symbols
+
+    resolved = resolve_symbols(
+        {
+            "FIRST": "ref::$SECOND/end",
+            "SECOND": "value",
+        },
+        {},
+    )
+    assert resolved["FIRST"] == "value/end"
+
+    with pytest.raises(SymbolCycleError, match=r"A -> B -> A"):
+        resolve_symbols({"A": "ref::$B", "B": "ref::$A"}, {})
+
+
+def test_unrecognized_double_colon_is_literal():
+    from librelane.config.preprocessor import parse_directive
+
+    assert parse_directive("pkg::type") is None

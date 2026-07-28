@@ -288,6 +288,67 @@ def test_multiconf():
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables()
+def test_later_source_selects_standard_cell_library():
+    import os
+
+    from librelane.config import Config
+
+    os.makedirs("/pdk/dummy/libs.tech/librelane/other_scl")
+    with open(
+        "/pdk/dummy/libs.tech/librelane/other_scl/config.tcl",
+        "w",
+    ) as stream:
+        stream.write("")
+
+    cfg, _ = Config.load(
+        [
+            {
+                "PDK": "dummy",
+                "STD_CELL_LIBRARY": "dummy_scl",
+                "DESIGN_NAME": "spm",
+            },
+            {
+                "STD_CELL_LIBRARY": "other_scl",
+                "VERILOG_FILES": "dir::src/*.v",
+            },
+        ],
+        config.flow_common_variables,
+        design_dir="/cwd",
+        pdk_root="/pdk",
+    )
+    assert cfg["STD_CELL_LIBRARY"] == "other_scl"  # issue #827
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables()
+def test_reference_uses_final_layer():
+    from librelane.config import Config, Variable
+
+    variables = config.flow_common_variables + [
+        Variable("BASE", str, description="Base."),
+        Variable("RESULT", str, description="Result."),
+    ]
+    cfg, _ = Config.load(
+        [
+            {
+                "DESIGN_NAME": "spm",
+                "VERILOG_FILES": "dir::src/*.v",
+                "BASE": "first",
+                "RESULT": "ref::$BASE",
+            },
+            {"BASE": "second"},
+        ],
+        variables,
+        design_dir="/cwd",
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+    assert cfg["RESULT"] == "second"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables()
 def test_mixed_configs():
     from librelane.config import Meta, Config
 
@@ -479,7 +540,7 @@ def test_automatic_conversion():
     with pytest.raises(
         config.InvalidConfig, match="Refusing to automatically convert"
     ) as e:
-        Config.load(
+        cfg, _ = Config.load(
             "/cwd/config.json",
             config.flow_common_variables,
             pdk="dummy",
@@ -592,7 +653,7 @@ def test_invalid_keys(caplog: pytest.LogCaptureFixture):
         )
 
     try:
-        Config.load(
+        cfg, _ = Config.load(
             "/cwd/config.json",
             config.flow_common_variables,
             pdk="dummy",
@@ -606,7 +667,9 @@ def test_invalid_keys(caplog: pytest.LogCaptureFixture):
             "unknown variable triggered an error when loading from a meta.version: 1 JSON file"
         )
 
-    assert "unknown key" in caplog.text, (
+    assert any(
+        diagnostic.category == "unknown-key" for diagnostic in cfg.diagnostics
+    ), (
         "unknown variable did not trigger a warning when loading from a meta.version: 1 JSON file"
     )
     caplog.clear()
@@ -629,7 +692,7 @@ def test_invalid_keys(caplog: pytest.LogCaptureFixture):
         "unknown variable did not trigger an error when loading from dict"
     )
 
-    Config.load(
+    removed_cfg, _ = Config.load(
         {
             "DESIGN_NAME": "whatever",
             "VERILOG_FILES": "dir::src/*.v",
@@ -642,7 +705,10 @@ def test_invalid_keys(caplog: pytest.LogCaptureFixture):
         pdk_root="/pdk",
     )
 
-    assert "has been removed" in caplog.text, (
+    assert any(
+        diagnostic.category == "removed-variable"
+        for diagnostic in removed_cfg.diagnostics
+    ), (
         "removed variable did not trigger a warning when loading from a meta.version: 1 JSON file"
     )
     caplog.clear()
@@ -726,7 +792,8 @@ def test_dis_migration(caplog: pytest.LogCaptureFixture):
     assert cfg["RUN_HEURISTIC_DIODE_INSERTION"], "failed to migrate dis 6 properly"
     assert cfg["DIODE_ON_PORTS"] == "in", "failed to migrate dis 6 properly"
 
-    assert "See 'Migrating DIODE_INSERTION_STRATEGY'" in caplog.text, (
-        "diode insertion strategy did not trigger a warning"
-    )
+    assert any(
+        "See 'Migrating DIODE_INSERTION_STRATEGY'" in diagnostic.message
+        for diagnostic in cfg.diagnostics
+    ), "diode insertion strategy did not trigger a warning"
     caplog.clear()

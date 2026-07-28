@@ -21,7 +21,8 @@ import os
 import textwrap
 import subprocess
 from abc import abstractmethod
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
+from collections.abc import Mapping
 
 from .tclstep import TclStep
 from .step import ViewsUpdate, MetricsUpdate, Step
@@ -33,7 +34,7 @@ from .pyosys import (
     VHDLSynthesis,
 )
 
-from ..config import Variable, Config
+from ..config import Variable
 from ..state import State, DesignFormat
 from ..common import Path, Toolbox, TclUtils, process_list_file
 
@@ -45,7 +46,7 @@ VHDLSynthesis
 
 # This is now only used by EQY since we moved our Yosys scripts to Python.
 def _generate_read_deps(
-    config: Config,
+    config: Mapping[str, Any],
     toolbox: Toolbox,
     power_defines: bool = False,
     tcl: bool = True,

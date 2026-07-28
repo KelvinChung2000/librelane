@@ -32,11 +32,14 @@ from typing import (
 )
 from collections.abc import Mapping, Sequence
 
-from .variable import Variable, MissingRequiredVariable
+from .legacy import Variable, MissingRequiredVariable
+from .diagnostics import Diagnostic, DiagnosticSet, Severity
+from .loading import ConfigSource, layer_mappings, read_source
 from .removals import removed_variables
 from .flow import pdk_variables, scl_variables, pad_variables, flow_common_variables
 from .pdk_compat import migrate_old_config
 from .preprocessor import preprocess_dict, Keys as SpecialKeys
+from .validation import validate_mapping
 from ..__version__ import __version__
 from ..common import (
     GenericDict,
@@ -203,12 +206,14 @@ class Config(GenericImmutableDict[str, Any]):
         self,
         *args,
         meta: Meta | None = None,
+        diagnostics: DiagnosticSet | None = None,
         **kwargs,
     ):
         if meta is None:
             meta = Meta(version=1)
 
         self.meta = meta
+        self.diagnostics = diagnostics or DiagnosticSet()
 
         super().__init__(*args, **kwargs)
 
@@ -220,7 +225,12 @@ class Config(GenericImmutableDict[str, Any]):
             These values are NOT validated and you should not be overriding these
             haphazardly.
         """
-        return Config(self, meta=self.meta, overrides=overrides)
+        return Config(
+            self,
+            meta=self.meta,
+            diagnostics=self.diagnostics,
+            overrides=overrides,
+        )
 
     def to_raw_dict(self, include_meta: bool = True) -> dict[str, Any]:
         """
@@ -272,6 +282,7 @@ class Config(GenericImmutableDict[str, Any]):
         return Config(
             {variable: self[variable] for variable in variables},
             meta=dataclasses.replace(self.meta),
+            diagnostics=self.diagnostics,
         )
 
     def with_increment(
@@ -322,18 +333,13 @@ class Config(GenericImmutableDict[str, Any]):
                 "incremental configuration", design_warnings, design_errors
             )
 
+        diagnostics = DiagnosticSet(self.diagnostics)
         if not config_quiet:
-            if len(design_warnings) > 0:
-                logger.info(
-                    "Loading the incremental configuration has generated the following warnings:"
-                )
-            for warning in design_warnings:
-                logger.warning(warning)
-
-        return Config(
-            processed,
-            meta=self.meta.copy(),
-        )
+            diagnostics.extend(
+                Diagnostic(Severity.WARNING, "incremental", warning)
+                for warning in design_warnings
+            )
+        return Config(processed, meta=self.meta.copy(), diagnostics=diagnostics)
 
     @classmethod
     def get_meta(
@@ -532,7 +538,8 @@ class Config(GenericImmutableDict[str, Any]):
                 "The design_dir argument is required when configuration dictionaries are used."
             )
 
-        config_obj = Config()
+        sources: list[ConfigSource] = []
+        meta = Meta()
         for config_validated in configs_validated:
             try:
                 meta = Self.get_meta(config_validated)
@@ -543,10 +550,14 @@ class Config(GenericImmutableDict[str, Any]):
                 raise InvalidConfig(identifier, [], [f"'meta' object is invalid: {e}"])
 
             mapping = None
+            source_name = "<mapping>"
+            source_kind = "mapping"
             if isinstance(config_validated, Mapping):
                 mapping = config_validated
             elif isinstance(config_validated, str):
                 validated_type = _validate_config_file(config_validated)
+                source_name = config_validated
+                source_kind = validated_type
                 if validated_type == "tcl":
                     mapping = Self.__mapping_from_tcl(
                         config_validated,
@@ -556,43 +567,34 @@ class Config(GenericImmutableDict[str, Any]):
                         scl=scl,
                         pad=pad,
                     )
-                elif validated_type == "json":
-                    mapping = json.load(
-                        open(config_validated, encoding="utf8"),
-                        parse_float=Decimal,
+                else:
+                    source = read_source(
+                        config_validated,
+                        yaml_loader=_OpenLaneYAMLLoader,
                     )
-                elif validated_type == "yaml":
-                    mapping = yaml.load(
-                        open(config_validated, encoding="utf8"),
-                        Loader=_OpenLaneYAMLLoader,
-                    )
+                    mapping = source.mapping
 
             assert mapping is not None, "Invalid validated config"
-
-            mutable = config_obj.copy_mut()
-            mutable.update_reorder(mapping)
-            config_obj = Self.__load_dict(
-                mutable,
-                design_dir,
-                flow_config_vars=flow_config_vars,
-                pdk_root=pdk_root,
-                pdk=pdk,
-                scl=scl,
-                pad=pad,
-                meta=meta,
-                permissive_typing=meta.version < 2,
-                missing_ok=True,
-                _load_pdk_configs=_load_pdk_configs,
+            sources.append(
+                ConfigSource(
+                    mapping,
+                    source_name,
+                    source_kind,  # type: ignore
+                )
             )
 
-            _load_pdk_configs = False  # one time's enough
-
-        # Final signoff + override strings
+        layered = layer_mappings(sources)
+        mutable = GenericDict(layered.mapping)
+        provenance = dict(layered.provenance)
         config_override_strings = config_override_strings or []
-        mutable = config_obj.copy_mut()
+        permissive_keys = {
+            key for source in sources if source.kind == "tcl" for key in source.mapping
+        }
         for string in config_override_strings:
             key, value = string.split("=", 1)
             mutable[key] = value
+            provenance[key] = "<command line>"
+            permissive_keys.add(key)
 
         config_obj = Self.__load_dict(
             mutable,
@@ -602,10 +604,11 @@ class Config(GenericImmutableDict[str, Any]):
             pdk=pdk,
             scl=scl,
             pad=pad,
-            meta=config_obj.meta,  # carry forward
-            missing_ok=False,  # must all exist
-            permissive_typing=True,  # so we can parse things from the commandline
-            _load_pdk_configs=False,  # one time's enough
+            meta=meta,
+            permissive_typing=meta.version < 2,
+            permissive_keys=frozenset(permissive_keys),
+            provenance=provenance,
+            _load_pdk_configs=_load_pdk_configs,
         )
 
         return (config_obj, design_dir)
@@ -648,7 +651,8 @@ class Config(GenericImmutableDict[str, Any]):
         pad: str | None = None,
         full_pdk_warnings: bool = False,
         permissive_typing: bool = False,
-        missing_ok: bool = False,
+        permissive_keys: frozenset[str] = frozenset(),
+        provenance: Mapping[str, str] | None = None,
         _load_pdk_configs: bool = True,
     ) -> "Config":
         raw = dict(mapping_in)
@@ -656,13 +660,10 @@ class Config(GenericImmutableDict[str, Any]):
         if "meta" in raw:
             del raw["meta"]
 
-        flow_option_vars = []
         flow_pdk_vars = []
         for variable in flow_config_vars:
             if variable.pdk:
                 flow_pdk_vars.append(variable)
-            else:
-                flow_option_vars.append(variable)
 
         mutable = GenericDict(
             preprocess_dict(
@@ -709,28 +710,24 @@ class Config(GenericImmutableDict[str, Any]):
             )
         )
 
-        processed, design_warnings, design_errors = Config.__process_variable_list(
+        processed, diagnostics = validate_mapping(
             mutable,
             list(flow_config_vars),
-            removed_variables,
-            missing_ok=missing_ok,
-            permissive_typing=permissive_typing,
+            permissive=permissive_typing,
+            permissive_keys=permissive_keys,
             on_unknown_key="warn" if permissive_typing else "error",
+            provenance=provenance,
+            removed=removed_variables,
         )
 
-        if len(design_errors) != 0:
+        if diagnostics.errors():
             raise InvalidConfig(
-                "design configuration file", design_warnings, design_errors
+                "design configuration file",
+                diagnostics.rendered_warnings(),
+                diagnostics.rendered_errors(),
             )
 
-        if len(design_warnings) > 0:
-            logger.info(
-                "Loading the design configuration file has generated the following warnings:"
-            )
-        for warning in design_warnings:
-            logger.warning(warning)
-
-        return Config(processed, meta=meta)
+        return Config(processed, meta=meta, diagnostics=diagnostics)
 
     @classmethod
     def __mapping_from_tcl(

@@ -667,6 +667,14 @@ class Flow(ABC):
                     )
                 )
 
+                for diagnostic in self.config.diagnostics:
+                    if diagnostic.severity.value == "error":
+                        logger.error(diagnostic.message)
+                    elif diagnostic.severity.value in ("warning", "deprecation"):
+                        logger.warning(diagnostic.message)
+                    else:
+                        logger.info(diagnostic.message)
+
                 self.config_resolved_path = self.run_dir / "resolved.json"
                 self.config_resolved_path.write_text(self.config.dumps())
 

@@ -324,17 +324,23 @@ class Toolbox(object):
 
     def render_png(
         self,
-        config: GenericImmutableDict[str, Any],
+        config: Mapping[str, Any],
         state_in: GenericImmutableDict[str, Any],
     ) -> bytes | None:  # pragma: no cover
         try:
             from ..steps import KLayout, StepError
-            from ..config import Config, InvalidConfig
+            from ..config import BaseConfigModel, Config, InvalidConfig
             from ..state import State
 
             # I'm too damn tired to figure out a way to forward-declare those two,
             # have fun if you want to
-            if not isinstance(config, Config):
+            if isinstance(config, BaseConfigModel):
+                config = Config(
+                    config.to_raw_dict(),
+                    meta=config.meta,
+                    diagnostics=config.diagnostics,
+                )
+            elif not isinstance(config, Config):
                 raise TypeError("parameter config must be of type Config")
 
             if not isinstance(state_in, State):

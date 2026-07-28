@@ -35,8 +35,11 @@ from collections.abc import Callable, Sequence
 
 
 from ...config import (
-    Config,
+    BaseConfigModel,
+    Config as ConfigMap,
     Variable,
+    model_to_variables,
+    variables_to_model,
 )
 from ...state import DesignFormat, State, InvalidState, StateElement
 from ...common import (
@@ -185,10 +188,18 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     output_processors: ClassVar[list[type[OutputProcessor]]] = [DefaultOutputProcessor]
     config_vars: ClassVar[list[Variable]] = []
 
+    class Config(BaseConfigModel):
+        pass
+
+    _config_model_cache: ClassVar[
+        tuple[tuple[tuple[str, Any, Any], ...], type[BaseConfigModel]] | None
+    ] = None
+
     # Instance Variables
     name: str
     long_name: str
     state_in: Future[State]
+    config: BaseConfigModel
 
     ## Stateful
     toolbox: Toolbox = GlobalToolbox
@@ -205,7 +216,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
 
     def __init__(
         self,
-        config: Config | None = None,
+        config: ConfigMap | BaseConfigModel | None = None,
         state_in: State | None | Future[State] = None,
         *,
         id: str | None = None,
@@ -228,13 +239,19 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
             self.id = id
 
         if config is None:
-            if current_interactive := Config.current_interactive:
+            if current_interactive := ConfigMap.current_interactive:
                 config = current_interactive
             else:
                 raise TypeError("Missing required argument 'config'")
+        elif isinstance(config, BaseConfigModel):
+            config = ConfigMap(
+                config.to_raw_dict(),
+                meta=config.meta,
+                diagnostics=config.diagnostics,
+            )
 
         if state_in is None:
-            if Config.current_interactive is not None:
+            if ConfigMap.current_interactive is not None:
                 raise TypeError(
                     "Using an implicit input state in interactive mode is no longer supported- pass the last state in as follows: `state_in=last_step.state_out`"
                 )
@@ -257,18 +274,28 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
             )
 
         if _no_revalidate_conf:
-            self.config = config.copy_filtered(
+            filtered_config = config.copy_filtered(
                 self.get_all_config_variables(),
                 include_flow_variables=False,  # get_all_config_variables() gets them anyway
             )
         elif _no_filter_conf:
-            self.config = config.copy()
+            filtered_config = config.copy()
         else:
-            self.config = config.with_increment(
+            filtered_config = config.with_increment(
                 self.get_all_config_variables(),
                 kwargs,
                 _config_quiet,
             )
+        model_type = self._get_config_model()
+        raw_filtered = filtered_config.to_raw_dict(include_meta=False)
+        if _no_revalidate_conf:
+            typed_config = model_type.model_construct(**raw_filtered)
+        else:
+            typed_config = model_type.model_validate(raw_filtered, strict=True)
+        self.config = typed_config.attach_context(
+            diagnostics=filtered_config.diagnostics,
+            meta=filtered_config.meta,
+        )
 
         state_in_future: Future[State] = Future()
         if isinstance(state_in, State):
@@ -278,6 +305,9 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         self.state_in = state_in_future
 
     def __init_subclass__(cls):
+        if "Config" in cls.__dict__ and "config_vars" not in cls.__dict__:
+            cls.config_vars = model_to_variables(cls.Config)
+        cls._config_model_cache = None
         if hasattr(cls, "flow_control_variable"):
             logger.warning(
                 f"Step '{cls.__name__}' uses deprecated property 'flow_control_variable'. Flow control should now be done using the Flow class's 'gating_config_vars' property."
@@ -285,6 +315,24 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         if cls.id != NotImplemented:
             if f".{cls.__name__}" not in cls.id:
                 logger.debug(f"Step '{cls.__name__}' has a non-matching ID: '{cls.id}'")
+
+    @classmethod
+    def _get_config_model(Self) -> type[BaseConfigModel]:
+        if "Config" in Self.__dict__:
+            return Self.Config
+        fingerprint = tuple(
+            (variable.name, variable.type, variable.default)
+            for variable in Self.get_all_config_variables()
+        )
+        cached = Self._config_model_cache
+        if cached is None or cached[0] != fingerprint:
+            model = variables_to_model(
+                f"{Self.__name__}Config",
+                Self.get_all_config_variables(),
+            )
+            Self._config_model_cache = (fingerprint, model)
+            return model
+        return cached[1]
 
     @classmethod
     def get_implementation_id(Self) -> str:
@@ -319,8 +367,8 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     @classmethod
     def _load_config_from_file(
         Self, config_path: str | os.PathLike, pdk_root: str = "."
-    ) -> Config:
-        config, _ = Config.load(
+    ) -> ConfigMap:
+        config, _ = ConfigMap.load(
             config_in=json.loads(open(config_path).read(), parse_float=Decimal),
             flow_config_vars=Self.get_all_config_variables(),
             design_dir=".",
@@ -332,7 +380,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     @classmethod
     def load(
         Self,
-        config: str | os.PathLike | Config,
+        config: str | os.PathLike | ConfigMap,
         state_in: str | os.PathLike | State,
         pdk_root: str | None = None,
     ) -> Step:
@@ -367,7 +415,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
             return Target.load(config, state_in, pdk_root)
 
         pdk_root = pdk_root or "."
-        if not isinstance(config, Config):
+        if not isinstance(config, ConfigMap):
             config = Self._load_config_from_file(config, pdk_root)
         if not isinstance(state_in, State):
             state_in = State.loads(pathlib.Path(state_in).read_text())
@@ -461,7 +509,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         """
 
         if step_dir is None:
-            if Config.current_interactive is not None:
+            if ConfigMap.current_interactive is not None:
                 self.step_dir = (
                     pathlib.Path.cwd()
                     / "librelane_run"
@@ -474,7 +522,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
             self.step_dir = pathlib.Path(step_dir)
 
         if toolbox is None:
-            if Config.current_interactive is not None:
+            if ConfigMap.current_interactive is not None:
                 pass
             else:
                 self.toolbox = Toolbox(os.fspath(self.step_dir))

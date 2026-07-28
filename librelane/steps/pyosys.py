@@ -31,7 +31,7 @@ from typing import Literal, Optional
 
 from .step import ViewsUpdate, MetricsUpdate, Step
 
-from ..config import Variable
+from ..config import BaseConfigModel, Variable, model_to_variables, variable
 from ..state import State, DesignFormat
 from ..common import Path, process_list_file
 
@@ -97,48 +97,46 @@ def _parse_yosys_check(
     return errors_encountered
 
 
-verilog_rtl_cfg_vars = [
-    Variable(
-        "VERILOG_FILES",
-        list[Path],
-        "The paths of the design's Verilog files.",
-    ),
-    Variable(
-        "VERILOG_DEFINES",
-        Optional[list[str]],
-        "Preprocessor defines for input Verilog files.",
+class VerilogRtlConfig(BaseConfigModel):
+    VERILOG_FILES: list[Path] = variable(
+        description="The paths of the design's Verilog files.",
+    )
+
+    VERILOG_DEFINES: Optional[list[str]] = variable(
+        None,
+        description="Preprocessor defines for input Verilog files.",
         deprecated_names=["SYNTH_DEFINES"],
-    ),
-    Variable(
-        "VERILOG_POWER_DEFINE",
-        Optional[str],
-        "Specifies the name of the define used to guard power and ground connections in the input RTL.",
+    )
+
+    VERILOG_POWER_DEFINE: Optional[str] = variable(
+        "USE_POWER_PINS",
+        description="Specifies the name of the define used to guard power and ground connections in the input RTL.",
         deprecated_names=["SYNTH_USE_PG_PINS_DEFINES", "SYNTH_POWER_DEFINE"],
-        default="USE_POWER_PINS",
-    ),
-    Variable(
-        "VERILOG_INCLUDE_DIRS",
-        Optional[list[Path]],
-        "Specifies the Verilog `include` directories.",
-    ),
-    Variable(
-        "SYNTH_PARAMETERS",
-        Optional[list[str]],
-        "Key-value pairs to be `chparam`ed in Yosys, in the format `key1=value1`.",
-    ),
-    Variable(
-        "USE_SLANG",
-        bool,
-        "Use the Slang frontend to process files, which has better SystemVerilog parsing capabilities but is not as battle-tested as the default Yosys friend.",
-        default=False,
+    )
+
+    VERILOG_INCLUDE_DIRS: Optional[list[Path]] = variable(
+        None,
+        description="Specifies the Verilog `include` directories.",
+    )
+
+    SYNTH_PARAMETERS: Optional[list[str]] = variable(
+        None,
+        description="Key-value pairs to be `chparam`ed in Yosys, in the format `key1=value1`.",
+    )
+
+    USE_SLANG: bool = variable(
+        False,
+        description="Use the Slang frontend to process files, which has better SystemVerilog parsing capabilities but is not as battle-tested as the default Yosys friend.",
         deprecated_names=["USE_SYNLIG"],
-    ),
-    Variable(
-        "SLANG_ARGUMENTS",
-        Optional[list[str]],
-        "Pass arguments to the Slang frontend.",
-    ),
-]
+    )
+
+    SLANG_ARGUMENTS: Optional[list[str]] = variable(
+        None,
+        description="Pass arguments to the Slang frontend.",
+    )
+
+
+verilog_rtl_cfg_vars = model_to_variables(VerilogRtlConfig)
 
 DesignFormat(
     "json_h",

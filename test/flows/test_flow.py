@@ -382,8 +382,10 @@ def test_flow_log_artifacts():
 
     logging_flow = LoggingFlow(
         {
+            "meta": {"version": 1},
             "DESIGN_NAME": "WHATEVER",
             "VERILOG_FILES": ["/cwd/src/a.v"],
+            "UNKNOWN_DIAGNOSTIC_KEY": "marker",
         },
         design_dir="/cwd",
         pdk="dummy",
@@ -404,3 +406,5 @@ def test_flow_log_artifacts():
     assert "info artifact marker" not in warning_log
     assert "error artifact marker" in error_log
     assert "warning artifact marker" not in error_log
+    assert "unknown key 'UNKNOWN_DIAGNOSTIC_KEY'" in flow_log
+    assert "unknown key 'UNKNOWN_DIAGNOSTIC_KEY'" in warning_log

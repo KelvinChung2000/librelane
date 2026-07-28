@@ -48,6 +48,35 @@ class Path(UserString, os.PathLike):
     # translation only.
     _dummy_path: ClassVar[str] = "__librelane_dummy_path"
 
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source, handler):
+        """Teach Pydantic LibreLane's scalar/glob path semantics."""
+        from pydantic_core import core_schema
+        from ..config.preprocessor import GlobMatch
+
+        def validate(value):
+            if isinstance(value, GlobMatch):
+                if len(value) == 1:
+                    value = value[0]
+                elif len(value) == 0:
+                    value = value.literal
+                else:
+                    raise ValueError(
+                        f"expected one path, glob matched {len(value)}: "
+                        + ", ".join(value)
+                    )
+            result = cls(str(value))
+            result.validate("Path provided for configuration variable is invalid")
+            return result
+
+        return core_schema.no_info_plain_validator_function(
+            validate,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                str,
+                when_used="json",
+            ),
+        )
+
     def __fspath__(self) -> str:
         return str(self)
 

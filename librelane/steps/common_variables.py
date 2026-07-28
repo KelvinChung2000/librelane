@@ -18,442 +18,401 @@
 from decimal import Decimal
 from typing import Optional, Literal
 
-from ..config import Variable
+from ..config import BaseConfigModel, model_to_variables, variable
 
-io_layer_variables = [
-    Variable(
-        "IO_PIN_H_LAYER",
-        str,
-        "The metal layer on which to place horizontally-aligned (long side parallel with the horizon) pins alongside the east and west edges of the die.",
+
+class IoLayerConfig(BaseConfigModel):
+    IO_PIN_H_LAYER: str = variable(
+        description="The metal layer on which to place horizontally-aligned (long side parallel with the horizon) pins alongside the east and west edges of the die.",
         pdk=True,
         deprecated_names=["FP_IO_HLAYER"],
-    ),
-    Variable(
-        "IO_PIN_V_LAYER",
-        str,
-        "The metal layer on which to place vertically-aligned (long side perpendicular to the horizon) pins alongside the north and south edges of the die.",
+    )
+
+    IO_PIN_V_LAYER: str = variable(
+        description="The metal layer on which to place vertically-aligned (long side perpendicular to the horizon) pins alongside the north and south edges of the die.",
         pdk=True,
         deprecated_names=["FP_IO_VLAYER"],
-    ),
-    Variable(
-        "IO_PIN_V_EXTENSION",
-        Decimal,
-        "Extends the vertical io pins outside of the die by the specified units.",
-        default=0,
+    )
+
+    IO_PIN_V_EXTENSION: Decimal = variable(
+        0,
+        description="Extends the vertical io pins outside of the die by the specified units.",
         units="µm",
         deprecated_names=["FP_IO_VEXTEND"],
-    ),
-    Variable(
-        "IO_PIN_H_EXTENSION",
-        Decimal,
-        "Extends the horizontal io pins outside of the die by the specified units.",
-        default=0,
+    )
+
+    IO_PIN_H_EXTENSION: Decimal = variable(
+        0,
+        description="Extends the horizontal io pins outside of the die by the specified units.",
         units="µm",
         deprecated_names=["FP_IO_HEXTEND"],
-    ),
-    Variable(
-        "IO_PIN_V_THICKNESS_MULT",
-        Decimal,
-        "A multiplier for vertical pin thickness. Base thickness is the pins layer min width.",
-        default=2,
+    )
+
+    IO_PIN_V_THICKNESS_MULT: Decimal = variable(
+        2,
+        description="A multiplier for vertical pin thickness. Base thickness is the pins layer min width.",
         deprecated_names=["FP_IO_VTHICKNESS_MULT"],
-    ),
-    Variable(
-        "IO_PIN_H_THICKNESS_MULT",
-        Decimal,
-        "A multiplier for horizontal pin thickness. Base thickness is the pins layer min width.",
-        default=2,
+    )
+
+    IO_PIN_H_THICKNESS_MULT: Decimal = variable(
+        2,
+        description="A multiplier for horizontal pin thickness. Base thickness is the pins layer min width.",
         deprecated_names=["FP_IO_HTHICKNESS_MULT"],
-    ),
-    Variable(
-        "IO_PIN_V_LENGTH",
-        Optional[Decimal],
-        """
-        The length of the pins with a north or south orientation. If unspecified by a PDK, OpenROAD will use whichever is higher of the following two values:
-            * The pin width
-            * The minimum value satisfying the minimum area constraint given the pin width
-        """,
+    )
+
+    IO_PIN_V_LENGTH: Optional[Decimal] = variable(
+        None,
+        description="\n        The length of the pins with a north or south orientation. If unspecified by a PDK, OpenROAD will use whichever is higher of the following two values:\n            * The pin width\n            * The minimum value satisfying the minimum area constraint given the pin width\n        ",
         units="µm",
         pdk=True,
         deprecated_names=["FP_IO_VLENGTH"],
-    ),
-    Variable(
-        "IO_PIN_H_LENGTH",
-        Optional[Decimal],
-        """
-        The length of the pins with an east or west orientation. If unspecified by a PDK, OpenROAD will use whichever is higher of the following two values:
-            * The pin width
-            * The minimum value satisfying the minimum area constraint given the pin width
-        """,
+    )
+
+    IO_PIN_H_LENGTH: Optional[Decimal] = variable(
+        None,
+        description="\n        The length of the pins with an east or west orientation. If unspecified by a PDK, OpenROAD will use whichever is higher of the following two values:\n            * The pin width\n            * The minimum value satisfying the minimum area constraint given the pin width\n        ",
         units="µm",
         pdk=True,
         deprecated_names=["FP_IO_HLENGTH"],
-    ),
-]
+    )
 
-pdn_variables = [
-    Variable(
-        "PDN_SKIPTRIM",
-        bool,
-        "Enables `-skip_trim` option during pdngen which skips the metal trim step, which attempts to remove metal stubs.",
-        default=False,
+
+io_layer_variables = model_to_variables(IoLayerConfig)
+
+
+class PdnConfig(BaseConfigModel):
+    PDN_SKIPTRIM: bool = variable(
+        False,
+        description="Enables `-skip_trim` option during pdngen which skips the metal trim step, which attempts to remove metal stubs.",
         deprecated_names=["FP_PDN_SKIPTRIM"],
-    ),
-    Variable(
-        "PDN_CORE_RING",
-        bool,
-        "Enables adding a core ring around the design. More details on the control variables in the PDK config documentation.",
-        default=False,
+    )
+
+    PDN_CORE_RING: bool = variable(
+        False,
+        description="Enables adding a core ring around the design. More details on the control variables in the PDK config documentation.",
         deprecated_names=["FP_PDN_CORE_RING"],
-    ),
-    Variable(
-        "PDN_ENABLE_RAILS",
-        bool,
-        "Enables the creation of rails in the power grid.",
-        default=True,
+    )
+
+    PDN_ENABLE_RAILS: bool = variable(
+        True,
+        description="Enables the creation of rails in the power grid.",
         deprecated_names=["FP_PDN_ENABLE_RAILS"],
-    ),
-    Variable(
-        "PDN_HORIZONTAL_HALO",
-        Decimal,
-        "Sets the horizontal halo around the macros during power grid insertion.",
-        default=10,
+    )
+
+    PDN_HORIZONTAL_HALO: Decimal = variable(
+        10,
+        description="Sets the horizontal halo around the macros during power grid insertion.",
         units="µm",
         deprecated_names=["FP_PDN_HORIZONTAL_HALO"],
-    ),
-    Variable(
-        "PDN_VERTICAL_HALO",
-        Decimal,
-        "Sets the vertical halo around the macros during power grid insertion.",
-        default=10,
+    )
+
+    PDN_VERTICAL_HALO: Decimal = variable(
+        10,
+        description="Sets the vertical halo around the macros during power grid insertion.",
         units="µm",
         deprecated_names=["FP_PDN_VERTICAL_HALO"],
-    ),
-    Variable(
-        "PDN_MULTILAYER",
-        bool,
-        "Controls the layers used in the power grid. If set to false, only the lower layer will be used, which is useful when hardening a macro for integrating into a larger top-level design.",
-        default=True,
+    )
+
+    PDN_MULTILAYER: bool = variable(
+        True,
+        description="Controls the layers used in the power grid. If set to false, only the lower layer will be used, which is useful when hardening a macro for integrating into a larger top-level design.",
         deprecated_names=["FP_PDN_MULTILAYER", "DESIGN_IS_CORE"],
-    ),
-    Variable(
-        "PDN_RAIL_OFFSET",
-        Decimal,
-        "The offset for the power distribution network rails for first metal layer.",
+    )
+
+    PDN_RAIL_OFFSET: Decimal = variable(
+        description="The offset for the power distribution network rails for first metal layer.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_RAIL_OFFSET"],
-    ),
-    Variable(
-        "PDN_VWIDTH",
-        Decimal,
-        "The strap width for the vertical layer in generated power distribution networks.",
+    )
+
+    PDN_VWIDTH: Decimal = variable(
+        description="The strap width for the vertical layer in generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_VWIDTH"],
-    ),
-    Variable(
-        "PDN_HWIDTH",
-        Decimal,
-        "The strap width for the horizontal layer in generated power distribution networks.",
+    )
+
+    PDN_HWIDTH: Decimal = variable(
+        description="The strap width for the horizontal layer in generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_HWIDTH"],
-    ),
-    Variable(
-        "PDN_VSPACING",
-        Decimal,
-        "Intra-spacing (within a set) of vertical straps in generated power distribution networks.",
+    )
+
+    PDN_VSPACING: Decimal = variable(
+        description="Intra-spacing (within a set) of vertical straps in generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_VSPACING"],
-    ),
-    Variable(
-        "PDN_HSPACING",
-        Decimal,
-        "Intra-spacing (within a set) of horizontal straps in generated power distribution networks.",
+    )
+
+    PDN_HSPACING: Decimal = variable(
+        description="Intra-spacing (within a set) of horizontal straps in generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_HSPACING"],
-    ),
-    Variable(
-        "PDN_VPITCH",
-        Decimal,
-        "Inter-distance (between sets) of vertical power straps in generated power distribution networks.",
+    )
+
+    PDN_VPITCH: Decimal = variable(
+        description="Inter-distance (between sets) of vertical power straps in generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_VPITCH"],
-    ),
-    Variable(
-        "PDN_HPITCH",
-        Decimal,
-        "Inter-distance (between sets) of horizontal power straps in generated power distribution networks.",
+    )
+
+    PDN_HPITCH: Decimal = variable(
+        description="Inter-distance (between sets) of horizontal power straps in generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_HPITCH"],
-    ),
-    Variable(
-        "PDN_VOFFSET",
-        Decimal,
-        "Initial offset for sets of vertical power straps.",
+    )
+
+    PDN_VOFFSET: Decimal = variable(
+        description="Initial offset for sets of vertical power straps.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_VOFFSET"],
-    ),
-    Variable(
-        "PDN_HOFFSET",
-        Decimal,
-        "Initial offset for sets of horizontal power straps.",
+    )
+
+    PDN_HOFFSET: Decimal = variable(
+        description="Initial offset for sets of horizontal power straps.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_HOFFSET"],
-    ),
-    Variable(
-        "PDN_CORE_RING_VWIDTH",
-        Decimal,
-        "The width for the vertical layer in the core ring of generated power distribution networks.",
+    )
+
+    PDN_CORE_RING_VWIDTH: Decimal = variable(
+        description="The width for the vertical layer in the core ring of generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_CORE_RING_VWIDTH"],
-    ),
-    Variable(
-        "PDN_CORE_RING_HWIDTH",
-        Decimal,
-        "The width for the horizontal layer in the core ring of generated power distribution networks.",
+    )
+
+    PDN_CORE_RING_HWIDTH: Decimal = variable(
+        description="The width for the horizontal layer in the core ring of generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_CORE_RING_HWIDTH"],
-    ),
-    Variable(
-        "PDN_CORE_RING_VSPACING",
-        Decimal,
-        "The spacing for the vertical layer in the core ring of generated power distribution networks.",
+    )
+
+    PDN_CORE_RING_VSPACING: Decimal = variable(
+        description="The spacing for the vertical layer in the core ring of generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_CORE_RING_VSPACING"],
-    ),
-    Variable(
-        "PDN_CORE_RING_HSPACING",
-        Decimal,
-        "The spacing for the horizontal layer in the core ring of generated power distribution networks.",
+    )
+
+    PDN_CORE_RING_HSPACING: Decimal = variable(
+        description="The spacing for the horizontal layer in the core ring of generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_CORE_RING_HSPACING"],
-    ),
-    Variable(
-        "PDN_CORE_RING_VOFFSET",
-        Decimal,
-        "The offset for the vertical layer in the core ring of generated power distribution networks.",
+    )
+
+    PDN_CORE_RING_VOFFSET: Decimal = variable(
+        description="The offset for the vertical layer in the core ring of generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_CORE_RING_VOFFSET"],
-    ),
-    Variable(
-        "PDN_CORE_RING_HOFFSET",
-        Decimal,
-        "The offset for the horizontal layer in the core ring of generated power distribution networks.",
+    )
+
+    PDN_CORE_RING_HOFFSET: Decimal = variable(
+        description="The offset for the horizontal layer in the core ring of generated power distribution networks.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_CORE_RING_HOFFSET"],
-    ),
-    Variable(
-        "PDN_CORE_RING_CONNECT_TO_PADS",
-        bool,
-        "If specified, the core side of the pad pins will be connected to the ring.",
-        default=False,
+    )
+
+    PDN_CORE_RING_CONNECT_TO_PADS: bool = variable(
+        False,
+        description="If specified, the core side of the pad pins will be connected to the ring.",
         pdk=True,
-    ),
-    Variable(
-        "PDN_CORE_RING_ALLOW_OUT_OF_DIE",
-        bool,
-        "If specified, the ring shapes are allowed to be outside the die boundary.",
-        default=True,
+    )
+
+    PDN_CORE_RING_ALLOW_OUT_OF_DIE: bool = variable(
+        True,
+        description="If specified, the ring shapes are allowed to be outside the die boundary.",
         pdk=True,
-    ),
-    Variable(
-        "PDN_RAIL_LAYER",
-        str,
-        "Defines the metal layer used for PDN rails.",
+    )
+
+    PDN_RAIL_LAYER: str = variable(
+        description="Defines the metal layer used for PDN rails.",
         deprecated_names=["FP_PDN_RAIL_LAYER", "FP_PDN_RAILS_LAYER"],
         pdk=True,
-    ),
-    Variable(
-        "PDN_RAIL_WIDTH",
-        Decimal,
-        "Defines the width of PDN rails on the `PDN_RAIL_LAYER` layer.",
+    )
+
+    PDN_RAIL_WIDTH: Decimal = variable(
+        description="Defines the width of PDN rails on the `PDN_RAIL_LAYER` layer.",
         units="µm",
         pdk=True,
         deprecated_names=["FP_PDN_RAIL_WIDTH"],
-    ),
-    Variable(
-        "PDN_HORIZONTAL_LAYER",
-        str,
-        "Defines the horizontal PDN layer.",
+    )
+
+    PDN_HORIZONTAL_LAYER: str = variable(
+        description="Defines the horizontal PDN layer.",
         deprecated_names=["FP_PDN_HORIZONTAL_LAYER", "FP_PDN_UPPER_LAYER"],
         pdk=True,
-    ),
-    Variable(
-        "PDN_VERTICAL_LAYER",
-        str,
-        "Defines the vertical PDN layer.",
+    )
+
+    PDN_VERTICAL_LAYER: str = variable(
+        description="Defines the vertical PDN layer.",
         deprecated_names=["FP_PDN_VERTICAL_LAYER", "FP_PDN_LOWER_LAYER"],
         pdk=True,
-    ),
-    Variable(
-        "PDN_CORE_HORIZONTAL_LAYER",
-        Optional[str],
-        "Defines the horizontal PDN layer for the core ring. Falls back to `PDN_HORIZONTAL_LAYER` if undefined.",
-        pdk=True,
-    ),
-    Variable(
-        "PDN_CORE_VERTICAL_LAYER",
-        Optional[str],
-        "Defines the vertical PDN layer for the core ring. Falls back to `PDN_VERTICAL_LAYER` if undefined.",
-        pdk=True,
-    ),
-    Variable(
-        "PDN_EXTEND_TO",
-        Literal["core_ring", "boundary"],
-        "Defines how far the stripes and rings extend.",
-        default="core_ring",
-        pdk=True,
-    ),
-    Variable(
-        "PDN_ENABLE_PINS",
-        bool,
-        "If specified, the power straps will be promoted to block pins.",
-        default=True,
-        pdk=True,
-    ),
-]
+    )
 
-routing_layer_variables = [
-    Variable(
-        "RT_CLOCK_MIN_LAYER",
-        Optional[str],
-        "The name of lowest layer to be used in routing the clock net.",
-    ),
-    Variable(
-        "RT_CLOCK_MAX_LAYER",
-        Optional[str],
-        "The name of highest layer to be used in routing the clock net.",
-    ),
-    Variable(
-        "GRT_ADJUSTMENT",
-        Decimal,
-        "Reduction in the routing capacity of the edges between the cells in the global routing graph for all layers. Values range from 0 to 1.  1 = most reduction, 0 = least reduction.",
-        default=0.3,
-    ),
-    Variable(
-        "GRT_MACRO_EXTENSION",
-        int,
-        "Sets the number of GCells added to the blockages boundaries from macros. A GCell is typically defined in terms of Mx routing tracks. The default GCell size is 15 M3 pitches.",
-        default=0,
-    ),
-    Variable(
-        "GRT_LAYER_ADJUSTMENTS",
-        list[Decimal],
-        "Layer-specific reductions in the routing capacity of the edges between the cells in the global routing graph, delimited by commas. Values range from 0 through 1.",
+    PDN_CORE_HORIZONTAL_LAYER: Optional[str] = variable(
+        None,
+        description="Defines the horizontal PDN layer for the core ring. Falls back to `PDN_HORIZONTAL_LAYER` if undefined.",
         pdk=True,
-    ),
-]
+    )
+
+    PDN_CORE_VERTICAL_LAYER: Optional[str] = variable(
+        None,
+        description="Defines the vertical PDN layer for the core ring. Falls back to `PDN_VERTICAL_LAYER` if undefined.",
+        pdk=True,
+    )
+
+    PDN_EXTEND_TO: Literal["core_ring", "boundary"] = variable(
+        "core_ring",
+        description="Defines how far the stripes and rings extend.",
+        pdk=True,
+    )
+
+    PDN_ENABLE_PINS: bool = variable(
+        True,
+        description="If specified, the power straps will be promoted to block pins.",
+        pdk=True,
+    )
 
 
-dpl_variables = [
-    Variable(
-        "PL_OPTIMIZE_MIRRORING",
-        bool,
-        "Specifies whether or not to run an optimize_mirroring pass whenever detailed placement happens. This pass will mirror the cells whenever possible to optimize the design.",
-        default=True,
-    ),
-    Variable(
-        "PL_MAX_DISPLACEMENT_X",
-        int,
-        "Specifies how far an instance can be moved along the X-axis when finding a site where it can be placed during detailed placement.",
-        default=500,
+pdn_variables = model_to_variables(PdnConfig)
+
+
+class RoutingLayerConfig(BaseConfigModel):
+    RT_CLOCK_MIN_LAYER: Optional[str] = variable(
+        None,
+        description="The name of lowest layer to be used in routing the clock net.",
+    )
+
+    RT_CLOCK_MAX_LAYER: Optional[str] = variable(
+        None,
+        description="The name of highest layer to be used in routing the clock net.",
+    )
+
+    GRT_ADJUSTMENT: Decimal = variable(
+        0.3,
+        description="Reduction in the routing capacity of the edges between the cells in the global routing graph for all layers. Values range from 0 to 1.  1 = most reduction, 0 = least reduction.",
+    )
+
+    GRT_MACRO_EXTENSION: int = variable(
+        0,
+        description="Sets the number of GCells added to the blockages boundaries from macros. A GCell is typically defined in terms of Mx routing tracks. The default GCell size is 15 M3 pitches.",
+    )
+
+    GRT_LAYER_ADJUSTMENTS: list[Decimal] = variable(
+        description="Layer-specific reductions in the routing capacity of the edges between the cells in the global routing graph, delimited by commas. Values range from 0 through 1.",
+        pdk=True,
+    )
+
+
+routing_layer_variables = model_to_variables(RoutingLayerConfig)
+
+
+class DplConfig(BaseConfigModel):
+    PL_OPTIMIZE_MIRRORING: bool = variable(
+        True,
+        description="Specifies whether or not to run an optimize_mirroring pass whenever detailed placement happens. This pass will mirror the cells whenever possible to optimize the design.",
+    )
+
+    PL_MAX_DISPLACEMENT_X: int = variable(
+        500,
+        description="Specifies how far an instance can be moved along the X-axis when finding a site where it can be placed during detailed placement.",
         units="µm",
-    ),
-    Variable(
-        "PL_MAX_DISPLACEMENT_Y",
-        int,
-        "Specifies how far an instance can be moved along the Y-axis when finding a site where it can be placed during detailed placement.",
-        default=100,
+    )
+
+    PL_MAX_DISPLACEMENT_Y: int = variable(
+        100,
+        description="Specifies how far an instance can be moved along the Y-axis when finding a site where it can be placed during detailed placement.",
         units="µm",
-    ),
-    Variable(
-        "DPL_CELL_PADDING",
-        int,
-        "Cell padding value (in sites) for detailed placement. The number will be integer divided by 2 and placed on both sides. Should be <= global placement.",
+    )
+
+    DPL_CELL_PADDING: int = variable(
+        description="Cell padding value (in sites) for detailed placement. The number will be integer divided by 2 and placed on both sides. Should be <= global placement.",
         units="sites",
         pdk=True,
-    ),
-]
+    )
 
-grt_variables = routing_layer_variables + [
-    Variable(
-        "DIODE_PADDING",
-        Optional[int],
-        "Diode cell padding; increases the width of diode cells during placement checks..",
+
+dpl_variables = model_to_variables(DplConfig)
+
+
+class GrtConfig(RoutingLayerConfig):
+    DIODE_PADDING: Optional[int] = variable(
+        None,
+        description="Diode cell padding; increases the width of diode cells during placement checks..",
         units="sites",
-    ),
-    Variable(
-        "GRT_ALLOW_CONGESTION",
-        bool,
-        "Allow congestion during global routing",
-        default=False,
-    ),
-    Variable(
-        "GRT_ANTENNA_REPAIR_ITERS",
-        int,
-        "The maximum number of iterations for global antenna repairs.",
-        default=3,
+    )
+
+    GRT_ALLOW_CONGESTION: bool = variable(
+        False,
+        description="Allow congestion during global routing",
+    )
+
+    GRT_ANTENNA_REPAIR_ITERS: int = variable(
+        3,
+        description="The maximum number of iterations for global antenna repairs.",
         deprecated_names=["GRT_ANT_ITERS", "GRT_ANTENNA_ITERS"],
-    ),
-    Variable(
-        "GRT_OVERFLOW_ITERS",
-        int,
-        "The maximum number of iterations waiting for the overflow to reach the desired value.",
-        default=50,
-    ),
-    Variable(
-        "GRT_ANTENNA_REPAIR_MARGIN",
-        int,
-        "The margin to over fix antenna violations.",
-        default=10,
+    )
+
+    GRT_OVERFLOW_ITERS: int = variable(
+        50,
+        description="The maximum number of iterations waiting for the overflow to reach the desired value.",
+    )
+
+    GRT_ANTENNA_REPAIR_MARGIN: int = variable(
+        10,
+        description="The margin to over fix antenna violations.",
         units="%",
         deprecated_names=["GRT_ANT_MARGIN", "GRT_ANTENNA_MARGIN"],
-    ),
-    Variable(
-        "GRT_ANTENNA_REPAIR_JUMPER_ONLY",
-        bool,
-        "Only use jumpers to fix antenna violations. Cannot be used in conjunction with GRT_ANTENNA_REPAIR_DIODE_ONLY.",
-        default=False,
-    ),
-    Variable(
-        "GRT_ANTENNA_REPAIR_DIODE_ONLY",
-        bool,
-        "Only use antenna diodes to fix antenna violations. Cannot be used in conjunction with GRT_ANTENNA_REPAIR_JUMPER_ONLY.",
-        default=False,
-    ),
-]
+    )
 
-rsz_variables = dpl_variables + [
-    Variable(
-        "RSZ_DONT_TOUCH_RX",
-        str,
-        'A single regular expression designating nets or instances as "don\'t touch" by design repairs or resizer optimizations.',
-        default="$^",
+    GRT_ANTENNA_REPAIR_JUMPER_ONLY: bool = variable(
+        False,
+        description="Only use jumpers to fix antenna violations. Cannot be used in conjunction with GRT_ANTENNA_REPAIR_DIODE_ONLY.",
+    )
+
+    GRT_ANTENNA_REPAIR_DIODE_ONLY: bool = variable(
+        False,
+        description="Only use antenna diodes to fix antenna violations. Cannot be used in conjunction with GRT_ANTENNA_REPAIR_JUMPER_ONLY.",
+    )
+
+
+grt_variables = routing_layer_variables + model_to_variables(
+    GrtConfig,
+    include_inherited=False,
+)
+
+
+class RszConfig(DplConfig):
+    RSZ_DONT_TOUCH_RX: str = variable(
+        "$^",
+        description='A single regular expression designating nets or instances as "don\'t touch" by design repairs or resizer optimizations.',
         deprecated_names=["UNBUFFER_NETS"],
-    ),
-    Variable(
-        "RSZ_DONT_TOUCH_LIST",
-        Optional[list[str]],
-        'A list of nets and instances as "don\'t touch" by design repairs or resizer optimizations.',
-        default=None,
-    ),
-    Variable(
-        "RSZ_CORNERS",
-        Optional[list[str]],
-        "Resizer step-specific override for PNR_CORNERS.",
-    ),
-]
+    )
+
+    RSZ_DONT_TOUCH_LIST: Optional[list[str]] = variable(
+        None,
+        description='A list of nets and instances as "don\'t touch" by design repairs or resizer optimizations.',
+    )
+
+    RSZ_CORNERS: Optional[list[str]] = variable(
+        None,
+        description="Resizer step-specific override for PNR_CORNERS.",
+    )
+
+
+rsz_variables = dpl_variables + model_to_variables(
+    RszConfig,
+    include_inherited=False,
+)

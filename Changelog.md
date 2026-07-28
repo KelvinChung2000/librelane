@@ -31,6 +31,28 @@ Style Notes
 
 * Relaxed version requirement for `rich` to allow rich 16.
 
+## Misc. Enhancements/Bugfixes
+
+* Reworked configuration loading around typed Pydantic models and a staged
+  read/layer/process/preprocess/validate pipeline.
+* Added structured configuration diagnostics, replayed after flow log sinks
+  are active.
+* Added forward references and cycle diagnostics to the configuration string
+  language.
+* Fixed later configuration sources not being able to select
+  `STD_CELL_LIBRARY` (#827).
+* Fixed lax union coercion choosing a less-specific scalar type (#993).
+* Fixed multiple globs supplied to a `list[Path]` field (#712).
+
+## API Breaks
+
+* References in an earlier configuration source now resolve against values
+  from the final merged layer.
+* Configuration validation error wording now comes from structured Pydantic
+  diagnostics.
+* Removed the undocumented `librelane.config.variable` module path. The
+  documented `librelane.config.Variable` compatibility export remains.
+
 # 3.0.4
 
 ## Steps

@@ -31,7 +31,7 @@ from collections.abc import Callable
 
 
 from ...config import (
-    Config,
+    BaseConfigModel,
     Variable,
 )
 from ...state import DesignFormat, State
@@ -54,7 +54,7 @@ class ReportingMixin:
     inputs: ClassVar[list[DesignFormat]]
     outputs: ClassVar[list[DesignFormat]]
     config_vars: ClassVar[list[Variable]]
-    config: Config
+    config: BaseConfigModel
     state_in: Future[State]
     state_out: State | None
     start_time: float | None

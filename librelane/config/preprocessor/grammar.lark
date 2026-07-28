@@ -1,0 +1,25 @@
+?start: directive
+?directive: expr_d | refg_d | ref_d | dir_d | pdk_dir_d
+
+expr_d: "expr::" sum
+ref_d: "ref::" VARREF PATH_REST?
+refg_d: "refg::" VARREF PATH_REST?
+dir_d: "dir::" PATH_REST
+pdk_dir_d: "pdk_dir::" PATH_REST
+
+?sum: sum "+" product       -> add
+    | sum "-" product       -> subtract
+    | product
+?product: product "*" power -> multiply
+        | product "/" power -> divide
+        | power
+?power: atom "**" power     -> power
+      | atom
+?atom: NUMBER               -> number
+     | VARREF               -> variable
+     | "(" sum ")"
+
+VARREF.2: /\$[A-Za-z_][A-Za-z0-9_.\[\]]*/
+NUMBER.2: /-?\d+\.?\d*/
+PATH_REST: /.+/
+%ignore /\s+/
