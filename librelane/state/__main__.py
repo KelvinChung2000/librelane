@@ -13,7 +13,6 @@
 # limitations under the License.
 import sys
 import json
-from typing import Optional
 
 import cloup
 
@@ -35,7 +34,7 @@ def cli():
     default=None,
 )
 @cloup.argument("run_dir")
-def latest(extract_metrics_to: Optional[str], run_dir: str):
+def latest(extract_metrics_to: str | None, run_dir: str):
     exit_code = 0
 
     if latest_state := get_latest_file(run_dir, "state_*.json"):

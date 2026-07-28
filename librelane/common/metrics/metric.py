@@ -14,12 +14,13 @@
 from math import inf
 from decimal import Decimal
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Mapping, Optional, Tuple, ClassVar, Dict
+from typing import Any, ClassVar
+from collections.abc import Callable, Iterable, Mapping
 
 
 from ..types import Number, is_number, is_real_number
 
-MetricAggregator = Tuple[Number, Callable[[Iterable[Number]], Number]]
+MetricAggregator = tuple[Number, Callable[[Iterable[Number]], Number]]
 
 sum_aggregator: MetricAggregator = (0, lambda x: sum(x))
 min_aggregator: MetricAggregator = (inf, min)
@@ -48,16 +49,16 @@ class MetricComparisonResult:
     metric_name: str
     gold: Any
     new: Any
-    delta: Optional[Number]
-    delta_pct: Optional[Number]
-    better: Optional[bool]
+    delta: Number | None
+    delta_pct: Number | None
+    better: bool | None
     critical: bool
-    significant_figures: Optional[int]
+    significant_figures: int | None
 
     def is_changed(self) -> bool:
         return (self.delta is not None and self.delta != 0) or self.gold != self.new
 
-    def format_values(self) -> Tuple[str, str, str]:
+    def format_values(self) -> tuple[str, str, str]:
         before_str = str(self.gold)
         if isinstance(self.gold, float) or isinstance(self.gold, Decimal):
             before_str = str(f"{self.gold:.{self.significant_figures}f}")
@@ -105,12 +106,12 @@ class Metric(object):
     """
 
     name: str
-    aggregator: Optional[MetricAggregator] = None
-    higher_is_better: Optional[bool] = None
-    dont_aggregate: Optional[Iterable[str]] = None
+    aggregator: MetricAggregator | None = None
+    higher_is_better: bool | None = None
+    dont_aggregate: Iterable[str] | None = None
     critical: bool = False
 
-    by_name: ClassVar[Dict[str, "Metric"]] = {}
+    by_name: ClassVar[dict[str, "Metric"]] = {}
 
     def __post_init__(self):
         Metric.by_name[self.name] = self
@@ -127,7 +128,7 @@ class Metric(object):
         gold: Any,
         new: Any,
         significant_figures: int,
-        modifiers: Optional[Mapping[str, str]] = None,
+        modifiers: Mapping[str, str] | None = None,
     ) -> MetricComparisonResult:
         """
         :param gold: The "gold-standard" value for this metric to compare against

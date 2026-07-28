@@ -32,14 +32,9 @@ from glob import glob
 from math import inf
 from typing import (
     Any,
-    Dict,
-    List,
     Literal,
     Optional,
-    Set,
-    Tuple,
     TypeAlias,
-    Union,
 )
 
 import rich
@@ -102,7 +97,7 @@ def old_to_new_tracks(old_tracks: str) -> str:
     >>> old_to_new_tracks(EXAMPLE_INPUT)
     'make_tracks li1 -x_offset 0.23 -x_pitch 0.46 -y_offset 0.17 -y_pitch 0.34\\nmake_tracks met1 -x_offset 0.17 -x_pitch 0.34 -y_offset 0.17 -y_pitch 0.34\\nmake_tracks met2 -x_offset 0.23 -x_pitch 0.46 -y_offset 0.23 -y_pitch 0.46\\nmake_tracks met3 -x_offset 0.34 -x_pitch 0.68 -y_offset 0.34 -y_pitch 0.68\\nmake_tracks met4 -x_offset 0.46 -x_pitch 0.92 -y_offset 0.46 -y_pitch 0.92\\nmake_tracks met5 -x_offset 1.70 -x_pitch 3.40 -y_offset 1.70 -y_pitch 3.40\\n'
     """
-    layers: Dict[str, Dict[str, Tuple[str, str]]] = {}
+    layers: dict[str, dict[str, tuple[str, str]]] = {}
 
     for line in old_tracks.splitlines():
         if line.strip() == "":
@@ -172,7 +167,7 @@ class CheckSDCFiles(Step):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         default_sdc_file = [
             var for var in option_variables if var.name == "FALLBACK_SDC"
         ][0]
@@ -203,12 +198,12 @@ class OpenROADStep(TclStep):
 
     output_processors = [OpenROADOutputProcessor, DefaultOutputProcessor]
 
-    alerts: Optional[List[OpenROADAlert]] = None
+    alerts: list[OpenROADAlert] | None = None
 
     config_vars = [
         Variable(
             "PNR_CORNERS",
-            Optional[List[str]],
+            Optional[list[str]],
             "A list of fully-qualified IPVT corners to use during PnR. If unspecified, the value for `STA_CORNERS` from the PDK will be used.",
             pdk=True,
         ),
@@ -220,7 +215,7 @@ class OpenROADStep(TclStep):
         ),
         Variable(
             "LAYERS_RC",
-            Optional[Dict[str, Dict[str, Dict[str, Decimal]]]],
+            Optional[dict[str, dict[str, dict[str, Decimal]]]],
             "Used during PNR steps, Specific custom resistance and capacitance values for metal layers."
             + " For each IPVT corner, a mapping for each metal layer is provided."
             + " Each mapping describes custom resistance and capacitance values."
@@ -230,7 +225,7 @@ class OpenROADStep(TclStep):
         ),
         Variable(
             "VIAS_R",
-            Optional[Dict[str, Dict[str, Dict[str, Decimal]]]],
+            Optional[dict[str, dict[str, dict[str, Decimal]]]],
             "Used during PNR steps, Specific custom resistance values for via layers."
             + " For each IPVT corner, a mapping for each via layer is provided."
             + " Each mapping describes custom resistance values."
@@ -240,7 +235,7 @@ class OpenROADStep(TclStep):
         ),
         Variable(
             "SIGNAL_WIRE_RC_LAYERS",
-            Optional[List[str]],
+            Optional[list[str]],
             "Sets estimated signal wire RC values to the average of these layers'. If you provide more than two, the averages are grouped by preferred routing direction and you must provide at least one layer for each routing direction.",
             pdk=True,
             deprecated_names=[
@@ -250,7 +245,7 @@ class OpenROADStep(TclStep):
         ),
         Variable(
             "CLOCK_WIRE_RC_LAYERS",
-            Optional[List[str]],
+            Optional[list[str]],
             "Sets estimated clock wire RC values to the average of these layers'. If you provide more than two, the averages are grouped by preferred routing direction and you must provide at least one layer for each routing direction.",
             pdk=True,
             deprecated_names=[("CLOCK_WIRE_RC_LAYER", lambda x: [x])],
@@ -264,7 +259,7 @@ class OpenROADStep(TclStep):
         ),
         Variable(
             "PDN_MACRO_CONNECTIONS",
-            Optional[List[str]],
+            Optional[list[str]],
             "Specifies explicit power connections of internal macros to the top level power grid, in the format: regex matching macro instance names, power domain vdd and ground net names, and macro vdd and ground pin names `<instance_name_rx> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>`.",
             deprecated_names=[("FP_PDN_MACRO_HOOKS", pdn_macro_migrator)],
         ),
@@ -331,13 +326,13 @@ class OpenROADStep(TclStep):
         if self.config["STA_EXTRA_CORNER_TCL_FILE"]:
             env["_EXTRA_CORNER_TCL_FILE"] = self.config["STA_EXTRA_CORNER_TCL_FILE"]
 
-        excluded_cells: Set[str] = set(self.config["EXTRA_EXCLUDED_CELLS"] or [])
+        excluded_cells: set[str] = set(self.config["EXTRA_EXCLUDED_CELLS"] or [])
         excluded_cells.update(process_list_file(self.config["PNR_EXCLUDED_CELL_FILE"]))
         env["_PNR_EXCLUDED_CELLS"] = TclUtils.join(excluded_cells)
 
         return env
 
-    def run(self, state_in, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         """
         The `run()` override for the OpenROADStep class handles two things:
 
@@ -351,16 +346,16 @@ class OpenROADStep(TclStep):
         kwargs, env = self.extract_env(kwargs)
         env = self.prepare_env(env, state_in)
 
-        corners: List[str] = self.config["PNR_CORNERS"] or [
+        corners: list[str] = self.config["PNR_CORNERS"] or [
             self.config["DEFAULT_CORNER"]
         ]
 
         @dataclass
         class IPVTCorner:
             name: str
-            libs: List[Path]
-            layers_rc: Optional[Dict[str, Dict[str, Decimal]]]
-            vias_r: Optional[Dict[str, Dict[str, Decimal]]]
+            libs: list[Path]
+            layers_rc: dict[str, dict[str, Decimal]] | None
+            vias_r: dict[str, dict[str, Decimal]] | None
 
             def __eq__(self, other):
                 if not isinstance(other, IPVTCorner):
@@ -509,7 +504,7 @@ class OpenROADStep(TclStep):
 
         return views_updates, metric_updates_with_aggregates
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         metrics_path = os.path.join(self.step_dir, "or_metrics_out.json")
         return [
             self.get_openroad_path(),
@@ -520,7 +515,7 @@ class OpenROADStep(TclStep):
             self.get_script_path(),
         ]
 
-    def layout_preview(self) -> Optional[str]:
+    def layout_preview(self) -> str | None:
         if self.state_out is None:
             return None
 
@@ -557,13 +552,13 @@ class STAMidPNR(OpenROADStep):
 class OpenSTAStep(OpenROADStep):
     @dataclass(frozen=True)
     class CornerFileList:
-        libs: Tuple[str, ...]
-        netlists: Tuple[str, ...]
-        spefs: Tuple[Tuple[str, str], ...]
-        extra_spefs_backcompat: Optional[Tuple[Tuple[str, str], ...]] = None
-        current_corner_spef: Optional[str] = None
+        libs: tuple[str, ...]
+        netlists: tuple[str, ...]
+        spefs: tuple[tuple[str, str], ...]
+        extra_spefs_backcompat: tuple[tuple[str, str], ...] | None = None
+        current_corner_spef: str | None = None
 
-        def set_env(self, env: Dict[str, Any]):
+        def set_env(self, env: dict[str, Any]):
             env["_CURRENT_CORNER_LIBS"] = TclStep.value_to_tcl(self.libs)
             env["_CURRENT_CORNER_NETLISTS"] = TclStep.value_to_tcl(self.netlists)
             env["_CURRENT_CORNER_SPEFS"] = TclStep.value_to_tcl(self.spefs)
@@ -576,17 +571,17 @@ class OpenSTAStep(OpenROADStep):
 
     inputs = [DesignFormat.NETLIST]
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         return ["sta", "-no_splash", "-exit", self.get_script_path()]
 
-    def layout_preview(self) -> Optional[str]:
+    def layout_preview(self) -> str | None:
         return None
 
     def _get_corner_files(
         self: Step,
-        timing_corner: Optional[str] = None,
+        timing_corner: str | None = None,
         prioritize_nl: bool = False,
-    ) -> Tuple[str, CornerFileList]:
+    ) -> tuple[str, CornerFileList]:
         (
             timing_corner,
             libs,
@@ -688,9 +683,9 @@ class CheckMacroInstances(OpenSTAStep):
             get_script_dir(), "openroad", "sta", "check_macro_instances.tcl"
         )
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
-        macros: Optional[Dict[str, Macro]] = self.config["MACROS"]
+        macros: dict[str, Macro] | None = self.config["MACROS"]
         if macros is None:
             info("No macros found, skipping instance check…")
             return {}, {}
@@ -727,7 +722,7 @@ class MultiCornerSTA(OpenSTAStep):
         ),
         Variable(
             "EXTRA_SPEFS",
-            Optional[List[Union[str, Path]]],
+            Optional[list[str | Path]],
             "A variable that only exists for backwards compatibility with LibreLane <2.0.0 and should not be used by new designs.",
         ),
         Variable(
@@ -743,10 +738,10 @@ class MultiCornerSTA(OpenSTAStep):
     def run_corner(
         self,
         state_in: State,
-        current_env: Dict[str, Any],
+        current_env: dict[str, Any],
         corner: str,
         corner_dir: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         info(f"Starting STA for the {corner} timing corner…")
         current_env["_CURRENT_CORNER_NAME"] = corner
         log_path = os.path.join(corner_dir, "sta.log")
@@ -769,7 +764,7 @@ class MultiCornerSTA(OpenSTAStep):
 
         return generated_metrics
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         env = self.prepare_env(env, state_in)
 
@@ -777,9 +772,9 @@ class MultiCornerSTA(OpenSTAStep):
             max_workers=self.config["STA_THREADS"] or _get_process_limit()
         )
 
-        futures: Dict[str, Future[MetricsUpdate]] = {}
-        files_so_far: Dict[OpenSTAStep.CornerFileList, str] = {}
-        corners_used: Set[str] = set()
+        futures: dict[str, Future[MetricsUpdate]] = {}
+        files_so_far: dict[OpenSTAStep.CornerFileList, str] = {}
+        corners_used: set[str] = set()
         for corner in self.config["STA_CORNERS"]:
             _, file_list = self._get_corner_files(
                 corner, prioritize_nl=self.config["STA_MACRO_PRIORITIZE_NL"]
@@ -812,7 +807,7 @@ class MultiCornerSTA(OpenSTAStep):
 
         metric_updates_with_aggregates = aggregate_metrics(metrics_updates)
 
-        def format_count(count: Optional[Union[int, float, Decimal]]) -> str:
+        def format_count(count: int | float | Decimal | None) -> str:
             if count is None:
                 return "[gray]?"
             count = int(count)
@@ -821,7 +816,7 @@ class MultiCornerSTA(OpenSTAStep):
             else:
                 return f"[red]{count}"
 
-        def format_slack(slack: Optional[Union[int, float, Decimal]]) -> str:
+        def format_slack(slack: int | float | Decimal | None) -> str:
             if slack is None:
                 return "[gray]?"
             if slack == float(inf):
@@ -904,18 +899,18 @@ class STAPrePNR(MultiCornerSTA):
     name = "STA (Pre-PnR)"
     long_name = "Static Timing Analysis (Pre-PnR)"
 
-    def prepare_env(self, env: Dict, state: State) -> Dict:
+    def prepare_env(self, env: dict, state: State) -> dict:
         env = super().prepare_env(env, state)
         env["OPENLANE_SDC_IDEAL_CLOCKS"] = "1"
         return env
 
     def run_corner(
-        self, state_in: State, current_env: Dict[str, Any], corner: str, corner_dir: str
-    ) -> Dict[str, Any]:
+        self, state_in: State, current_env: dict[str, Any], corner: str, corner_dir: str
+    ) -> dict[str, Any]:
         current_env["_SDF_SAVE_DIR"] = corner_dir
         return super().run_corner(state_in, current_env, corner, corner_dir)
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates, metrics_updates = super().run(state_in, **kwargs)
 
         sdf_dict = state_in.get(DesignFormat.SDF, {})
@@ -979,7 +974,7 @@ class STAPostPNR(STAPrePNR):
         self,
         corner: str,
         corner_dir: str,
-        env: Dict,
+        env: dict,
         checks_report: str,
         odb_design: str,
     ):
@@ -1036,7 +1031,7 @@ class STAPostPNR(STAPrePNR):
     def run_corner(
         self,
         state_in: State,
-        current_env: Dict[str, Any],
+        current_env: dict[str, Any],
         corner: str,
         corner_dir: str,
     ) -> MetricsUpdate:
@@ -1059,7 +1054,7 @@ class STAPostPNR(STAPrePNR):
                 raise e
         return {**metrics_updates, **filter_unannotated_metrics}
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates, metrics_updates = super().run(state_in, **kwargs)
         lib_dict = state_in.get(DesignFormat.LIB, {})
         if not isinstance(lib_dict, dict):
@@ -1094,7 +1089,7 @@ class Floorplan(OpenROADStep):
     config_vars = OpenROADStep.config_vars + [
         Variable(
             "FP_FLIP_SITES",
-            Optional[List[str]],
+            Optional[list[str]],
             "Flip these sites vertically. Useful in niche alignment scenarios where single-height cells have ground at the south side and double-height cells have power at the south side, causing a short. In that situation, flipping the sites for single-height cells resolves the issue.",
             pdk=True,
         ),
@@ -1126,19 +1121,19 @@ class Floorplan(OpenROADStep):
         ),
         Variable(
             "FP_OBSTRUCTIONS",
-            Optional[List[Tuple[Decimal, Decimal, Decimal, Decimal]]],
+            Optional[list[tuple[Decimal, Decimal, Decimal, Decimal]]],
             "Obstructions applied at floorplanning stage. Placement sites are never generated at these locations, which guarantees that it will remain empty throughout the entire flow.",
             units="µm",
         ),
         Variable(
             "PL_SOFT_OBSTRUCTIONS",
-            Optional[List[Tuple[Decimal, Decimal, Decimal, Decimal]]],
+            Optional[list[tuple[Decimal, Decimal, Decimal, Decimal]]],
             "Soft placement blockages applied at the floorplanning stage. Areas that are soft-blocked will not be used by the initial placer, however, later phases such as buffer insertion or clock tree synthesis are still allowed to place cells in this area.",
             units="µm",
         ),
         Variable(
             "CORE_AREA",
-            Optional[Tuple[Decimal, Decimal, Decimal, Decimal]],
+            Optional[tuple[Decimal, Decimal, Decimal, Decimal]],
             "Specifies a core area (i.e. die area minus margins) to be used in floorplanning."
             + " It must be paired with `DIE_AREA`.",
             units="µm",
@@ -1173,7 +1168,7 @@ class Floorplan(OpenROADStep):
         ),
         Variable(
             "EXTRA_SITES",
-            Optional[List[str]],
+            Optional[list[str]],
             "Explicitly specify sites other than `PLACE_SITE` to create rows for. If the alternate-site standard cells properly declare the `SITE` property, you do not need to provide this explicitly.",
             pdk=True,
         ),
@@ -1187,7 +1182,7 @@ class Floorplan(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "floorplan.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         path = self.config["FP_TRACKS_INFO"]
         tracks_info_str = open(path).read()
         tracks_commands = old_to_new_tracks(tracks_info_str)
@@ -1204,7 +1199,7 @@ PPLMode: TypeAlias = Literal["matching", "annealing", "random_equidistant"]
 
 
 def _validate_io_ppl_mode(
-    variable: Variable, input: PPLMode, warning_list_ref: List[str]
+    variable: Variable, input: PPLMode, warning_list_ref: list[str]
 ):
     if input == "random_equidistant":
         warning_list_ref.append(
@@ -1233,7 +1228,7 @@ class PadRing(OpenROADStep):
         ),
         Variable(
             "PDN_MACRO_CONNECTIONS",
-            Optional[List[str]],
+            Optional[list[str]],
             "Specifies explicit power connections of internal macros to the top level power grid, in the format: regex matching macro instance names, power domain vdd and ground net names, and macro vdd and ground pin names `<instance_name_rx> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>`.",
             deprecated_names=[("FP_PDN_MACRO_HOOKS", pdn_macro_migrator)],
         ),
@@ -1251,22 +1246,22 @@ class PadRing(OpenROADStep):
         ),
         Variable(
             "PAD_SOUTH",
-            Optional[List[str]],
+            Optional[list[str]],
             "The pad instance names for the south pad row.",
         ),
         Variable(
             "PAD_EAST",
-            Optional[List[str]],
+            Optional[list[str]],
             "The pad instance names for the east pad row.",
         ),
         Variable(
             "PAD_NORTH",
-            Optional[List[str]],
+            Optional[list[str]],
             "The pad instance names for the north pad row.",
         ),
         Variable(
             "PAD_WEST",
-            Optional[List[str]],
+            Optional[list[str]],
             "The pad instance names for the west pad row.",
         ),
     ]
@@ -1274,7 +1269,7 @@ class PadRing(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "pad.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         if self.config["PAD_CFG"] is None:
             env["PAD_CFG"] = os.path.join(
@@ -1337,7 +1332,7 @@ class IOPlacement(OpenROADStep):
             ),
             Variable(
                 "IO_EXCLUDE_PIN_REGION",
-                Optional[List[str]],
+                Optional[list[str]],
                 "List of regions where pins cannot be placed. The regions are strings in the format `{edge}:{interval}` where edge is `top|bottom|left|right` and the interval is either `*` to exclude the entire edge or `{begin}-{end}` to exclude a part of the edge, where `begin` and `end` are either absolute distance values or themselves `*` to denote the very start or end of an edge.",
                 units="µm",
             ),
@@ -1353,7 +1348,7 @@ class IOPlacement(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "ioplacer.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["IO_PIN_ORDER_CFG"] is not None:
             info(f"IO_PIN_ORDER_CFG is set. Skipping '{self.id}'…")
             return {}, {}
@@ -1475,7 +1470,7 @@ class GeneratePDN(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "pdn.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         if self.config["PDN_CFG"] is None:
             env["PDN_CFG"] = os.path.join(
@@ -1570,7 +1565,7 @@ class _GlobalPlacement(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "gpl.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         if self.config["PL_TARGET_DENSITY_PCT"] is None:
             util = self.config["FP_CORE_UTIL"]
@@ -1657,7 +1652,7 @@ class GlobalPlacementSkipIO(_GlobalPlacement):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         if self.config["FP_DEF_TEMPLATE"] is not None:
             info(
@@ -1736,7 +1731,7 @@ class CheckAntennas(OpenROADStep):
         required_ratio = None
         pin = None
         net = None
-        violations: List[AntennaViolation] = []
+        violations: list[AntennaViolation] = []
 
         net_pattern = re.compile(r"\s*Net:\s*(\S+)")
         required_ratio_pattern = re.compile(r"\s*Required ratio:\s+([\d.]+)")
@@ -1820,7 +1815,7 @@ class CheckAntennas(OpenROADStep):
 
         return count
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         report_dir = os.path.join(self.step_dir, "reports")
         report_path = os.path.join(report_dir, "antenna.rpt")
         report_summary_path = os.path.join(report_dir, "antenna_summary.rpt")
@@ -1884,7 +1879,7 @@ class RepairAntennas(CompositeStep):
 
     Steps = [_DiodeInsertion, CheckAntennas]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["DIODE_CELL"] is None:
             info(f"'DIODE_CELL' not set. Skipping '{self.id}'…")
             return {}, {}
@@ -1907,9 +1902,9 @@ class NDR:
         For example: `via: [L1M1_PR_R, M1M2_PR_R, M2M3_PR_R, M3M4_PR_R, M4M5_PR_R]`
     """
 
-    spacing: List[str]
-    width: List[str]
-    via: Optional[List[str]]
+    spacing: list[str]
+    width: list[str]
+    via: list[str] | None
 
 
 @Step.factory.register()
@@ -1999,7 +1994,7 @@ class DetailedRouting(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "drt.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         env["DRT_THREADS"] = env.get("DRT_THREADS", str(_get_process_limit()))
         info(f"Running TritonRoute with {env['DRT_THREADS']} threads…")
@@ -2037,7 +2032,7 @@ class LayoutSTA(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "sta.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         env["RUN_STANDALONE"] = "1"
         return super().run(state_in, env=env, **kwargs)
@@ -2085,7 +2080,7 @@ class RCX(OpenROADStep):
         ),
         Variable(
             "RCX_RULESETS",
-            Dict[str, Path],
+            dict[str, Path],
             "Map of corner patterns to OpenRCX extraction rules.",
             pdk=True,
         ),
@@ -2102,7 +2097,7 @@ class RCX(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "rcx.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         env = self.prepare_env(env, state_in)
 
@@ -2165,7 +2160,7 @@ class RCX(OpenROADStep):
             max_workers=self.config["STA_THREADS"] or _get_process_limit()
         )
 
-        futures: Dict[str, Future[str]] = {}
+        futures: dict[str, Future[str]] = {}
         for corner in self.config["RCX_RULESETS"]:
             futures[corner] = tpe.submit(
                 run_corner,
@@ -2208,7 +2203,7 @@ class IRDropReport(OpenROADStep):
     config_vars = OpenROADStep.config_vars + [
         Variable(
             "VSRC_LOC_FILES",
-            Optional[Dict[str, Path]],
+            Optional[dict[str, Path]],
             "Map of power and ground nets to OpenROAD PSM location files. See [this](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/psm#commands) for more info.",
         )
     ]
@@ -2216,7 +2211,7 @@ class IRDropReport(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "irdrop.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         from decimal import Decimal
 
         assert state_in[DesignFormat.SPEF] is not None
@@ -2389,7 +2384,7 @@ class ResizerStep(OpenROADStep):
         self,
         state_in,
         **kwargs,
-    ) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    ) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         return super().run(
             state_in,
@@ -2492,7 +2487,7 @@ class CTS(OpenROADStep):
             ),
             Variable(
                 "CTS_CORNERS",
-                Optional[List[str]],
+                Optional[list[str]],
                 "Clock tree synthesis step-specific override for PNR_CORNERS.",
             ),
             Variable(
@@ -2503,7 +2498,7 @@ class CTS(OpenROADStep):
             ),
             Variable(
                 "CTS_CLK_BUFFERS",
-                List[str],
+                list[str],
                 "Defines the list of clock buffer names or buffer name wildcards to be used in CTS.",
                 deprecated_names=["CTS_CLK_BUFFER_LIST"],
                 pdk=True,
@@ -2532,7 +2527,7 @@ class CTS(OpenROADStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "openroad", "cts.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         if self.config.get("CLOCK_NET") is None:
             if clock_port := self.config["CLOCK_PORT"]:
@@ -2946,7 +2941,7 @@ class OpenGUI(OpenSTAStep):
     def get_script_path(self) -> str:
         return os.path.join(get_script_dir(), "openroad", "gui.tcl")
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         return [
             "openroad",
             "-no_splash",
@@ -2954,7 +2949,7 @@ class OpenGUI(OpenSTAStep):
             self.get_script_path(),
         ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
 
         corner_name, file_list = self._get_corner_files(prioritize_nl=True)

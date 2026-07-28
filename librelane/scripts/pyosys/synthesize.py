@@ -34,7 +34,7 @@
 import os
 import json
 import shutil
-from typing import List, Optional
+from typing import Optional
 
 import click
 
@@ -152,8 +152,8 @@ def librelane_synth(
     abc_dff=False,
     undriven=True,
     keep_hierarchy_min_cost: Optional[int],
-    keep_hierarchy_instances: List[str],
-    keep_hierarchy_modules: List[str],
+    keep_hierarchy_instances: list[str],
+    keep_hierarchy_modules: list[str],
 ):
     d.run_pass("hierarchy", "-check", "-top", top, "-nokeep_prints", "-nokeep_asserts")
     librelane_proc(d, report_dir)

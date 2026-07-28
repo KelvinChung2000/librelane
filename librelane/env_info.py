@@ -29,7 +29,7 @@ import platform
 import subprocess
 
 try:
-    from typing import Union, Optional, Dict, List  # noqa: F401
+    from typing import Union, Optional, Dict, List  # noqa: F401, UP035
 except ImportError:
     pass
 
@@ -205,8 +205,8 @@ class OSInfo(StringRepresentable):
     distro_version = "UNKNOWN"  # type: str
     python_version = ""  # type: str
     python_path = []  # type: List[str]
-    container_info = None  # type: Union[ContainerInfo, str]
-    nix_info = None  # type: Union[NixInfo, str]
+    container_info = None  # type: Optional[Union[ContainerInfo, str]]
+    nix_info = None  # type: Optional[Union[NixInfo, str]]
 
     def __init__(self):
         self.kernel = platform.system()

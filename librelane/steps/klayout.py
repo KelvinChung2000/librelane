@@ -24,7 +24,8 @@ import subprocess
 from os.path import abspath
 from base64 import b64encode
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, Optional, List, Literal, Sequence, Tuple, Union
+from typing import Any, Optional, Literal
+from collections.abc import Sequence
 
 from .step import ViewsUpdate, MetricsUpdate, Step, StepError, StepException
 
@@ -66,13 +67,13 @@ class KLayoutStep(Step):
 
     def run_pya_script(
         self,
-        cmd: Sequence[Union[str, os.PathLike]],
-        log_to: Optional[Union[str, os.PathLike]] = None,
+        cmd: Sequence[str | os.PathLike],
+        log_to: str | os.PathLike | None = None,
         silent: bool = False,
-        report_dir: Optional[Union[str, os.PathLike]] = None,
-        env: Optional[Dict[str, Any]] = None,
+        report_dir: str | os.PathLike | None = None,
+        env: dict[str, Any] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         env = env or os.environ.copy()
         # Pass site packages
         python_path_elements = site.getsitepackages() + sys.path
@@ -88,7 +89,7 @@ class KLayoutStep(Step):
         layer_info: bool = True,
         include_lefs: bool = False,
         include_gds: bool = False,
-    ) -> List[str]:
+    ) -> list[str]:
         result = []
         if layer_info:
             lyp = abspath(self.config["KLAYOUT_PROPERTIES"])
@@ -134,7 +135,7 @@ class KLayoutStep(Step):
             result += lef_args
 
         if include_gds:
-            gds_args: List[str] = []
+            gds_args: list[str] = []
 
             for gds in self.config["CELL_GDS"]:
                 gds_args.append("--with-gds-file")
@@ -213,7 +214,7 @@ class Render(KLayoutStep):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates: ViewsUpdate = {}
 
         input_view = state_in[DesignFormat.DEF]
@@ -286,7 +287,7 @@ class StreamOut(KLayoutStep):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates: ViewsUpdate = {}
 
         klayout_gds_out = os.path.join(
@@ -324,7 +325,7 @@ class StreamOut(KLayoutStep):
 
         return views_updates, {}
 
-    def layout_preview(self) -> Optional[str]:
+    def layout_preview(self) -> str | None:
         if self.state_out is None:
             return None
         assert self.toolbox is not None
@@ -361,7 +362,7 @@ class XOR(KLayoutStep):
         ),
         Variable(
             "KLAYOUT_XOR_IGNORE_LAYERS",
-            Optional[List[str]],
+            Optional[list[str]],
             "KLayout layers to ignore during XOR operations.",
             pdk=True,
         ),
@@ -374,7 +375,7 @@ class XOR(KLayoutStep):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         ignored = ""
         if ignore_list := self.config["KLAYOUT_XOR_IGNORE_LAYERS"]:
             ignored = ";".join(ignore_list)
@@ -455,7 +456,7 @@ class DRC(KLayoutStep):
         ),
         Variable(
             "KLAYOUT_DRC_OPTIONS",
-            Optional[Dict[str, Union[bool, int, str]]],
+            Optional[dict[str, bool | int | str]],
             "Options passed directly to the KLayout DRC runset. They vary from one PDK to another.",
             pdk=True,
         ),
@@ -467,7 +468,7 @@ class DRC(KLayoutStep):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         if self.config["PDK"] in ["sky130A", "sky130B"]:
             metrics_updates = self.run_sky130(state_in, **kwargs)
@@ -789,7 +790,7 @@ class LVS(KLayoutStep):
         ),
         Variable(
             "KLAYOUT_LVS_OPTIONS",
-            Optional[Dict[str, Union[bool, int, str]]],
+            Optional[dict[str, bool | int | str]],
             "Options passed directly to the KLayout LVS script. They vary from one PDK to another.",
             pdk=True,
         ),
@@ -797,7 +798,7 @@ class LVS(KLayoutStep):
 
     def run_ihp_sg13g2(
         self, state_in: State, **kwargs
-    ) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    ) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
 
         lvs_script_path = self.config["KLAYOUT_LVS_SCRIPT"]
@@ -878,7 +879,7 @@ class LVS(KLayoutStep):
 
         return views_updates, metrics_updates
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         views_updates: ViewsUpdate = {}
         if self.config["PDK"] in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
@@ -912,7 +913,7 @@ class SealRing(KLayoutStep):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         views_updates: ViewsUpdate = {}
         if self.config["PDK"] in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
@@ -924,7 +925,7 @@ class SealRing(KLayoutStep):
 
     def run_generic(
         self, state_in: State, **kwargs
-    ) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    ) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates: ViewsUpdate = {}
         kwargs, env = self.extract_env(kwargs)
 
@@ -967,7 +968,7 @@ class SealRing(KLayoutStep):
 
     def run_ihp_sg13g2(
         self, state_in: State, **kwargs
-    ) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    ) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates: ViewsUpdate = {}
         kwargs, env = self.extract_env(kwargs)
 
@@ -1034,13 +1035,13 @@ class Filler(KLayoutStep):
         ),
         Variable(
             "KLAYOUT_FILLER_OPTIONS",
-            Optional[Dict[str, Union[bool, int, str]]],
+            Optional[dict[str, bool | int | str]],
             "Options passed directly to the KLayout filler script. They vary from one PDK to another.",
             pdk=True,
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         views_updates: ViewsUpdate = {}
 
@@ -1059,7 +1060,7 @@ class Filler(KLayoutStep):
 
     def run_generic(
         self, state_in: State, **kwargs
-    ) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    ) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates: ViewsUpdate = {}
         kwargs, env = self.extract_env(kwargs)
 
@@ -1103,7 +1104,7 @@ class Filler(KLayoutStep):
 
     def run_ihp_sg13g2(
         self, state_in: State, **kwargs
-    ) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    ) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates: ViewsUpdate = {}
         kwargs, env = self.extract_env(kwargs)
 
@@ -1158,7 +1159,7 @@ class Density(KLayoutStep):
         ),
         Variable(
             "KLAYOUT_DENSITY_OPTIONS",
-            Optional[Dict[str, Union[bool, int, str]]],
+            Optional[dict[str, bool | int | str]],
             "Options passed directly to the KLayout density runset. They vary from one PDK to another.",
             pdk=True,
         ),
@@ -1170,7 +1171,7 @@ class Density(KLayoutStep):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         views_updates: ViewsUpdate = {}
 
@@ -1276,13 +1277,13 @@ class Antenna(KLayoutStep):
         ),
         Variable(
             "KLAYOUT_ANTENNA_OPTIONS",
-            Optional[Dict[str, Union[bool, int, str]]],
+            Optional[dict[str, bool | int | str]],
             "Options passed directly to the KLayout density runset. They vary from one PDK to another.",
             pdk=True,
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         views_updates: ViewsUpdate = {}
 
@@ -1387,7 +1388,7 @@ class OpenGUI(KLayoutStep):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         mode_args = []
         if self.config["KLAYOUT_EDITOR_MODE"]:

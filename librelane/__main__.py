@@ -24,7 +24,8 @@ import tempfile
 import traceback
 from textwrap import dedent
 from functools import partial
-from typing import Any, Dict, Sequence, Tuple, Type, Optional, List
+from typing import Any, Optional
+from collections.abc import Sequence
 
 import click
 from cloup import (
@@ -65,11 +66,11 @@ def run(
     last_run: bool,
     frm: Optional[str],
     to: Optional[str],
-    skip: Tuple[str, ...],
+    skip: tuple[str, ...],
     overwrite: bool,
     reproducible: Optional[str],
     with_initial_state: Optional[State],
-    config_override_strings: List[str],
+    config_override_strings: list[str],
     _force_run_dir: Optional[str],
     design_dir: Optional[str],
     initial_state_element_override: Sequence[str],
@@ -81,7 +82,7 @@ def run(
             err("No config file(s) have been provided.")
             ctx.exit(1)
 
-        TargetFlow: Optional[Type[Flow]] = Flow.factory.get("Classic")
+        TargetFlow: Optional[type[Flow]] = Flow.factory.get("Classic")
 
         for config_file in config_files:
             if meta := Config.get_meta(config_file):
@@ -137,7 +138,7 @@ def run(
             "TargetFlow is unexpectedly None. Please report this as a bug."
         )
 
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "pdk_root": pdk_root,
             "pdk": pdk,
             "scl": scl,

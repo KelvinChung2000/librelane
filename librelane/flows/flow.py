@@ -24,17 +24,10 @@ from abc import abstractmethod, ABC
 from concurrent.futures import Future
 from functools import wraps
 from typing import (
-    List,
-    Sequence,
-    Tuple,
-    Type,
     ClassVar,
-    Optional,
-    Dict,
-    Callable,
     TypeVar,
-    Union,
 )
+from collections.abc import Sequence, Callable
 
 from rich.progress import (
     Progress,
@@ -69,6 +62,7 @@ from ..common import (
     Toolbox,
     get_latest_file,
 )
+import builtins
 
 
 class FlowError(RuntimeError):
@@ -292,7 +286,7 @@ class Flow(ABC):
         @dataclass
         class Record:
             message: str
-            step: Optional[str] = None
+            step: str | None = None
             repeats: int = 0
             similar: int = 0
 
@@ -309,7 +303,7 @@ class Flow(ABC):
 
         def __init__(self, *args, **kwargs) -> None:
             super().__init__(*args, **kwargs)
-            self.warnings: Dict[str, Flow._StepWarningHandler.Record] = {}
+            self.warnings: dict[str, Flow._StepWarningHandler.Record] = {}
 
         def emit(self, record: logging.LogRecord) -> None:
             step = None
@@ -327,24 +321,24 @@ class Flow(ABC):
                 self.warnings[key] = Flow._StepWarningHandler.Record(record.msg, step)
 
     name: str = NotImplemented
-    Steps: List[Type[Step]] = NotImplemented  # Override
-    config_vars: List[Variable] = []
-    step_objects: Optional[List[Step]] = None
-    run_dir: Optional[str] = None
-    toolbox: Optional[Toolbox] = None
-    config_resolved_path: Optional[str] = None
+    Steps: list[type[Step]] = NotImplemented  # Override
+    config_vars: list[Variable] = []
+    step_objects: list[Step] | None = None
+    run_dir: str | None = None
+    toolbox: Toolbox | None = None
+    config_resolved_path: str | None = None
 
     def __init__(
         self,
         config: AnyConfigs,
         *,
-        name: Optional[str] = None,
-        pdk: Optional[str] = None,
-        pdk_root: Optional[str] = None,
-        scl: Optional[str] = None,
-        pad: Optional[str] = None,
-        design_dir: Optional[str] = None,
-        config_override_strings: Optional[Sequence[str]] = None,
+        name: str | None = None,
+        pdk: str | None = None,
+        pdk_root: str | None = None,
+        scl: str | None = None,
+        pad: str | None = None,
+        design_dir: str | None = None,
+        config_override_strings: Sequence[str] | None = None,
     ):
         if self.__class__.Steps == NotImplemented:
             raise NotImplementedError(
@@ -465,13 +459,13 @@ class Flow(ABC):
 
             console.log(Markdown(Self.get_help_md()))
 
-    def get_all_config_variables(self) -> List[Variable]:
+    def get_all_config_variables(self) -> list[Variable]:
         """
         :returns: All configuration variables for this Flow, including
             universal configuration variables, flow-specific configuration
             variables and step-specific configuration variables.
         """
-        flow_variables_by_name: Dict[str, Tuple[Variable, str]] = {
+        flow_variables_by_name: dict[str, tuple[Variable, str]] = {
             variable.name: (variable, "universal flow variables")
             for variable in universal_flow_config_variables
         }
@@ -510,7 +504,7 @@ class Flow(ABC):
     )
     def init_with_config(
         Self,
-        config_in: Union[Config, str, os.PathLike, Dict],
+        config_in: Config | str | os.PathLike | dict,
         **kwargs,
     ):  # pragma: no cover
         kwargs["config"] = config_in
@@ -519,10 +513,10 @@ class Flow(ABC):
     @final
     def start(
         self,
-        with_initial_state: Optional[State] = None,
-        tag: Optional[str] = None,
+        with_initial_state: State | None = None,
+        tag: str | None = None,
         last_run: bool = False,
-        _force_run_dir: Optional[str] = None,
+        _force_run_dir: str | None = None,
         _no_load_previous_steps: bool = False,
         *,
         overwrite: bool = False,
@@ -555,7 +549,7 @@ class Flow(ABC):
         :returns: ``(success, state_list)``
         """
 
-        handlers: List[logging.Handler] = []
+        handlers: list[logging.Handler] = []
 
         warning_handler = Flow._StepWarningHandler()
         warning_handler.addFilter(LevelFilter("WARNING"))
@@ -572,7 +566,7 @@ class Flow(ABC):
             runs = sorted(glob.glob(os.path.join(self.design_dir, "runs", "*")))
 
             latest_time: float = 0
-            latest_run: Optional[str] = None
+            latest_run: str | None = None
             for run in runs:
                 time = os.path.getmtime(run)
                 if time > latest_time:
@@ -706,7 +700,7 @@ class Flow(ABC):
         self,
         initial_state: State,
         **kwargs,
-    ) -> Tuple[State, List[Step]]:
+    ) -> tuple[State, list[Step]]:
         """
         The core of the Flow. Subclasses of flow are expected to override this
         method.
@@ -789,7 +783,7 @@ class Flow(ABC):
 
         return get_tpe().submit(step.start, *args, **kwargs)
 
-    def _save_snapshot_ef(self, path: Union[str, os.PathLike]):
+    def _save_snapshot_ef(self, path: str | os.PathLike):
         if (
             self.step_objects is None
             or self.toolbox is None
@@ -1007,12 +1001,12 @@ class Flow(ABC):
         for a primer.
         """
 
-        __registry: ClassVar[Dict[str, Type[Flow]]] = {}
+        __registry: ClassVar[dict[str, type[Flow]]] = {}
 
         @classmethod
         def register(
-            Self, registered_name: Optional[str] = None
-        ) -> Callable[[Type[Flow]], Type[Flow]]:
+            Self, registered_name: str | None = None
+        ) -> Callable[[type[Flow]], type[Flow]]:
             """
             A decorator that adds a flow type to the registry.
 
@@ -1022,7 +1016,7 @@ class Flow(ABC):
                 class name.
             """
 
-            def decorator(cls: Type[Flow]) -> Type[Flow]:
+            def decorator(cls: type[Flow]) -> type[Flow]:
                 name = cls.__name__
                 if registered_name is not None:
                     name = registered_name
@@ -1032,7 +1026,7 @@ class Flow(ABC):
             return decorator
 
         @classmethod
-        def get(Self, name: str) -> Optional[Type[Flow]]:
+        def get(Self, name: str) -> type[Flow] | None:
             """
             Retrieves a Flow type from the registry using a lookup string.
 
@@ -1041,7 +1035,7 @@ class Flow(ABC):
             return Self.__registry.get(name)
 
         @classmethod
-        def list(Self) -> List[str]:
+        def list(Self) -> builtins.list[str]:
             """
             :returns: A list of strings representing all registered flows.
             """

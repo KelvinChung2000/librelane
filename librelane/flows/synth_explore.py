@@ -18,7 +18,6 @@ import os
 import rich
 import rich.table
 from concurrent.futures import Future
-from typing import Dict, List, Tuple
 
 from .flow import Flow
 from ..state import State
@@ -68,12 +67,12 @@ class SynthesisExploration(Flow):
         self,
         initial_state: State,
         **kwargs,
-    ) -> Tuple[State, List[Step]]:
-        step_list: List[Step] = []
+    ) -> tuple[State, list[Step]]:
+        step_list: list[Step] = []
 
         self.progress_bar.set_max_stage_count(1)
 
-        synth_futures: List[Tuple[Config, Future[State]]] = []
+        synth_futures: list[tuple[Config, Future[State]]] = []
         self.progress_bar.start_stage("Synthesis Exploration")
 
         options.set_condensed_mode(True)
@@ -118,8 +117,8 @@ class SynthesisExploration(Flow):
 
             synth_futures.append((config, sta_future))
 
-        results: Dict[
-            str, Tuple[Decimal, Decimal, Decimal, Decimal, Decimal] | None
+        results: dict[
+            str, tuple[Decimal, Decimal, Decimal, Decimal, Decimal] | None
         ] = {}
         for config, future in synth_futures:
             strategy = config["SYNTH_STRATEGY"]

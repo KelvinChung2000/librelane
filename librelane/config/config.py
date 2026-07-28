@@ -25,15 +25,10 @@ from typing import (
     Any,
     ClassVar,
     Literal,
-    Mapping,
-    Tuple,
     Union,
-    List,
     Optional,
-    Sequence,
-    Dict,
-    Set,
 )
+from collections.abc import Mapping, Sequence
 
 from .variable import Variable, MissingRequiredVariable
 from .removals import removed_variables
@@ -141,9 +136,9 @@ class InvalidConfig(ValueError):
     def __init__(
         self,
         config: str,
-        warnings: List[str],
-        errors: List[str],
-        message: Optional[str] = None,
+        warnings: list[str],
+        errors: list[str],
+        message: str | None = None,
         *args,
         **kwargs,
     ) -> None:
@@ -165,14 +160,12 @@ class Meta:
     """
 
     version: int = 1
-    flow: Union[None, str, List[str]] = None
-    substituting_steps: Union[
-        None,
-        Dict[str, Union[str, None]],
-        List[Tuple[str, Union[str, None]]],
-    ] = None
-    step: Union[None, str] = None
-    librelane_version: Union[None, str] = __version__
+    flow: None | str | list[str] = None
+    substituting_steps: None | dict[str, str | None] | list[tuple[str, str | None]] = (
+        None
+    )
+    step: None | str = None
+    librelane_version: None | str = __version__
 
     @classmethod
     def from_dict(Self, meta_dict: dict):
@@ -208,7 +201,7 @@ class Config(GenericImmutableDict[str, Any]):
     def __init__(
         self,
         *args,
-        meta: Optional[Meta] = None,
+        meta: Meta | None = None,
         **kwargs,
     ):
         if meta is None:
@@ -228,7 +221,7 @@ class Config(GenericImmutableDict[str, Any]):
         """
         return Config(self, meta=self.meta, overrides=overrides)
 
-    def to_raw_dict(self, include_meta: bool = True) -> Dict[str, Any]:
+    def to_raw_dict(self, include_meta: bool = True) -> dict[str, Any]:
         """
         :param include_meta: Whether to include the "meta" object or not
         :returns: A raw dictionary representation including the ``meta`` object.
@@ -269,7 +262,7 @@ class Config(GenericImmutableDict[str, Any]):
             set to ``False`` by callers.
         :returns: The new copy
         """
-        variables: Set[str] = set([variable.name for variable in config_vars])
+        variables: set[str] = set([variable.name for variable in config_vars])
         if include_flow_variables:
             variables = variables.union(
                 set([variable.name for variable in flow_common_variables])
@@ -345,7 +338,7 @@ class Config(GenericImmutableDict[str, Any]):
     def get_meta(
         Self,
         config_in: AnyConfig,
-        flow_override: Optional[str] = None,
+        flow_override: str | None = None,
     ) -> Meta:
         """
         Returns the Meta object of a configuration dictionary or file.
@@ -387,9 +380,9 @@ class Config(GenericImmutableDict[str, Any]):
         Self,
         DESIGN_NAME: str,
         PDK: str,
-        STD_CELL_LIBRARY: Optional[str] = None,
-        PAD_CELL_LIBRARY: Optional[str] = None,
-        PDK_ROOT: Optional[str] = None,
+        STD_CELL_LIBRARY: str | None = None,
+        PAD_CELL_LIBRARY: str | None = None,
+        PDK_ROOT: str | None = None,
         **kwargs,
     ) -> "Config":
         """
@@ -460,14 +453,14 @@ class Config(GenericImmutableDict[str, Any]):
         config_in: AnyConfigs,
         flow_config_vars: Sequence[Variable],
         *,
-        config_override_strings: Optional[Sequence[str]] = None,
-        pdk: Optional[str] = None,
-        pdk_root: Optional[str] = None,
-        scl: Optional[str] = None,
-        pad: Optional[str] = None,
-        design_dir: Optional[str] = None,
+        config_override_strings: Sequence[str] | None = None,
+        pdk: str | None = None,
+        pdk_root: str | None = None,
+        scl: str | None = None,
+        pad: str | None = None,
+        design_dir: str | None = None,
         _load_pdk_configs: bool = True,
-    ) -> Tuple["Config", str]:
+    ) -> tuple["Config", str]:
         """
         Creates a new Config object based on a Tcl file, a JSON file, or a
         dictionary.
@@ -520,7 +513,7 @@ class Config(GenericImmutableDict[str, Any]):
             raise ValueError("The value for config_in must not be empty.")
 
         file_design_dir = None
-        configs_validated: List[AnyConfig] = []
+        configs_validated: list[AnyConfig] = []
         for config in config_in:
             if isinstance(config, Mapping):
                 configs_validated.append(config)
@@ -648,10 +641,10 @@ class Config(GenericImmutableDict[str, Any]):
         flow_config_vars: Sequence[Variable],
         *,
         meta: Meta,
-        pdk_root: Optional[str] = None,
-        pdk: Optional[str] = None,
-        scl: Optional[str] = None,
-        pad: Optional[str] = None,
+        pdk_root: str | None = None,
+        pdk: str | None = None,
+        scl: str | None = None,
+        pad: str | None = None,
         full_pdk_warnings: bool = False,
         permissive_typing: bool = False,
         missing_ok: bool = False,
@@ -744,10 +737,10 @@ class Config(GenericImmutableDict[str, Any]):
         config: AnyPath,
         design_dir: str,
         *,
-        pdk_root: Optional[str] = None,
-        pdk: Optional[str] = None,
-        scl: Optional[str] = None,
-        pad: Optional[str] = None,
+        pdk_root: str | None = None,
+        pdk: str | None = None,
+        scl: str | None = None,
+        pad: str | None = None,
     ) -> Mapping[str, Any]:
         config_str = open(config, encoding="utf8").read()
 
@@ -801,7 +794,7 @@ class Config(GenericImmutableDict[str, Any]):
     @classmethod
     def __resolve_pdk_root(
         Self,
-        pdk_root: Optional[str],
+        pdk_root: str | None,
     ) -> str:
         if pdk_root is None:
             try:
@@ -818,8 +811,8 @@ class Config(GenericImmutableDict[str, Any]):
     @staticmethod
     @lru_cache(1, True)
     def __get_pdk_raw(
-        pdk_root: str, pdk: str, scl: Optional[str], pad: Optional[str]
-    ) -> Tuple[GenericImmutableDict[str, Any], str, str, Optional[str]]:
+        pdk_root: str, pdk: str, scl: str | None, pad: str | None
+    ) -> tuple[GenericImmutableDict[str, Any], str, str, str | None]:
         pdk_config: GenericDict[str, Any] = GenericDict(
             {
                 SpecialKeys.pdk_root: pdk_root,
@@ -922,12 +915,12 @@ class Config(GenericImmutableDict[str, Any]):
     @staticmethod
     def __get_pdk_config(
         pdk: str,
-        scl: Optional[str],
-        pad: Optional[str],
+        scl: str | None,
+        pad: str | None,
         pdk_root: str,
-        flow_pdk_vars: Optional[List[Variable]] = None,
-        full_pdk_warnings: Optional[bool] = False,
-    ) -> Tuple[GenericDict[str, Any], str, str, Optional[str]]:
+        flow_pdk_vars: list[Variable] | None = None,
+        full_pdk_warnings: bool | None = False,
+    ) -> tuple[GenericDict[str, Any], str, str, str | None]:
         """
         :returns: A tuple of the PDK configuration, the PDK path, the SCL and the PAD.
         """
@@ -963,12 +956,12 @@ class Config(GenericImmutableDict[str, Any]):
     def __process_variable_list(
         mutable: GenericDict[str, Any],
         variables: Sequence["Variable"],
-        removed: Optional[Mapping[str, str]] = None,
+        removed: Mapping[str, str] | None = None,
         *,
-        on_unknown_key: Union[Literal["error", "warn"], None] = "warn",
+        on_unknown_key: Literal["error", "warn"] | None = "warn",
         permissive_typing: bool = False,
         missing_ok: bool = False,
-    ) -> Tuple[GenericDict[str, Any], List[str], List[str]]:
+    ) -> tuple[GenericDict[str, Any], list[str], list[str]]:
         """
         Verifies a configuration object against a list of variables, returning
         an object with the variables normalized according to their types.
@@ -986,7 +979,7 @@ class Config(GenericImmutableDict[str, Any]):
         """
         if removed is None:
             removed = {}
-        warnings: List[str] = []
+        warnings: list[str] = []
         errors = []
         final: GenericDict[str, Any] = GenericDict()
 

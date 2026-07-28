@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 import pathlib
-from typing import Callable, Optional, Type
+from collections.abc import Callable
 
 import pytest
 
@@ -122,7 +122,7 @@ def DummyFlow(MockStepTuple):
         def __init__(
             self,
             *args,
-            run_override: Optional[Callable] = None,
+            run_override: Callable | None = None,
             **kwargs,
         ):
             self.run_override = run_override
@@ -148,7 +148,7 @@ def test_flow_abc_init():
     assert e is not None, "Flow ABC instantiated successfully"
 
 
-def test_factory(DummyFlow: Type[flow.Flow]):
+def test_factory(DummyFlow: type[flow.Flow]):
     from librelane.flows import Flow
 
     assert all(
@@ -178,7 +178,7 @@ def test_factory(DummyFlow: Type[flow.Flow]):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow])
-def test_init_and_config_vars(DummyFlow: Type[flow.Flow], variable: Variable):
+def test_init_and_config_vars(DummyFlow: type[flow.Flow], variable: Variable):
     flow = DummyFlow(
         {
             "DESIGN_NAME": "WHATEVER",
@@ -198,7 +198,7 @@ def test_init_and_config_vars(DummyFlow: Type[flow.Flow], variable: Variable):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow])
-def test_clashing_variables(DummyFlow: Type[flow.Flow], MockStepTuple):
+def test_clashing_variables(DummyFlow: type[flow.Flow], MockStepTuple):
     from librelane.flows import FlowException
 
     StepA, StepB, StepC = MockStepTuple
@@ -227,7 +227,7 @@ def test_clashing_variables(DummyFlow: Type[flow.Flow], MockStepTuple):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow])
-def test_progress_bar(DummyFlow: Type[flow.Flow]):
+def test_progress_bar(DummyFlow: type[flow.Flow]):
     def run_override(self: DummyFlow, initial_state, **kwargs):
         assert self.progress_bar.started, (
             ".start() did not start the progress bar rendering"

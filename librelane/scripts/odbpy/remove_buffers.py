@@ -14,7 +14,6 @@
 import odb
 
 import re
-from typing import List
 
 from reader import click_odb, click
 
@@ -27,7 +26,7 @@ def get_pin_name(pin: odb.dbITerm):
     return f"{cell_name}/{master_pin_name}"
 
 
-def get_sinks_terms(net: odb.dbNet) -> List[odb.dbITerm]:
+def get_sinks_terms(net: odb.dbNet) -> list[odb.dbITerm]:
     sinks = []
     for it in net.getITerms():
         cell = it.getInst()
@@ -45,7 +44,7 @@ def get_sinks_terms(net: odb.dbNet) -> List[odb.dbITerm]:
     return sinks
 
 
-def get_drivers(net: odb.dbNet) -> List[odb.dbInst]:
+def get_drivers(net: odb.dbNet) -> list[odb.dbInst]:
     drivers = []
     for it in net.getITerms():
         cell = it.getInst()

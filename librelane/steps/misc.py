@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-from typing import Tuple
 
 from .step import ViewsUpdate, MetricsUpdate, Step
 from ..common import Path
@@ -38,7 +37,7 @@ class LoadBaseSDC(Step):
     inputs = []
     outputs = [DesignFormat.SDC]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         path = self.config["FALLBACK_SDC"]
 
         target = os.path.join(self.step_dir, f"{self.config['DESIGN_NAME']}.sdc")
@@ -152,7 +151,7 @@ class ReportManufacturability(Step):
 
         return "\n".join(report)
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         report_file = os.path.join(self.step_dir, "manufacturability.rpt")
         lvs_report = self.__get_lvs_report(state_in)
         drc_report = self.__get_drc_report(state_in)

@@ -16,7 +16,8 @@ import os
 import tempfile
 from unittest import mock
 from decimal import Decimal
-from typing import Any, Literal, Optional, Iterable, Callable, List, Dict
+from typing import Any, Literal, Optional
+from collections.abc import Iterable, Callable
 
 import pytest
 from pyfakefs.fake_filesystem_unittest import Patcher
@@ -131,7 +132,7 @@ MOCK_PDK_VARS = [
     ),
     Variable(
         "TECH_LEFS",
-        Dict[str, Path],
+        dict[str, Path],
         description="x",
         pdk=True,
     ),
@@ -144,7 +145,7 @@ MOCK_PDK_VARS = [
     ),
     Variable(
         "RANDOM_ARRAY",
-        Optional[List[str]],
+        Optional[list[str]],
         description="x",
     ),
 ]
@@ -171,7 +172,7 @@ MOCK_FLOW_VARS = [
     ),
     Variable(
         "VERILOG_FILES",
-        List[Path],
+        list[Path],
         description="x",
     ),
     Variable(
@@ -194,7 +195,7 @@ MOCK_FLOW_VARS = [
     ),
     Variable(
         "MACROS",
-        Optional[Dict[str, Macro]],
+        Optional[dict[str, Macro]],
         description="x",
         default=None,
     ),
@@ -202,7 +203,7 @@ MOCK_FLOW_VARS = [
 COMMON_FLOW_VARS = MOCK_PDK_VARS + MOCK_FLOW_VARS
 
 
-def mock_variables(patch_in_objects: Optional[Iterable[Any]] = None):
+def mock_variables(patch_in_objects: Iterable[Any] | None = None):
     from librelane.config import config
 
     if patch_in_objects is None:
@@ -282,9 +283,9 @@ class MockProgress(object):
     def update(
         self,
         _,
-        description: Optional[str] = None,
-        total: Optional[int] = None,
-        completed: Optional[float] = None,
+        description: str | None = None,
+        total: int | None = None,
+        completed: float | None = None,
     ):
         if total_stages := total:
             self.total = total_stages

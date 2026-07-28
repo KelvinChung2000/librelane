@@ -18,7 +18,7 @@ import utl
 import re
 import json
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Optional
 
 from reader import OdbReader, click_odb, click
 
@@ -33,16 +33,16 @@ class Design(object):
     class Instance:
         name: str
         module_name: str
-        power_connections: Dict[str, str]
-        ground_connections: Dict[str, str]
+        power_connections: dict[str, str]
+        ground_connections: dict[str, str]
 
     def __init__(self, reader: OdbReader, yosys_dict: dict) -> None:
         self.reader = reader
         self.design_name = reader.block.getName()
         self.yosys_dict = yosys_dict
 
-        self.pins_by_module_name: Dict[str, Dict[str, odb.dbMTerm]] = {}
-        self.verilog_net_names_by_bit_by_module: Dict[str, Dict[int, str]] = {}
+        self.pins_by_module_name: dict[str, dict[str, odb.dbMTerm]] = {}
+        self.verilog_net_names_by_bit_by_module: dict[str, dict[int, str]] = {}
         self.nets_by_net_name = {net.getName(): net for net in reader.block.getNets()}
 
     def get_verilog_net_name_by_bit(self, top_module: str, target_bit: int):
@@ -58,7 +58,7 @@ class Design(object):
             self.verilog_net_names_by_bit_by_module[top_module] = netname_by_bit
         return self.verilog_net_names_by_bit_by_module[top_module][target_bit]
 
-    def get_pins(self, module_name: str) -> Dict[str, odb.dbMTerm]:
+    def get_pins(self, module_name: str) -> dict[str, odb.dbMTerm]:
         if module_name not in self.pins_by_module_name:
             master = self.reader.db.findMaster(module_name)
             if master is None:
@@ -134,7 +134,7 @@ class Design(object):
         self,
         top_module: str,
         prefix: str = "",
-    ) -> List["Design.Instance"]:
+    ) -> list["Design.Instance"]:
         yosys_design_object = self.yosys_dict["modules"][top_module]
         instances = []
         cells = yosys_design_object["cells"]

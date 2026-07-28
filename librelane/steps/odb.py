@@ -23,7 +23,7 @@ from math import inf
 from decimal import Decimal
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Literal, Optional
 
 from ..common import Path, get_script_dir, aggregate_metrics
 from ..config import Instance, Macro, Variable
@@ -53,7 +53,7 @@ class OdbpyStep(Step):
 
     output_processors = [OpenROADOutputProcessor, DefaultOutputProcessor]
 
-    alerts: Optional[List[OpenROADAlert]] = None
+    alerts: list[OpenROADAlert] | None = None
 
     @classmethod
     def get_openroad_path(Self) -> str:
@@ -71,7 +71,7 @@ class OdbpyStep(Step):
             self.warn(str(alert), extra={"key": alert.code})
         return alert
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         self.alerts = None
 
         kwargs, env = self.extract_env(kwargs)
@@ -147,7 +147,7 @@ class OdbpyStep(Step):
 
         return views_updates, metric_updates_with_aggregates
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         metrics_path = os.path.join(self.step_dir, "or_metrics_out.json")
 
         tech_lefs = self.toolbox.filter_views(self.config, self.config["TECH_LEFS"])
@@ -191,7 +191,7 @@ class OdbpyStep(Step):
     def get_script_path(self) -> str:
         pass
 
-    def get_subcommand(self) -> List[str]:
+    def get_subcommand(self) -> list[str]:
         return []
 
 
@@ -213,7 +213,7 @@ class CheckMacroAntennaProperties(OdbpyStep):
             "check_antenna_properties.py",
         )
 
-    def get_cells(self) -> List[str]:
+    def get_cells(self) -> list[str]:
         macros = self.config["MACROS"]
         cells = []
         if macros:
@@ -223,13 +223,13 @@ class CheckMacroAntennaProperties(OdbpyStep):
     def get_report_path(self) -> str:
         return os.path.join(self.step_dir, "report.yaml")
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         args = ["--report-file", self.get_report_path()]
         for name in self.get_cells():
             args += ["--cell-name", name]
         return super().get_command() + args
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if not self.get_cells():
             info(f"No cells provided, skipping '{self.id}'…")
             return {}, {}
@@ -246,7 +246,7 @@ class CheckDesignAntennaProperties(CheckMacroAntennaProperties):
     name = "Check Antenna Properties of Pins in The Generated Design LEF view"
     inputs = CheckMacroAntennaProperties.inputs + [DesignFormat.LEF]
 
-    def get_cells(self) -> List[str]:
+    def get_cells(self) -> list[str]:
         return [self.config["DESIGN_NAME"]]
 
 
@@ -287,7 +287,7 @@ class ApplyDEFTemplate(OdbpyStep):
             "apply_def_template.py",
         )
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         args = [
             "--def-template",
             self.config["FP_DEF_TEMPLATE"],
@@ -297,7 +297,7 @@ class ApplyDEFTemplate(OdbpyStep):
             args.append("--copy-def-power")
         return super().get_command() + args
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["FP_DEF_TEMPLATE"] is None:
             info(f"No DEF template provided, skipping '{self.id}'…")
             return {}, {}
@@ -336,10 +336,10 @@ class SetPowerConnections(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "power_utils.py")
 
-    def get_subcommand(self) -> List[str]:
+    def get_subcommand(self) -> list[str]:
         return ["set-power-connections"]
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         state_in = self.state_in.result()
         return super().get_command() + [
             "--input-json",
@@ -372,10 +372,10 @@ class WriteVerilogHeader(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "power_utils.py")
 
-    def get_subcommand(self) -> List[str]:
+    def get_subcommand(self) -> list[str]:
         return ["write-verilog-header"]
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         state_in = self.state_in.result()
         command = super().get_command() + [
             "--output-vh",
@@ -392,7 +392,7 @@ class WriteVerilogHeader(OdbpyStep):
 
         return command
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates, metrics_updates = super().run(state_in, **kwargs)
         views_updates[DesignFormat.VERILOG_HEADER] = Path(
             os.path.join(self.step_dir, f"{self.config['DESIGN_NAME']}.vh")
@@ -424,17 +424,17 @@ class ManualMacroPlacement(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "placers.py")
 
-    def get_subcommand(self) -> List[str]:
+    def get_subcommand(self) -> list[str]:
         return ["manual-macro-placement"]
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         return super().get_command() + [
             "--config",
             os.path.join(self.step_dir, "placement.cfg"),
             "--fixed",
         ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         cfg_file = Path(os.path.join(self.step_dir, "placement.cfg"))
         if cfg_ref := self.config.get("MACRO_PLACEMENT_CFG"):
             self.warn(
@@ -487,7 +487,7 @@ class ReportWireLength(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "wire_lengths.py")
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         return super().get_command() + [
             "--human-readable",
             "--report-out",
@@ -526,7 +526,7 @@ class ReportDisconnectedPins(OdbpyStep):
     config_vars = OdbpyStep.config_vars + [
         Variable(
             "IGNORE_DISCONNECTED_MODULES",
-            Optional[List[str]],
+            Optional[list[str]],
             "Modules (or cells) to ignore when checking for disconnected pins.",
             pdk=True,
         ),
@@ -535,7 +535,7 @@ class ReportDisconnectedPins(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "disconnected_pins.py")
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         command = super().get_command()
         if ignored_modules := self.config["IGNORE_DISCONNECTED_MODULES"]:
             for module in ignored_modules:
@@ -558,7 +558,7 @@ class AddRoutingObstructions(OdbpyStep):
     config_vars = [
         Variable(
             "ROUTING_OBSTRUCTIONS",
-            Optional[List[Tuple[str, Decimal, Decimal, Decimal, Decimal]]],
+            Optional[list[tuple[str, Decimal, Decimal, Decimal, Decimal]]],
             "Add routing obstructions to the design. If set to `None`, this step is skipped."
             + " Format of each obstruction item is a tuple of: layer name, llx, lly, urx, ury.",
             units="µm",
@@ -573,10 +573,10 @@ class AddRoutingObstructions(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "defutil.py")
 
-    def get_subcommand(self) -> List[str]:
+    def get_subcommand(self) -> list[str]:
         return ["add_obstructions"]
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         command = super().get_command()
         if obstructions := self.config[self.config_vars[0].name]:
             for obstruction in obstructions:
@@ -584,7 +584,7 @@ class AddRoutingObstructions(OdbpyStep):
                 command.append(" ".join([str(o) for o in obstruction]))
         return command
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config[self.get_obstruction_variable().name] is None:
             info(
                 f"'{self.get_obstruction_variable().name}' is not defined. Skipping '{self.id}'…"
@@ -603,7 +603,7 @@ class RemoveRoutingObstructions(AddRoutingObstructions):
     id = "Odb.RemoveRoutingObstructions"
     name = "Remove Obstructions"
 
-    def get_subcommand(self) -> List[str]:
+    def get_subcommand(self) -> list[str]:
         return ["remove_obstructions"]
 
 
@@ -624,7 +624,7 @@ class AddPDNObstructions(AddRoutingObstructions):
     config_vars = [
         Variable(
             "PDN_OBSTRUCTIONS",
-            Optional[List[Tuple[str, Decimal, Decimal, Decimal, Decimal]]],
+            Optional[list[tuple[str, Decimal, Decimal, Decimal, Decimal]]],
             "Add routing obstructions to the design before PDN stage. If set to `None`, this step is skipped."
             + " Format of each obstruction item is a tuple of: layer name, llx, lly, urx, ury,.",
             units="µm",
@@ -683,7 +683,7 @@ class CustomIOPlacement(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "io_place.py")
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         length_args = []
         if self.config["IO_PIN_V_LENGTH"] is not None:
             length_args += ["--ver-length", self.config["IO_PIN_V_LENGTH"]]
@@ -713,7 +713,7 @@ class CustomIOPlacement(OdbpyStep):
             + length_args
         )
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["IO_PIN_ORDER_CFG"] is None:
             info(f"No custom I/O placement file configured, skipping '{self.id}'…")
             return {}, {}
@@ -754,10 +754,10 @@ class PortDiodePlacement(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "diodes.py")
 
-    def get_subcommand(self) -> List[str]:
+    def get_subcommand(self) -> list[str]:
         return ["place"]
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         cell, pin = self.config["DIODE_CELL"].split("/")
 
         return super().get_command() + [
@@ -771,7 +771,7 @@ class PortDiodePlacement(OdbpyStep):
             "Infinity",
         ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["DIODE_ON_PORTS"] == "none":
             info(f"'DIODE_ON_PORTS' is set to 'none': skipping '{self.id}'…")
             return {}, {}
@@ -815,7 +815,7 @@ class DiodesOnPorts(CompositeStep):
         GlobalRouting,
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["DIODE_ON_PORTS"] == "none":
             info(f"'DIODE_ON_PORTS' is set to 'none': skipping '{self.id}'…")
             return {}, {}
@@ -864,10 +864,10 @@ class FuzzyDiodePlacement(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "diodes.py")
 
-    def get_subcommand(self) -> List[str]:
+    def get_subcommand(self) -> list[str]:
         return ["place"]
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         cell, pin = self.config["DIODE_CELL"].split("/")
 
         return super().get_command() + [
@@ -879,7 +879,7 @@ class FuzzyDiodePlacement(OdbpyStep):
             str(self.config["HEURISTIC_ANTENNA_THRESHOLD"]),
         ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["GPL_CELL_PADDING"] == 0:
             self.warn(
                 "'GPL_CELL_PADDING' is set to 0. This step may cause overlap failures."
@@ -927,7 +927,7 @@ class HeuristicDiodeInsertion(CompositeStep):
         GlobalRouting,
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["DIODE_CELL"] is None:
             info(f"'DIODE_CELL' not set. Skipping '{self.id}'…")
             return {}, {}
@@ -968,7 +968,7 @@ class CellFrequencyTables(OdbpyStep):
     def get_buffer_list_script(self):
         return os.path.join(get_script_dir(), "openroad", "buffer_list.tcl")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
 
         env_copy = env.copy()
@@ -986,7 +986,7 @@ class CellFrequencyTables(OdbpyStep):
         )
         return super().run(state_in, env=env, **kwargs)
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         command = super().get_command()
         command.append("--buffer-list")
         command.append(self.get_buffer_list_file())
@@ -1011,7 +1011,7 @@ class ManualGlobalPlacement(OdbpyStep):
     config_vars = OdbpyStep.config_vars + [
         Variable(
             "MANUAL_GLOBAL_PLACEMENTS",
-            Optional[Dict[str, Instance]],
+            Optional[dict[str, Instance]],
             description="A dictionary of instances to their global (non-legalized and unfixed) placement location.",
         )
     ]
@@ -1019,14 +1019,14 @@ class ManualGlobalPlacement(OdbpyStep):
     def get_script_path(self) -> str:
         return os.path.join(get_script_dir(), "odbpy", "placers.py")
 
-    def get_subcommand(self) -> List[str]:
+    def get_subcommand(self) -> list[str]:
         return ["manual-global-placement"]
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         assert self.config_path is not None, "get_command called before start()"
         return super().get_command() + ["--step-config", self.config_path]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["MANUAL_GLOBAL_PLACEMENTS"] is None:
             info(f"'MANUAL_GLOBAL_PLACEMENTS' not set. Skipping '{self.id}'…")
             return {}, {}
@@ -1049,7 +1049,7 @@ class ECOBuffer:
 
     target: str
     buffer: str
-    placement: Optional[Tuple[Decimal, Decimal]] = None
+    placement: tuple[Decimal, Decimal] | None = None
 
 
 @Step.factory.register()
@@ -1075,7 +1075,7 @@ class InsertECOBuffers(OdbpyStep):
         + [
             Variable(
                 "INSERT_ECO_BUFFERS",
-                Optional[List[ECOBuffer]],
+                Optional[list[ECOBuffer]],
                 "List of buffers to insert",
             )
         ]
@@ -1084,11 +1084,11 @@ class InsertECOBuffers(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "eco_buffer.py")
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         assert self.config_path is not None, "get_command called before start()"
         return super().get_command() + ["--step-config", self.config_path]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["INSERT_ECO_BUFFERS"] is None:
             info(f"'INSERT_ECO_BUFFERS' not set. Skipping '{self.id}'…")
             return {}, {}
@@ -1106,7 +1106,7 @@ class ECODiode:
     """
 
     target: str
-    placement: Optional[Tuple[Decimal, Decimal]] = None
+    placement: tuple[Decimal, Decimal] | None = None
 
 
 @Step.factory.register()
@@ -1130,7 +1130,7 @@ class InsertECODiodes(OdbpyStep):
         + [
             Variable(
                 "INSERT_ECO_DIODES",
-                Optional[List[ECODiode]],
+                Optional[list[ECODiode]],
                 "List of sinks to insert diodes for.",
             )
         ]
@@ -1139,7 +1139,7 @@ class InsertECODiodes(OdbpyStep):
     def get_script_path(self):
         return os.path.join(get_script_dir(), "odbpy", "eco_diode.py")
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         assert self.config_path is not None, "get_command called before start()"
         return super().get_command() + ["--step-config", self.config_path]
 

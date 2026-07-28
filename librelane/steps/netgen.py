@@ -21,7 +21,7 @@ import json
 import textwrap
 from decimal import Decimal
 from abc import abstractmethod
-from typing import List, Dict, Tuple, Optional
+from typing import Optional
 
 from .step import ViewsUpdate, MetricsUpdate, Step
 from .tclstep import TclStep
@@ -31,8 +31,8 @@ from ..config import Variable
 from ..state import DesignFormat, State
 
 
-def get_metrics(stats: Dict) -> Dict:
-    metrics: Dict = {}
+def get_metrics(stats: dict) -> dict:
+    metrics: dict = {}
     if not stats:
         return metrics
 
@@ -123,7 +123,7 @@ class NetgenStep(TclStep):
     def get_script_path(self) -> str:
         pass
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         return ["netgen", "-batch", "source"]
 
 
@@ -151,23 +151,23 @@ class LVS(NetgenStep):
         ),
         Variable(
             "LVS_FLATTEN_CELLS",
-            Optional[List[str]],
+            Optional[list[str]],
             "A list of cell names to be flattened while running LVS",
         ),
         Variable(
             "LVS_IGNORE_CELLS",
-            Optional[List[str]],
+            Optional[list[str]],
             "A list of cell names to be ignored while running LVS",
         ),
     ]
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         return super().get_command() + [self.get_script_path()]
 
     def get_script_path(self):
         return os.path.join(self.step_dir, "lvs_script.lvs")
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         spice_files = []
         if self.config["CELL_SPICE_MODELS"] is None:
             self.warn(

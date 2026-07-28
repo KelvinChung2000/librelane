@@ -18,7 +18,8 @@ import fnmatch
 from enum import Enum
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any, Dict, List, Mapping, Sequence, Tuple, Union, Optional
+from typing import Any, Union
+from collections.abc import Mapping, Sequence
 
 from ..common import is_string
 
@@ -59,7 +60,7 @@ class Expr(object):
         def __repr__(self):
             return f"<Token:{self.type} '{self.value}'>"
 
-        def prec_assoc(self) -> Tuple[int, bool]:
+        def prec_assoc(self) -> tuple[int, bool]:
             """
             Returns (precedence, is_left_assoc)
             """
@@ -76,7 +77,7 @@ class Expr(object):
                 )
 
     @staticmethod
-    def tokenize(expr: str) -> List["Expr.Token"]:
+    def tokenize(expr: str) -> list["Expr.Token"]:
         rx_list = [
             (re.compile(r"^\$([A-Za-z_][A-Za-z0-9_\.\[\]]*)"), Expr.Token.Type.VAR),
             (re.compile(r"^(-?\d+\.?\d*)"), Expr.Token.Type.NUMBER),
@@ -110,12 +111,12 @@ class Expr(object):
 
     @staticmethod
     def evaluate(expression: str, symbols: Mapping[str, Any]) -> Decimal:
-        tokens: List["Expr.Token"] = Expr.tokenize(expression)
+        tokens: list["Expr.Token"] = Expr.tokenize(expression)
         ETT = Expr.Token.Type
 
         # Infix to Postfix
-        postfix: List["Expr.Token"] = []
-        opstack: List["Expr.Token"] = []
+        postfix: list["Expr.Token"] = []
+        opstack: list["Expr.Token"] = []
         for token in tokens:
             if token.type == ETT.OP:
                 prec, assoc = token.prec_assoc()
@@ -294,8 +295,8 @@ SCL_PREFIX = "scl::"
 
 def process_list_recursive(
     input: Sequence[Any],
-    ref: List[Any],
-    symbols: Dict[str, Any],
+    ref: list[Any],
+    symbols: dict[str, Any],
     *,
     key_path: str = "",
 ):
@@ -330,8 +331,8 @@ def process_list_recursive(
 
 def process_dict_recursive(
     input: Mapping[str, Any],
-    ref: Dict[str, Any],
-    symbols: Dict[str, Any],
+    ref: dict[str, Any],
+    symbols: dict[str, Any],
     *,
     key_path: str = "",
 ):
@@ -390,15 +391,15 @@ def process_dict_recursive(
 
 def process_config_dict(
     config_in: Mapping[str, Any],
-    exposed_variables: Dict[str, Any],
-) -> Dict[str, Any]:
+    exposed_variables: dict[str, Any],
+) -> dict[str, Any]:
     state = dict(exposed_variables)
     symbols = dict(exposed_variables)
     process_dict_recursive(config_in, state, symbols)
     return state
 
 
-def extract_process_vars(config_in: Dict[str, str]) -> Dict[str, str]:
+def extract_process_vars(config_in: dict[str, str]) -> dict[str, str]:
     return {
         key: config_in[key]
         for key in PROCESS_INFO_ALLOWLIST
@@ -410,11 +411,11 @@ def preprocess_dict(
     config_dict: Mapping[str, Any],
     design_dir: str,
     only_extract_process_info: bool = False,
-    pdk: Optional[str] = None,
-    pdkpath: Optional[str] = None,
-    scl: Optional[str] = None,
-    pad: Optional[str] = None,
-) -> Dict[str, Any]:
+    pdk: str | None = None,
+    pdkpath: str | None = None,
+    scl: str | None = None,
+    pad: str | None = None,
+) -> dict[str, Any]:
     if None in (pdk, pdkpath, scl):
         if only_extract_process_info:
             pdkpath = ""

@@ -20,7 +20,8 @@ import sys
 import json
 import shutil
 from decimal import Decimal
-from typing import Callable, List, Mapping, Tuple, Union, Optional, Dict, Any
+from typing import Union, Any
+from collections.abc import Callable, Mapping
 
 from .design_format import (
     DesignFormat,
@@ -39,7 +40,7 @@ class InvalidState(RuntimeError):
     pass
 
 
-StateElement = Union[Path, List[Path], Dict[str, Union[Path, List[Path]]], None]
+StateElement = Union[Path, list[Path], dict[str, Path | list[Path]], None]
 
 
 class State(GenericImmutableDict[str, StateElement]):
@@ -78,17 +79,17 @@ class State(GenericImmutableDict[str, StateElement]):
 
     def __init__(
         self,
-        copying: Optional[
-            Union[Mapping[str, StateElement], Mapping[DesignFormat, StateElement]]
-        ] = None,
+        copying: Mapping[str, StateElement]
+        | Mapping[DesignFormat, StateElement]
+        | None = None,
         *args,
-        overrides: Optional[
-            Union[Mapping[str, StateElement], Mapping[DesignFormat, StateElement]]
-        ] = None,
-        metrics: Optional[Mapping[str, Any]] = None,
+        overrides: Mapping[str, StateElement]
+        | Mapping[DesignFormat, StateElement]
+        | None = None,
+        metrics: Mapping[str, Any] | None = None,
         **kwargs,
     ) -> None:
-        copying_resolved: Dict[str, StateElement] = {}
+        copying_resolved: dict[str, StateElement] = {}
         if c_mapping := copying:
             for key, value in c_mapping.items():
                 if isinstance(key, DesignFormat):
@@ -118,25 +119,25 @@ class State(GenericImmutableDict[str, StateElement]):
     def get_by_df(self, key: DesignFormat) -> StateElement:
         return self.get(key.id)
 
-    def __getitem__(self, key: Union[DesignFormat, str]) -> StateElement:
+    def __getitem__(self, key: DesignFormat | str) -> StateElement:
         if isinstance(key, DesignFormat):
             id: str = key.id
             key = id
         return super().__getitem__(key)
 
-    def __setitem__(self, key: Union[DesignFormat, str], item: StateElement):
+    def __setitem__(self, key: DesignFormat | str, item: StateElement):
         if isinstance(key, DesignFormat):
             id: str = key.id
             key = id
         return super().__setitem__(key, item)
 
-    def __delitem__(self, key: Union[DesignFormat, str]):
+    def __delitem__(self, key: DesignFormat | str):
         if isinstance(key, DesignFormat):
             id: str = key.id
             key = id
         return super().__delitem__(key)
 
-    def to_raw_dict(self, metrics: bool = True) -> Dict[str, Any]:
+    def to_raw_dict(self, metrics: bool = True) -> dict[str, Any]:
         final = super().to_raw_dict()
         if metrics:
             final["metrics"] = self.metrics.to_raw_dict()
@@ -151,12 +152,12 @@ class State(GenericImmutableDict[str, StateElement]):
 
     def _walk(
         self,
-        views: Union[Dict, "State"],
-        save_directory: Union[str, os.PathLike],
+        views: dict | "State",
+        save_directory: str | os.PathLike,
         visit: Callable[[str, StateElement, str, str, int], StateElement],
         key_path: str = "",
         depth: int = 0,
-        top_key: Optional[str] = None,
+        top_key: str | None = None,
     ):
         for key, value in views.items():
             current_top_key = top_key
@@ -190,7 +191,7 @@ class State(GenericImmutableDict[str, StateElement]):
                         depth + 1,
                     )
 
-    def save_snapshot(self, path: Union[str, os.PathLike]):
+    def save_snapshot(self, path: str | os.PathLike):
         """
         Validates the current state then saves all views to a folder by
         design format, including the metrics.
@@ -218,7 +219,7 @@ class State(GenericImmutableDict[str, StateElement]):
             f.write(self.metrics.dumps())
 
     def metrics_to_csv(
-        self, fp: io.TextIOWrapper, metrics_object: Optional[Dict[str, Any]] = None
+        self, fp: io.TextIOWrapper, metrics_object: dict[str, Any] | None = None
     ):
         w = csv.writer(fp)
         w.writerow(("Metric", "Value"))
@@ -255,7 +256,7 @@ class State(GenericImmutableDict[str, StateElement]):
     @classmethod
     def __load_recursive(
         Self,
-        views: Dict,
+        views: dict,
         validate_path: bool = True,
         key_path: str = "",
     ) -> dict:
@@ -312,7 +313,7 @@ class State(GenericImmutableDict[str, StateElement]):
     def __mapping_to_html_rec(
         self,
         mapping: Mapping[str, Any],
-        header_optional: Optional[Tuple[str, str]] = None,
+        header_optional: tuple[str, str] | None = None,
     ):
         result = """
         <table style="grid-column-start: 1; grid-column-end: 2; ">

@@ -17,7 +17,7 @@ from cloup import (
     HelpTheme,
     Style,
 )
-from typing import Any, Optional, Type, Union
+from typing import Any
 
 from click import (
     Choice,
@@ -36,21 +36,21 @@ formatter_settings = HelpFormatter.settings(
 
 
 class IntEnumChoice(Choice):
-    def __init__(self, enum: Type[IntEnum], case_sensitive: bool = True) -> None:
+    def __init__(self, enum: type[IntEnum], case_sensitive: bool = True) -> None:
         super().__init__([e.name for e in enum], case_sensitive)
         self.__enum = enum
 
     def convert(
         self,
-        value: Union[str, int],
-        param: Optional[Parameter],
-        ctx: Optional[Context],
+        value: str | int,
+        param: Parameter | None,
+        ctx: Context | None,
     ) -> IntEnum:
         try:
             if isinstance(value, int):
                 return self.__enum(value)
             else:
-                as_int: Optional[int] = None
+                as_int: int | None = None
                 try:
                     as_int = int(value)
                 except ValueError:

@@ -16,7 +16,7 @@ import sys
 import shutil
 import inspect
 import importlib
-from typing import Callable, Optional, Tuple
+from collections.abc import Callable
 
 import pytest
 from _pytest.fixtures import SubRequest
@@ -83,7 +83,7 @@ def attribute_from_file(file: str, attribute: str):
 @pytest.mark.parametrize("test", pytest.tests)
 @pytest.mark.usefixtures("_chdir_tmp", "create_reproducible_on_fail")
 def test_step_folder(
-    test: Tuple[str, bool],
+    test: tuple[str, bool],
     pdk_root: str,
     caplog: pytest.LogCaptureFixture,
 ):
@@ -165,7 +165,7 @@ def test_step_folder(
 
     target = Target.load(config_object, state_in, pdk_root)
 
-    exception: Optional[Exception] = None
+    exception: Exception | None = None
     try:
         target.start(
             toolbox=Toolbox("."),

@@ -13,7 +13,6 @@
 # limitations under the License.
 import os
 import textwrap
-from typing import Tuple
 
 import pytest
 
@@ -276,7 +275,7 @@ def test_step_start(mock_config):
         outputs = []
         id = "TestStep"
 
-        def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+        def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
             return new_view, new_metric
 
     metrics_in = {"metric": "123"}

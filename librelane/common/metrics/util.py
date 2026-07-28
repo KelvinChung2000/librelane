@@ -16,15 +16,9 @@ import textwrap
 from enum import IntEnum
 from dataclasses import dataclass
 from typing import (
-    List,
-    Mapping,
-    Tuple,
-    Dict,
     Any,
-    Iterable,
-    Optional,
-    Union,
 )
+from collections.abc import Mapping, Iterable
 
 from .metric import Metric, MetricAggregator, MetricComparisonResult
 from ..misc import Filter
@@ -45,7 +39,7 @@ class TableVerbosity(IntEnum):
     ALL = 4
 
 
-def parse_metric_modifiers(metric_name: str) -> Tuple[str, Mapping[str, str]]:
+def parse_metric_modifiers(metric_name: str) -> tuple[str, Mapping[str, str]]:
     """
     Parses a metric name into a base and modifiers as specified in
     the METRICS2.1 naming convention.
@@ -64,10 +58,8 @@ def parse_metric_modifiers(metric_name: str) -> Tuple[str, Mapping[str, str]]:
 
 def aggregate_metrics(
     input: Mapping[str, Any],
-    aggregator_by_metric: Optional[
-        Mapping[str, Union[MetricAggregator, Metric]]
-    ] = None,
-) -> Dict[str, Any]:
+    aggregator_by_metric: Mapping[str, MetricAggregator | Metric] | None = None,
+) -> dict[str, Any]:
     """
     Takes a set of metrics generated according to the METRICS2.1 naming
     convention.
@@ -82,7 +74,7 @@ def aggregate_metrics(
     if aggregator_by_metric is None:
         aggregator_by_metric = Metric.by_name
 
-    aggregated: Dict[str, Any] = {}
+    aggregated: dict[str, Any] = {}
     for name, value in input.items():
         metric_name, modifiers = parse_metric_modifiers(name)
         if len(modifiers) < 1:
@@ -114,7 +106,7 @@ def aggregate_metrics(
     return final_values
 
 
-def _key_from_metrics(fields: Iterable[str], metric: str) -> List[str]:
+def _key_from_metrics(fields: Iterable[str], metric: str) -> list[str]:
     base, modifiers = parse_metric_modifiers(metric)
     result = []
     for field in fields:
@@ -152,14 +144,14 @@ class MetricDiff(object):
         critical: int = 0
         unchanged: int = 0
 
-    differences: List[MetricComparisonResult]
+    differences: list[MetricComparisonResult]
 
     def __init__(self, differences: Iterable[MetricComparisonResult]) -> None:
         self.differences = list(differences)
 
     def render_md(
         self,
-        sort_by: Optional[Iterable[str]] = None,
+        sort_by: Iterable[str] | None = None,
         table_verbosity: TableVerbosity = TableVerbosity.ALL,
     ) -> str:
         """
@@ -195,7 +187,7 @@ class MetricDiff(object):
             else:
                 remaining.append(row)
 
-        listed_differences: List[MetricComparisonResult] = []
+        listed_differences: list[MetricComparisonResult] = []
         if table_verbosity >= TableVerbosity.CRITICAL:
             listed_differences += critical
         if table_verbosity >= TableVerbosity.WORSE:

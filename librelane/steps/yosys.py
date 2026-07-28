@@ -19,7 +19,7 @@ import os
 import textwrap
 import subprocess
 from abc import abstractmethod
-from typing import List, Literal, Optional, Set, Tuple
+from typing import Literal, Optional
 
 from .tclstep import TclStep
 from .step import ViewsUpdate, MetricsUpdate, Step
@@ -101,7 +101,7 @@ def _generate_read_deps(
                 f"read_liberty -lib -ignore_miss_dir -setattr blackbox {lib_str}\n"
             )
 
-    excluded_cells: Set[str] = set(config["EXTRA_EXCLUDED_CELLS"] or [])
+    excluded_cells: set[str] = set(config["EXTRA_EXCLUDED_CELLS"] or [])
     excluded_cells.update(process_list_file(config["SYNTH_EXCLUDED_CELL_FILE"]))
     excluded_cells.update(process_list_file(config["PNR_EXCLUDED_CELL_FILE"]))
 
@@ -212,7 +212,7 @@ class YosysStep(TclStep):
     def get_script_path(self) -> str:
         pass
 
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         script_path = self.get_script_path()
         cmd = [self.get_yosys_path(), "-c", script_path]
         if self.config["YOSYS_LOG_LEVEL"] != "ALL":
@@ -223,7 +223,7 @@ class YosysStep(TclStep):
             cmd += ["-qq"]
         return cmd
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         power_defines = False
         if "power_defines" in kwargs:
             power_defines = kwargs.pop("power_defines")
@@ -284,7 +284,7 @@ class EQY(Step):
         ]
     )
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         processed_pdk = os.path.join(self.step_dir, "formal_pdk.v")
 
         if self.config["PDK"].startswith("sky130A"):

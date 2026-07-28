@@ -19,18 +19,9 @@ from decimal import Decimal
 from collections import UserString
 from typing import (
     Any,
-    Callable,
-    Dict,
-    Hashable,
-    ItemsView,
-    Iterator,
-    Mapping,
-    Sequence,
-    Type,
     TypeVar,
-    Tuple,
-    Optional,
 )
+from collections.abc import Callable, Hashable, ItemsView, Iterator, Mapping, Sequence
 
 from .misc import idem
 from .types import is_string
@@ -52,7 +43,7 @@ class GenericDictEncoder(json.JSONEncoder):
         elif isinstance(o, os.PathLike) or isinstance(o, UserString):
             return str(o)
         elif not isinstance(o, type) and dataclasses.is_dataclass(o):
-            return dataclasses.asdict(o)
+            return dataclasses.asdict(o)  # type: ignore[arg-type]
         elif isinstance(o, Enum):
             return o.name
         elif isinstance(o, Decimal):
@@ -76,13 +67,13 @@ class GenericDict(Mapping[KT, VT]):
         with.
     """
 
-    _data: Dict[KT, VT]
+    _data: dict[KT, VT]
 
     def __init__(
         self,
-        copying: Optional[Mapping[KT, VT]] = None,
+        copying: Mapping[KT, VT] | None = None,
         /,
-        overrides: Optional[Mapping[KT, VT]] = None,
+        overrides: Mapping[KT, VT] | None = None,
     ) -> None:
         super().__init__()
         self.__data = {}
@@ -159,7 +150,7 @@ class GenericDict(Mapping[KT, VT]):
         """
         return self.__data.copy()
 
-    def get_encoder(self) -> Type[GenericDictEncoder]:
+    def get_encoder(self) -> type[GenericDictEncoder]:
         """
         :returns: A JSON encoder handling GenericDict objects.
         """
@@ -192,7 +183,7 @@ class GenericDict(Mapping[KT, VT]):
             kwargs["indent"] = 4
         return json.dumps(self.to_raw_dict(), cls=self.get_encoder(), **kwargs)
 
-    def check(self, key: KT, /) -> Tuple[Optional[KT], Optional[VT]]:
+    def check(self, key: KT, /) -> tuple[KT | None, VT | None]:
         """
         Checks if a key exists and returns a tuple in the form ``(key, value)``.
 
@@ -236,7 +227,7 @@ class GenericImmutableDict(GenericDict[KT, VT]):
 
     def __init__(
         self,
-        copying: Optional[Mapping[KT, VT]] = None,
+        copying: Mapping[KT, VT] | None = None,
         /,
         *args,
         **kwargs,

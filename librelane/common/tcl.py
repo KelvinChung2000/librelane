@@ -16,7 +16,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import re
-from typing import Dict, Mapping, Any, Iterable
+from typing import Any
+from collections.abc import Mapping, Iterable
 
 _env_rx = re.compile(r"(?:\:\:)?env\((\w+)\)")
 _find_unsafe = re.compile(r"[^\w@%+=:,./-]", re.ASCII).search
@@ -57,7 +58,7 @@ class TclUtils(object):
         return " ".join(TclUtils.escape(arg) for arg in ss)
 
     @staticmethod
-    def _eval_env(env_in: Mapping[str, Any], tcl_in: str) -> Dict[str, Any]:
+    def _eval_env(env_in: Mapping[str, Any], tcl_in: str) -> dict[str, Any]:
         import tkinter
 
         interpreter = tkinter.Tcl()

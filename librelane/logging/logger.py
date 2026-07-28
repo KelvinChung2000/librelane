@@ -15,7 +15,8 @@ import click
 import atexit
 import logging
 from enum import IntEnum
-from typing import ClassVar, Iterable, Union
+from typing import ClassVar
+from collections.abc import Iterable
 
 import rich.console
 import rich.logging
@@ -195,7 +196,7 @@ def deregister_additional_handler(handler: logging.Handler):
     __event_logger.removeHandler(handler)
 
 
-def set_log_level(lv: Union[str, int]):
+def set_log_level(lv: str | int):
     """
     Sets the log level of the default LibreLane logger.
 

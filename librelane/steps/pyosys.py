@@ -24,7 +24,7 @@ import fnmatch
 import shutil
 from decimal import Decimal
 from abc import abstractmethod
-from typing import List, Literal, Optional, Set, Tuple
+from typing import Literal, Optional
 
 from .step import ViewsUpdate, MetricsUpdate, Step
 
@@ -39,8 +39,8 @@ yosys_cell_rx = r"cell\s+\S+\s+\((\S+)\)"
 
 
 def _check_any_tristate(
-    cells: List[str],
-    tristate_patterns: List[str],
+    cells: list[str],
+    tristate_patterns: list[str],
 ):
     for cell in cells:
         for tristate_pattern in tristate_patterns:
@@ -52,7 +52,7 @@ def _check_any_tristate(
 
 def _parse_yosys_check(
     report: io.TextIOBase,
-    tristate_patterns: Optional[List[str]] = None,
+    tristate_patterns: list[str] | None = None,
     tristate_okay: bool = False,
     elaborate_only: bool = False,
 ) -> int:
@@ -98,12 +98,12 @@ def _parse_yosys_check(
 verilog_rtl_cfg_vars = [
     Variable(
         "VERILOG_FILES",
-        List[Path],
+        list[Path],
         "The paths of the design's Verilog files.",
     ),
     Variable(
         "VERILOG_DEFINES",
-        Optional[List[str]],
+        Optional[list[str]],
         "Preprocessor defines for input Verilog files.",
         deprecated_names=["SYNTH_DEFINES"],
     ),
@@ -116,12 +116,12 @@ verilog_rtl_cfg_vars = [
     ),
     Variable(
         "VERILOG_INCLUDE_DIRS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Specifies the Verilog `include` directories.",
     ),
     Variable(
         "SYNTH_PARAMETERS",
-        Optional[List[str]],
+        Optional[list[str]],
         "Key-value pairs to be `chparam`ed in Yosys, in the format `key1=value1`.",
     ),
     Variable(
@@ -133,7 +133,7 @@ verilog_rtl_cfg_vars = [
     ),
     Variable(
         "SLANG_ARGUMENTS",
-        Optional[List[str]],
+        Optional[list[str]],
         "Pass arguments to the Slang frontend.",
     ),
 ]
@@ -146,9 +146,7 @@ DesignFormat(
 ).register()
 
 
-def _validate_icg(
-    variable: Variable, input: Optional[str], warning_list_ref: List[str]
-):
+def _validate_icg(variable: Variable, input: str | None, warning_list_ref: list[str]):
     if input is not None:
         components = input.split("/")
         if len(components) != 4:
@@ -242,7 +240,7 @@ class PyosysStep(Step):
     def get_script_path(self) -> str:
         pass
 
-    def get_command(self, state_in: State) -> List[str]:
+    def get_command(self, state_in: State) -> list[str]:
         script_path = self.get_script_path()
         # HACK: Get Colab working
         yosys_bin = self.get_yosys_path()
@@ -259,7 +257,7 @@ class PyosysStep(Step):
         cmd += ["--config-in", os.path.join(self.step_dir, "config.json")]
         return cmd
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         cmd = self.get_command(state_in)
         kwargs, env = self.extract_env(kwargs)
         # HACK: Get Colab working
@@ -277,7 +275,7 @@ class VerilogStep(PyosysStep):
 
     config_vars = PyosysStep.config_vars + verilog_rtl_cfg_vars
 
-    def get_command(self, state_in: State) -> List[str]:
+    def get_command(self, state_in: State) -> list[str]:
         cmd = super().get_command(state_in)
 
         blackbox_models = []
@@ -333,7 +331,7 @@ class VerilogStep(PyosysStep):
         if models := self.config.get("EXTRA_VERILOG_MODELS"):
             blackbox_models.extend(str(f) for f in models)
 
-        excluded_cells: Set[str] = set(self.config["EXTRA_EXCLUDED_CELLS"] or [])
+        excluded_cells: set[str] = set(self.config["EXTRA_EXCLUDED_CELLS"] or [])
         excluded_cells.update(
             process_list_file(self.config["SYNTH_EXCLUDED_CELL_FILE"])
         )
@@ -372,14 +370,14 @@ class JsonHeader(VerilogStep):
     def get_script_path(self) -> str:
         return os.path.join(get_script_dir(), "pyosys", "json_header.py")
 
-    def get_command(self, state_in: State) -> List[str]:
+    def get_command(self, state_in: State) -> list[str]:
         out_file = os.path.join(
             self.step_dir,
             f"{self.config['DESIGN_NAME']}.{DesignFormat.JSON_HEADER.extension}",
         )
         return super().get_command(state_in) + ["--output", out_file]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         out_file = os.path.join(
             self.step_dir,
             f"{self.config['DESIGN_NAME']}.{DesignFormat.JSON_HEADER.extension}",
@@ -499,12 +497,12 @@ class SynthesisCommon(VerilogStep):
         ),
         Variable(
             "SYNTH_KEEP_HIERARCHY_INSTANCES",
-            Optional[List[str]],
+            Optional[list[str]],
             "A list of instances for which to set the 'keep_hierarchy' attribute. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
         ),
         Variable(
             "SYNTH_KEEP_HIERARCHY_MODULES",
-            Optional[List[str]],
+            Optional[list[str]],
             "A list of modules for which to set the 'keep_hierarchy' attribute. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
         ),
         Variable(
@@ -564,14 +562,14 @@ class SynthesisCommon(VerilogStep):
     def get_script_path(self) -> str:
         return os.path.join(get_script_dir(), "pyosys", "synthesize.py")
 
-    def get_command(self, state_in: State) -> List[str]:
+    def get_command(self, state_in: State) -> list[str]:
         out_file = os.path.join(
             self.step_dir,
             f"{self.config['DESIGN_NAME']}.{DesignFormat.NETLIST.extension}",
         )
         return super().get_command(state_in) + ["--output", out_file]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         out_file = os.path.join(
             self.step_dir,
             f"{self.config['DESIGN_NAME']}.{DesignFormat.NETLIST.extension}",
@@ -688,12 +686,12 @@ class VHDLSynthesis(SynthesisCommon):
     config_vars = SynthesisCommon.config_vars + [
         Variable(
             "VHDL_FILES",
-            List[Path],
+            list[Path],
             "The paths of the design's VHDL files.",
         ),
         Variable(
             "GHDL_ARGUMENTS",
-            Optional[List[str]],
+            Optional[list[str]],
             "Pass arguments to the ghdl frontend.",
         ),
     ]

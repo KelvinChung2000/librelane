@@ -13,7 +13,8 @@
 # limitations under the License.
 import sys
 from dataclasses import dataclass
-from typing import Dict, Literal, Optional, Sequence, Union
+from typing import Literal, Optional, Union
+from collections.abc import Sequence
 
 import odb
 import utl
@@ -129,7 +130,7 @@ class Module(object):
 
     def __init__(self, object: Union[odb.dbBlock, odb.dbInst]) -> None:
         self.name = object.getName()
-        self.ports: Dict[str, Port] = {}
+        self.ports: dict[str, Port] = {}
         terminals = (
             object.getBTerms()
             if isinstance(object, odb.dbBlock)

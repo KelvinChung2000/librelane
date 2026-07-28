@@ -20,7 +20,6 @@ import sys
 from decimal import Decimal
 
 from reader import click_odb, click
-from typing import Tuple, List
 
 
 @click.group()
@@ -462,7 +461,7 @@ def replace_instance_prefixes(original_prefix, new_prefix, reader):
 cli.add_command(replace_instance_prefixes)
 
 
-def parse_obstructions(obstructions) -> List[Tuple[str, List[int]]]:
+def parse_obstructions(obstructions) -> list[tuple[str, list[int]]]:
     RE_NUMBER = r"[\-]?[0-9]+(\.[0-9]+)?"
     RE_OBS = (
         r"(?P<layer>\S+)\s+"
@@ -533,7 +532,7 @@ cli.add_command(add_obstructions)
 @click_odb
 def remove_obstructions(reader, input_lefs, obstructions):
     dbu: int = reader.tech.getDbUnitsPerMicron()
-    existing_obstructions: List[Tuple[str, List[int], odb.dbObstruction]] = []
+    existing_obstructions: list[tuple[str, list[int], odb.dbObstruction]] = []
 
     for odb_obstruction in reader.block.getObstructions():
         bbox = odb_obstruction.getBBox()

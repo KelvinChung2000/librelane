@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Iterable, Iterator, Type, TypeVar
+from typing import TypeVar
+from collections.abc import Iterable, Iterator
 
 VT = TypeVar("VT")
 
@@ -24,7 +25,7 @@ class RingBuffer(Iterable[VT]):
 
     def __init__(
         self,
-        t: Type[VT],
+        t: type[VT],
         max: int,
     ) -> None:
         super().__init__()

@@ -16,12 +16,11 @@ import os
 import sys
 import shlex
 import argparse
-from typing import Tuple
 
 import pya  # Must be run inside KLayout-- the library version of pya does not include "Application"
 
 
-def open_design(input_lefs: Tuple[str, ...], lyt: str, lyp: str, lym: str, input: str):
+def open_design(input_lefs: tuple[str, ...], lyt: str, lyp: str, lym: str, input: str):
     try:
         main_window = pya.Application.instance().main_window()
 

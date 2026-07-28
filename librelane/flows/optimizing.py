@@ -13,7 +13,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-from typing import List, Tuple
 from concurrent.futures import Future
 
 from .flow import Flow
@@ -44,12 +43,12 @@ class Optimizing(Flow):
         self,
         initial_state: State,
         **kwargs,
-    ) -> Tuple[State, List[Step]]:
-        step_list: List[Step] = []
+    ) -> tuple[State, list[Step]]:
+        step_list: list[Step] = []
 
         self.set_max_stage_count(2)
 
-        synthesis_futures: List[Tuple[Config, Future[State]]] = []
+        synthesis_futures: list[tuple[Config, Future[State]]] = []
         self.start_stage("Synthesis Exploration")
 
         log_level_bk = get_log_level()
@@ -88,7 +87,7 @@ class Optimizing(Flow):
 
             synthesis_futures.append((config, sta_future))
 
-        synthesis_states: List[Tuple[Config, State]] = [
+        synthesis_states: list[tuple[Config, State]] = [
             (config, future.result()) for config, future in synthesis_futures
         ]
 

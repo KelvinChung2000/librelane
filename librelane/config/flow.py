@@ -18,13 +18,14 @@
 import os
 
 from decimal import Decimal
-from typing import List, Optional, Dict, Sequence, Union, Tuple
+from typing import Optional, Union
+from collections.abc import Sequence
 
 from .variable import Variable, Macro
 from ..common import Path, get_script_dir
 
 
-def _prefix_to_wildcard(prefixes_raw: Union[str, Sequence[str]]):
+def _prefix_to_wildcard(prefixes_raw: str | Sequence[str]):
     prefixes = prefixes_raw
     if isinstance(prefixes, str):
         prefixes = prefixes.split()
@@ -53,7 +54,7 @@ pdk_variables = [
     ),
     Variable(
         "TECH_LEFS",
-        Dict[str, Path],
+        dict[str, Path],
         "Map of corner patterns to technology LEF files. A corner not matched here will not be supported by OpenRCX in the default flow.",
         pdk=True,
     ),
@@ -80,7 +81,7 @@ pdk_variables = [
     ),
     Variable(
         "STA_CORNERS",
-        List[str],
+        list[str],
         "A list of fully qualified IPVT (Interconnect, transistor Process, Voltage, and Temperature) timing corners on which to conduct multi-corner static timing analysis.",
         pdk=True,
     ),
@@ -93,80 +94,80 @@ scl_variables = [
     # Common
     Variable(
         "SCL_GROUND_PINS",
-        List[str],
+        list[str],
         "SCL-specific ground pins",
         deprecated_names=["STD_CELL_GROUND_PINS"],
         pdk=True,
     ),
     Variable(
         "SCL_POWER_PINS",
-        List[str],
+        list[str],
         "SCL-specific power pins",
         deprecated_names=["STD_CELL_POWER_PINS"],
         pdk=True,
     ),
     Variable(
         "TRISTATE_CELLS",
-        Optional[List[str]],
+        Optional[list[str]],
         "A list of cell names or wildcards of tri-state buffers.",
         deprecated_names=[("TRISTATE_CELL_PREFIX", _prefix_to_wildcard)],
         pdk=True,
     ),
     Variable(
         "FILL_CELLS",
-        List[str],
+        list[str],
         "A list of cell names or wildcards of fill cells to be used in fill insertion.",
         pdk=True,
         deprecated_names=["FILL_CELL"],
     ),
     Variable(
         "DECAP_CELLS",
-        List[str],
+        list[str],
         "A list of cell names or wildcards of decap cells to be used in fill insertion.",
         pdk=True,
         deprecated_names=["DECAP_CELL"],
     ),
     Variable(
         "LIB",
-        Dict[str, List[Path]],
+        dict[str, list[Path]],
         "A map from corner patterns to a list of associated liberty files. Exactly one entry must match the `DEFAULT_CORNER`.",
         pdk=True,
     ),
     Variable(
         "CELL_LEFS",
-        List[Path],
+        list[Path],
         "Path(s) to the cells' LEF file(s).",
         deprecated_names=["CELLS_LEF"],
         pdk=True,
     ),
     Variable(
         "CELL_GDS",
-        List[Path],
+        list[Path],
         "Path(s) to the cells' GDSII file(s).",
         deprecated_names=["GDS_FILES", "CELLS_GDS"],
         pdk=True,
     ),
     Variable(
         "CELL_VERILOG_MODELS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Path(s) to cells' Verilog model(s)",
         pdk=True,
     ),
     Variable(
         "CELL_BB_VERILOG_MODELS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Path(s) to cells' black-box Verilog model(s)",
         pdk=True,
     ),
     Variable(
         "CELL_SPICE_MODELS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Path(s) to cells' SPICE model(s)",
         pdk=True,
     ),
     Variable(
         "CELL_CDLS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         description="A circuit-design language view of the standard cell library.",
         pdk=True,
         deprecated_names=["STD_CELL_LIBRARY_CDL"],
@@ -289,7 +290,7 @@ scl_variables = [
     ),
     Variable(
         "CELL_PAD_EXCLUDE",
-        List[str],
+        list[str],
         "Defines a list of cells to be excluded from cell padding.",
         pdk=True,
     ),
@@ -347,72 +348,72 @@ option_variables = [
     ),
     Variable(
         "CLOCK_PORT",
-        Union[None, str, List[str]],
+        Union[None, str, list[str]],
         "The name(s) of the design's clock port(s).",
     ),
     Variable(
         "CLOCK_NET",
-        Union[None, str, List[str]],
+        Union[None, str, list[str]],
         "The name of the net input to root clock buffer. If unset, it is presumed to be equal to CLOCK_PORT.",
     ),
     Variable(
         "VDD_NETS",
-        Optional[List[str]],
+        Optional[list[str]],
         "Specifies the power nets/pins to be used when creating the power grid for the design.",
     ),
     Variable(
         "GND_NETS",
-        Optional[List[str]],
+        Optional[list[str]],
         "Specifies the ground nets/pins to be used when creating the power grid for the design.",
     ),
     Variable(
         "DIE_AREA",
-        Optional[Tuple[Decimal, Decimal, Decimal, Decimal]],
+        Optional[tuple[Decimal, Decimal, Decimal, Decimal]],
         'Specific die area to be used in floorplanning. Specified as a 4-corner rectangle "x0 y0 x1 y1".',
         units="µm",
     ),
     # Exclusion Options
     Variable(
         "EXTRA_EXCLUDED_CELLS",
-        Optional[List[str]],
+        Optional[list[str]],
         "Wildcards matching additional cells to exclude from both synthesis and PnR.",
         deprecated_names=["RSZ_DONT_USE_CELLS", "DONT_USE_CELLS"],
     ),
     # Macros
     Variable(
         "MACROS",
-        Optional[Dict[str, Macro]],
+        Optional[dict[str, Macro]],
         "A dictionary of Macro definition objects. See {py:class}`librelane.config.Macro` for more info.",
     ),
     Variable(
         "EXTRA_LEFS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Specifies miscellaneous LEF files to be loaded indiscriminately whenever LEFs are loaded.",
     ),
     Variable(
         "EXTRA_VERILOG_MODELS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Specifies miscellaneous Verilog models to be loaded indiscriminately during synthesis.",
         deprecated_names=["VERILOG_FILES_BLACKBOX"],
     ),
     Variable(
         "EXTRA_SPICE_MODELS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Specifies miscellaneous SPICE models to be loaded indiscriminately whenever SPICE models are loaded.",
     ),
     Variable(
         "EXTRA_CDLS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Specifies miscellaneous CDL netlists to be loaded indiscriminately whenever CDL netlists are loaded.",
     ),
     Variable(
         "EXTRA_LIBS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Specifies LIB files of pre-hardened macros used in the current design, used during timing analyses (and during parasitics-based STA as a fallback). These are loaded indiscriminately for all timing corners.",
     ),
     Variable(
         "EXTRA_GDS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Specifies GDS files of pre-hardened macros used in the current design, used during tape-out.",
         deprecated_names=["EXTRA_GDS_FILES"],
     ),
@@ -428,49 +429,49 @@ option_variables = [
 pad_variables = [
     Variable(
         "PAD_GDS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Path(s) to IO pad GDS file(s).",
         pdk=True,
     ),
     Variable(
         "PAD_LEFS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Path(s) to IO pad LEF file(s).",
         pdk=True,
     ),
     Variable(
         "PAD_VERILOG_MODELS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Path(s) to IO pads' Verilog model(s)",
         pdk=True,
     ),
     Variable(
         "PAD_SPICE_MODELS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         "Path(s) to IO pads' SPICE model(s)",
         pdk=True,
     ),
     Variable(
         "PAD_CDLS",
-        Optional[List[Path]],
+        Optional[list[Path]],
         description="A circuit-design language view of the io pad library.",
         pdk=True,
     ),
     Variable(
         "PAD_LIBS",
-        Optional[Dict[str, List[Path]]],
+        Optional[dict[str, list[Path]]],
         "A map from corner patterns to a list of associated liberty files. Exactly one entry must match the `DEFAULT_CORNER`.",
         pdk=True,
     ),
     Variable(
         "PAD_CORNER",
-        Optional[List[str]],
+        Optional[list[str]],
         "The pad corner cell.",
         pdk=True,
     ),
     Variable(
         "PAD_FILLERS",
-        Optional[List[str]],
+        Optional[list[str]],
         "A list of pad filler cells.",
         pdk=True,
     ),
@@ -490,7 +491,7 @@ pad_variables = [
     ),
     Variable(
         "PAD_FAKE_SITES",
-        Optional[Dict[str, Tuple[Decimal, Decimal]]],
+        Optional[dict[str, tuple[Decimal, Decimal]]],
         "A dict of fake pad sites and their width and height tuple. Use this if the LEF does not include the site definitions for the IO pads.",
         units="µm",
         pdk=True,
@@ -517,13 +518,13 @@ pad_variables = [
     ),
     Variable(
         "PAD_BONDPAD_OFFSETS",
-        Optional[Dict[str, Tuple[Decimal, Decimal]]],
+        Optional[dict[str, tuple[Decimal, Decimal]]],
         "A dict of pad master names or regular expressions to their bondpad (offset_x, offset_y) tuple.",
         pdk=True,
     ),
     Variable(
         "PAD_PLACE_IO_TERMINALS",
-        Optional[List[str]],
+        Optional[list[str]],
         "Place I/O terminals for these master/pin combinations.",
         pdk=True,
     ),

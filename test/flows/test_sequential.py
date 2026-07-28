@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Type
 
 import pytest
 
@@ -45,7 +44,7 @@ def MetricIncrementer():
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_flow_module, step_module])
-def test_sequential_flow(MetricIncrementer: Type[Step]):
+def test_sequential_flow(MetricIncrementer: type[Step]):
     from librelane.flows import SequentialFlow
 
     class Dummy(SequentialFlow):

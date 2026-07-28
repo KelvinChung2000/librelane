@@ -16,7 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from decimal import Decimal
-from typing import Optional, List, Literal
+from typing import Optional, Literal
 
 from ..config import Variable
 
@@ -352,7 +352,7 @@ routing_layer_variables = [
     ),
     Variable(
         "GRT_LAYER_ADJUSTMENTS",
-        List[Decimal],
+        list[Decimal],
         "Layer-specific reductions in the routing capacity of the edges between the cells in the global routing graph, delimited by commas. Values range from 0 through 1.",
         pdk=True,
     ),
@@ -447,13 +447,13 @@ rsz_variables = dpl_variables + [
     ),
     Variable(
         "RSZ_DONT_TOUCH_LIST",
-        Optional[List[str]],
+        Optional[list[str]],
         'A list of nets and instances as "don\'t touch" by design repairs or resizer optimizations.',
         default=None,
     ),
     Variable(
         "RSZ_CORNERS",
-        Optional[List[str]],
+        Optional[list[str]],
         "Resizer step-specific override for PNR_CORNERS.",
     ),
 ]

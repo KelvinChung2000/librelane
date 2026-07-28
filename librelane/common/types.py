@@ -18,7 +18,7 @@ from math import isfinite
 from decimal import Decimal
 from weakref import finalize
 from collections import UserString
-from typing import Any, Union, ClassVar, Tuple, Optional
+from typing import Any, Union, ClassVar
 
 
 def is_string(obj: Any) -> bool:
@@ -69,9 +69,9 @@ class Path(UserString, os.PathLike):
 
     def startswith(
         self,
-        prefix: Union[str, Tuple[str, ...], UserString, os.PathLike],
-        start: Optional[int] = 0,
-        end: Optional[int] = sys.maxsize,
+        prefix: str | tuple[str, ...] | UserString | os.PathLike,
+        start: int | None = 0,
+        end: int | None = sys.maxsize,
     ) -> bool:
         if isinstance(prefix, UserString) or isinstance(prefix, os.PathLike):
             prefix = str(prefix)
@@ -79,7 +79,7 @@ class Path(UserString, os.PathLike):
 
     def rel_if_child(
         self,
-        start: Union[str, os.PathLike] = os.getcwd(),
+        start: str | os.PathLike = os.getcwd(),
         *,
         relative_prefix: str = "",
     ) -> "Path":

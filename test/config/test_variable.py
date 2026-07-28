@@ -16,7 +16,7 @@ import pytest
 from decimal import Decimal
 from dataclasses import dataclass
 from pyfakefs.fake_filesystem_unittest import Patcher
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Literal, Optional, Union
 
 
 pytestmark = pytest.mark.all
@@ -105,7 +105,7 @@ def test_is_optional():
 
     assert is_optional(int) is False, "is_optional false positive"
     assert is_optional(Optional[int]) is True, "is_optional false negative"
-    assert is_optional(Optional[Union[int, dict]]) is True, (
+    assert is_optional(Optional[int | dict]) is True, (
         "is_optional composite false negative"
     )
     assert is_optional(Union[None, int, dict]) is True, (
@@ -119,17 +119,17 @@ def test_some_of():
     from librelane.config.variable import some_of
 
     assert some_of(int) is int, "some_of changed the type of a non-option type"
-    assert some_of(List[str]) == List[str], (
+    assert some_of(list[str]) == list[str], (
         "some_of changed the type of a non-option type"
     )
     assert some_of(Optional[int]) is int, (
         "some_of failed to extract type from option type"
     )
-    assert some_of(Optional[Union[Dict, List]]) == Union[Dict, List], (
+    assert some_of(Optional[dict | list]) == Union[dict, list], (
         "some of failed to properly handle optional union"
     )
 
-    assert some_of(Union[Dict, List, None]) == Union[Dict, List], (
+    assert some_of(Union[dict, list, None]) == Union[dict, list], (
         "some of failed to properly handle flattened optional union"
     )
     assert some_of(int | None) is int, (
@@ -175,19 +175,19 @@ def test_variable_construction():
 
     variable_union = Variable(
         "UNION_VAR",
-        Union[int, Dict[str, str]],
+        Union[int, dict[str, str]],
         description="x",
     )
-    assert variable_union.type == Union[int, Dict[str, str]], (
+    assert variable_union.type == Union[int, dict[str, str]], (
         "Union magically switched types"
     )
 
     variable_union_new = Variable(
         "UNION_VAR",
-        int | Dict[str, str],
+        int | dict[str, str],
         description="x",
     )
-    assert variable_union_new.type == int | Dict[str, str], (
+    assert variable_union_new.type == int | dict[str, str], (
         "PEP 604 union didn't match typing union"
     )
     assert variable_union.type == variable_union_new.type, (
@@ -202,7 +202,7 @@ def variable():
 
     return Variable(
         "EXAMPLE",
-        Optional[List[Path]],
+        Optional[list[Path]],
         description="x",
         deprecated_names=["OLD_EXAMPLE"],
     )
@@ -357,47 +357,47 @@ def variable_set(variable, test_enum):
         variable,
         Variable(
             "LIST_VAR",
-            List[int],
+            list[int],
             description="x",
         ),
         Variable(
             "TUPLE_2_VAR",
-            Tuple[int, int],
+            tuple[int, int],
             description="x",
         ),
         Variable(
             "TUPLE_3_VAR",
-            Tuple[int, int, int],
+            tuple[int, int, int],
             description="x",
         ),
         Variable(
             "TUPLE_4_VAR",
-            Tuple[str, int, int],
+            tuple[str, int, int],
             description="x",
         ),
         Variable(
             "DICT_VAR",
-            Dict[str, str],
+            dict[str, str],
             description="x",
         ),
         Variable(
             "OTHER_DICT_VAR",
-            Dict[str, str],
+            dict[str, str],
             description="x",
         ),
         Variable(
             "ANOTHER_DICT_VAR",
-            Dict[str, str],
+            dict[str, str],
             description="x",
         ),
         Variable(
             "UNION_VAR",
-            Union[int, Dict[str, str]],
+            Union[int, dict[str, str]],
             description="x",
         ),
         Variable(
             "UNION_VAR_2",
-            int | Dict[str, str],
+            int | dict[str, str],
             description="x",
         ),
         Variable(
@@ -465,7 +465,7 @@ def test_compile_invalid(variable_set: list):
 
 
 @pytest.mark.usefixtures("_mock_fs")
-def test_compile_permissive(variable_set: list, test_enum: Type):
+def test_compile_permissive(variable_set: list, test_enum: type):
     from librelane.common import GenericDict
 
     permissive_valid_input = GenericDict(

@@ -20,7 +20,6 @@ import tarfile
 import tempfile
 from io import BytesIO
 from decimal import Decimal
-from typing import Optional, Set, Tuple
 
 import cloup
 import httpx
@@ -99,10 +98,10 @@ def common_opts(f):
 @common_opts
 @cloup.argument("metric_files", nargs=2)
 def compare(
-    metric_files: Tuple[str, str],
+    metric_files: tuple[str, str],
     table_verbosity: TableVerbosity,
-    filter_wildcards: Tuple[str, ...],
-    table_out: Optional[str],
+    filter_wildcards: tuple[str, ...],
+    table_out: str | None,
     significant_figures: int,
 ):
     """
@@ -142,16 +141,16 @@ cli.add_command(compare)
 
 
 def _compare_metric_folders(
-    filter_wildcards: Tuple[str, ...],
+    filter_wildcards: tuple[str, ...],
     table_verbosity: TableVerbosity,
     path_a: str,
     path_b: str,
     significant_figures: int,
-) -> Tuple[str, str]:  # (summary, table)
-    a: Set[Tuple[str, str, str]] = set()
-    b: Set[Tuple[str, str, str]] = set()
+) -> tuple[str, str]:  # (summary, table)
+    a: set[tuple[str, str, str]] = set()
+    b: set[tuple[str, str, str]] = set()
 
-    def add_designs(in_dir: str, to_set: Set[Tuple[str, str, str]]):
+    def add_designs(in_dir: str, to_set: set[tuple[str, str, str]]):
         for file in os.listdir(in_dir):
             basename = os.path.basename(file)
             if not basename.endswith(".metrics.json"):
@@ -250,10 +249,10 @@ def _compare_metric_folders(
 @common_opts
 @cloup.argument("metric_folders", nargs=2)
 def compare_multiple(
-    filter_wildcards: Tuple[str, ...],
+    filter_wildcards: tuple[str, ...],
     table_verbosity: TableVerbosity,
-    metric_folders: Tuple[str, str],
-    table_out: Optional[str],
+    metric_folders: tuple[str, str],
+    table_out: str | None,
     significant_figures: int,
 ):
     """
@@ -311,14 +310,14 @@ cli.add_command(compare_multiple)
 @common_opts
 @cloup.argument("metric_folder", nargs=1)
 def compare_remote(
-    filter_wildcards: Tuple[str, ...],
+    filter_wildcards: tuple[str, ...],
     table_verbosity: TableVerbosity,
     repo: str,
     metric_repo: str,
-    commit: Optional[str],
+    commit: str | None,
     token: str,
     metric_folder: str,
-    table_out: Optional[str],
+    table_out: str | None,
     significant_figures: int,
     branch: str,
 ):

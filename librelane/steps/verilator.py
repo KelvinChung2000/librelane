@@ -17,7 +17,7 @@
 # limitations under the License.
 import os
 import re
-from typing import List, Optional, Set, Tuple
+from typing import Optional
 
 from .step import Step, StepException, ViewsUpdate, MetricsUpdate
 from ..config import Variable
@@ -43,12 +43,12 @@ class Lint(Step):
     config_vars = [
         Variable(
             "VERILOG_FILES",
-            List[Path],
+            list[Path],
             "The paths of the design's Verilog files.",
         ),
         Variable(
             "VERILOG_INCLUDE_DIRS",
-            Optional[List[Path]],
+            Optional[list[Path]],
             "Specifies the Verilog `include` directories.",
         ),
         Variable(
@@ -85,24 +85,24 @@ class Lint(Step):
         ),
         Variable(
             "VERILOG_DEFINES",
-            Optional[List[str]],
+            Optional[list[str]],
             "Preprocessor defines for input Verilog files",
             deprecated_names=["SYNTH_DEFINES"],
         ),
         Variable(
             "LINTER_DEFINES",
-            Optional[List[str]],
+            Optional[list[str]],
             "Linter-specific preprocessor definitions; overrides VERILOG_DEFINES for the lint step if exists",
         ),
         Variable(
             "LINTER_DISABLE_WARNINGS",
-            Optional[List[str]],
+            Optional[list[str]],
             "Warning codes that are passed to the linter to be disabled.",
             default=["DECLFILENAME", "EOFNEWLINE"],
         ),
         Variable(
             "LINTER_DISABLE_WARNINGS_BLACKBOX",
-            Optional[List[str]],
+            Optional[list[str]],
             "Warning codes that are passed to the linter to be disabled for all blackbox modules.",
             default=["UNDRIVEN", "UNUSEDSIGNAL"],
         ),
@@ -113,7 +113,7 @@ class Lint(Step):
         ),
     ]
 
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         views_updates: ViewsUpdate = {}
         metrics_updates: MetricsUpdate = {}
@@ -121,8 +121,8 @@ class Lint(Step):
 
         blackboxes = []
 
-        model_list: List[str] = []
-        model_set: Set[str] = set()
+        model_list: list[str] = []
+        model_set: set[str] = set()
 
         if cell_verilog_models := self.config["CELL_VERILOG_MODELS"]:
             blackboxes.append(
@@ -265,5 +265,5 @@ class Lint(Step):
         metrics_updates.update({"design__inferred_latch__count": latch_count})
         return views_updates, metrics_updates
 
-    def layout_preview(self) -> Optional[str]:
+    def layout_preview(self) -> str | None:
         return None

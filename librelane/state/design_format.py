@@ -17,8 +17,9 @@
 # limitations under the License.
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
-from typing import Dict, List, Optional, ClassVar
+from typing import ClassVar
 from deprecated.sphinx import deprecated
+import builtins
 
 
 class DFMetaclass(type):
@@ -57,8 +58,8 @@ class DesignFormat(metaclass=DFMetaclass):
     id: str
     extension: str
     full_name: str
-    alts: List[str] = field(default_factory=list)
-    folder_override: Optional[str] = None
+    alts: list[str] = field(default_factory=list)
+    folder_override: str | None = None
     multiple: bool = False
 
     _instance_optional: bool = False
@@ -104,7 +105,7 @@ class DesignFormat(metaclass=DFMetaclass):
         version="3.0.0",
         action="once",
     )
-    def by_id(id: str) -> Optional["DesignFormat"]:
+    def by_id(id: str) -> "DesignFormat" | None:
         return DesignFormat.factory.get(id)
 
     class DesignFormatFactory(object):
@@ -116,7 +117,7 @@ class DesignFormat(metaclass=DFMetaclass):
         a primer.
         """
 
-        _registry: ClassVar[Dict[str, DesignFormat]] = {}
+        _registry: ClassVar[dict[str, DesignFormat]] = {}
 
         @classmethod
         def register(Self, df: DesignFormat) -> DesignFormat:
@@ -131,7 +132,7 @@ class DesignFormat(metaclass=DFMetaclass):
             return df
 
         @classmethod
-        def get(Self, name: str) -> Optional[DesignFormat]:
+        def get(Self, name: str) -> DesignFormat | None:
             """
             Retrieves a DesignFormat type from the registry using a lookup
             string.
@@ -141,7 +142,7 @@ class DesignFormat(metaclass=DFMetaclass):
             return Self._registry.get(name)
 
         @classmethod
-        def list(Self) -> List[str]:
+        def list(Self) -> builtins.list[str]:
             """
             :returns: A list of IDs of all registered DesignFormat.
             """

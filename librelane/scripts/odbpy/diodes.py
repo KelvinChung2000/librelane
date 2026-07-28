@@ -20,7 +20,7 @@ import sys
 import click
 import random
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional
 from reader import click_odb, OdbReader
 
 
@@ -37,7 +37,7 @@ class DiodeInserter:
         diode_pin: str,
         threshold_microns: Decimal,
         side_strategy: str = "source",
-        port_protect_polarities: Optional[List[str]] = None,
+        port_protect_polarities: Optional[list[str]] = None,
         verbose=False,
     ):
         print(f"Using threshold {threshold_microns}µm…")

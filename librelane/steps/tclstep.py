@@ -22,15 +22,8 @@ from dataclasses import is_dataclass, asdict
 from typing import (
     Any,
     ClassVar,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Tuple,
-    Dict,
-    Union,
 )
+from collections.abc import Iterable, Mapping, Sequence
 
 from .step import ViewsUpdate, MetricsUpdate, Step, StepException
 
@@ -72,7 +65,7 @@ class TclStep(Step):
         * Otherwise, the value is passed to ``str()``.
         """
         if not isinstance(value, type) and is_dataclass(value):
-            return TclStep.value_to_tcl(asdict(value))
+            return TclStep.value_to_tcl(asdict(value))  # type: ignore[arg-type]
         elif isinstance(value, Mapping):
             result = []
             for v_key, v_value in value.items():
@@ -104,7 +97,7 @@ class TclStep(Step):
         pass
 
     @protected
-    def get_command(self) -> List[str]:
+    def get_command(self) -> list[str]:
         """
         This command should be overridden by subclasses and replaced with a
         command incorporating the  appropriate tool: e.g. ``openroad``,
@@ -174,7 +167,7 @@ class TclStep(Step):
         return env
 
     @protected
-    def run(self, state_in: State, **kwargs) -> Tuple[ViewsUpdate, MetricsUpdate]:
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         """
         This overridden :meth:`run` function prepares configuration variables and
         inputs for use with Tcl: specifically, it converts them all to
@@ -225,8 +218,8 @@ class TclStep(Step):
 
     def _reroute_env(
         self,
-        env: Dict[str, str],
-        report_dir: Optional[Union[str, os.PathLike]] = None,
+        env: dict[str, str],
+        report_dir: str | os.PathLike | None = None,
     ):
         thread_postfix = f"_{threading.current_thread().name}"
         if threading.current_thread() is threading.main_thread():
@@ -245,7 +238,7 @@ class TclStep(Step):
             "PDK",
             "_TCL_ENV_IN",
         ]
-        env_in: List[Tuple[str, str]] = list(env.items())
+        env_in: list[tuple[str, str]] = list(env.items())
 
         # Create new "blank" env dict
         #
@@ -272,13 +265,13 @@ class TclStep(Step):
     @protected
     def run_subprocess(
         self,
-        cmd: Sequence[Union[str, os.PathLike]],
-        log_to: Optional[Union[str, os.PathLike]] = None,
+        cmd: Sequence[str | os.PathLike],
+        log_to: str | os.PathLike | None = None,
         silent: bool = False,
-        report_dir: Optional[Union[str, os.PathLike]] = None,
-        env: Optional[Dict[str, str]] = None,
+        report_dir: str | os.PathLike | None = None,
+        env: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if env is not None:
             env = self._reroute_env(env, report_dir=report_dir)
         return super().run_subprocess(

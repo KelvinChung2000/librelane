@@ -17,7 +17,8 @@ import shutil
 import datetime
 import subprocess
 from functools import partial
-from typing import IO, Any, Dict, Optional, Sequence, Union
+from typing import IO, Any
+from collections.abc import Sequence
 
 from click import pass_context, Context, argument
 from cloup import (
@@ -37,10 +38,10 @@ from ..common import mkdirp, Toolbox, get_librelane_root
 
 def load_step_from_inputs(
     ctx: Context,
-    id: Optional[str],
+    id: str | None,
     config: str,
     state_in: str,
-    pdk_root: Optional[str] = None,
+    pdk_root: str | None = None,
 ) -> Step:
     Target = Step
     if id is not None:
@@ -219,17 +220,17 @@ def eject(ctx, output, state_in, config, id):
 
     toolbox_dir = os.path.join(".", "toolbox_tmp")
 
-    found_cmd: Optional[Sequence[Union[str, os.PathLike]]] = None
-    found_env: Optional[Dict[str, Any]] = None
-    found_stdin_data: Optional[Union[str, bytes]] = None
+    found_cmd: Sequence[str | os.PathLike] | None = None
+    found_env: dict[str, Any] | None = None
+    found_stdin_data: str | bytes | None = None
 
     class Stop(Exception):
         pass
 
     def popen_substitute(
-        cmd: Sequence[Union[str, os.PathLike]],
-        env: Optional[Dict[str, Any]] = None,
-        stdin: Optional[IO[Any]] = None,
+        cmd: Sequence[str | os.PathLike],
+        env: dict[str, Any] | None = None,
+        stdin: IO[Any] | None = None,
         *args,
         **kwargs,
     ) -> subprocess.Popen:

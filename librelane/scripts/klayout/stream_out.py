@@ -49,7 +49,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import sys
-from typing import Tuple, Optional
+from typing import Optional
 
 import pya
 import click
@@ -103,11 +103,11 @@ import click
 )
 def stream_out(
     output: str,
-    input_lefs: Tuple[str, ...],
+    input_lefs: tuple[str, ...],
     lyt: str,
     lyp: str,
     lym: str,
-    input_gds_files: Tuple[str, ...],
+    input_gds_files: tuple[str, ...],
     seal_gds: Optional[str],
     design_name: str,
     input: str,

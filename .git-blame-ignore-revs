@@ -1,2 +1,5 @@
 # Mechanical reformat: black -> ruff format
 b572b08df28925868cb737c3d22b280cf7d1a62b
+
+# Mechanical typing modernization: PEP 585 builtin generics
+0a6fad7ecfe8bd93bbfc2d3f41f9ec5aa628ccc5

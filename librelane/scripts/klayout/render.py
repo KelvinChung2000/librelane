@@ -48,7 +48,6 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-from typing import Tuple
 
 import pya
 import click
@@ -118,7 +117,7 @@ import click
 )
 @click.argument("input")
 def render(
-    input_lefs: Tuple[str, ...],
+    input_lefs: tuple[str, ...],
     output: str,
     lyt: str,
     lyp: str,

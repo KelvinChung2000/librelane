@@ -17,7 +17,7 @@
 # limitations under the License.
 import re
 from enum import IntEnum
-from typing import Literal, Optional, Dict, List, Union
+from typing import Literal, Optional, Union
 from decimal import Decimal
 import warnings
 
@@ -33,7 +33,7 @@ class Order(IntEnum):
 class Side:
     min_distance: Optional[Decimal] = None
     reverse_result: bool = False
-    pins: List[Union[str, int]] = field(default_factory=list)
+    pins: list[Union[str, int]] = field(default_factory=list)
     sort_mode: Optional[Order] = Order.busMajor
 
 
@@ -44,7 +44,7 @@ STANDALONE_ANNOTATIONS = [
 ]
 
 
-def parse(string: str) -> Dict[Literal["N", "E", "W", "S"], Side]:
+def parse(string: str) -> dict[Literal["N", "E", "W", "S"], Side]:
     """
     Parses a pin configuration into a dictionary of the four cardinal sides.
 
@@ -134,7 +134,7 @@ def parse(string: str) -> Dict[Literal["N", "E", "W", "S"], Side]:
                 f"Syntax Error: Unexpected character starting at {string_mut[:10]}…"
             )
 
-    all_sides: List[Literal["N", "E", "W", "S"]] = ["N", "E", "W", "S"]
+    all_sides: list[Literal["N", "E", "W", "S"]] = ["N", "E", "W", "S"]
     for side in all_sides:
         if side in sides:
             continue

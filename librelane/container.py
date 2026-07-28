@@ -19,7 +19,8 @@ import uuid
 import shlex
 import pathlib
 import subprocess
-from typing import List, NoReturn, Sequence, Optional, Union, Tuple
+from typing import NoReturn, Optional, Union
+from collections.abc import Sequence
 
 import httpx
 import semver
@@ -31,7 +32,7 @@ from .env_info import ContainerInfo, OSInfo
 __file_dir__ = os.path.dirname(os.path.abspath(__file__))
 
 
-def permission_args(osinfo: OSInfo) -> List[str]:
+def permission_args(osinfo: OSInfo) -> list[str]:
     if (
         osinfo.kernel == "Linux"
         and isinstance(osinfo.container_info, ContainerInfo)
@@ -46,7 +47,7 @@ def permission_args(osinfo: OSInfo) -> List[str]:
     return []
 
 
-def gui_args(osinfo: OSInfo) -> List[str]:
+def gui_args(osinfo: OSInfo) -> list[str]:
     args = []
     if osinfo.kernel == "Linux":
         if os.environ.get("DISPLAY") is None:
@@ -134,7 +135,7 @@ def ensure_image(ce_path: str, image: str) -> bool:
 dos_path_sep = re.compile(r"\\")
 
 
-def sanitize_path(path: Union[str, os.PathLike]) -> Tuple[str, str]:
+def sanitize_path(path: Union[str, os.PathLike]) -> tuple[str, str]:
     """
     :returns: A tuple of:
         - The host path, processed ``abspath``

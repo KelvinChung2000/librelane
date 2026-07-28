@@ -20,7 +20,6 @@ import sys
 import json
 from functools import partial, wraps
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, Union, Tuple
 
 from click import (
     Context,
@@ -54,7 +53,7 @@ class Option(CloupOption):
     variable(s) in envvar upon use.
     """
 
-    def resolve_envvar_value(self, ctx: Context) -> Optional[str]:
+    def resolve_envvar_value(self, ctx: Context) -> str | None:
         if self.envvar is None:
             return None
         evs = self.envvar
@@ -75,9 +74,9 @@ class Path(CloupPath):
 
     def convert(
         self,
-        value: Union[str, os.PathLike],
-        param: Optional[Parameter],
-        ctx: Optional[Context],
+        value: str | os.PathLike,
+        param: Parameter | None,
+        ctx: Context | None,
     ):
         value = str(value)
         assert param is not None
@@ -115,12 +114,12 @@ class Path(CloupPath):
 def set_log_level_cb(
     ctx: Context,
     param: Parameter,
-    value: Optional[str],
+    value: str | None,
 ):
     if value is None:
         return
 
-    level: Union[str, int] = value
+    level: str | int = value
     try:
         try:
             level = int(value)
@@ -136,7 +135,7 @@ def set_log_level_cb(
 def set_worker_count_cb(
     ctx: Context,
     param: Parameter,
-    value: Optional[int],
+    value: int | None,
 ):
     if value is None:
         return None
@@ -147,7 +146,7 @@ def set_worker_count_cb(
 def initial_state_cb(
     ctx: Context,
     param: Parameter,
-    value: Tuple[str],
+    value: tuple[str],
 ):
     if len(value) == 0:
         return None
@@ -178,7 +177,7 @@ def initial_state_cb(
 def only_cb(
     ctx: Context,
     param: Parameter,
-    value: Optional[str],
+    value: str | None,
 ):
     if value is not None:
         ctx.obj = ctx.obj or {}
@@ -189,7 +188,7 @@ def only_cb(
 def from_to_cb(
     ctx: Context,
     param: Parameter,
-    value: Optional[str],
+    value: str | None,
 ):
     if isinstance(ctx.obj, dict) and ctx.obj.get("only"):
         return ctx.obj.get("only")
@@ -202,7 +201,7 @@ def condensed_cb(ctx: Context, param: Parameter, value: bool):
         options.set_show_progress_bar(False)
 
 
-def progressbar_cb(ctx: Context, param: Parameter, value: Optional[bool]):
+def progressbar_cb(ctx: Context, param: Parameter, value: bool | None):
     if value is not None:
         options.set_show_progress_bar(value)
 
@@ -218,7 +217,7 @@ def cloup_flow_opts(
     jobs: bool = True,
     accept_config_files: bool = True,
     volare_by_default: bool = True,
-    volare_pdk_override: Optional[str] = None,
+    volare_pdk_override: str | None = None,
     _enable_debug_flags: bool = False,
     enable_overwrite_flag: bool = False,
     enable_initial_state_element: bool = False,
@@ -502,10 +501,10 @@ def cloup_flow_opts(
             @wraps(f)
             def pdk_resolve_wrapper(
                 *args,
-                pdk_root: Optional[str],
+                pdk_root: str | None,
                 pdk: str,
-                scl: Optional[str],
-                pad: Optional[str],
+                scl: str | None,
+                pad: str | None,
                 use_ciel: bool,
                 **kwargs,
             ) -> str:

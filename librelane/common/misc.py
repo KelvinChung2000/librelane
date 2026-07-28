@@ -30,14 +30,10 @@ from math import inf
 from typing import (
     IO,
     Any,
-    Generator,
-    Iterable,
-    List,
-    Optional,
     SupportsFloat,
     TypeVar,
-    Union,
 )
+from collections.abc import Generator, Iterable
 
 import httpx
 
@@ -186,7 +182,7 @@ final.__doc__ = """A decorator to indicate final methods and final classes.
 """
 
 
-def mkdirp(path: typing.Union[str, os.PathLike]):
+def mkdirp(path: str | os.PathLike):
     """
     Attempts to create a directory and all of its parents.
 
@@ -362,7 +358,7 @@ def recreate_tree(
                 shutil.copyfileobj(fi, fo)
 
 
-def get_latest_file(in_path: Union[str, os.PathLike], filename: str) -> Optional[Path]:
+def get_latest_file(in_path: str | os.PathLike, filename: str) -> Path | None:
     """
     :param in_path: A directory to search in
     :param filename: The final filename
@@ -380,7 +376,7 @@ def get_latest_file(in_path: Union[str, os.PathLike], filename: str) -> Optional
     return latest_json
 
 
-def get_httpx_session(token: Optional[str] = None) -> httpx.Client:
+def get_httpx_session(token: str | None = None) -> httpx.Client:
     """
     Creates an ``httpx`` session client that follows redirects and has the
     User-Agent header set to ``librelane/{__version__}``.
@@ -397,7 +393,7 @@ def get_httpx_session(token: Optional[str] = None) -> httpx.Client:
     return session
 
 
-def process_list_file(from_file: AnyPath) -> List[str]:
+def process_list_file(from_file: AnyPath) -> list[str]:
     """
     Convenience function to process text files in a ``.gitignore``-style format,
     i.e., those where the lines may be:

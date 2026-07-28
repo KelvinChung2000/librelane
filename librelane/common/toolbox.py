@@ -22,18 +22,9 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import (
     Any,
-    Callable,
-    Dict,
-    FrozenSet,
-    Iterable,
     Literal,
-    Mapping,
-    Optional,
-    Sequence,
-    Tuple,
-    List,
-    Union,
 )
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 import libparse
 from deprecated.sphinx import deprecated
@@ -71,17 +62,17 @@ class Toolbox(object):
     )
     def aggregate_metrics(
         self,
-        input: Dict[str, Any],
-        aggregator_by_metric: Dict[str, Tuple[Any, Callable[[Iterable], Any]]],
-    ) -> Dict[str, Any]:
+        input: dict[str, Any],
+        aggregator_by_metric: dict[str, tuple[Any, Callable[[Iterable], Any]]],
+    ) -> dict[str, Any]:
         return aggregate_metrics(input, aggregator_by_metric)
 
     def filter_views(
         self,
         config: Mapping[str, Any],
-        views_by_corner: Mapping[str, Union[Path, Iterable[Path]]],
-        timing_corner: Optional[str] = None,
-    ) -> List[Path]:
+        views_by_corner: Mapping[str, Path | Iterable[Path]],
+        timing_corner: str | None = None,
+    ) -> list[Path]:
         """
         Given a mapping from (wildcards of) corner names to views, this function
         enumerates all views matching either the default timing corner or
@@ -96,7 +87,7 @@ class Toolbox(object):
         :returns: The created list
         """
         timing_corner = timing_corner or config["DEFAULT_CORNER"]
-        result: List[Path] = []
+        result: list[Path] = []
 
         for key in Filter(views_by_corner).get_matching_wildcards(timing_corner):
             value = views_by_corner[key]
@@ -111,9 +102,9 @@ class Toolbox(object):
         self,
         config: Mapping[str, Any],
         view: DesignFormat,
-        timing_corner: Optional[str] = None,
-        unless_exist: Union[None, DesignFormat, Sequence[DesignFormat]] = None,
-    ) -> List[Path]:
+        timing_corner: str | None = None,
+        unless_exist: None | DesignFormat | Sequence[DesignFormat] = None,
+    ) -> list[Path]:
         """
         For :class:`Config` objects (or similar Mappings) that have Macro
         information, this function gets all Macro views matching a certain
@@ -139,7 +130,7 @@ class Toolbox(object):
 
         timing_corner = timing_corner or config["DEFAULT_CORNER"]
         macros = config["MACROS"]
-        result: List[Path] = []
+        result: list[Path] = []
 
         if macros is None:
             return result
@@ -158,7 +149,7 @@ class Toolbox(object):
             if views is None:
                 continue
 
-            alt_views: List[Path] = []
+            alt_views: list[Path] = []
             for alternate_format in unless_exist:
                 entry = macro.view_by_df(alternate_format)
                 if entry is not None:
@@ -186,10 +177,10 @@ class Toolbox(object):
         self,
         config: Mapping[str, Any],
         design_formats: Sequence[DesignFormat],
-        timing_corner: Optional[str] = None,
-    ) -> List[Tuple[Path, DesignFormat]]:
-        result: List[Tuple[Path, DesignFormat]] = []
-        formats_so_far: List[DesignFormat] = []
+        timing_corner: str | None = None,
+    ) -> list[tuple[Path, DesignFormat]]:
+        result: list[tuple[Path, DesignFormat]] = []
+        formats_so_far: list[DesignFormat] = []
         for format in design_formats:
             views = self.get_macro_views(
                 config,
@@ -205,9 +196,9 @@ class Toolbox(object):
     def get_timing_files_categorized(
         self,
         config: Mapping[str, Any],
-        timing_corner: Optional[str] = None,
+        timing_corner: str | None = None,
         prioritize_nl: bool = False,
-    ) -> Tuple[str, List[Path], List[Path], List[Tuple[str, Path]]]:
+    ) -> tuple[str, list[Path], list[Path], list[tuple[str, Path]]]:
         """
         Returns the lib files for a given configuration and timing corner.
 
@@ -232,12 +223,12 @@ class Toolbox(object):
 
         timing_corner = timing_corner or config["DEFAULT_CORNER"]
 
-        all_libs: List[Path] = self.filter_views(config, config["LIB"], timing_corner)
+        all_libs: list[Path] = self.filter_views(config, config["LIB"], timing_corner)
         if len(all_libs) == 0:
             warn(f"No SCL lib files found for {timing_corner}.")
 
-        all_netlists: List[Path] = []
-        all_spefs: List[Tuple[str, Path]] = []
+        all_netlists: list[Path] = []
+        all_spefs: list[tuple[str, Path]] = []
 
         macros = config["MACROS"]
         if macros is None:
@@ -292,9 +283,9 @@ class Toolbox(object):
     def get_timing_files(
         self,
         config: Mapping[str, Any],
-        timing_corner: Optional[str] = None,
+        timing_corner: str | None = None,
         prioritize_nl: bool = False,
-    ) -> Tuple[str, List[str]]:
+    ) -> tuple[str, list[str]]:
         """
         Returns the lib files for a given configuration and timing corner.
 
@@ -334,7 +325,7 @@ class Toolbox(object):
         self,
         config: GenericImmutableDict[str, Any],
         state_in: GenericImmutableDict[str, Any],
-    ) -> Optional[bytes]:  # pragma: no cover
+    ) -> bytes | None:  # pragma: no cover
         try:
             from ..steps import KLayout, StepError
             from ..config import Config, InvalidConfig
@@ -363,9 +354,9 @@ class Toolbox(object):
 
     def remove_cells_from_lib(
         self,
-        input_lib_files: FrozenSet[str],
-        excluded_cells: FrozenSet[str],
-    ) -> List[str]:
+        input_lib_files: frozenset[str],
+        excluded_cells: frozenset[str],
+    ) -> list[str]:
         """
         Creates a new lib file with some cells removed.
 
@@ -431,15 +422,15 @@ class Toolbox(object):
 
     def create_blackbox_model(
         self,
-        input_models: Union[frozenset, Tuple[str, ...]],
-        defines: FrozenSet[str],
+        input_models: frozenset | tuple[str, ...],
+        defines: frozenset[str],
     ) -> str:
         mkdirp(self.tmp_dir)
         out_path = os.path.join(self.tmp_dir, f"{uuid.uuid4().hex}.bb.v")
         debug(f"Creating cell models for {input_models} at '{out_path}'…")
         bad_yosys_line = re.compile(r"^\s+(\w+|(\\\S+?))\s*\(.*\).*;")
 
-        stack: List[Literal["specify", "primitive"]] = []
+        stack: list[Literal["specify", "primitive"]] = []
         with open(out_path, "w", encoding="utf8") as out:
             for model in input_models:
                 try:
@@ -510,7 +501,7 @@ class Toolbox(object):
     def get_lib_voltage(
         self,
         input_lib: str,
-    ) -> Optional[Decimal]:
+    ) -> Decimal | None:
         """
         Extract the voltage from the default operating conditions of a liberty file.
 

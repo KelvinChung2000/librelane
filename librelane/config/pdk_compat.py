@@ -14,10 +14,11 @@
 import os
 import re
 from glob import glob
-from typing import Any, Dict, List, Mapping
+from typing import Any
+from collections.abc import Mapping
 
 
-def migrate_old_config(config: Mapping[str, Any]) -> Dict[str, Any]:
+def migrate_old_config(config: Mapping[str, Any]) -> dict[str, Any]:
     new = dict(config)
 
     # 1. Migrate SYNTH_DRIVING_CELL
@@ -184,7 +185,7 @@ def migrate_old_config(config: Mapping[str, Any]) -> Dict[str, Any]:
             del new["KLAYOUT_DRC_TECH_SCRIPT"]
 
     # x3. Timing Corners
-    lib_sta: Dict[str, List[str]] = {}
+    lib_sta: dict[str, list[str]] = {}
     ws = re.compile(r"\s+")
 
     default_pvt = ""

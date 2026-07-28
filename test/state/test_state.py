@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-from typing import Dict
 
 import pytest
 from pyfakefs.fake_filesystem_unittest import Patcher
@@ -82,7 +81,7 @@ def test_to_raw_dict():
     state = State(test_dict, metrics=test_metrics)
     raw_dict = state.to_raw_dict()
 
-    assert isinstance(raw_dict, Dict)
+    assert isinstance(raw_dict, dict)
     assert raw_dict["nl"] == "abc"
     assert raw_dict["metrics"]["metric"] == "a"
 
