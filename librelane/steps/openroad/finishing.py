@@ -17,11 +17,11 @@
 # limitations under the License.
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 import os
 import re
 import subprocess
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from decimal import Decimal
 from typing import (
     Optional,
@@ -31,9 +31,10 @@ from typing import (
 from ...common import (
     Path,
     _get_process_limit,
+    ContextPropagatingThreadPoolExecutor,
     mkdirp,
 )
-from ...config import Variable
+from ...config import variable
 from ...state import DesignFormat, State
 from ..step import (
     MetricsUpdate,
@@ -61,7 +62,7 @@ class LayoutSTA(OpenROADStep):
     outputs = []
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "sta.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "sta.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -82,7 +83,7 @@ class FillInsertion(OpenROADStep):
     name = "Fill Insertion"
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "fill.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "fill.tcl")
 
 
 @Step.factory.register()
@@ -97,36 +98,34 @@ class RCX(OpenROADStep):
     name = "Parasitics (RC) Extraction"
     long_name = "Parasitic Resistance/Capacitance Extraction"
 
-    config_vars = OpenROADStep.config_vars + [
-        Variable(
-            "RCX_MERGE_VIA_WIRE_RES",
-            bool,
-            "If enabled, the via and wire resistances will be merged.",
-            default=True,
-        ),
-        Variable(
-            "RCX_SDC_FILE",
-            Optional[Path],
-            "Specifies SDC file to be used for RCX-based STA, which can be different from the one used for implementation.",
-        ),
-        Variable(
-            "RCX_RULESETS",
-            dict[str, Path],
-            "Map of corner patterns to OpenRCX extraction rules.",
+    class Config(OpenROADStep.Config):
+        RCX_MERGE_VIA_WIRE_RES: bool = variable(
+            True,
+            description="If enabled, the via and wire resistances will be merged.",
+        )
+
+        RCX_SDC_FILE: Optional[Path] = variable(
+            None,
+            description="Specifies SDC file to be used for RCX-based STA, which can be different from the one used for implementation.",
+        )
+
+        RCX_RULESETS: dict[str, Path] = variable(
+            description="Map of corner patterns to OpenRCX extraction rules.",
             pdk=True,
-        ),
-        Variable(
-            "STA_THREADS",
-            Optional[int],
-            "The maximum number of STA corners to run in parallel. If unset, this will be equal to your machine's thread count.",
-        ),
-    ]
+        )
+
+        STA_THREADS: Optional[int] = variable(
+            None,
+            description="The maximum number of STA corners to run in parallel. If unset, this will be equal to your machine's thread count.",
+        )
+
+    config: Config
 
     inputs = [DesignFormat.DEF]
     outputs = [DesignFormat.SPEF]
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "rcx.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "rcx.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -136,7 +135,7 @@ class RCX(OpenROADStep):
             nonlocal env
             current_env = env.copy()
 
-            rcx_ruleset = self.config["RCX_RULESETS"].get(corner)
+            rcx_ruleset = self.config.RCX_RULESETS.get(corner)
             if rcx_ruleset is None:
                 logger.bind(step=self.id).warning(
                     f"RCX ruleset for corner {corner} not found. The corner may be ill-defined."
@@ -148,7 +147,7 @@ class RCX(OpenROADStep):
             mkdirp(corner_dir)
 
             tech_lefs = self.toolbox.filter_views(
-                self.config, self.config["TECH_LEFS"], corner
+                self.config, self.config.TECH_LEFS, corner
             )
             if len(tech_lefs) < 1:
                 logger.bind(step=self.id).warning(
@@ -164,7 +163,7 @@ class RCX(OpenROADStep):
             current_env["RCX_RULESET"] = rcx_ruleset
 
             out = os.path.join(
-                corner_dir, f"{self.config['DESIGN_NAME']}.{corner_sanitized}.spef"
+                corner_dir, f"{self.config.DESIGN_NAME}.{corner_sanitized}.spef"
             )
             current_env["SAVE_SPEF"] = out
 
@@ -191,12 +190,12 @@ class RCX(OpenROADStep):
 
             return out
 
-        tpe = ThreadPoolExecutor(
-            max_workers=self.config["STA_THREADS"] or _get_process_limit()
+        tpe = ContextPropagatingThreadPoolExecutor(
+            max_workers=self.config.STA_THREADS or _get_process_limit()
         )
 
         futures: dict[str, Future[str]] = {}
-        for corner in self.config["RCX_RULESETS"]:
+        for corner in self.config.RCX_RULESETS:
             futures[corner] = tpe.submit(
                 run_corner,
                 corner,
@@ -235,16 +234,16 @@ class IRDropReport(OpenROADStep):
     inputs = [DesignFormat.ODB, DesignFormat.SPEF]
     outputs = []
 
-    config_vars = OpenROADStep.config_vars + [
-        Variable(
-            "VSRC_LOC_FILES",
-            Optional[dict[str, Path]],
-            "Map of power and ground nets to OpenROAD PSM location files. See [this](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/psm#commands) for more info.",
+    class Config(OpenROADStep.Config):
+        VSRC_LOC_FILES: Optional[dict[str, Path]] = variable(
+            None,
+            description="Map of power and ground nets to OpenROAD PSM location files. See [this](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/psm#commands) for more info.",
         )
-    ]
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "irdrop.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "irdrop.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         from decimal import Decimal
@@ -272,9 +271,9 @@ class IRDropReport(OpenROADStep):
         elif len(spefs_in) < 1:
             raise StepException("No SPEF file found for the default corner.")
 
-        libs_in = self.toolbox.filter_views(self.config, self.config["LIB"])
+        libs_in = self.toolbox.filter_views(self.config, self.config.LIB)
 
-        if self.config["VSRC_LOC_FILES"] is None:
+        if self.config.VSRC_LOC_FILES is None:
             logger.bind(step=self.id).warning(
                 "'VSRC_LOC_FILES' was not given a value, which may make the results of IR drop analysis inaccurate. If you are not integrating a top-level chip for manufacture, you may ignore this warning, otherwise, see the documentation for 'VSRC_LOC_FILES'."
             )
@@ -338,34 +337,32 @@ class CutRows(OpenROADStep):
         DesignFormat.DEF,
     ]
 
-    config_vars = OpenROADStep.config_vars + [
-        Variable(
-            "FP_MACRO_HORIZONTAL_HALO",
-            Decimal,
-            "Specify the horizontal halo size around macros.",
-            default=10,
+    class Config(OpenROADStep.Config):
+        FP_MACRO_HORIZONTAL_HALO: Decimal = variable(
+            10,
+            description="Specify the horizontal halo size around macros.",
             units="µm",
             deprecated_names=["FP_TAP_HORIZONTAL_HALO"],
-        ),
-        Variable(
-            "FP_MACRO_VERTICAL_HALO",
-            Decimal,
-            "Specify the vertical halo size around macros.",
-            default=10,
+        )
+
+        FP_MACRO_VERTICAL_HALO: Decimal = variable(
+            10,
+            description="Specify the vertical halo size around macros.",
             units="µm",
             deprecated_names=["FP_TAP_VERTICAL_HALO"],
-        ),
-        Variable(
-            "FP_PRUNE_THRESHOLD",
-            Optional[Decimal],
-            'If specified, all rows smaller in width than this value will be removed. This helps avoid "islets" of cells that are hard to route and connect to PDNs.',
+        )
+
+        FP_PRUNE_THRESHOLD: Optional[Decimal] = variable(
+            None,
+            description='If specified, all rows smaller in width than this value will be removed. This helps avoid "islets" of cells that are hard to route and connect to PDNs.',
             pdk=True,
             units="µm",
-        ),
-    ]
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "cut_rows.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "cut_rows.tcl")
 
 
 @Step.factory.register()
@@ -379,7 +376,7 @@ class WriteCDL(OpenROADStep):
     outputs = [DesignFormat.CDL]
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "write_cdl.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "write_cdl.tcl")
 
 
 # Resizer Steps
@@ -404,7 +401,9 @@ class DEFtoODB(OpenROADStep):
     outputs = [DesignFormat.ODB]
 
     def get_script_path(self) -> str:
-        return str(package_path().joinpath("scripts", "openroad", "write_views.tcl"))
+        return str(
+            files("librelane").joinpath("scripts", "openroad", "write_views.tcl")
+        )
 
 
 @Step.factory.register()
@@ -425,7 +424,7 @@ class OpenGUI(OpenSTAStep):
     outputs = []
 
     def get_script_path(self) -> str:
-        return str(package_path().joinpath("scripts", "openroad", "gui.tcl"))
+        return str(files("librelane").joinpath("scripts", "openroad", "gui.tcl"))
 
     def get_command(self) -> list[str]:
         return [
@@ -470,4 +469,4 @@ class DumpRCValues(OpenROADStep):
     inputs = [DesignFormat.DEF]
 
     def get_script_path(self) -> str:
-        return str(package_path().joinpath("scripts", "openroad", "dump_rc.tcl"))
+        return str(files("librelane").joinpath("scripts", "openroad", "dump_rc.tcl"))

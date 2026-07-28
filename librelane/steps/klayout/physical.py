@@ -20,9 +20,9 @@ import os
 from os.path import abspath
 from typing import Optional
 
-from ..step import ViewsUpdate, MetricsUpdate, Step
+from ..step import ViewsUpdate, MetricsUpdate, Step, StepException
 
-from ...config import Variable
+from ...config import variable
 from ...state import DesignFormat, State
 from ...common import Path
 
@@ -41,19 +41,19 @@ class SealRing(KLayoutStep):
     inputs = [DesignFormat.GDS]
     outputs = [DesignFormat.GDS]
 
-    config_vars = KLayoutStep.config_vars + [
-        Variable(
-            "KLAYOUT_SEALRING_SCRIPT",
-            Optional[Path],
-            "A path to KLayout seal ring script.",
+    class Config(KLayoutStep.Config):
+        KLAYOUT_SEALRING_SCRIPT: Optional[Path] = variable(
+            None,
+            description="A path to KLayout seal ring script.",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         views_updates: ViewsUpdate = {}
-        if self.config["PDK"] in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
+        if self.config.PDK in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
             views_updates, metrics_updates = self.run_ihp_sg13g2(state_in, **kwargs)
         else:
             views_updates, metrics_updates = self.run_generic(state_in, **kwargs)
@@ -66,22 +66,28 @@ class SealRing(KLayoutStep):
         views_updates: ViewsUpdate = {}
         kwargs, env = self.extract_env(kwargs)
 
-        if not self.config["KLAYOUT_SEALRING_SCRIPT"]:
+        if not self.config.KLAYOUT_SEALRING_SCRIPT:
             logger.bind(step=self.id).warning(
-                f"KLAYOUT_SEALRING_SCRIPT is unset. KLayout.SealRing may not be supported for the {self.config['PDK']} PDK. This step will be skipped."
+                f"KLAYOUT_SEALRING_SCRIPT is unset. KLayout.SealRing may not be supported for the {self.config.PDK} PDK. This step will be skipped."
             )
             return views_updates, {}
 
         input_gds = state_in[DesignFormat.GDS]
         assert isinstance(input_gds, Path)
         output_gds = os.path.join(
-            self.step_dir, f"{self.config['DESIGN_NAME']}.{DesignFormat.GDS.extension}"
+            self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
 
-        script = self.config["KLAYOUT_SEALRING_SCRIPT"]
+        script = self.config.KLAYOUT_SEALRING_SCRIPT
 
-        env["PDK_ROOT"] = self.config["PDK_ROOT"]
-        env["PDK"] = self.config["PDK"]
+        env["PDK_ROOT"] = self.config.PDK_ROOT
+        env["PDK"] = self.config.PDK
+
+        die_area = self.config.DIE_AREA
+        if die_area is None:
+            raise StepException(
+                "A sealring can only be drawn around a known die: 'DIE_AREA' is unset."
+            )
 
         self.run_pya_script(
             [
@@ -92,9 +98,9 @@ class SealRing(KLayoutStep):
                 "--output",
                 abspath(output_gds),
                 "--die-width",
-                f"{self.config['DIE_AREA'][2]:f}",
+                f"{die_area[2]:f}",
                 "--die-height",
-                f"{self.config['DIE_AREA'][3]:f}",
+                f"{die_area[3]:f}",
             ],
             env=env,
         )
@@ -112,18 +118,24 @@ class SealRing(KLayoutStep):
         input_gds = state_in[DesignFormat.GDS]
         assert isinstance(input_gds, Path)
         output_gds = os.path.join(
-            self.step_dir, f"{self.config['DESIGN_NAME']}.{DesignFormat.GDS.extension}"
+            self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
 
-        script = self.config["KLAYOUT_SEALRING_SCRIPT"]
+        script = self.config.KLAYOUT_SEALRING_SCRIPT
 
-        env["PDK_ROOT"] = self.config["PDK_ROOT"]
-        env["PDK"] = self.config["PDK"]
+        env["PDK_ROOT"] = self.config.PDK_ROOT
+        env["PDK"] = self.config.PDK
 
         # Set KLAYOUT_PATH so that KLayout can load the technology definition
         env["KLAYOUT_PATH"] = os.path.join(
-            self.config["PDK_ROOT"], self.config["PDK"], "libs.tech", "klayout"
+            self.config.PDK_ROOT, self.config.PDK, "libs.tech", "klayout"
         )
+
+        die_area = self.config.DIE_AREA
+        if die_area is None:
+            raise StepException(
+                "A sealring can only be drawn around a known die: 'DIE_AREA' is unset."
+            )
 
         self.run_subprocess(
             [
@@ -131,13 +143,13 @@ class SealRing(KLayoutStep):
                 "-zz",
                 "-nc",
                 "-n",
-                self.config["PDK"].replace("ihp-", ""),
+                self.config.PDK.replace("ihp-", ""),
                 "-r",
                 script,
                 "-rd",
-                f"width={self.config['DIE_AREA'][3]:f}",
+                f"width={die_area[3]:f}",
                 "-rd",
-                f"height={self.config['DIE_AREA'][2]:f}",
+                f"height={die_area[2]:f}",
                 "-rd",
                 f"input={abspath(input_gds)}",
                 "-rd",
@@ -163,32 +175,32 @@ class Filler(KLayoutStep):
     inputs = [DesignFormat.GDS]
     outputs = [DesignFormat.GDS]
 
-    config_vars = KLayoutStep.config_vars + [
-        Variable(
-            "KLAYOUT_FILLER_SCRIPT",
-            Optional[Path],
-            "A path to KLayout filler script.",
+    class Config(KLayoutStep.Config):
+        KLAYOUT_FILLER_SCRIPT: Optional[Path] = variable(
+            None,
+            description="A path to KLayout filler script.",
             pdk=True,
-        ),
-        Variable(
-            "KLAYOUT_FILLER_OPTIONS",
-            Optional[dict[str, bool | int | str]],
-            "Options passed directly to the KLayout filler script. They vary from one PDK to another.",
+        )
+
+        KLAYOUT_FILLER_OPTIONS: Optional[dict[str, bool | int | str]] = variable(
+            None,
+            description="Options passed directly to the KLayout filler script. They vary from one PDK to another.",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         views_updates: ViewsUpdate = {}
 
-        if not self.config["KLAYOUT_FILLER_SCRIPT"]:
+        if not self.config.KLAYOUT_FILLER_SCRIPT:
             logger.bind(step=self.id).warning(
-                f"KLAYOUT_FILLER_SCRIPT is unset. KLayout.Filler may not be supported for the {self.config['PDK']} PDK. This step will be skipped."
+                f"KLAYOUT_FILLER_SCRIPT is unset. KLayout.Filler may not be supported for the {self.config.PDK} PDK. This step will be skipped."
             )
             return views_updates, metrics_updates
 
-        if self.config["PDK"] in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
+        if self.config.PDK in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
             views_updates, metrics_updates = self.run_ihp_sg13g2(state_in, **kwargs)
         else:
             views_updates, metrics_updates = self.run_generic(state_in, **kwargs)
@@ -204,14 +216,14 @@ class Filler(KLayoutStep):
         input_gds = state_in[DesignFormat.GDS]
         assert isinstance(input_gds, Path)
         output_gds = os.path.join(
-            self.step_dir, f"{self.config['DESIGN_NAME']}.{DesignFormat.GDS.extension}"
+            self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
 
-        script = self.config["KLAYOUT_FILLER_SCRIPT"]
+        script = self.config.KLAYOUT_FILLER_SCRIPT
 
         opts = []
-        if self.config["KLAYOUT_FILLER_OPTIONS"]:
-            for k, v in self.config["KLAYOUT_FILLER_OPTIONS"].items():
+        if self.config.KLAYOUT_FILLER_OPTIONS:
+            for k, v in self.config.KLAYOUT_FILLER_OPTIONS.items():
                 opts.extend(
                     [
                         "-rd",
@@ -248,13 +260,13 @@ class Filler(KLayoutStep):
         input_gds = state_in[DesignFormat.GDS]
         assert isinstance(input_gds, Path)
         output_gds = os.path.join(
-            self.step_dir, f"{self.config['DESIGN_NAME']}.{DesignFormat.GDS.extension}"
+            self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
 
-        script = self.config["KLAYOUT_FILLER_SCRIPT"]
+        script = self.config.KLAYOUT_FILLER_SCRIPT
 
-        env["PDK_ROOT"] = self.config["PDK_ROOT"]
-        env["PDK"] = self.config["PDK"]
+        env["PDK_ROOT"] = self.config.PDK_ROOT
+        env["PDK"] = self.config.PDK
 
         self.run_subprocess(
             [

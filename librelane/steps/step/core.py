@@ -29,7 +29,9 @@ from concurrent.futures import Future
 from typing import (
     Any,
     ClassVar,
+    TYPE_CHECKING,
     TypeVar,
+    cast,
 )
 from collections.abc import Callable, Sequence
 
@@ -41,6 +43,7 @@ from ...config import (
     model_to_variables,
     variables_to_model,
 )
+from ...config.flow import OptionConfig, PadConfig, PdkConfig, SclConfig
 from ...state import DesignFormat, State, InvalidState, StateElement
 from ...common import (
     GenericImmutableDict,
@@ -51,7 +54,7 @@ from ...common import (
     protected,
     format_elapsed_time,
 )
-from ...logging import console, options
+from ...logging import step_context
 from ...__version__ import __version__
 
 from .exceptions import StepError, StepException, StepNotFound, StepSignalled
@@ -188,18 +191,28 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     output_processors: ClassVar[list[type[OutputProcessor]]] = [DefaultOutputProcessor]
     config_vars: ClassVar[list[Variable]] = []
 
-    class Config(BaseConfigModel):
-        pass
+    if TYPE_CHECKING:
+        # Every step is also handed the flow's common variables, which reach
+        # the model as extras rather than declared fields. Spelling them out
+        # for the type checker keeps `self.config.DESIGN_NAME` and friends
+        # checked, without freezing the variable list a flow may substitute.
+        class Config(PdkConfig, SclConfig, OptionConfig, PadConfig):
+            pass
+
+    else:
+
+        class Config(BaseConfigModel):
+            pass
 
     _config_model_cache: ClassVar[
-        tuple[tuple[tuple[str, Any, Any], ...], type[BaseConfigModel]] | None
+        "tuple[tuple[tuple[str, Any, Any], ...], type[Step.Config]] | None"
     ] = None
 
     # Instance Variables
     name: str
     long_name: str
     state_in: Future[State]
-    config: BaseConfigModel
+    config: Config
 
     ## Stateful
     toolbox: Toolbox = GlobalToolbox
@@ -317,8 +330,23 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
                 logger.debug(f"Step '{cls.__name__}' has a non-matching ID: '{cls.id}'")
 
     @classmethod
-    def _get_config_model(Self) -> type[BaseConfigModel]:
-        if "Config" in Self.__dict__:
+    def install_config_model(Self, model: type[BaseConfigModel]) -> None:
+        """
+        Replaces this step's nested ``Config`` with a generated model.
+
+        Composite and checker steps derive their variables from other steps or
+        from class attributes, so their model has no written-out class for a
+        type checker to see. Installing it dynamically keeps ``Config`` usable
+        as a base class everywhere else.
+
+        :param model: The generated model, which must derive from the
+            ``Config`` of the step being specialized.
+        """
+        setattr(Self, "Config", model)
+
+    @classmethod
+    def _get_config_model(Self) -> "type[Step.Config]":
+        if "Config" in Self.__dict__ or "config_vars" not in Self.__dict__:
             return Self.Config
         fingerprint = tuple(
             (variable.name, variable.type, variable.default)
@@ -326,9 +354,13 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         )
         cached = Self._config_model_cache
         if cached is None or cached[0] != fingerprint:
-            model = variables_to_model(
-                f"{Self.__name__}Config",
-                Self.get_all_config_variables(),
+            model = cast(
+                "type[Step.Config]",
+                variables_to_model(
+                    f"{Self.__name__}Config",
+                    Self.get_all_config_variables(),
+                    base=Step.Config,
+                ),
             )
             Self._config_model_cache = (fingerprint, model)
             return model
@@ -521,6 +553,24 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         else:
             self.step_dir = pathlib.Path(step_dir)
 
+        # Established before any work so that everything below -- including
+        # subprocess output, which carries no binding of its own -- is
+        # attributed to this step, and so the step's block header is emitted in
+        # order with its output rather than printed around it.
+        self.step_dir.mkdir(parents=True, exist_ok=True)
+        with step_context(
+            self.id,
+            self.long_name,
+            log_path=self.step_dir / "step.log",
+        ):
+            return self.__start(toolbox=toolbox, _no_rule=_no_rule, **kwargs)
+
+    def __start(
+        self,
+        toolbox: Toolbox | None = None,
+        _no_rule: bool = False,
+        **kwargs,
+    ) -> State:
         if toolbox is None:
             if ConfigMap.current_interactive is not None:
                 pass
@@ -530,9 +580,6 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
             self.toolbox = toolbox
 
         state_in_result = self.state_in.result()
-
-        if not options.get_condensed_mode():
-            console.rule(f"{self.long_name}")
 
         hyperlinks = (
             os.getenv(

@@ -39,7 +39,7 @@ from .removals import removed_variables
 from .flow import pdk_variables, scl_variables, pad_variables, flow_common_variables
 from .pdk_compat import migrate_old_config
 from .preprocessor import preprocess_dict, Keys as SpecialKeys
-from .validation import validate_mapping
+from .validation import translate_deprecated_names, validate_mapping
 from ..__version__ import __version__
 from ..common import (
     GenericDict,
@@ -699,7 +699,7 @@ class Config(GenericImmutableDict[str, Any]):
             if pdk_root is not None:
                 pdkpath = os.path.join(pdk_root, mutable["PDK"])
 
-        mutable.update(
+        design_values, deprecations = translate_deprecated_names(
             preprocess_dict(
                 raw,
                 pdk=pdk,
@@ -707,8 +707,10 @@ class Config(GenericImmutableDict[str, Any]):
                 scl=mutable[SpecialKeys.scl],
                 pad=mutable.get(SpecialKeys.pad, None),
                 design_dir=design_dir,
-            )
+            ),
+            list(flow_config_vars),
         )
+        mutable.update(design_values)
 
         processed, diagnostics = validate_mapping(
             mutable,
@@ -719,6 +721,7 @@ class Config(GenericImmutableDict[str, Any]):
             provenance=provenance,
             removed=removed_variables,
         )
+        diagnostics.extend(deprecations)
 
         if diagnostics.errors():
             raise InvalidConfig(

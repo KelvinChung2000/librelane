@@ -15,14 +15,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from ...resources import package_path
+from importlib.resources import files
 from decimal import Decimal
 from typing import (
     Optional,
 )
 
 
-from ...config import Variable
+from ...config import variable
 from ..step import (
     Step,
 )
@@ -39,69 +39,61 @@ class RepairDesignPostGPL(ResizerStep):
     id = "OpenROAD.RepairDesignPostGPL"
     name = "Repair Design (Post-Global Placement)"
 
-    config_vars = ResizerStep.config_vars + [
-        Variable(
-            "DESIGN_REPAIR_BUFFER_INPUT_PORTS",
-            bool,
-            "Specifies whether or not to insert buffers on input ports when design repairs are run.",
-            default=True,
+    class Config(ResizerStep.Config):
+        DESIGN_REPAIR_BUFFER_INPUT_PORTS: bool = variable(
+            True,
+            description="Specifies whether or not to insert buffers on input ports when design repairs are run.",
             deprecated_names=["PL_RESIZER_BUFFER_INPUT_PORTS"],
-        ),
-        Variable(
-            "DESIGN_REPAIR_BUFFER_OUTPUT_PORTS",
-            bool,
-            "Specifies whether or not to insert buffers on output ports when design repairs are run.",
-            default=True,
+        )
+
+        DESIGN_REPAIR_BUFFER_OUTPUT_PORTS: bool = variable(
+            True,
+            description="Specifies whether or not to insert buffers on output ports when design repairs are run.",
             deprecated_names=["PL_RESIZER_BUFFER_OUTPUT_PORTS"],
-        ),
-        Variable(
-            "DESIGN_REPAIR_TIE_FANOUT",
-            bool,
-            "Specifies whether or not to repair tie cells fanout when design repairs are run.",
-            default=True,
+        )
+
+        DESIGN_REPAIR_TIE_FANOUT: bool = variable(
+            True,
+            description="Specifies whether or not to repair tie cells fanout when design repairs are run.",
             deprecated_names=["PL_RESIZER_REPAIR_TIE_FANOUT"],
-        ),
-        Variable(
-            "DESIGN_REPAIR_TIE_SEPARATION",
-            bool,
-            "Allows tie separation when performing design repairs.",
-            default=False,
+        )
+
+        DESIGN_REPAIR_TIE_SEPARATION: bool = variable(
+            False,
+            description="Allows tie separation when performing design repairs.",
             deprecated_names=["PL_RESIZER_TIE_SEPERATION"],
-        ),
-        Variable(
-            "DESIGN_REPAIR_MAX_WIRE_LENGTH",
-            Decimal,
-            "Specifies the maximum wire length cap used by resizer to insert buffers during design repair. If set to 0, no buffers will be inserted.",
-            default=0,
+        )
+
+        DESIGN_REPAIR_MAX_WIRE_LENGTH: Decimal = variable(
+            0,
+            description="Specifies the maximum wire length cap used by resizer to insert buffers during design repair. If set to 0, no buffers will be inserted.",
             units="µm",
             deprecated_names=["PL_RESIZER_MAX_WIRE_LENGTH"],
-        ),
-        Variable(
-            "DESIGN_REPAIR_MAX_SLEW_PCT",
-            Decimal,
-            "Specifies a margin for the slews during design repair.",
-            default=20,
+        )
+
+        DESIGN_REPAIR_MAX_SLEW_PCT: Decimal = variable(
+            20,
+            description="Specifies a margin for the slews during design repair.",
             units="%",
             deprecated_names=["PL_RESIZER_MAX_SLEW_MARGIN"],
-        ),
-        Variable(
-            "DESIGN_REPAIR_MAX_CAP_PCT",
-            Decimal,
-            "Specifies a margin for the capacitances during design repair.",
-            default=20,
+        )
+
+        DESIGN_REPAIR_MAX_CAP_PCT: Decimal = variable(
+            20,
+            description="Specifies a margin for the capacitances during design repair.",
             units="%",
             deprecated_names=["PL_RESIZER_MAX_CAP_MARGIN"],
-        ),
-        Variable(
-            "DESIGN_REPAIR_REMOVE_BUFFERS",
-            bool,
-            "Invokes OpenROAD's remove_buffers command to remove buffers from synthesis, which gives OpenROAD more flexibility when buffering nets.",
-            default=False,
-        ),
-    ]
+        )
+
+        DESIGN_REPAIR_REMOVE_BUFFERS: bool = variable(
+            False,
+            description="Invokes OpenROAD's remove_buffers command to remove buffers from synthesis, which gives OpenROAD more flexibility when buffering nets.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "repair_design.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "repair_design.tcl")
 
 
 @Step.factory.register()
@@ -123,41 +115,37 @@ class RepairDesignPostGRT(ResizerStep):
     id = "OpenROAD.RepairDesignPostGRT"
     name = "Repair Design (Post-Global Routing)"
 
-    config_vars = ResizerStep.config_vars + [
-        Variable(
-            "GRT_DESIGN_REPAIR_RUN_GRT",
-            bool,
-            "Enables running GRT before and after running resizer",
-            default=True,
-        ),
-        Variable(
-            "GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH",
-            Decimal,
-            "Specifies the maximum wire length cap used by resizer to insert buffers during post-grt design repair. If set to 0, no buffers will be inserted.",
-            default=0,
+    class Config(ResizerStep.Config):
+        GRT_DESIGN_REPAIR_RUN_GRT: bool = variable(
+            True,
+            description="Enables running GRT before and after running resizer",
+        )
+
+        GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH: Decimal = variable(
+            0,
+            description="Specifies the maximum wire length cap used by resizer to insert buffers during post-grt design repair. If set to 0, no buffers will be inserted.",
             units="µm",
             deprecated_names=["GLB_RESIZER_MAX_WIRE_LENGTH"],
-        ),
-        Variable(
-            "GRT_DESIGN_REPAIR_MAX_SLEW_PCT",
-            Decimal,
-            "Specifies a margin for the slews during post-grt design repair.",
-            default=10,
+        )
+
+        GRT_DESIGN_REPAIR_MAX_SLEW_PCT: Decimal = variable(
+            10,
+            description="Specifies a margin for the slews during post-grt design repair.",
             units="%",
             deprecated_names=["GLB_RESIZER_MAX_SLEW_MARGIN"],
-        ),
-        Variable(
-            "GRT_DESIGN_REPAIR_MAX_CAP_PCT",
-            Decimal,
-            "Specifies a margin for the capacitances during design post-grt repair.",
-            default=10,
+        )
+
+        GRT_DESIGN_REPAIR_MAX_CAP_PCT: Decimal = variable(
+            10,
+            description="Specifies a margin for the capacitances during design post-grt repair.",
             units="%",
             deprecated_names=["GLB_RESIZER_MAX_CAP_MARGIN"],
-        ),
-    ]
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath(
+        return files("librelane").joinpath(
             "scripts", "openroad", "repair_design_postgrt.tcl"
         )
 
@@ -176,95 +164,88 @@ class ResizerTimingPostCTS(ResizerStep):
     id = "OpenROAD.ResizerTimingPostCTS"
     name = "Resizer Timing Optimizations (Post-Clock Tree Synthesis)"
 
-    config_vars = ResizerStep.config_vars + [
-        Variable(
-            "PL_RESIZER_HOLD_SLACK_MARGIN",
-            Decimal,
-            "Specifies a time margin for the slack when fixing hold violations. Normally the resizer will stop when it reaches zero slack. This option allows you to overfix.",
-            default=0.1,
+    class Config(ResizerStep.Config):
+        PL_RESIZER_HOLD_SLACK_MARGIN: Decimal = variable(
+            0.1,
+            description="Specifies a time margin for the slack when fixing hold violations. Normally the resizer will stop when it reaches zero slack. This option allows you to overfix.",
             units="ns",
-        ),
-        Variable(
-            "PL_RESIZER_SETUP_SLACK_MARGIN",
-            Decimal,
-            "Specifies a time margin for the slack when fixing setup violations.",
-            default=0.05,
+        )
+
+        PL_RESIZER_SETUP_SLACK_MARGIN: Decimal = variable(
+            0.05,
+            description="Specifies a time margin for the slack when fixing setup violations.",
             units="ns",
-        ),
-        Variable(
-            "PL_RESIZER_HOLD_MAX_BUFFER_PCT",
-            Decimal,
-            "Specifies a max number of buffers to insert to fix hold violations. This number is calculated as a percentage of the number of instances in the design.",
-            default=50,
+        )
+
+        PL_RESIZER_HOLD_MAX_BUFFER_PCT: Decimal = variable(
+            50,
+            description="Specifies a max number of buffers to insert to fix hold violations. This number is calculated as a percentage of the number of instances in the design.",
             deprecated_names=["PL_RESIZER_HOLD_MAX_BUFFER_PERCENT"],
-        ),
-        Variable(
-            "PL_RESIZER_SETUP_MAX_BUFFER_PCT",
-            Decimal,
-            "Specifies a max number of buffers to insert to fix setup violations. This number is calculated as a percentage of the number of instances in the design.",
-            default=50,
+        )
+
+        PL_RESIZER_SETUP_MAX_BUFFER_PCT: Decimal = variable(
+            50,
+            description="Specifies a max number of buffers to insert to fix setup violations. This number is calculated as a percentage of the number of instances in the design.",
             units="%",
             deprecated_names=["PL_RESIZER_SETUP_MAX_BUFFER_PERCENT"],
-        ),
-        Variable(
-            "PL_RESIZER_ALLOW_SETUP_VIOS",
-            bool,
-            "Allows the creation of setup violations when fixing hold violations. Setup violations are less dangerous as they simply mean a chip may not run at its rated speed, however, chips with hold violations are essentially dead-on-arrival.",
-            default=False,
-        ),
-        Variable(
-            "PL_RESIZER_SETUP_GATE_CLONING",
-            bool,
-            "Enables gate cloning when attempting to fix setup violations",
-            default=True,
+        )
+
+        PL_RESIZER_ALLOW_SETUP_VIOS: bool = variable(
+            False,
+            description="Allows the creation of setup violations when fixing hold violations. Setup violations are less dangerous as they simply mean a chip may not run at its rated speed, however, chips with hold violations are essentially dead-on-arrival.",
+        )
+
+        PL_RESIZER_SETUP_GATE_CLONING: bool = variable(
+            True,
+            description="Enables gate cloning when attempting to fix setup violations",
             deprecated_names=["PL_RESIZER_GATE_CLONING"],
-        ),
-        Variable(
-            "PL_RESIZER_SETUP_BUFFERING",
-            bool,
-            "Rebuffering and load splitting during setup fixing.",
-            default=True,
-        ),
-        Variable(
-            "PL_RESIZER_SETUP_BUFFER_REMOVAL",
-            bool,
-            "Buffer removal transform during setup fixing.",
-            default=True,
-        ),
-        Variable(
-            "PL_RESIZER_SETUP_REPAIR_TNS_PCT",
-            Optional[Decimal],
-            "Percentage of violating endpoints to repair during setup fixing.",
+        )
+
+        PL_RESIZER_SETUP_BUFFERING: bool = variable(
+            True,
+            description="Rebuffering and load splitting during setup fixing.",
+        )
+
+        PL_RESIZER_SETUP_BUFFER_REMOVAL: bool = variable(
+            True,
+            description="Buffer removal transform during setup fixing.",
+        )
+
+        PL_RESIZER_SETUP_REPAIR_TNS_PCT: Optional[Decimal] = variable(
+            None,
+            description="Percentage of violating endpoints to repair during setup fixing.",
             units="%",
-        ),
-        Variable(
-            "PL_RESIZER_SETUP_MAX_UTIL_PCT",
-            Optional[Decimal],
-            "Defines the percentage of core area used during setup fixing.",
+        )
+
+        PL_RESIZER_SETUP_MAX_UTIL_PCT: Optional[Decimal] = variable(
+            None,
+            description="Defines the percentage of core area used during setup fixing.",
             units="%",
-        ),
-        Variable(
-            "PL_RESIZER_HOLD_REPAIR_TNS_PCT",
-            Optional[Decimal],
-            "Percentage of violating endpoints to repair during hold fixing.",
+        )
+
+        PL_RESIZER_HOLD_REPAIR_TNS_PCT: Optional[Decimal] = variable(
+            None,
+            description="Percentage of violating endpoints to repair during hold fixing.",
             units="%",
-        ),
-        Variable(
-            "PL_RESIZER_HOLD_MAX_UTIL_PCT",
-            Optional[Decimal],
-            "Defines the percentage of core area used during hold fixing.",
+        )
+
+        PL_RESIZER_HOLD_MAX_UTIL_PCT: Optional[Decimal] = variable(
+            None,
+            description="Defines the percentage of core area used during hold fixing.",
             units="%",
-        ),
-        Variable(
-            "PL_RESIZER_FIX_HOLD_FIRST",
-            bool,
-            "Experimental: attempt to fix hold violations before setup violations, which may lead to better timing results.",
-            default=False,
-        ),
-    ]
+        )
+
+        PL_RESIZER_FIX_HOLD_FIRST: bool = variable(
+            False,
+            description="Experimental: attempt to fix hold violations before setup violations, which may lead to better timing results.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "rsz_timing_postcts.tcl")
+        return files("librelane").joinpath(
+            "scripts", "openroad", "rsz_timing_postcts.tcl"
+        )
 
 
 @Step.factory.register()
@@ -282,102 +263,94 @@ class ResizerTimingPostGRT(ResizerStep):
     id = "OpenROAD.ResizerTimingPostGRT"
     name = "Resizer Timing Optimizations (Post-Global Routing)"
 
-    config_vars = ResizerStep.config_vars + [
-        Variable(
-            "GRT_RESIZER_HOLD_SLACK_MARGIN",
-            Decimal,
-            "Specifies a time margin for the slack when fixing hold violations. Normally the resizer will stop when it reaches zero slack. This option allows you to overfix.",
-            default=0.05,
+    class Config(ResizerStep.Config):
+        GRT_RESIZER_HOLD_SLACK_MARGIN: Decimal = variable(
+            0.05,
+            description="Specifies a time margin for the slack when fixing hold violations. Normally the resizer will stop when it reaches zero slack. This option allows you to overfix.",
             units="ns",
             deprecated_names=["GLB_RESIZER_HOLD_SLACK_MARGIN"],
-        ),
-        Variable(
-            "GRT_RESIZER_SETUP_SLACK_MARGIN",
-            Decimal,
-            "Specifies a time margin for the slack when fixing setup violations.",
-            default=0.025,
+        )
+
+        GRT_RESIZER_SETUP_SLACK_MARGIN: Decimal = variable(
+            0.025,
+            description="Specifies a time margin for the slack when fixing setup violations.",
             units="ns",
             deprecated_names=["GLB_RESIZER_SETUP_SLACK_MARGIN"],
-        ),
-        Variable(
-            "GRT_RESIZER_HOLD_MAX_BUFFER_PCT",
-            Decimal,
-            "Specifies a max number of buffers to insert to fix hold violations. This number is calculated as a percentage of the number of instances in the design.",
-            default=50,
+        )
+
+        GRT_RESIZER_HOLD_MAX_BUFFER_PCT: Decimal = variable(
+            50,
+            description="Specifies a max number of buffers to insert to fix hold violations. This number is calculated as a percentage of the number of instances in the design.",
             units="%",
             deprecated_names=["GLB_RESIZER_HOLD_MAX_BUFFER_PERCENT"],
-        ),
-        Variable(
-            "GRT_RESIZER_SETUP_MAX_BUFFER_PCT",
-            Decimal,
-            "Specifies a max number of buffers to insert to fix setup violations. This number is calculated as a percentage of the number of instances in the design.",
-            default=50,
+        )
+
+        GRT_RESIZER_SETUP_MAX_BUFFER_PCT: Decimal = variable(
+            50,
+            description="Specifies a max number of buffers to insert to fix setup violations. This number is calculated as a percentage of the number of instances in the design.",
             units="%",
             deprecated_names=["GLB_RESIZER_SETUP_MAX_BUFFER_PERCENT"],
-        ),
-        Variable(
-            "GRT_RESIZER_ALLOW_SETUP_VIOS",
-            bool,
-            "Allows setup violations when fixing hold.",
-            default=False,
+        )
+
+        GRT_RESIZER_ALLOW_SETUP_VIOS: bool = variable(
+            False,
+            description="Allows setup violations when fixing hold.",
             deprecated_names=["GLB_RESIZER_ALLOW_SETUP_VIOS"],
-        ),
-        Variable(
-            "GRT_RESIZER_SETUP_GATE_CLONING",
-            bool,
-            "Enables gate cloning when attempting to fix setup violations",
-            default=True,
+        )
+
+        GRT_RESIZER_SETUP_GATE_CLONING: bool = variable(
+            True,
+            description="Enables gate cloning when attempting to fix setup violations",
             deprecated_names=["GRT_RESIZER_GATE_CLONING"],
-        ),
-        Variable(
-            "GRT_RESIZER_RUN_GRT",
-            bool,
-            "Gates running global routing after resizer steps. May be useful to disable for designs where global routing takes non-trivial time.",
-            default=True,
-        ),
-        Variable(
-            "GRT_RESIZER_SETUP_BUFFERING",
-            bool,
-            "Rebuffering and load splitting during setup fixing.",
-            default=True,
-        ),
-        Variable(
-            "GRT_RESIZER_SETUP_BUFFER_REMOVAL",
-            bool,
-            "Buffer removal transform during setup fixing.",
-            default=True,
-        ),
-        Variable(
-            "GRT_RESIZER_SETUP_REPAIR_TNS_PCT",
-            Optional[Decimal],
-            "Percentage of violating endpoints to repair during setup fixing.",
+        )
+
+        GRT_RESIZER_RUN_GRT: bool = variable(
+            True,
+            description="Gates running global routing after resizer steps. May be useful to disable for designs where global routing takes non-trivial time.",
+        )
+
+        GRT_RESIZER_SETUP_BUFFERING: bool = variable(
+            True,
+            description="Rebuffering and load splitting during setup fixing.",
+        )
+
+        GRT_RESIZER_SETUP_BUFFER_REMOVAL: bool = variable(
+            True,
+            description="Buffer removal transform during setup fixing.",
+        )
+
+        GRT_RESIZER_SETUP_REPAIR_TNS_PCT: Optional[Decimal] = variable(
+            None,
+            description="Percentage of violating endpoints to repair during setup fixing.",
             units="%",
-        ),
-        Variable(
-            "GRT_RESIZER_SETUP_MAX_UTIL_PCT",
-            Optional[Decimal],
-            "Defines the percentage of core area used during setup fixing.",
+        )
+
+        GRT_RESIZER_SETUP_MAX_UTIL_PCT: Optional[Decimal] = variable(
+            None,
+            description="Defines the percentage of core area used during setup fixing.",
             units="%",
-        ),
-        Variable(
-            "GRT_RESIZER_HOLD_REPAIR_TNS_PCT",
-            Optional[Decimal],
-            "Percentage of violating endpoints to repair during hold fixing.",
+        )
+
+        GRT_RESIZER_HOLD_REPAIR_TNS_PCT: Optional[Decimal] = variable(
+            None,
+            description="Percentage of violating endpoints to repair during hold fixing.",
             units="%",
-        ),
-        Variable(
-            "GRT_RESIZER_HOLD_MAX_UTIL_PCT",
-            Optional[Decimal],
-            "Defines the percentage of core area used during hold fixing.",
+        )
+
+        GRT_RESIZER_HOLD_MAX_UTIL_PCT: Optional[Decimal] = variable(
+            None,
+            description="Defines the percentage of core area used during hold fixing.",
             units="%",
-        ),
-        Variable(
-            "GRT_RESIZER_FIX_HOLD_FIRST",
-            bool,
-            "Experimental: attempt to fix hold violations before setup violations, which may lead to better timing results.",
-            default=False,
-        ),
-    ]
+        )
+
+        GRT_RESIZER_FIX_HOLD_FIRST: bool = variable(
+            False,
+            description="Experimental: attempt to fix hold violations before setup violations, which may lead to better timing results.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "rsz_timing_postgrt.tcl")
+        return files("librelane").joinpath(
+            "scripts", "openroad", "rsz_timing_postgrt.tcl"
+        )

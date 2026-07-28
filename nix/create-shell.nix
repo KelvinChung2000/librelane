@@ -13,12 +13,14 @@
   python3,
   devshell,
   extra-packages ? [ ],
-  extra-python-packages ? ps: [ ],
   extra-env ? [ ],
   librelane-plugins ? ps: [ ],
   librelane-extra-python-interpreter-packages ? ps: [ ],
   librelane-extra-yosys-plugins ? [ ],
-  include-librelane ? true,
+  # The Python environment placed on the shell's PATH. LibreLane is itself a
+  # virtual environment, so by default the shell simply uses it. Pass
+  # python3.pkgs.librelane-dev-env for a shell that runs the working tree.
+  python-env ? null,
 }:
 let
   plugins-resolved = librelane-plugins python3.pkgs;
@@ -32,19 +34,12 @@ let
   plugins-propagatedBuildInputs = lib.lists.flatten (
     map (p: (lib.filter (d: d.pname != "librelane") p.propagatedBuildInputs)) plugins-resolved
   );
-  librelane-env = (
-    python3.withPackages (
-      pp:
-      (
-        if include-librelane then
-          ([ librelane' ] ++ plugins-overridden)
-        else
-          (librelane'.propagatedBuildInputs ++ plugins-propagatedBuildInputs)
-      )
-      ++ extra-python-packages pp
-    )
+  librelane-env = if python-env == null then librelane' else python-env;
+  # Plugins are built by nixpkgs, so they live outside the virtual environment
+  # and reach it through the import path instead.
+  plugin-sitepackages = map (p: "${p}/${python3.sitePackages}") (
+    plugins-overridden ++ plugins-propagatedBuildInputs
   );
-  librelane-env-sitepackages = "${librelane-env}/${librelane-env.sitePackages}";
   prompt = ''\[\033[1;32m\][nix-shell:\w]\$\[\033[0m\] '';
   packages = [
     librelane-env
@@ -65,11 +60,17 @@ in
 devshell.mkShell {
   devshell.packages = packages;
   env = [
+    # Editable installs resolve the working tree through this variable; see
+    # mkEditablePyprojectOverlay in flake.nix.
     {
-      name = "NIX_PYTHONPATH";
-      value = "${librelane-env-sitepackages}";
+      name = "REPO_ROOT";
+      eval = "$PRJ_ROOT";
     }
   ]
+  ++ lib.optional (plugin-sitepackages != [ ]) {
+    name = "PYTHONPATH";
+    value = lib.concatStringsSep ":" plugin-sitepackages;
+  }
   ++ extra-env;
   devshell.interactive.PS1 = {
     text = ''PS1="${prompt}"'';

@@ -36,7 +36,7 @@ from ...common import (
     aggregate_metrics,
     process_list_file,
 )
-from ...config import Variable
+from ...config import variable
 from ...config.flow import option_variables
 from ...state import DesignFormat, State
 from ..openroad_alerts import OpenROADAlert, OpenROADOutputProcessor
@@ -128,18 +128,18 @@ class CheckSDCFiles(Step):
     inputs = []
     outputs = []
 
-    config_vars = [
-        Variable(
-            "PNR_SDC_FILE",
-            Optional[Path],
-            "Specifies the SDC file used during all implementation (PnR) steps",
-        ),
-        Variable(
-            "SIGNOFF_SDC_FILE",
-            Optional[Path],
-            "Specifies the SDC file for STA during signoff",
-        ),
-    ]
+    class Config(Step.Config):
+        PNR_SDC_FILE: Optional[Path] = variable(
+            None,
+            description="Specifies the SDC file used during all implementation (PnR) steps",
+        )
+
+        SIGNOFF_SDC_FILE: Optional[Path] = variable(
+            None,
+            description="Specifies the SDC file for STA during signoff",
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         default_sdc_file = [
@@ -149,11 +149,11 @@ class CheckSDCFiles(Step):
 
         is_generic_fallback = default_sdc_file.default
         fallback_descriptor = "generic" if is_generic_fallback else "user-defined"
-        if self.config["PNR_SDC_FILE"] is None:
+        if self.config.PNR_SDC_FILE is None:
             logger.bind(step=self.id).warning(
                 f"'PNR_SDC_FILE' is not defined. Using {fallback_descriptor} fallback SDC for OpenROAD PnR steps."
             )
-        if self.config["SIGNOFF_SDC_FILE"] is None:
+        if self.config.SIGNOFF_SDC_FILE is None:
             logger.bind(step=self.id).warning(
                 f"'SIGNOFF_SDC_FILE' is not defined. Using {fallback_descriptor} fallback SDC for OpenROAD PnR steps."
             )
@@ -174,93 +174,89 @@ class OpenROADStep(TclStep):
 
     alerts: list[OpenROADAlert] | None = None
 
-    config_vars = [
-        Variable(
-            "PNR_CORNERS",
-            Optional[list[str]],
-            "A list of fully-qualified IPVT corners to use during PnR. If unspecified, the value for `STA_CORNERS` from the PDK will be used.",
+    class Config(Step.Config):
+        PNR_CORNERS: Optional[list[str]] = variable(
+            None,
+            description="A list of fully-qualified IPVT corners to use during PnR. If unspecified, the value for `STA_CORNERS` from the PDK will be used.",
             pdk=True,
-        ),
-        Variable(
-            "SET_RC_VERBOSE",
-            bool,
-            "If set to true, set_rc commands are echoed. Quite noisy, but may be useful for debugging.",
-            default=False,
-        ),
-        Variable(
-            "LAYERS_RC",
-            Optional[dict[str, dict[str, dict[str, Decimal]]]],
-            "Used during PNR steps, Specific custom resistance and capacitance values for metal layers."
+        )
+
+        SET_RC_VERBOSE: bool = variable(
+            False,
+            description="If set to true, set_rc commands are echoed. Quite noisy, but may be useful for debugging.",
+        )
+
+        LAYERS_RC: Optional[dict[str, dict[str, dict[str, Decimal]]]] = variable(
+            None,
+            description="Used during PNR steps, Specific custom resistance and capacitance values for metal layers."
             + " For each IPVT corner, a mapping for each metal layer is provided."
             + " Each mapping describes custom resistance and capacitance values."
             + " Usage of wildcards for specifying IPVT corners is allowed."
             + " Units are resistance and capacitance per unit length as defined in the first lib file.",
             pdk=True,
-        ),
-        Variable(
-            "VIAS_R",
-            Optional[dict[str, dict[str, dict[str, Decimal]]]],
-            "Used during PNR steps, Specific custom resistance values for via layers."
+        )
+
+        VIAS_R: Optional[dict[str, dict[str, dict[str, Decimal]]]] = variable(
+            None,
+            description="Used during PNR steps, Specific custom resistance values for via layers."
             + " For each IPVT corner, a mapping for each via layer is provided."
             + " Each mapping describes custom resistance values."
             + " Usage of wildcards for specifying IPVT corners is allowed."
             + " Via resistance is per cut/via with units asdefined in the first lib file.",
             pdk=True,
-        ),
-        Variable(
-            "SIGNAL_WIRE_RC_LAYERS",
-            Optional[list[str]],
-            "Sets estimated signal wire RC values to the average of these layers'. If you provide more than two, the averages are grouped by preferred routing direction and you must provide at least one layer for each routing direction.",
+        )
+
+        SIGNAL_WIRE_RC_LAYERS: Optional[list[str]] = variable(
+            None,
+            description="Sets estimated signal wire RC values to the average of these layers'. If you provide more than two, the averages are grouped by preferred routing direction and you must provide at least one layer for each routing direction.",
             pdk=True,
             deprecated_names=[
                 ("WIRE_RC_LAYER", lambda x: [x]),
                 ("DATA_WIRE_RC_LAYER", lambda x: [x]),
             ],
-        ),
-        Variable(
-            "CLOCK_WIRE_RC_LAYERS",
-            Optional[list[str]],
-            "Sets estimated clock wire RC values to the average of these layers'. If you provide more than two, the averages are grouped by preferred routing direction and you must provide at least one layer for each routing direction.",
+        )
+
+        CLOCK_WIRE_RC_LAYERS: Optional[list[str]] = variable(
+            None,
+            description="Sets estimated clock wire RC values to the average of these layers'. If you provide more than two, the averages are grouped by preferred routing direction and you must provide at least one layer for each routing direction.",
             pdk=True,
             deprecated_names=[("CLOCK_WIRE_RC_LAYER", lambda x: [x])],
-        ),
-        Variable(
-            "PDN_CONNECT_MACROS_TO_GRID",
-            bool,
-            "Enables the connection of macros to the top level power grid.",
-            default=True,
+        )
+
+        PDN_CONNECT_MACROS_TO_GRID: bool = variable(
+            True,
+            description="Enables the connection of macros to the top level power grid.",
             deprecated_names=["FP_PDN_ENABLE_MACROS_GRID"],
-        ),
-        Variable(
-            "PDN_MACRO_CONNECTIONS",
-            Optional[list[str]],
-            "Specifies explicit power connections of internal macros to the top level power grid, in the format: regex matching macro instance names, power domain vdd and ground net names, and macro vdd and ground pin names `<instance_name_rx> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>`.",
+        )
+
+        PDN_MACRO_CONNECTIONS: Optional[list[str]] = variable(
+            None,
+            description="Specifies explicit power connections of internal macros to the top level power grid, in the format: regex matching macro instance names, power domain vdd and ground net names, and macro vdd and ground pin names `<instance_name_rx> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>`.",
             deprecated_names=[("FP_PDN_MACRO_HOOKS", pdn_macro_migrator)],
-        ),
-        Variable(
-            "PDN_ENABLE_GLOBAL_CONNECTIONS",
-            bool,
-            "Enables the creation of global connections in PDN generation.",
-            default=True,
+        )
+
+        PDN_ENABLE_GLOBAL_CONNECTIONS: bool = variable(
+            True,
+            description="Enables the creation of global connections in PDN generation.",
             deprecated_names=["FP_PDN_ENABLE_GLOBAL_CONNECTIONS"],
-        ),
-        Variable(
-            "PNR_SDC_FILE",
-            Optional[Path],
-            "Specifies the SDC file used during all implementation (PnR) steps",
-        ),
-        Variable(
-            "STA_EXTRA_CORNER_TCL_FILE",
-            Optional[Path],
-            "Experimental: specifies a additional configuration .tcl file to be called during (PnR) steps.",
-        ),
-        Variable(
-            "DEDUPLICATE_CORNERS",
-            bool,
-            "Cull duplicate IPVT corners during PNR, i.e. corners that share the same set of lib files and values for LAYERS_RC and VIAS_R as another corner are not considered outside of STA.",
-            default=False,
-        ),
-    ]
+        )
+
+        PNR_SDC_FILE: Optional[Path] = variable(
+            None,
+            description="Specifies the SDC file used during all implementation (PnR) steps",
+        )
+
+        STA_EXTRA_CORNER_TCL_FILE: Optional[Path] = variable(
+            None,
+            description="Experimental: specifies a additional configuration .tcl file to be called during (PnR) steps.",
+        )
+
+        DEDUPLICATE_CORNERS: bool = variable(
+            False,
+            description="Cull duplicate IPVT corners during PNR, i.e. corners that share the same set of lib files and values for LAYERS_RC and VIAS_R as another corner are not considered outside of STA.",
+        )
+
+    config: Config
 
     @classmethod
     def get_openroad_path(Self) -> str:
@@ -289,19 +285,19 @@ class OpenROADStep(TclStep):
     def prepare_env(self, env: dict, state: State) -> dict:
         env = super().prepare_env(env, state)
 
-        lib_list = self.toolbox.filter_views(self.config, self.config["LIB"])
+        lib_list = self.toolbox.filter_views(self.config, self.config.LIB)
         lib_list += self.toolbox.get_macro_views(self.config, DesignFormat.LIB)
 
-        env["_SDC_IN"] = self.config["PNR_SDC_FILE"] or self.config["FALLBACK_SDC"]
+        env["_SDC_IN"] = self.config.PNR_SDC_FILE or self.config.FALLBACK_SDC
         env["_PNR_LIBS"] = TclStep.value_to_tcl(lib_list)
         env["_MACRO_LIBS"] = TclStep.value_to_tcl(
             self.toolbox.get_macro_views(self.config, DesignFormat.LIB)
         )
-        if self.config["STA_EXTRA_CORNER_TCL_FILE"]:
-            env["_EXTRA_CORNER_TCL_FILE"] = self.config["STA_EXTRA_CORNER_TCL_FILE"]
+        if self.config.STA_EXTRA_CORNER_TCL_FILE:
+            env["_EXTRA_CORNER_TCL_FILE"] = self.config.STA_EXTRA_CORNER_TCL_FILE
 
-        excluded_cells: set[str] = set(self.config["EXTRA_EXCLUDED_CELLS"] or [])
-        excluded_cells.update(process_list_file(self.config["PNR_EXCLUDED_CELL_FILE"]))
+        excluded_cells: set[str] = set(self.config.EXTRA_EXCLUDED_CELLS or [])
+        excluded_cells.update(process_list_file(self.config.PNR_EXCLUDED_CELL_FILE))
         env["_PNR_EXCLUDED_CELLS"] = TclUtils.join(excluded_cells)
 
         return env
@@ -320,9 +316,7 @@ class OpenROADStep(TclStep):
         kwargs, env = self.extract_env(kwargs)
         env = self.prepare_env(env, state_in)
 
-        corners: list[str] = self.config["PNR_CORNERS"] or [
-            self.config["DEFAULT_CORNER"]
-        ]
+        corners: list[str] = self.config.PNR_CORNERS or [self.config.DEFAULT_CORNER]
 
         @dataclass
         class IPVTCorner:
@@ -367,20 +361,20 @@ class OpenROADStep(TclStep):
         if "check" in kwargs:
             check = kwargs.pop("check")
 
-        layers_rc = self.config["LAYERS_RC"]
+        layers_rc = self.config.LAYERS_RC
         if layers_rc is not None:
             for corner_wildcard, metal_layers in layers_rc.items():
                 for corner in Filter([corner_wildcard]).filter(corners):
                     ipvt_corners[corner].layers_rc = metal_layers
 
-        vias_r = self.config["VIAS_R"]
+        vias_r = self.config.VIAS_R
         if vias_r is not None:
             for corner_wildcard, metal_layers in vias_r.items():
                 for corner in Filter(corner_wildcard).filter(corners):
                     ipvt_corners[corner].vias_r = metal_layers
 
         filtered_ipvt_corners_names_sorted = corners
-        if self.config["DEDUPLICATE_CORNERS"]:
+        if self.config.DEDUPLICATE_CORNERS:
             filtered_ipvt_corners = {
                 k: v
                 for k, v in ipvt_corners.items()
@@ -391,9 +385,9 @@ class OpenROADStep(TclStep):
             ]
         count = 0
         for corner_name in filtered_ipvt_corners_names_sorted:
-            vias_r = ipvt_corners[corner_name].vias_r
-            if vias_r is not None:
-                for via, rc in vias_r.items():
+            corner_vias_r = ipvt_corners[corner_name].vias_r
+            if corner_vias_r is not None:
+                for via, rc in corner_vias_r.items():
                     res = rc["res"]
                     env[f"_VIA_R_{count}"] = TclStep.value_to_tcl(
                         [corner_name, via, res]
@@ -401,9 +395,9 @@ class OpenROADStep(TclStep):
                     count += 1
         count = 0
         for corner_name in filtered_ipvt_corners_names_sorted:
-            layers_rc = ipvt_corners[corner_name].layers_rc
-            if layers_rc is not None:
-                for layer, rc in layers_rc.items():
+            corner_layers_rc = ipvt_corners[corner_name].layers_rc
+            if corner_layers_rc is not None:
+                for layer, rc in corner_layers_rc.items():
                     res = rc["res"]
                     cap = rc["cap"]
                     env[f"_LAYER_RC_{count}"] = TclStep.value_to_tcl(

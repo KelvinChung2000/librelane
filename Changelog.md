@@ -27,6 +27,36 @@ Style Notes
 
 # 3.0.5
 
+## CLI
+
+* Migrated the LibreLane, step, configuration, state, help, and metrics command
+  interfaces from Cloup decorators to typed Typer applications.
+* Fixed metrics table verbosity values not being compared as their declared
+  enum type.
+* Fixed standalone reproducible creation ignoring an explicitly supplied
+  configuration and input-state pair.
+* Made `--state-in` explicitly required for standalone step runs and ejection,
+  matching the underlying step loader contract.
+
+## Steps
+
+* Migrated all built-in step configuration declarations to nested typed
+  `Config` models and static configuration reads to attribute access.
+* Migrated dynamically composed and checker-generated step configuration to
+  generated typed models.
+* Annotated every step's `config` attribute with its own nested `Config` model,
+  so attribute reads are checked rather than typed as the empty base model.
+
+* `Odb.RemovePDNObstructions`
+
+  * Fixed the step reading `ROUTING_OBSTRUCTIONS`, inherited from
+    `Odb.RemoveRoutingObstructions`, instead of `PDN_OBSTRUCTIONS`.
+
+## Flows
+
+* Migrated the `Classic` flow's configuration declarations to a nested typed
+  `Config` model.
+
 ## Tool Updates
 
 * Relaxed version requirement for `rich` to allow rich 16.
@@ -43,15 +73,43 @@ Style Notes
   `STD_CELL_LIBRARY` (#827).
 * Fixed lax union coercion choosing a less-specific scalar type (#993).
 * Fixed multiple globs supplied to a `list[Path]` field (#712).
+* Fixed strict validation rejecting whole numbers for `Decimal` fields,
+  sequences for tuple fields, and mappings for dataclass fields such as
+  `Macro`.
+* Fixed declared defaults being validated in their written form rather than
+  the shape of their annotation.
+* Fixed a deprecated variable name supplied by a design being ignored whenever
+  the PDK also supplied the current name. Deprecated names are now translated
+  per configuration layer, so the design's value wins under either spelling,
+  and the deprecation is still reported.
+* Rebuilt the Nix environment around a uv2nix virtual environment: the flake
+  now derives the runtime, development, and notebook environments from
+  `uv.lock`, and the `librelane` package wraps its entry points so the
+  interpreters it shells out to resolve `python3` within that environment.
+* Replaced `NIX_PYTHONPATH` with `PYTHONPATH` for Nix plugin injection and for
+  the host package mounted by `librelane --dockerized`, since a virtual
+  environment's interpreter does not read the former.
 
 ## API Breaks
 
+* Removed the Cloup-specific `librelane.flows.cloup_flow_opts` decorator and
+  `librelane.common.cli` helpers. Reusable Typer option annotations and CLI
+  resolution helpers now live in `librelane.flows.cli`.
 * References in an earlier configuration source now resolve against values
   from the final merged layer.
 * Configuration validation error wording now comes from structured Pydantic
   diagnostics.
 * Removed the undocumented `librelane.config.variable` module path. The
   documented `librelane.config.Variable` compatibility export remains.
+* Removed the Nix shell arguments `extra-python-packages` and
+  `include-librelane`. Plugins are supplied through `librelane-plugins`, and
+  the shell's Python environment is selected with `python-env`.
+
+## Documentation
+
+* Rewrote the Nix section of {doc}`/usage/writing_plugins` around
+  `librelane-shell` and `librelane-plugins`, replacing the removed
+  `createOpenLaneShell`/`extra-python-packages` interface.
 
 # 3.0.4
 

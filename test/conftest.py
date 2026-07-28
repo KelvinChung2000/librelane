@@ -44,17 +44,11 @@ class LoguruCapture:
 
 @pytest.fixture
 def caplog():
-    from librelane.logging import (
-        deregister_additional_sink,
-        register_additional_sink,
-    )
+    from librelane.logging import additional_sink
 
     capture = LoguruCapture()
-    sink_id = register_additional_sink(capture)
-    try:
+    with additional_sink(capture):
         yield capture
-    finally:
-        deregister_additional_sink(sink_id)
 
 
 def pytest_assertrepr_compare(op, left, right):
@@ -159,6 +153,7 @@ MOCK_PDK_VARS = [
         description="x",
         default=10.0,
         pdk=True,
+        deprecated_names=["EXAMPLE_PDK_VAR_LEGACY"],
     ),
     Variable(
         "TECH_LEFS",
@@ -301,8 +296,17 @@ class MockProgress(object):
         self.completed = 0
         self.description = "Progress"
 
-    def add_task(self, *args):
+    def add_task(self, *args, **kwargs):
         self.add_task_called_count += 1
+        # Per-step rows are keyed by the returned ID, so it has to be distinct.
+        self.add_task_returned_count = getattr(self, "add_task_returned_count", 0) + 1
+        return self.add_task_returned_count
+
+    def remove_task(self, *args, **kwargs):
+        self.remove_task_called_count = getattr(self, "remove_task_called_count", 0) + 1
+
+    def refresh(self):
+        self.refresh_called_count = getattr(self, "refresh_called_count", 0) + 1
 
     def start(self):
         self.start_called_count += 1
@@ -335,6 +339,27 @@ def _mock_progress():
 
     with mock.patch.object(flow, "Progress", MockProgress):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _quiesce_log_pump():
+    """
+    Keeps the shared :data:`librelane.logging.live` pump thread from rendering
+    during tests.
+
+    pyfakefs does not support other threads touching the filesystem while it is
+    active, and a pump tick landing inside a faked filesystem corrupts that
+    test's view of it. Tests that exercise the pump construct their own
+    ``LiveLog`` instead.
+    """
+    from librelane.logging import logger as logger_module
+
+    live = logger_module.live
+    live.stop()
+    live._stopping.clear()
+    live._autostart = False
+    yield
+    live.drain()
 
 
 def pytest_configure():

@@ -23,7 +23,7 @@ from typing import Optional
 
 from ..step import ViewsUpdate, MetricsUpdate, Step
 
-from ...config import Variable
+from ...config import variable
 from ...state import DesignFormat, State
 from ...common import Path, mkdirp
 
@@ -41,27 +41,27 @@ class LVS(KLayoutStep):
     ]
     outputs = [DesignFormat.SPICE]
 
-    config_vars = KLayoutStep.config_vars + [
-        Variable(
-            "KLAYOUT_LVS_SCRIPT",
-            Optional[Path],
-            "A path to KLayout LVS script.",
+    class Config(KLayoutStep.Config):
+        KLAYOUT_LVS_SCRIPT: Optional[Path] = variable(
+            None,
+            description="A path to KLayout LVS script.",
             pdk=True,
-        ),
-        Variable(
-            "KLAYOUT_LVS_OPTIONS",
-            Optional[dict[str, bool | int | str]],
-            "Options passed directly to the KLayout LVS script. They vary from one PDK to another.",
+        )
+
+        KLAYOUT_LVS_OPTIONS: Optional[dict[str, bool | int | str]] = variable(
+            None,
+            description="Options passed directly to the KLayout LVS script. They vary from one PDK to another.",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     def run_ihp_sg13g2(
         self, state_in: State, **kwargs
     ) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
 
-        lvs_script_path = self.config["KLAYOUT_LVS_SCRIPT"]
+        lvs_script_path = self.config.KLAYOUT_LVS_SCRIPT
 
         reports_dir = os.path.join(self.step_dir, "reports")
         mkdirp(reports_dir)
@@ -74,23 +74,23 @@ class LVS(KLayoutStep):
 
         output_spice = os.path.join(
             self.step_dir,
-            f"{self.config['DESIGN_NAME']}.{DesignFormat.SPICE.value.extension}",
+            f"{self.config.DESIGN_NAME}.{DesignFormat.SPICE.value.extension}",
         )
 
         with NamedTemporaryFile("w") as f:
             # Merge all CDL inputs
             cdl_lst = [input_view_cdl]
-            cdl_lst.extend(self.config["CELL_CDLS"] or [])
-            cdl_lst.extend(self.config["EXTRA_CDLS"] or [])
-            cdl_lst.extend(self.config["PAD_CDLS"] or [])
+            cdl_lst.extend(self.config.CELL_CDLS or [])
+            cdl_lst.extend(self.config.EXTRA_CDLS or [])
+            cdl_lst.extend(self.config.PAD_CDLS or [])
 
             for fn in cdl_lst:
                 with open(fn, "r") as cdl_fh:
                     f.write(cdl_fh.read())
 
             opts = []
-            if self.config["KLAYOUT_LVS_OPTIONS"]:
-                for k, v in self.config["KLAYOUT_LVS_OPTIONS"].items():
+            if self.config.KLAYOUT_LVS_OPTIONS:
+                for k, v in self.config.KLAYOUT_LVS_OPTIONS.items():
                     opts.extend(
                         [
                             "-rd",
@@ -142,11 +142,11 @@ class LVS(KLayoutStep):
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         views_updates: ViewsUpdate = {}
-        if self.config["PDK"] in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
+        if self.config.PDK in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
             views_updates, metrics_updates = self.run_ihp_sg13g2(state_in, **kwargs)
         else:
             logger.bind(step=self.id).warning(
-                f"KLayout LVS is not supported for the {self.config['PDK']} PDK. This step will be skipped."
+                f"KLayout LVS is not supported for the {self.config.PDK} PDK. This step will be skipped."
             )
 
         return views_updates, metrics_updates

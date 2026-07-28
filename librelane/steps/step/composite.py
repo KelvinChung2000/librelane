@@ -20,6 +20,7 @@ from typing import (
 
 from ...config import (
     Variable,
+    variables_to_model,
 )
 from ...state import DesignFormat, State
 from ...common import (
@@ -75,6 +76,13 @@ class CompositeStep(Step):
         if Self.outputs == NotImplemented:  # Allow for setting explicit outputs
             Self.outputs = list(output_set)
         Self.config_vars = list(config_var_dict.values())
+        Self.install_config_model(
+            variables_to_model(
+                f"{Self.__name__}Config",
+                Self.config_vars,
+                base=Step.Config,
+            )
+        )
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         state = state_in

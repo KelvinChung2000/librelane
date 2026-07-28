@@ -11,145 +11,186 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
-import sys
-import json
 from decimal import Decimal
+import json
+import os
+from pathlib import Path
+import shlex
+from typing import Annotated
 
-import click
+import typer
 
 from .config import Config
+from ..flows.cli import (
+    DEFAULT_JOBS,
+    CondensedOption,
+    JobsOption,
+    LogLevelOption,
+    PadOption,
+    PdkOption,
+    PdkRootOption,
+    SclOption,
+    ShowProgressBarOption,
+    UseCielOption,
+    apply_runtime_options,
+    resolve_pdk_options,
+)
 from ..flows.flow import universal_flow_config_variables
-from ..steps.yosys import verilog_rtl_cfg_vars
-from ..flows.cli import cloup_flow_opts
+from ..steps.pyosys import verilog_rtl_cfg_vars
 
 
-@click.group
-def cli():
-    pass
+cli = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+    rich_markup_mode="rich",
+)
 
 
-@click.command()
-@click.option(
-    "--file-name",
-    type=click.Path(exists=False, file_okay=True, dir_okay=False),
-    default="config.json",
-    prompt="Please input the file name for the configuration file",
-    help="The file name of the configuration file.",
-)
-@click.option(
-    "--design-dir",
-    type=click.Path(exists=True, dir_okay=True, file_okay=False),
-    default=".",
-    prompt="Enter the base directory for your design",
-    help="The top-level design directory. Typically, the configuration file goes in the design directory as well.",
-)
-@click.option(
-    "--design-name",
-    "--top-module",
-    type=str,
-    prompt="Enter the design name (which should be equal to the HDL name of your top module)",
-    help="The name of the design, i.e. the name of the top-level module of the design.",
-)
-@click.option(
-    "--clock-port",
-    type=str,
-    prompt="Enter the name of your design's clock port",
-    help="The identifier for the clock port.",
-)
-@click.option(
-    "--clock-period",
-    type=Decimal,
-    prompt="Enter your desired clock period in nanoseconds",
-    help="The clock period, in nanoseconds.",
-)
-@cloup_flow_opts(
-    config_options=False,
-    run_options=False,
-    sequential_flow_controls=False,
-    jobs=False,
-    accept_config_files=False,
-)
-@click.argument(
-    "source_rtl",
-    type=click.Path(
-        exists=True,
-        dir_okay=False,
-        file_okay=True,
-    ),
-    nargs=-1,
-)
+@cli.callback()
+def config_cli() -> None:
+    """Create and inspect LibreLane design configurations."""
+
+
+@cli.command("create-config")
 def create_config(
-    pdk_root,
-    pdk,
-    scl,
-    file_name,
-    design_name,
-    design_dir,
-    clock_port,
-    clock_period,
-    source_rtl,
-):
-    """
-    Generates an LibreLane JSON configuration file for a design interactively.
-    """
-    if len(source_rtl) == 0:
-        source_rtl = []
+    design_name: Annotated[
+        str,
+        typer.Option(
+            "--design-name",
+            "--top-module",
+            prompt=("Enter the design name (equal to the HDL name of your top module)"),
+            help="The top-level HDL module name.",
+        ),
+    ],
+    clock_port: Annotated[
+        str,
+        typer.Option(
+            "--clock-port",
+            prompt="Enter the name of your design's clock port",
+            help="The clock-port identifier.",
+        ),
+    ],
+    clock_period: Annotated[
+        Decimal,
+        typer.Option(
+            "--clock-period",
+            parser=Decimal,
+            prompt="Enter your desired clock period in nanoseconds",
+            help="The clock period in nanoseconds.",
+        ),
+    ],
+    source_rtl: Annotated[
+        list[Path] | None,
+        typer.Argument(
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="Verilog or SystemVerilog source files.",
+        ),
+    ] = None,
+    file_name: Annotated[
+        Path,
+        typer.Option(
+            "--file-name",
+            file_okay=True,
+            dir_okay=False,
+            prompt="Please input the file name for the configuration file",
+            help="The output configuration file.",
+        ),
+    ] = Path("config.json"),
+    design_dir: Annotated[
+        Path,
+        typer.Option(
+            "--design-dir",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            prompt="Enter the base directory for your design",
+            help="The top-level design directory.",
+        ),
+    ] = Path("."),
+    use_ciel: UseCielOption = True,
+    pdk_root: PdkRootOption = None,
+    pdk: PdkOption = "sky130A",
+    scl: SclOption = None,
+    pad: PadOption = None,
+    log_level: LogLevelOption = None,
+    show_progress_bar: ShowProgressBarOption = None,
+    condensed: CondensedOption = False,
+    jobs: JobsOption = DEFAULT_JOBS,
+) -> None:
+    """Generate a LibreLane JSON configuration interactively."""
+    apply_runtime_options(
+        log_level=log_level,
+        show_progress_bar=show_progress_bar,
+        condensed=condensed,
+        jobs=jobs,
+    )
+    resolved_pdk = resolve_pdk_options(
+        use_ciel=use_ciel,
+        pdk_root=pdk_root,
+        pdk=pdk,
+        scl=scl,
+        pad=pad,
+    )
+
+    sources = list(source_rtl or [])
+    if not sources:
         try:
             while True:
-                file = input(
-                    f"Input the RTL source file #{len(source_rtl)} (Ctrl+D to stop): "
+                source = Path(
+                    input(f"Input RTL source file #{len(sources)} (Ctrl+D to stop): ")
                 )
-                if not os.path.isfile(file):
-                    print(f"Invalid file {file}.", file=sys.stderr)
-                    exit(1)
-                source_rtl.append(file)
+                if not source.is_file():
+                    typer.echo(f"Invalid file {source}.", err=True)
+                    raise typer.Exit(1)
+                sources.append(source)
         except EOFError:
-            print("")
-            if len(source_rtl) == 0:
-                print("At least one source RTL file is required.", file=sys.stderr)
-                exit(1)
-    source_rtl_key = "VERILOG_FILES"
-    if not all(file.endswith(".sv") or file.endswith(".v") for file in source_rtl):
-        print(
+            typer.echo()
+            if not sources:
+                typer.echo("At least one source RTL file is required.", err=True)
+                raise typer.Exit(1)
+
+    if not all(source.suffix in {".sv", ".v"} for source in sources):
+        typer.echo(
             "Only Verilog/SystemVerilog files are supported by create-config.",
-            file=sys.stderr,
+            err=True,
         )
-        exit(-1)
-    source_rtl_rel = [f"dir::{os.path.relpath(x, design_dir)}" for x in source_rtl]
+        raise typer.Exit(-1)
+
+    source_rtl_rel = [
+        f"dir::{os.path.relpath(source, design_dir)}" for source in sources
+    ]
     config_dict = {
         "DESIGN_NAME": design_name,
         "CLOCK_PORT": clock_port,
         "CLOCK_PERIOD": clock_period,
-        source_rtl_key: source_rtl_rel,
-        "meta": {
-            "version": 2,
-        },
+        "VERILOG_FILES": source_rtl_rel,
+        "meta": {"version": 2},
     }
     config, _ = Config.load(
         config_dict,
         universal_flow_config_variables + verilog_rtl_cfg_vars,
-        design_dir=design_dir,
-        pdk=pdk,
-        pdk_root=pdk_root,
-        scl=scl,
+        design_dir=str(design_dir),
+        pdk=resolved_pdk.pdk,
+        pdk_root=resolved_pdk.pdk_root,
+        scl=resolved_pdk.scl,
     )
-    with open(file_name, "w") as f:
-        print(
-            json.dumps(config_dict, cls=config.get_encoder(), indent=4),
-            file=f,
-        )
+    with file_name.open("w", encoding="utf8") as output:
+        json.dump(config_dict, output, cls=config.get_encoder(), indent=4)
+        output.write("\n")
 
-    design_dir_opt = ""
-    if os.path.abspath(design_dir) != os.path.abspath(os.path.dirname(file_name)):
-        design_dir_opt = f"--design-dir {design_dir} "
+    arguments = ["librelane"]
+    if design_dir.resolve() != file_name.parent.resolve():
+        arguments.extend(["--design-dir", str(design_dir)])
+    arguments.append(str(file_name))
 
-    print(f"Wrote config to '{file_name}'.")
-    print("To run this design, invoke:")
-    print(f"\tlibrelane {design_dir_opt}{file_name}")
+    typer.echo(f"Wrote config to '{file_name}'.")
+    typer.echo("To run this design, invoke:")
+    typer.echo(f"\t{shlex.join(arguments)}")
 
-
-cli.add_command(create_config)
 
 if __name__ == "__main__":
     cli()

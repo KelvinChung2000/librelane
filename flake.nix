@@ -77,28 +77,61 @@
               pythonBase = pkgs.callPackage pyproject-nix.build.packages {
                 python = pkgs.python3;
               };
+              # tkinter is how LibreLane gets a Tcl interpreter (see
+              # librelane.common.TclUtils), but it is standard library shipped
+              # with CPython, not a PyPI distribution -- so uv cannot resolve it
+              # and it never appears in uv.lock. nixpkgs builds its python3
+              # without tk and ships the module separately, so hand that
+              # prebuilt module to the virtual environment builder.
+              tkinterOverlay = _final: _prev: {
+                tkinter = (pkgs.callPackage pyproject-nix.build.hacks { }).nixpkgsPrebuilt {
+                  from = pkgs.python3.pkgs.tkinter;
+                };
+              };
+              withTkinter = deps: deps // { tkinter = [ ]; };
               pythonSet = pythonBase.overrideScope (
                 lib.composeManyExtensions [
                   pyproject-build-systems.overlays.wheel
                   (workspace.mkPyprojectOverlay {
                     sourcePreference = "wheel";
                   })
+                  tkinterOverlay
                 ]
               );
-              librelaneEnv = pythonSet.mkVirtualEnv "librelane-python-env" workspace.deps.default;
+              librelaneEnv = pythonSet.mkVirtualEnv "librelane-python-env" (withTkinter workspace.deps.default);
+              # Every dependency group in pyproject.toml, with LibreLane itself
+              # installed as a pointer to the working tree at $REPO_ROOT rather
+              # than a copy in the store. This is what the dev and docs shells
+              # run, so edits take effect without rebuilding.
+              editablePythonSet = pythonSet.overrideScope (
+                lib.composeManyExtensions [
+                  (workspace.mkEditablePyprojectOverlay {
+                    root = "$REPO_ROOT";
+                  })
+                  # hatchling only reaches for `editables` when asked to build
+                  # an editable wheel, so uv.lock never records it as one of
+                  # LibreLane's build systems.
+                  (final: prev: {
+                    librelane = prev.librelane.overrideAttrs (previousAttrs: {
+                      nativeBuildInputs =
+                        previousAttrs.nativeBuildInputs ++ final.resolveBuildSystem { editables = [ ]; };
+                    });
+                  })
+                ]
+              );
+              librelaneDevEnv = editablePythonSet.mkVirtualEnv "librelane-dev-env" (withTkinter {
+                librelane = [
+                  "lint"
+                  "test"
+                  "docs"
+                ];
+              });
+              librelaneNotebookEnv = pythonSet.mkVirtualEnv "librelane-notebook-env" (withTkinter {
+                librelane = [ "notebook" ];
+              });
             in
             {
               libparse = callPythonPackage ./nix/libparse.nix { };
-
-              # warning with every single click invocation
-              cloup = pypkgs.cloup.overridePythonAttrs {
-                postPatch = ''
-                  substituteInPlace cloup/_util.py \
-                    --replace-fail \
-                      "tuple(click.__version__.split('.'))" \
-                      "tuple('${pypkgs'.click.version}'.split('.'))"
-                '';
-              };
 
               sphinx-tippy = callPythonPackage ./nix/sphinx-tippy.nix { };
               sphinx-subfigure = callPythonPackage ./nix/sphinx-subfigure.nix { };
@@ -109,6 +142,8 @@
               librelane = callPythonPackage ./default.nix {
                 inherit librelaneEnv;
               };
+              librelane-dev-env = pypkgs'.toPythonModule librelaneDevEnv;
+              librelane-notebook-env = pypkgs'.toPythonModule librelaneNotebookEnv;
             }
           ))
           (
@@ -177,63 +212,24 @@
           # include the package itself. For a proper devShell, try .#dev.
           default = pkgs.librelane-shell;
           notebook = pkgs.librelane-shell.override ({
-            extra-packages = with pkgs; [
-              jupyter
-            ];
+            python-env = pkgs.python3.pkgs.librelane-notebook-env;
           });
+          # The lint, test and docs tooling comes from pyproject.toml's
+          # dependency groups by way of the development environment, so these
+          # shells only add what is not a Python package.
           dev = pkgs.librelane-shell.override ({
             extra-packages = with pkgs; [
               alejandra
             ];
-            extra-python-packages =
-              ps: with ps; [
-                pyfakefs
-                pytest
-                pytest-xdist
-                pytest-cov
-                pillow
-                mdformat
-                black
-                ipython
-                tokenize-rt
-                flake8
-                mypy
-                types-deprecated
-                types-pyyaml
-                types-psutil
-                types-lxml
-                pipx
-              ];
-            include-librelane = false;
+            python-env = pkgs.python3.pkgs.librelane-dev-env;
           });
           docs = pkgs.librelane-shell.override ({
             extra-packages = with pkgs; [
               alejandra
               imagemagick
+              python3.pkgs.py-mon
             ];
-            extra-python-packages =
-              ps: with ps; [
-                pyfakefs
-                pytest
-                pytest-xdist
-                pillow
-                mdformat
-                furo
-                docutils
-                sphinx
-                sphinx-autobuild
-                sphinx-autodoc-typehints
-                sphinx-design
-                myst-parser
-                docstring-parser
-                sphinx-copybutton
-                sphinxcontrib-spelling
-                sphinxcontrib-bibtex
-                sphinx-tippy
-                sphinx-subfigure
-                py-mon
-              ];
-            include-librelane = false;
+            python-env = pkgs.python3.pkgs.librelane-dev-env;
           });
         }
       );

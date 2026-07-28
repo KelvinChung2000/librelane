@@ -23,7 +23,7 @@ from concurrent.futures import Future
 from .flow import Flow
 from ..state import State
 from ..config import Config
-from ..logging import options, console
+from ..logging import console
 from ..steps import Step, Yosys, OpenROAD, StepError
 
 
@@ -74,8 +74,6 @@ class SynthesisExploration(Flow):
 
         synth_futures: list[tuple[Config, Future[State]]] = []
         self.progress_bar.start_stage("Synthesis Exploration")
-
-        options.set_condensed_mode(True)
 
         for strategy in [
             "AREA 0",
@@ -135,7 +133,6 @@ class SynthesisExploration(Flow):
             except StepError:
                 pass  # None == failure
         self.progress_bar.end_stage()
-        options.set_condensed_mode(False)
 
         successful_results = {k: v for k, v in results.items() if v is not None}
         min_gates = min(map(lambda x: x[0], successful_results.values()))

@@ -23,7 +23,7 @@ from collections.abc import Sequence
 
 from ..step import Step, StepError, StepException
 
-from ...config import Variable
+from ...config import variable
 from ...state import DesignFormat
 from ...common import Path
 
@@ -37,26 +37,23 @@ DesignFormat(
 
 
 class KLayoutStep(Step):
-    config_vars = [
-        Variable(
-            "KLAYOUT_TECH",
-            Path,
-            "A path to the KLayout layer technology (.lyt) file.",
+    class Config(Step.Config):
+        KLAYOUT_TECH: Path = variable(
+            description="A path to the KLayout layer technology (.lyt) file.",
             pdk=True,
-        ),
-        Variable(
-            "KLAYOUT_PROPERTIES",
-            Path,
-            "A path to the KLayout layer properties (.lyp) file.",
+        )
+
+        KLAYOUT_PROPERTIES: Path = variable(
+            description="A path to the KLayout layer properties (.lyp) file.",
             pdk=True,
-        ),
-        Variable(
-            "KLAYOUT_DEF_LAYER_MAP",
-            Path,
-            "A path to the KLayout LEF/DEF layer mapping (.map) file.",
+        )
+
+        KLAYOUT_DEF_LAYER_MAP: Path = variable(
+            description="A path to the KLayout LEF/DEF layer mapping (.map) file.",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     def run_pya_script(
         self,
@@ -85,9 +82,9 @@ class KLayoutStep(Step):
     ) -> list[str]:
         result = []
         if layer_info:
-            lyp = abspath(self.config["KLAYOUT_PROPERTIES"])
-            lyt = abspath(self.config["KLAYOUT_TECH"])
-            lym = abspath(self.config["KLAYOUT_DEF_LAYER_MAP"])
+            lyp = abspath(self.config.KLAYOUT_PROPERTIES)
+            lyt = abspath(self.config.KLAYOUT_TECH)
+            lym = abspath(self.config.KLAYOUT_DEF_LAYER_MAP)
             if None in [lyp, lyt, lym]:
                 raise StepError(
                     "Cannot open design in KLayout as the PDK does not appear to support KLayout."
@@ -95,7 +92,7 @@ class KLayoutStep(Step):
             result += ["--lyp", lyp, "--lyt", lyt, "--lym", lym]
 
         if include_lefs:
-            tech_lefs = self.toolbox.filter_views(self.config, self.config["TECH_LEFS"])
+            tech_lefs = self.toolbox.filter_views(self.config, self.config.TECH_LEFS)
             if len(tech_lefs) != 1:
                 raise StepException(
                     "Misconfigured SCL: 'TECH_LEFS' must return exactly one Tech LEF for its default timing corner."
@@ -106,7 +103,7 @@ class KLayoutStep(Step):
                 abspath(tech_lefs[0]),
             ]
 
-            for lef in self.config["CELL_LEFS"]:
+            for lef in self.config.CELL_LEFS:
                 lef_args.append("--input-lef")
                 lef_args.append(abspath(lef))
 
@@ -115,12 +112,12 @@ class KLayoutStep(Step):
                 lef_args.append("--input-lef")
                 lef_args.append(abspath(lef))
 
-            if extra_lefs := self.config["EXTRA_LEFS"]:
+            if extra_lefs := self.config.EXTRA_LEFS:
                 for lef in extra_lefs:
                     lef_args.append("--input-lef")
                     lef_args.append(abspath(lef))
 
-            if io_pad_lefs := self.config["PAD_LEFS"]:
+            if io_pad_lefs := self.config.PAD_LEFS:
                 for lef in io_pad_lefs:
                     lef_args.append("--input-lef")
                     lef_args.append(abspath(lef))
@@ -130,23 +127,23 @@ class KLayoutStep(Step):
         if include_gds:
             gds_args: list[str] = []
 
-            for gds in self.config["CELL_GDS"]:
+            for gds in self.config.CELL_GDS:
                 gds_args.append("--with-gds-file")
-                gds_args.append(gds)
+                gds_args.append(str(gds))
 
             for gds in self.toolbox.get_macro_views(self.config, DesignFormat.GDS):
                 gds_args.append("--with-gds-file")
                 gds_args.append(str(gds))
 
-            if extra_gds := self.config["EXTRA_GDS"]:
+            if extra_gds := self.config.EXTRA_GDS:
                 for gds in extra_gds:
                     gds_args.append("--with-gds-file")
-                    gds_args.append(gds)
+                    gds_args.append(str(gds))
 
-            if io_pads_gds := self.config["PAD_GDS"]:
+            if io_pads_gds := self.config.PAD_GDS:
                 for gds in io_pads_gds:
                     gds_args.append("--with-gds-file")
-                    gds_args.append(gds)
+                    gds_args.append(str(gds))
 
             result += gds_args
 

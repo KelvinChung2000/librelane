@@ -16,11 +16,11 @@
 # See the License for the specific language governing permissions and
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 from decimal import Decimal
 from typing import Optional
 
-from ...config import Variable
+from ...config import variable
 from ...state import State
 
 from ..step import (
@@ -41,39 +41,39 @@ class AddRoutingObstructions(OdbpyStep):
 
     id = "Odb.AddRoutingObstructions"
     name = "Add Obstructions"
-    config_vars = [
-        Variable(
-            "ROUTING_OBSTRUCTIONS",
-            Optional[list[tuple[str, Decimal, Decimal, Decimal, Decimal]]],
-            "Add routing obstructions to the design. If set to `None`, this step is skipped."
+    obstruction_variable = "ROUTING_OBSTRUCTIONS"
+
+    class Config(Step.Config):
+        ROUTING_OBSTRUCTIONS: Optional[
+            list[tuple[str, Decimal, Decimal, Decimal, Decimal]]
+        ] = variable(
+            None,
+            description="Add routing obstructions to the design. If set to `None`, this step is skipped."
             + " Format of each obstruction item is a tuple of: layer name, llx, lly, urx, ury.",
             units="µm",
-            default=None,
             deprecated_names=["GRT_OBS"],
-        ),
-    ]
+        )
 
-    def get_obstruction_variable(self):
-        return self.config_vars[0]
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "defutil.py")
+        return files("librelane").joinpath("scripts", "odbpy", "defutil.py")
 
     def get_subcommand(self) -> list[str]:
         return ["add_obstructions"]
 
     def get_command(self) -> list[str]:
         command = super().get_command()
-        if obstructions := self.config[self.config_vars[0].name]:
+        if obstructions := self.config[self.obstruction_variable]:
             for obstruction in obstructions:
                 command.append("--obstructions")
                 command.append(" ".join([str(o) for o in obstruction]))
         return command
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config[self.get_obstruction_variable().name] is None:
+        if self.config[self.obstruction_variable] is None:
             logger.info(
-                f"'{self.get_obstruction_variable().name}' is not defined. Skipping '{self.id}'…"
+                f"'{self.obstruction_variable}' is not defined. Skipping '{self.id}'…"
             )
             return {}, {}
         return super().run(state_in, **kwargs)
@@ -106,17 +106,19 @@ class AddPDNObstructions(AddRoutingObstructions):
 
     id = "Odb.AddPDNObstructions"
     name = "Add PDN obstructions"
+    obstruction_variable = "PDN_OBSTRUCTIONS"
 
-    config_vars = [
-        Variable(
-            "PDN_OBSTRUCTIONS",
-            Optional[list[tuple[str, Decimal, Decimal, Decimal, Decimal]]],
-            "Add routing obstructions to the design before PDN stage. If set to `None`, this step is skipped."
+    class Config(Step.Config):
+        PDN_OBSTRUCTIONS: Optional[
+            list[tuple[str, Decimal, Decimal, Decimal, Decimal]]
+        ] = variable(
+            None,
+            description="Add routing obstructions to the design before PDN stage. If set to `None`, this step is skipped."
             + " Format of each obstruction item is a tuple of: layer name, llx, lly, urx, ury,.",
             units="µm",
-            default=None,
-        ),
-    ]
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -128,5 +130,9 @@ class RemovePDNObstructions(RemoveRoutingObstructions):
 
     id = "Odb.RemovePDNObstructions"
     name = "Remove PDN obstructions"
+    obstruction_variable = "PDN_OBSTRUCTIONS"
 
-    config_vars = AddPDNObstructions.config_vars
+    class Config(AddPDNObstructions.Config):
+        pass
+
+    config: Config

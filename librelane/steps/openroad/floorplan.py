@@ -17,7 +17,7 @@
 # limitations under the License.
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 import io
 import os
 import textwrap
@@ -36,11 +36,11 @@ from ...common import (
     Path,
     aggregate_metrics,
 )
-from ...config import Variable
+from ...config import Variable, variable
 from ...state import DesignFormat, State
 from ..common_variables import (
-    io_layer_variables,
-    pdn_variables,
+    IoLayerConfig,
+    PdnConfig,
 )
 from ..step import (
     MetricsUpdate,
@@ -64,93 +64,89 @@ class Floorplan(OpenROADStep):
 
     inputs = [DesignFormat.NETLIST]
 
-    config_vars = OpenROADStep.config_vars + [
-        Variable(
-            "FP_FLIP_SITES",
-            Optional[list[str]],
-            "Flip these sites vertically. Useful in niche alignment scenarios where single-height cells have ground at the south side and double-height cells have power at the south side, causing a short. In that situation, flipping the sites for single-height cells resolves the issue.",
+    class Config(OpenROADStep.Config):
+        FP_FLIP_SITES: Optional[list[str]] = variable(
+            None,
+            description="Flip these sites vertically. Useful in niche alignment scenarios where single-height cells have ground at the south side and double-height cells have power at the south side, causing a short. In that situation, flipping the sites for single-height cells resolves the issue.",
             pdk=True,
-        ),
-        Variable(
-            "FP_TRACKS_INFO",
-            Path,
-            "A path to the a classic OpenROAD `.tracks` file. Used by the floorplanner to generate tracks.",
+        )
+
+        FP_TRACKS_INFO: Path = variable(
+            description="A path to the a classic OpenROAD `.tracks` file. Used by the floorplanner to generate tracks.",
             deprecated_names=["TRACKS_INFO_FILE"],
             pdk=True,
-        ),
-        Variable(
-            "FP_SIZING",
-            Literal["absolute", "relative"],
-            "Sizing mode for floorplanning",
-            default="relative",
-        ),
-        Variable(
-            "FP_ASPECT_RATIO",
-            Decimal,
-            "The core's aspect ratio (height / width).",
-            default=1,
-        ),
-        Variable(
-            "FP_CORE_UTIL",
-            Decimal,
-            "The core utilization percentage.",
-            default=50,
+        )
+
+        FP_SIZING: Literal["absolute", "relative"] = variable(
+            "relative",
+            description="Sizing mode for floorplanning",
+        )
+
+        FP_ASPECT_RATIO: Decimal = variable(
+            1,
+            description="The core's aspect ratio (height / width).",
+        )
+
+        FP_CORE_UTIL: Decimal = variable(
+            50,
+            description="The core utilization percentage.",
             units="%",
-        ),
-        Variable(
-            "FP_OBSTRUCTIONS",
-            Optional[list[tuple[Decimal, Decimal, Decimal, Decimal]]],
-            "Obstructions applied at floorplanning stage. Placement sites are never generated at these locations, which guarantees that it will remain empty throughout the entire flow.",
+        )
+
+        FP_OBSTRUCTIONS: Optional[list[tuple[Decimal, Decimal, Decimal, Decimal]]] = (
+            variable(
+                None,
+                description="Obstructions applied at floorplanning stage. Placement sites are never generated at these locations, which guarantees that it will remain empty throughout the entire flow.",
+                units="µm",
+            )
+        )
+
+        PL_SOFT_OBSTRUCTIONS: Optional[
+            list[tuple[Decimal, Decimal, Decimal, Decimal]]
+        ] = variable(
+            None,
+            description="Soft placement blockages applied at the floorplanning stage. Areas that are soft-blocked will not be used by the initial placer, however, later phases such as buffer insertion or clock tree synthesis are still allowed to place cells in this area.",
             units="µm",
-        ),
-        Variable(
-            "PL_SOFT_OBSTRUCTIONS",
-            Optional[list[tuple[Decimal, Decimal, Decimal, Decimal]]],
-            "Soft placement blockages applied at the floorplanning stage. Areas that are soft-blocked will not be used by the initial placer, however, later phases such as buffer insertion or clock tree synthesis are still allowed to place cells in this area.",
-            units="µm",
-        ),
-        Variable(
-            "CORE_AREA",
-            Optional[tuple[Decimal, Decimal, Decimal, Decimal]],
-            "Specifies a core area (i.e. die area minus margins) to be used in floorplanning."
+        )
+
+        CORE_AREA: Optional[tuple[Decimal, Decimal, Decimal, Decimal]] = variable(
+            None,
+            description="Specifies a core area (i.e. die area minus margins) to be used in floorplanning."
             + " It must be paired with `DIE_AREA`.",
             units="µm",
-        ),
-        Variable(
-            "BOTTOM_MARGIN_MULT",
-            Decimal,
-            "The core margin, in multiples of site heights, from the bottom boundary."
+        )
+
+        BOTTOM_MARGIN_MULT: Decimal = variable(
+            4,
+            description="The core margin, in multiples of site heights, from the bottom boundary."
             + " If `DIEA_AREA` and `CORE_AREA` are set, this variable has no effect.",
-            default=4,
-        ),
-        Variable(
-            "TOP_MARGIN_MULT",
-            Decimal,
-            "The core margin, in multiples of site heights, from the top boundary."
+        )
+
+        TOP_MARGIN_MULT: Decimal = variable(
+            4,
+            description="The core margin, in multiples of site heights, from the top boundary."
             + " If `DIE_AREA` and `CORE_AREA` are set, this variable has no effect.",
-            default=4,
-        ),
-        Variable(
-            "LEFT_MARGIN_MULT",
-            Decimal,
-            "The core margin, in multiples of site widths, from the left boundary."
+        )
+
+        LEFT_MARGIN_MULT: Decimal = variable(
+            12,
+            description="The core margin, in multiples of site widths, from the left boundary."
             + " If `DIE_AREA` are `CORE_AREA` are set, this variable has no effect.",
-            default=12,
-        ),
-        Variable(
-            "RIGHT_MARGIN_MULT",
-            Decimal,
-            "The core margin, in multiples of site widths, from the right boundary."
+        )
+
+        RIGHT_MARGIN_MULT: Decimal = variable(
+            12,
+            description="The core margin, in multiples of site widths, from the right boundary."
             + " If `DIE_AREA` are `CORE_AREA` are set, this variable has no effect.",
-            default=12,
-        ),
-        Variable(
-            "EXTRA_SITES",
-            Optional[list[str]],
-            "Explicitly specify sites other than `PLACE_SITE` to create rows for. If the alternate-site standard cells properly declare the `SITE` property, you do not need to provide this explicitly.",
+        )
+
+        EXTRA_SITES: Optional[list[str]] = variable(
+            None,
+            description="Explicitly specify sites other than `PLACE_SITE` to create rows for. If the alternate-site standard cells properly declare the `SITE` property, you do not need to provide this explicitly.",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     class Mode(str, Enum):
         TEMPLATE = "template"
@@ -158,10 +154,10 @@ class Floorplan(OpenROADStep):
         RELATIVE = "relative"
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "floorplan.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "floorplan.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        path = self.config["FP_TRACKS_INFO"]
+        path = self.config.FP_TRACKS_INFO
         tracks_info_str = open(path).read()
         tracks_commands = old_to_new_tracks(tracks_info_str)
         new_tracks_info = os.path.join(self.step_dir, "config.tracks")
@@ -196,61 +192,59 @@ class PadRing(OpenROADStep):
     id = "OpenROAD.PadRing"
     name = "Pad Ring Generation"
 
-    config_vars = OpenROADStep.config_vars + [
-        Variable(
-            "PDN_CONNECT_MACROS_TO_GRID",
-            bool,
-            "Enables the connection of macros to the top level power grid.",
-            default=True,
+    class Config(OpenROADStep.Config):
+        PDN_CONNECT_MACROS_TO_GRID: bool = variable(
+            True,
+            description="Enables the connection of macros to the top level power grid.",
             deprecated_names=["FP_PDN_ENABLE_MACROS_GRID"],
-        ),
-        Variable(
-            "PDN_MACRO_CONNECTIONS",
-            Optional[list[str]],
-            "Specifies explicit power connections of internal macros to the top level power grid, in the format: regex matching macro instance names, power domain vdd and ground net names, and macro vdd and ground pin names `<instance_name_rx> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>`.",
+        )
+
+        PDN_MACRO_CONNECTIONS: Optional[list[str]] = variable(
+            None,
+            description="Specifies explicit power connections of internal macros to the top level power grid, in the format: regex matching macro instance names, power domain vdd and ground net names, and macro vdd and ground pin names `<instance_name_rx> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>`.",
             deprecated_names=[("FP_PDN_MACRO_HOOKS", pdn_macro_migrator)],
-        ),
-        Variable(
-            "PDN_ENABLE_GLOBAL_CONNECTIONS",
-            bool,
-            "Enables the creation of global connections in PDN generation.",
-            default=True,
+        )
+
+        PDN_ENABLE_GLOBAL_CONNECTIONS: bool = variable(
+            True,
+            description="Enables the creation of global connections in PDN generation.",
             deprecated_names=["FP_PDN_ENABLE_GLOBAL_CONNECTIONS"],
-        ),
-        Variable(
-            "PAD_CFG",
-            Optional[Path],
-            "A custom pad configuration file. If not provided, the default pad config will be used.",
-        ),
-        Variable(
-            "PAD_SOUTH",
-            Optional[list[str]],
-            "The pad instance names for the south pad row.",
-        ),
-        Variable(
-            "PAD_EAST",
-            Optional[list[str]],
-            "The pad instance names for the east pad row.",
-        ),
-        Variable(
-            "PAD_NORTH",
-            Optional[list[str]],
-            "The pad instance names for the north pad row.",
-        ),
-        Variable(
-            "PAD_WEST",
-            Optional[list[str]],
-            "The pad instance names for the west pad row.",
-        ),
-    ]
+        )
+
+        PAD_CFG: Optional[Path] = variable(
+            None,
+            description="A custom pad configuration file. If not provided, the default pad config will be used.",
+        )
+
+        PAD_SOUTH: Optional[list[str]] = variable(
+            None,
+            description="The pad instance names for the south pad row.",
+        )
+
+        PAD_EAST: Optional[list[str]] = variable(
+            None,
+            description="The pad instance names for the east pad row.",
+        )
+
+        PAD_NORTH: Optional[list[str]] = variable(
+            None,
+            description="The pad instance names for the north pad row.",
+        )
+
+        PAD_WEST: Optional[list[str]] = variable(
+            None,
+            description="The pad instance names for the west pad row.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "pad.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "pad.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
-        if self.config["PAD_CFG"] is None:
-            env["PAD_CFG"] = package_path().joinpath(
+        if self.config.PAD_CFG is None:
+            env["PAD_CFG"] = files("librelane").joinpath(
                 "scripts", "openroad", "common", "pad_cfg.tcl"
             )
             logger.info(
@@ -272,69 +266,63 @@ class IOPlacement(OpenROADStep):
     id = "OpenROAD.IOPlacement"
     name = "I/O Placement"
 
-    config_vars = (
-        OpenROADStep.config_vars
-        + io_layer_variables
-        + [
-            Variable(
-                "IO_PIN_CORNER_AVOIDANCE",
-                Optional[Decimal],
-                "The distance from each corner within which pin placement should be avoided.",
-                units="µm",
-            ),
-            Variable(
-                "IO_PIN_PLACEMENT_MODE",
-                PPLMode,
-                "Decides the mode of the random IO placement option.",
-                default="matching",
-                deprecated_names=["FP_PPL_MODE"],
-                validator=_validate_io_ppl_mode,
-            ),
-            Variable(
-                "IO_PIN_MIN_DISTANCE",
-                Optional[Decimal],
-                "The minimum distance between two pins. The unit is microns or routing tracks, depending on whether IO_PIN_MIN_DISTANCE_IN_TRACKS is set. If unspecified by a PDK, OpenROAD will use the length of two routing tracks.",
-                units="µm or routing tracks",
-                pdk=True,
-                deprecated_names=["FP_IO_MIN_DISTANCE"],
-            ),
-            Variable(
-                "IO_PIN_MIN_DISTANCE_IN_TRACKS",
-                Optional[bool],
-                "Setting this variable to true allows IO_PIN_MIN_DISTANCE to be set in number of tracks instead of microns.",
-                pdk=True,
-            ),
-            Variable(
-                "IO_PIN_ORDER_CFG",
-                Optional[Path],
-                "Path to a custom pin configuration file.",
-                deprecated_names=["FP_PIN_ORDER_CFG"],
-            ),
-            Variable(
-                "IO_EXCLUDE_PIN_REGION",
-                Optional[list[str]],
-                "List of regions where pins cannot be placed. The regions are strings in the format `{edge}:{interval}` where edge is `top|bottom|left|right` and the interval is either `*` to exclude the entire edge or `{begin}-{end}` to exclude a part of the edge, where `begin` and `end` are either absolute distance values or themselves `*` to denote the very start or end of an edge.",
-                units="µm",
-            ),
-            # Only used by this step to skip:
-            Variable(
-                "FP_DEF_TEMPLATE",
-                Optional[Path],
-                "Points to the DEF file to be used as a template.",
-            ),
-        ]
-    )
+    class Config(IoLayerConfig, OpenROADStep.Config):
+        IO_PIN_CORNER_AVOIDANCE: Optional[Decimal] = variable(
+            None,
+            description="The distance from each corner within which pin placement should be avoided.",
+            units="µm",
+        )
+
+        IO_PIN_PLACEMENT_MODE: PPLMode = variable(
+            "matching",
+            description="Decides the mode of the random IO placement option.",
+            deprecated_names=["FP_PPL_MODE"],
+            validator=_validate_io_ppl_mode,
+        )
+
+        IO_PIN_MIN_DISTANCE: Optional[Decimal] = variable(
+            None,
+            description="The minimum distance between two pins. The unit is microns or routing tracks, depending on whether IO_PIN_MIN_DISTANCE_IN_TRACKS is set. If unspecified by a PDK, OpenROAD will use the length of two routing tracks.",
+            units="µm or routing tracks",
+            pdk=True,
+            deprecated_names=["FP_IO_MIN_DISTANCE"],
+        )
+
+        IO_PIN_MIN_DISTANCE_IN_TRACKS: Optional[bool] = variable(
+            None,
+            description="Setting this variable to true allows IO_PIN_MIN_DISTANCE to be set in number of tracks instead of microns.",
+            pdk=True,
+        )
+
+        IO_PIN_ORDER_CFG: Optional[Path] = variable(
+            None,
+            description="Path to a custom pin configuration file.",
+            deprecated_names=["FP_PIN_ORDER_CFG"],
+        )
+
+        IO_EXCLUDE_PIN_REGION: Optional[list[str]] = variable(
+            None,
+            description="List of regions where pins cannot be placed. The regions are strings in the format `{edge}:{interval}` where edge is `top|bottom|left|right` and the interval is either `*` to exclude the entire edge or `{begin}-{end}` to exclude a part of the edge, where `begin` and `end` are either absolute distance values or themselves `*` to denote the very start or end of an edge.",
+            units="µm",
+        )
+
+        FP_DEF_TEMPLATE: Optional[Path] = variable(
+            None,
+            description="Points to the DEF file to be used as a template.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "ioplacer.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "ioplacer.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["IO_PIN_ORDER_CFG"] is not None:
+        if self.config.IO_PIN_ORDER_CFG is not None:
             logger.info(f"IO_PIN_ORDER_CFG is set. Skipping '{self.id}'…")
             return {}, {}
-        if self.config["FP_DEF_TEMPLATE"] is not None:
+        if self.config.FP_DEF_TEMPLATE is not None:
             logger.info(
-                f"I/O pins were loaded from {self.config['FP_DEF_TEMPLATE']}. Skipping {self.id}…"
+                f"I/O pins were loaded from {self.config.FP_DEF_TEMPLATE}. Skipping {self.id}…"
             )
             return {}, {}
 
@@ -351,40 +339,35 @@ class TapEndcapInsertion(OpenROADStep):
     id = "OpenROAD.TapEndcapInsertion"
     name = "Tap/Decap Insertion"
 
-    config_vars = OpenROADStep.config_vars + [
-        Variable(
-            "FP_TAPCELL_DIST",
-            Optional[Decimal],
-            "The distance between tap cell columns. Must be specified if WELLTAP_CELL is specified.",
+    class Config(OpenROADStep.Config):
+        FP_TAPCELL_DIST: Optional[Decimal] = variable(
+            None,
+            description="The distance between tap cell columns. Must be specified if WELLTAP_CELL is specified.",
             units="µm",
             pdk=True,
-        ),
-        Variable(
-            "FP_MACRO_HORIZONTAL_HALO",
-            Decimal,
-            "Specify the horizontal halo size around macros.",
-            default=10,
+        )
+
+        FP_MACRO_HORIZONTAL_HALO: Decimal = variable(
+            10,
+            description="Specify the horizontal halo size around macros.",
             units="µm",
             deprecated_names=["FP_TAP_HORIZONTAL_HALO"],
-        ),
-        Variable(
-            "FP_MACRO_VERTICAL_HALO",
-            Decimal,
-            "Specify the vertical halo size around macros.",
-            default=10,
+        )
+
+        FP_MACRO_VERTICAL_HALO: Decimal = variable(
+            10,
+            description="Specify the vertical halo size around macros.",
             units="µm",
             deprecated_names=["FP_TAP_VERTICAL_HALO"],
-        ),
-    ]
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "tapcell.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "tapcell.tcl")
 
     def run(self, state_in, **kwargs):
-        if (
-            self.config["WELLTAP_CELL"] is not None
-            and self.config["FP_TAPCELL_DIST"] is None
-        ):
+        if self.config.WELLTAP_CELL is not None and self.config.FP_TAPCELL_DIST is None:
             raise StepException("FP_TAPCELL_DIST must be set if WELLTAP_CELL is set.")
         return super().run(state_in, **kwargs)
 
@@ -402,7 +385,7 @@ class UnplaceAll(OpenROADStep):
     name = "Unplace All"
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "ungpl.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "ungpl.tcl")
 
 
 def get_psm_error_count(rpt: io.TextIOWrapper) -> int:
@@ -434,26 +417,22 @@ class GeneratePDN(OpenROADStep):
     name = "Generate PDN"
     long_name = "Power Distribution Network Generation"
 
-    config_vars = (
-        OpenROADStep.config_vars
-        + pdn_variables
-        + [
-            Variable(
-                "PDN_CFG",
-                Optional[Path],
-                "A custom PDN configuration file. If not provided, the default PDN config will be used.",
-                deprecated_names=["FP_PDN_CFG"],
-            )
-        ]
-    )
+    class Config(PdnConfig, OpenROADStep.Config):
+        PDN_CFG: Optional[Path] = variable(
+            None,
+            description="A custom PDN configuration file. If not provided, the default PDN config will be used.",
+            deprecated_names=["FP_PDN_CFG"],
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "pdn.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "pdn.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
-        if self.config["PDN_CFG"] is None:
-            env["PDN_CFG"] = package_path().joinpath(
+        if self.config.PDN_CFG is None:
+            env["PDN_CFG"] = files("librelane").joinpath(
                 "scripts", "openroad", "common", "pdn_cfg.tcl"
             )
             logger.info(

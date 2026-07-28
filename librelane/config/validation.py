@@ -42,6 +42,24 @@ def _prepare_deprecated_names(
             break
 
 
+def translate_deprecated_names(
+    mapping: Mapping[str, Any],
+    variables: Sequence[Variable],
+) -> tuple[dict[str, Any], DiagnosticSet]:
+    """Rewrite deprecated keys to their current names within a single layer.
+
+    A PDK supplies a value for every PDK variable, so by the time the layers
+    have been merged the current name is always present and a design that
+    still uses a deprecated one would be quietly ignored. Translating a layer
+    while it is still on its own keeps the design's value winning, whichever
+    name it was written under.
+    """
+    translated = dict(mapping)
+    diagnostics = DiagnosticSet()
+    _prepare_deprecated_names(translated, variables, diagnostics)
+    return translated, diagnostics
+
+
 def _migrate_diode_strategy(
     raw: dict[str, Any],
     diagnostics: DiagnosticSet,
@@ -139,7 +157,10 @@ def validate_mapping(
             )
         return {}, diagnostics
 
-    final = model.model_dump(mode="python")
+    # Read the validated values rather than dumping them: model_dump flattens
+    # dataclasses such as Macro back into plain mappings, and steps expect the
+    # typed objects.
+    final = {name: getattr(model, name) for name in type(model).model_fields}
     extras = model.model_extra or {}
     declared_names = {variable.name for variable in variables}
     deprecated_names = {

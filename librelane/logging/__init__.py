@@ -19,17 +19,17 @@ This module initializes Loguru and owns LibreLane's logging settings and sinks.
 Application code logs through :data:`loguru.logger` directly.
 """
 
+from .live import LiveLog, StepDisplay
 from .logger import (
-    LogLevels,
-    LevelFilter,
     options,
     console,
+    live,
+    step_context,
     set_log_level,
     reset_log_level,
     get_log_level,
     initialize_logger,
     register_additional_sink,
-    deregister_additional_sink,
     additional_sink,
     temporary_log_level,
 )

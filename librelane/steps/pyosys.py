@@ -17,7 +17,7 @@
 # limitations under the License.
 from loguru import logger
 
-from ..resources import package_path
+from importlib.resources import files
 import os
 import re
 import io
@@ -157,80 +157,78 @@ def _validate_icg(variable: Variable, input: str | None, warning_list_ref: list[
 
 
 class PyosysStep(Step):
-    config_vars = [
-        Variable(
-            "SYNTH_LATCH_MAP",
-            Optional[Path],
-            "A path to a file containing the latch mapping for Yosys.",
+    class Config(Step.Config):
+        SYNTH_LATCH_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the latch mapping for Yosys.",
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_TRISTATE_MAP",
-            Optional[Path],
-            "A path to a file containing the tri-state buffer mapping for Yosys.",
+        )
+
+        SYNTH_TRISTATE_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the tri-state buffer mapping for Yosys.",
             deprecated_names=["TRISTATE_BUFFER_MAP"],
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_CSA_MAP",
-            Optional[Path],
-            "A path to a file containing the carry-select adder mapping for Yosys.",
+        )
+
+        SYNTH_CSA_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the carry-select adder mapping for Yosys.",
             deprecated_names=["CARRY_SELECT_ADDER_MAP"],
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_RCA_MAP",
-            Optional[Path],
-            "A path to a file containing the ripple-carry adder mapping for Yosys.",
+        )
+
+        SYNTH_RCA_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the ripple-carry adder mapping for Yosys.",
             deprecated_names=["RIPPLE_CARRY_ADDER_MAP"],
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_FA_MAP",
-            Optional[Path],
-            "A path to a file containing the full adder mapping for Yosys.",
+        )
+
+        SYNTH_FA_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the full adder mapping for Yosys.",
             deprecated_names=["FULL_ADDER_MAP"],
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_CLOCKGATE_MIN_WIDTH",
-            Optional[int],
-            "If set to a value, a group of flip-flops with size >= SYNTH_CLOCKGATE_MIN_WIDTH and an enable signal are clock-gated instead.",
+        )
+
+        SYNTH_CLOCKGATE_MIN_WIDTH: Optional[int] = variable(
+            None,
+            description="If set to a value, a group of flip-flops with size >= SYNTH_CLOCKGATE_MIN_WIDTH and an enable signal are clock-gated instead.",
             deprecated_names=[("USE_LIGHTER", lambda x: 1 if x else None)],
-        ),
-        Variable(
-            "SYNTH_CLOCKGATE_POSEDGE_ICG",
-            Optional[str],
-            "The integrated clock gate cell used for positive-edge flip-flops, in the format `<cell>/<active-high clock enable port>/<clk port>/<gated clk port>`.",
+        )
+
+        SYNTH_CLOCKGATE_POSEDGE_ICG: Optional[str] = variable(
+            None,
+            description="The integrated clock gate cell used for positive-edge flip-flops, in the format `<cell>/<active-high clock enable port>/<clk port>/<gated clk port>`.",
             pdk=True,
             validator=_validate_icg,
-        ),
-        Variable(
-            "SYNTH_CLOCKGATE_NEGEDGE_ICG",
-            Optional[str],
-            "The integrated clock gate cell used for positive-edge flip-flops, in the format `<cell>/<active-high clock enable port>/<clk port>/<gated clk port>`.",
+        )
+
+        SYNTH_CLOCKGATE_NEGEDGE_ICG: Optional[str] = variable(
+            None,
+            description="The integrated clock gate cell used for positive-edge flip-flops, in the format `<cell>/<active-high clock enable port>/<clk port>/<gated clk port>`.",
             pdk=True,
             validator=_validate_icg,
-        ),
-        Variable(
-            "YOSYS_LOG_LEVEL",
-            Literal["ALL", "WARNING", "ERROR"],
-            "Which log level for Yosys. At WARNING or higher, the initialization splash is also disabled.",
-            default="ALL",
-        ),
-        Variable(
-            "SYNTH_CORNER",
-            Optional[str],
-            "A fully qualified IPVT corner to use during synthesis. If unspecified, the value for `DEFAULT_CORNER` from the PDK will be used.",
+        )
+
+        YOSYS_LOG_LEVEL: Literal["ALL", "WARNING", "ERROR"] = variable(
+            "ALL",
+            description="Which log level for Yosys. At WARNING or higher, the initialization splash is also disabled.",
+        )
+
+        SYNTH_CORNER: Optional[str] = variable(
+            None,
+            description="A fully qualified IPVT corner to use during synthesis. If unspecified, the value for `DEFAULT_CORNER` from the PDK will be used.",
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_SHOW",
-            bool,
-            "Generate a graphviz DOT file for the design. This will fail on a completely empty design.",
-            default=False,
-        ),
-    ]
+        )
+
+        SYNTH_SHOW: bool = variable(
+            False,
+            description="Generate a graphviz DOT file for the design. This will fail on a completely empty design.",
+        )
+
+    config: Config
 
     @classmethod
     def get_yosys_path(Self) -> str:
@@ -247,11 +245,11 @@ class PyosysStep(Step):
         if "google.colab" in sys.modules:
             yosys_bin = shutil.which("yosys") or "yosys"
         cmd = [yosys_bin, "-y", script_path]
-        if self.config["YOSYS_LOG_LEVEL"] != "ALL":
+        if self.config.YOSYS_LOG_LEVEL != "ALL":
             cmd += ["-Q"]
-        if self.config["YOSYS_LOG_LEVEL"] == "WARNING":
+        if self.config.YOSYS_LOG_LEVEL == "WARNING":
             cmd += ["-q"]
-        elif self.config["YOSYS_LOG_LEVEL"] == "ERROR":
+        elif self.config.YOSYS_LOG_LEVEL == "ERROR":
             cmd += ["-qq"]
         cmd += ["--"]
         cmd += ["--config-in", os.path.join(self.step_dir, "config.json")]
@@ -266,7 +264,7 @@ class PyosysStep(Step):
         env["PYTHONPATH"] = ":".join(
             (
                 env.get("PYTHONPATH", ""),
-                str(package_path().joinpath("scripts", "pyosys")),
+                str(files("librelane").joinpath("scripts", "pyosys")),
             )
         )
         subprocess_result = super().run_subprocess(cmd, env=env, **kwargs)
@@ -276,31 +274,34 @@ class PyosysStep(Step):
 class VerilogStep(PyosysStep):
     power_defines: bool = False
 
-    config_vars = PyosysStep.config_vars + verilog_rtl_cfg_vars
+    class Config(VerilogRtlConfig, PyosysStep.Config):
+        pass
+
+    config: Config
 
     def get_command(self, state_in: State) -> list[str]:
         cmd = super().get_command(state_in)
 
         blackbox_models = []
         scl_lib_list = self.toolbox.filter_views(
-            self.config, self.config["LIB"], self.config.get("SYNTH_CORNER")
+            self.config, self.config.LIB, self.config.get("SYNTH_CORNER")
         )
 
         if self.power_defines:
-            if self.config["CELL_VERILOG_MODELS"] is not None:
+            if self.config.CELL_VERILOG_MODELS is not None:
                 blackbox_models.extend(
                     [
                         self.toolbox.create_blackbox_model(
-                            frozenset(self.config["CELL_VERILOG_MODELS"]),
+                            frozenset(self.config.CELL_VERILOG_MODELS),
                             frozenset(["USE_POWER_PINS"]),
                         )
                     ]
                 )
-            if self.config["PAD_VERILOG_MODELS"] is not None:
+            if self.config.PAD_VERILOG_MODELS is not None:
                 blackbox_models.extend(
                     [
                         self.toolbox.create_blackbox_model(
-                            frozenset(self.config["PAD_VERILOG_MODELS"]),
+                            frozenset(self.config.PAD_VERILOG_MODELS),
                             frozenset(["USE_POWER_PINS"]),
                         )
                     ]
@@ -334,11 +335,9 @@ class VerilogStep(PyosysStep):
         if models := self.config.get("EXTRA_VERILOG_MODELS"):
             blackbox_models.extend(str(f) for f in models)
 
-        excluded_cells: set[str] = set(self.config["EXTRA_EXCLUDED_CELLS"] or [])
-        excluded_cells.update(
-            process_list_file(self.config["SYNTH_EXCLUDED_CELL_FILE"])
-        )
-        excluded_cells.update(process_list_file(self.config["PNR_EXCLUDED_CELL_FILE"]))
+        excluded_cells: set[str] = set(self.config.EXTRA_EXCLUDED_CELLS or [])
+        excluded_cells.update(process_list_file(self.config.SYNTH_EXCLUDED_CELL_FILE))
+        excluded_cells.update(process_list_file(self.config.PNR_EXCLUDED_CELL_FILE))
 
         libs_synth = self.toolbox.remove_cells_from_lib(
             frozenset([str(lib) for lib in scl_lib_list]),
@@ -366,24 +365,27 @@ class JsonHeader(VerilogStep):
     inputs = []
     outputs = [DesignFormat.JSON_HEADER]
 
-    config_vars = PyosysStep.config_vars + verilog_rtl_cfg_vars
+    class Config(VerilogRtlConfig, PyosysStep.Config):
+        pass
+
+    config: Config
 
     power_defines = True
 
     def get_script_path(self) -> str:
-        return str(package_path().joinpath("scripts", "pyosys", "json_header.py"))
+        return str(files("librelane").joinpath("scripts", "pyosys", "json_header.py"))
 
     def get_command(self, state_in: State) -> list[str]:
         out_file = os.path.join(
             self.step_dir,
-            f"{self.config['DESIGN_NAME']}.{DesignFormat.JSON_HEADER.extension}",
+            f"{self.config.DESIGN_NAME}.{DesignFormat.JSON_HEADER.extension}",
         )
         return super().get_command(state_in) + ["--output", out_file]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         out_file = os.path.join(
             self.step_dir,
-            f"{self.config['DESIGN_NAME']}.{DesignFormat.JSON_HEADER.extension}",
+            f"{self.config.DESIGN_NAME}.{DesignFormat.JSON_HEADER.extension}",
         )
         views_updates, metrics_updates = super().run(state_in, **kwargs)
         views_updates[DesignFormat.JSON_HEADER] = Path(out_file)
@@ -394,188 +396,160 @@ class SynthesisCommon(VerilogStep):
     inputs = []  # The input RTL is part of the configuration
     outputs = [DesignFormat.NETLIST]
 
-    config_vars = PyosysStep.config_vars + [
-        Variable(
-            "SYNTH_CHECKS_ALLOW_TRISTATE",
-            bool,
-            "Ignore multiple-driver warnings if they are connected to tri-state buffers on a best-effort basis.",
-            default=True,
-        ),
-        Variable(
-            "SYNTH_AUTONAME",
-            bool,
-            "Generates names for netlist instances. This results in instance names that can be extremely long, but are more human-readable.",
-            default=False,
-        ),
-        Variable(
-            "SYNTH_STRATEGY",
-            Literal[
-                "AREA 0",
-                "AREA 1",
-                "AREA 2",
-                "AREA 3",
-                "DELAY 0",
-                "DELAY 1",
-                "DELAY 2",
-                "DELAY 3",
-                "DELAY 4",
-            ],
-            "Strategies for abc logic synthesis and technology mapping. AREA strategies usually result in a more compact design, while DELAY strategies usually result in a design that runs at a higher frequency. Please note that there is no way to know which strategy is the best before trying them.",
-            default="AREA 0",
-        ),
-        Variable(
-            "SYNTH_ABC_BUFFERING",
-            bool,
-            "Enables `abc` cell buffering.",
-            default=False,
+    class Config(PyosysStep.Config):
+        SYNTH_CHECKS_ALLOW_TRISTATE: bool = variable(
+            True,
+            description="Ignore multiple-driver warnings if they are connected to tri-state buffers on a best-effort basis.",
+        )
+
+        SYNTH_AUTONAME: bool = variable(
+            False,
+            description="Generates names for netlist instances. This results in instance names that can be extremely long, but are more human-readable.",
+        )
+
+        SYNTH_STRATEGY: Literal[
+            "AREA 0",
+            "AREA 1",
+            "AREA 2",
+            "AREA 3",
+            "DELAY 0",
+            "DELAY 1",
+            "DELAY 2",
+            "DELAY 3",
+            "DELAY 4",
+        ] = variable(
+            "AREA 0",
+            description="Strategies for abc logic synthesis and technology mapping. AREA strategies usually result in a more compact design, while DELAY strategies usually result in a design that runs at a higher frequency. Please note that there is no way to know which strategy is the best before trying them.",
+        )
+
+        SYNTH_ABC_BUFFERING: bool = variable(
+            False,
+            description="Enables `abc` cell buffering.",
             deprecated_names=["SYNTH_BUFFERING"],
-        ),
-        Variable(
-            "SYNTH_ABC_LEGACY_REFACTOR",
-            bool,
-            "Replaces the ABC command `drf -l` with `refactor` which matches older versions of LibreLane but is more unstable.",
-            default=False,
-        ),
-        Variable(
-            "SYNTH_ABC_LEGACY_REWRITE",
-            bool,
-            "Replaces the ABC command `drw -l` with `rewrite` which matches older versions of LibreLane but is more unstable.",
-            default=False,
-        ),
-        Variable(
-            "SYNTH_ABC_DFF",
-            bool,
-            "Passes D-flipflop cells through ABC for optimization (which can for example, eliminate identical flip-flops).",
-            default=False,
-        ),
-        Variable(
-            "SYNTH_ABC_USE_MFS3",
-            bool,
-            "Experimental: attempts a SAT-based remapping in all area and delay strategies before 'retime', which may improve PPA results.",
-            default=False,
-        ),
-        Variable(
-            "SYNTH_ABC_AREA_USE_NF",
-            bool,
-            "Experimental: uses the &nf delay-based mapper with a very high value instead of the amap area mapper, which may be better in some scenarios at recovering area.",
-            default=False,
-        ),
-        Variable(
-            "SYNTH_DIRECT_WIRE_BUFFERING",
-            bool,
-            "Enables inserting buffer cells for directly connected wires.",
-            default=True,
+        )
+
+        SYNTH_ABC_LEGACY_REFACTOR: bool = variable(
+            False,
+            description="Replaces the ABC command `drf -l` with `refactor` which matches older versions of LibreLane but is more unstable.",
+        )
+
+        SYNTH_ABC_LEGACY_REWRITE: bool = variable(
+            False,
+            description="Replaces the ABC command `drw -l` with `rewrite` which matches older versions of LibreLane but is more unstable.",
+        )
+
+        SYNTH_ABC_DFF: bool = variable(
+            False,
+            description="Passes D-flipflop cells through ABC for optimization (which can for example, eliminate identical flip-flops).",
+        )
+
+        SYNTH_ABC_USE_MFS3: bool = variable(
+            False,
+            description="Experimental: attempts a SAT-based remapping in all area and delay strategies before 'retime', which may improve PPA results.",
+        )
+
+        SYNTH_ABC_AREA_USE_NF: bool = variable(
+            False,
+            description="Experimental: uses the &nf delay-based mapper with a very high value instead of the amap area mapper, which may be better in some scenarios at recovering area.",
+        )
+
+        SYNTH_DIRECT_WIRE_BUFFERING: bool = variable(
+            True,
+            description="Enables inserting buffer cells for directly connected wires.",
             deprecated_names=["SYNTH_BUFFER_DIRECT_WIRES"],
-        ),
-        Variable(
-            "SYNTH_SPLITNETS",
-            bool,
-            "Splits multi-bit nets into single-bit nets. Easier to trace but may not be supported by all tools.",
-            default=True,
-        ),
-        Variable(
-            "SYNTH_SIZING",
-            bool,
-            "Enables `abc` cell sizing (instead of buffering).",
-            default=False,
-        ),
-        Variable(
-            "SYNTH_HIERARCHY_MODE",
-            Literal["flatten", "deferred_flatten", "keep"],
-            "Affects how hierarchy is maintained throughout and after synthesis. 'flatten' flattens it during and after synthesis. 'deferred_flatten' flattens it after synthesis. 'keep' never flattens it. Please note that when using the Slang plugin, you need to pass '--keep-hierarchy' to `SLANG_ARGUMENTS` separately. To keep the hierarchy partially, use one of the flattening options and set the 'keep_hierarchy' attribute on instances or modules via: `SYNTH_KEEP_HIERARCHY_INSTANCES`, `SYNTH_KEEP_HIERARCHY_MODULES` or `SYNTH_KEEP_HIERARCHY_MIN_COST`.",
-            default="flatten",
+        )
+
+        SYNTH_SPLITNETS: bool = variable(
+            True,
+            description="Splits multi-bit nets into single-bit nets. Easier to trace but may not be supported by all tools.",
+        )
+
+        SYNTH_SIZING: bool = variable(
+            False,
+            description="Enables `abc` cell sizing (instead of buffering).",
+        )
+
+        SYNTH_HIERARCHY_MODE: Literal["flatten", "deferred_flatten", "keep"] = variable(
+            "flatten",
+            description="Affects how hierarchy is maintained throughout and after synthesis. 'flatten' flattens it during and after synthesis. 'deferred_flatten' flattens it after synthesis. 'keep' never flattens it. Please note that when using the Slang plugin, you need to pass '--keep-hierarchy' to `SLANG_ARGUMENTS` separately. To keep the hierarchy partially, use one of the flattening options and set the 'keep_hierarchy' attribute on instances or modules via: `SYNTH_KEEP_HIERARCHY_INSTANCES`, `SYNTH_KEEP_HIERARCHY_MODULES` or `SYNTH_KEEP_HIERARCHY_MIN_COST`.",
             deprecated_names=[
-                (
-                    "SYNTH_NO_FLAT",
-                    lambda x: "deferred_flatten" if x else "flatten",
-                ),
+                ("SYNTH_NO_FLAT", lambda x: "deferred_flatten" if x else "flatten"),
                 ("SYNTH_ELABORATE_FLATTEN", lambda x: "flatten" if x else "keep"),
                 ("SYNTH_FLAT_TOP", lambda x: "flatten" if x else "keep"),
             ],
-        ),
-        Variable(
-            "SYNTH_KEEP_HIERARCHY_MIN_COST",
-            Optional[int],
-            "Sets the 'keep_hierarchy' attribute on modules where the gate count is estimated to exceed the specified threshold. This prevents larger modules from being flattened. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
-        ),
-        Variable(
-            "SYNTH_KEEP_HIERARCHY_INSTANCES",
-            Optional[list[str]],
-            "A list of instances for which to set the 'keep_hierarchy' attribute. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
-        ),
-        Variable(
-            "SYNTH_KEEP_HIERARCHY_MODULES",
-            Optional[list[str]],
-            "A list of modules for which to set the 'keep_hierarchy' attribute. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
-        ),
-        Variable(
-            "SYNTH_SHARE_RESOURCES",
-            bool,
-            "A flag that enables yosys to reduce the number of cells by determining shareable resources and merging them.",
-            default=True,
-        ),
-        Variable(
-            "SYNTH_ADDER_TYPE",
-            Literal["YOSYS", "FA", "RCA", "CSA"],
-            "Adder type to which the $add and $sub operators are mapped to.  Possible values are `YOSYS/FA/RCA/CSA`; where `YOSYS` refers to using Yosys internal adder definition, `FA` refers to full-adder structure, `RCA` refers to ripple carry adder structure, and `CSA` refers to carry select adder.",
-            default="YOSYS",
-        ),
-        Variable(
-            "SYNTH_EXTRA_MAPPING_FILE",
-            Optional[Path],
-            "Points to an extra techmap file for yosys that runs right after yosys `synth` before generic techmap.",
-        ),
-        Variable(
-            "SYNTH_ELABORATE_ONLY",
-            bool,
-            '"Elaborate" the design only without attempting any logic mapping. Useful when dealing with structural Verilog netlists.',
-            default=False,
-        ),
-        Variable(
-            "SYNTH_MUL_BOOTH",
-            bool,
-            "Runs the booth pass as part of synthesis: See https://yosyshq.readthedocs.io/projects/yosys/en/latest/cmd/booth.html",
-            default=False,
-        ),
-        Variable(
-            "SYNTH_TIE_UNDEFINED",
-            Optional[Literal["high", "low"]],
-            "Whether to tie undefined values low or high. Explicitly provide null if you wish to simply leave them undriven.",
-            default="low",
-        ),
-        Variable(
-            "SYNTH_WRITE_NOATTR",
-            bool,
-            "If true, Verilog-2001 attributes are omitted from output netlists. Some utilities do not support attributes.",
-            default=True,
-        ),
-        Variable(
-            "SYNTH_NORMALIZE_SINGLE_BIT_VECTORS",
-            bool,
-            "If true, vectors with the shape [0:0] are converted to normal wires in the netlist. If disabled, even one-width pins will be suffixed [0] in the layout when imported by most PnR tools.",
-            default=True,
-        ),
-        # Variable(
-        #     "SYNTH_SDC_FILE",
-        #     Optional[Path],
-        #     "Specifies the SDC file read during all Synthesis steps",
-        # ),
-    ]
+        )
+
+        SYNTH_KEEP_HIERARCHY_MIN_COST: Optional[int] = variable(
+            None,
+            description="Sets the 'keep_hierarchy' attribute on modules where the gate count is estimated to exceed the specified threshold. This prevents larger modules from being flattened. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
+        )
+
+        SYNTH_KEEP_HIERARCHY_INSTANCES: Optional[list[str]] = variable(
+            None,
+            description="A list of instances for which to set the 'keep_hierarchy' attribute. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
+        )
+
+        SYNTH_KEEP_HIERARCHY_MODULES: Optional[list[str]] = variable(
+            None,
+            description="A list of modules for which to set the 'keep_hierarchy' attribute. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
+        )
+
+        SYNTH_SHARE_RESOURCES: bool = variable(
+            True,
+            description="A flag that enables yosys to reduce the number of cells by determining shareable resources and merging them.",
+        )
+
+        SYNTH_ADDER_TYPE: Literal["YOSYS", "FA", "RCA", "CSA"] = variable(
+            "YOSYS",
+            description="Adder type to which the $add and $sub operators are mapped to.  Possible values are `YOSYS/FA/RCA/CSA`; where `YOSYS` refers to using Yosys internal adder definition, `FA` refers to full-adder structure, `RCA` refers to ripple carry adder structure, and `CSA` refers to carry select adder.",
+        )
+
+        SYNTH_EXTRA_MAPPING_FILE: Optional[Path] = variable(
+            None,
+            description="Points to an extra techmap file for yosys that runs right after yosys `synth` before generic techmap.",
+        )
+
+        SYNTH_ELABORATE_ONLY: bool = variable(
+            False,
+            description='"Elaborate" the design only without attempting any logic mapping. Useful when dealing with structural Verilog netlists.',
+        )
+
+        SYNTH_MUL_BOOTH: bool = variable(
+            False,
+            description="Runs the booth pass as part of synthesis: See https://yosyshq.readthedocs.io/projects/yosys/en/latest/cmd/booth.html",
+        )
+
+        SYNTH_TIE_UNDEFINED: Optional[Literal["high", "low"]] = variable(
+            "low",
+            description="Whether to tie undefined values low or high. Explicitly provide null if you wish to simply leave them undriven.",
+        )
+
+        SYNTH_WRITE_NOATTR: bool = variable(
+            True,
+            description="If true, Verilog-2001 attributes are omitted from output netlists. Some utilities do not support attributes.",
+        )
+
+        SYNTH_NORMALIZE_SINGLE_BIT_VECTORS: bool = variable(
+            True,
+            description="If true, vectors with the shape [0:0] are converted to normal wires in the netlist. If disabled, even one-width pins will be suffixed [0] in the layout when imported by most PnR tools.",
+        )
+
+    config: Config
 
     def get_script_path(self) -> str:
-        return str(package_path().joinpath("scripts", "pyosys", "synthesize.py"))
+        return str(files("librelane").joinpath("scripts", "pyosys", "synthesize.py"))
 
     def get_command(self, state_in: State) -> list[str]:
         out_file = os.path.join(
             self.step_dir,
-            f"{self.config['DESIGN_NAME']}.{DesignFormat.NETLIST.extension}",
+            f"{self.config.DESIGN_NAME}.{DesignFormat.NETLIST.extension}",
         )
         return super().get_command(state_in) + ["--output", out_file]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         out_file = os.path.join(
             self.step_dir,
-            f"{self.config['DESIGN_NAME']}.{DesignFormat.NETLIST.extension}",
+            f"{self.config.DESIGN_NAME}.{DesignFormat.NETLIST.extension}",
         )
 
         view_updates, metric_updates = super().run(state_in, **kwargs)
@@ -602,9 +576,9 @@ class SynthesisCommon(VerilogStep):
         if os.path.exists(check_error_count_file):
             metric_updates["synthesis__check_error__count"] = _parse_yosys_check(
                 open(check_error_count_file),
-                self.config["TRISTATE_CELLS"],
-                self.config["SYNTH_CHECKS_ALLOW_TRISTATE"],
-                self.config["SYNTH_ELABORATE_ONLY"],
+                self.config.TRISTATE_CELLS,
+                self.config.SYNTH_CHECKS_ALLOW_TRISTATE,
+                self.config.SYNTH_ELABORATE_ONLY,
             )
 
         view_updates[DesignFormat.NETLIST] = Path(out_file)
@@ -633,7 +607,10 @@ class Synthesis(SynthesisCommon):
     id = "Yosys.Synthesis"
     name = "Synthesis"
 
-    config_vars = SynthesisCommon.config_vars + verilog_rtl_cfg_vars
+    class Config(VerilogRtlConfig, SynthesisCommon.Config):
+        pass
+
+    config: Config
 
 
 @Step.factory.register()
@@ -657,7 +634,10 @@ class Resynthesis(SynthesisCommon):
     id = "Yosys.Resynthesis"
     name = "Resynthesis"
 
-    config_vars = SynthesisCommon.config_vars
+    class Config(SynthesisCommon.Config):
+        pass
+
+    config: Config
 
     inputs = [DesignFormat.NETLIST]
 
@@ -686,15 +666,14 @@ class VHDLSynthesis(SynthesisCommon):
     id = "Yosys.VHDLSynthesis"
     name = "Synthesis (VHDL)"
 
-    config_vars = SynthesisCommon.config_vars + [
-        Variable(
-            "VHDL_FILES",
-            list[Path],
-            "The paths of the design's VHDL files.",
-        ),
-        Variable(
-            "GHDL_ARGUMENTS",
-            Optional[list[str]],
-            "Pass arguments to the ghdl frontend.",
-        ),
-    ]
+    class Config(SynthesisCommon.Config):
+        VHDL_FILES: list[Path] = variable(
+            description="The paths of the design's VHDL files.",
+        )
+
+        GHDL_ARGUMENTS: Optional[list[str]] = variable(
+            None,
+            description="Pass arguments to the ghdl frontend.",
+        )
+
+    config: Config

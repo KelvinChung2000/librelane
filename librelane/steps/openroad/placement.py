@@ -17,7 +17,7 @@
 # limitations under the License.
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 from decimal import Decimal
 from typing import (
     Optional,
@@ -27,12 +27,12 @@ from typing import (
 from ...common import (
     Path,
 )
-from ...config import Variable
+from ...config import variable
 from ...state import State
 from ..common_variables import (
-    dpl_variables,
-    routing_layer_variables,
-    rsz_variables,
+    DplConfig,
+    RoutingLayerConfig,
+    RszConfig,
 )
 from ..step import (
     MetricsUpdate,
@@ -45,78 +45,69 @@ from .floorplan import PPLMode, _validate_io_ppl_mode
 
 
 class _GlobalPlacement(OpenROADStep):
-    config_vars = (
-        OpenROADStep.config_vars
-        + routing_layer_variables
-        + rsz_variables
-        + [
-            Variable(
-                "PL_TARGET_DENSITY_PCT",
-                Optional[Decimal],
-                "The desired placement density of cells. If not specified, the value will be equal to (`FP_CORE_UTIL` + 5 * `GPL_CELL_PADDING` + 10).",
-                units="%",
-                deprecated_names=[
-                    ("PL_TARGET_DENSITY", lambda d: Decimal(d) * Decimal("100"))
-                ],
-            ),
-            Variable(
-                "PL_SKIP_INITIAL_PLACEMENT",
-                bool,
-                "Specifies whether the placer should run initial placement or not.",
-                default=False,
-            ),
-            Variable(
-                "PL_WIRE_LENGTH_COEF",
-                Decimal,
-                "Global placement initial wirelength coefficient."
-                + " Decreasing the variable will modify the initial placement of the standard cells to reduce the wirelengths",
-                default=0.25,
-                deprecated_names=["PL_WIRELENGTH_COEF"],
-            ),
-            Variable(
-                "PL_MIN_PHI_COEFFICIENT",
-                Optional[Decimal],
-                "Sets a lower bound on the µ_k variable in the GPL algorithm. Useful if global placement diverges. See https://openroad.readthedocs.io/en/latest/main/src/gpl/README.html",
-            ),
-            Variable(
-                "PL_MAX_PHI_COEFFICIENT",
-                Optional[Decimal],
-                "Sets a upper bound on the µ_k variable in the GPL algorithm. Useful if global placement diverges.See https://openroad.readthedocs.io/en/latest/main/src/gpl/README.html",
-            ),
-            Variable(
-                "FP_CORE_UTIL",
-                Decimal,
-                "The core utilization percentage.",
-                default=50,
-                units="%",
-            ),
-            Variable(
-                "GPL_CELL_PADDING",
-                int,
-                "Cell padding value (in sites) for global placement. The number will be integer divided by 2 and placed on both sides.",
-                units="sites",
-                pdk=True,
-            ),
-            Variable(
-                "PL_KEEP_RESIZE_BELOW_OVERFLOW",
-                Optional[Decimal],
-                "Only applicable when PL_TIMING_DRIVEN is enabled. When the overflow is below the set value, timing-driven iterations will retain the resizer changes instead of reverting them. Allowed values are 0 to 1. If not set, a nonzero default value from OpenROAD will be used",
-            ),
-        ]
-    )
+    class Config(RszConfig, RoutingLayerConfig, OpenROADStep.Config):
+        PL_TARGET_DENSITY_PCT: Optional[Decimal] = variable(
+            None,
+            description="The desired placement density of cells. If not specified, the value will be equal to (`FP_CORE_UTIL` + 5 * `GPL_CELL_PADDING` + 10).",
+            units="%",
+            deprecated_names=[
+                ("PL_TARGET_DENSITY", lambda d: Decimal(d) * Decimal("100"))
+            ],
+        )
+
+        PL_SKIP_INITIAL_PLACEMENT: bool = variable(
+            False,
+            description="Specifies whether the placer should run initial placement or not.",
+        )
+
+        PL_WIRE_LENGTH_COEF: Decimal = variable(
+            0.25,
+            description="Global placement initial wirelength coefficient."
+            + " Decreasing the variable will modify the initial placement of the standard cells to reduce the wirelengths",
+            deprecated_names=["PL_WIRELENGTH_COEF"],
+        )
+
+        PL_MIN_PHI_COEFFICIENT: Optional[Decimal] = variable(
+            None,
+            description="Sets a lower bound on the µ_k variable in the GPL algorithm. Useful if global placement diverges. See https://openroad.readthedocs.io/en/latest/main/src/gpl/README.html",
+        )
+
+        PL_MAX_PHI_COEFFICIENT: Optional[Decimal] = variable(
+            None,
+            description="Sets a upper bound on the µ_k variable in the GPL algorithm. Useful if global placement diverges.See https://openroad.readthedocs.io/en/latest/main/src/gpl/README.html",
+        )
+
+        FP_CORE_UTIL: Decimal = variable(
+            50,
+            description="The core utilization percentage.",
+            units="%",
+        )
+
+        GPL_CELL_PADDING: int = variable(
+            description="Cell padding value (in sites) for global placement. The number will be integer divided by 2 and placed on both sides.",
+            units="sites",
+            pdk=True,
+        )
+
+        PL_KEEP_RESIZE_BELOW_OVERFLOW: Optional[Decimal] = variable(
+            None,
+            description="Only applicable when PL_TIMING_DRIVEN is enabled. When the overflow is below the set value, timing-driven iterations will retain the resizer changes instead of reverting them. Allowed values are 0 to 1. If not set, a nonzero default value from OpenROAD will be used",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "gpl.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "gpl.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
-        if self.config["PL_TARGET_DENSITY_PCT"] is None:
-            util = self.config["FP_CORE_UTIL"]
+        if self.config.PL_TARGET_DENSITY_PCT is None:
+            util = self.config.FP_CORE_UTIL
             metrics_util = state_in.metrics.get("design__instance__utilization")
             if metrics_util is not None:
                 util = metrics_util * 100
 
-            expr = util + (5 * self.config["GPL_CELL_PADDING"]) + 10
+            expr = util + (5 * self.config.GPL_CELL_PADDING) + 10
             expr = min(expr, 100)
             env["PL_TARGET_DENSITY_PCT"] = f"{expr}"
             logger.info(
@@ -136,26 +127,24 @@ class GlobalPlacement(_GlobalPlacement):
     id = "OpenROAD.GlobalPlacement"
     name = "Global Placement"
 
-    config_vars = _GlobalPlacement.config_vars + [
-        Variable(
-            "PL_TIMING_DRIVEN",
-            bool,
-            "Specifies whether the placer should use timing-driven placement.",
-            default=False,
+    class Config(_GlobalPlacement.Config):
+        PL_TIMING_DRIVEN: bool = variable(
+            False,
+            description="Specifies whether the placer should use timing-driven placement.",
             deprecated_names=["PL_TIME_DRIVEN"],
-        ),
-        Variable(
-            "PL_ROUTABILITY_DRIVEN",
-            bool,
-            "Specifies whether the placer should use routability driven placement.",
-            default=True,
-        ),
-        Variable(
-            "PL_ROUTABILITY_OVERFLOW_THRESHOLD",
-            Optional[Decimal],
-            "Sets overflow threshold for routability mode.",
-        ),
-    ]
+        )
+
+        PL_ROUTABILITY_DRIVEN: bool = variable(
+            True,
+            description="Specifies whether the placer should use routability driven placement.",
+        )
+
+        PL_ROUTABILITY_OVERFLOW_THRESHOLD: Optional[Decimal] = variable(
+            None,
+            description="Sets overflow threshold for routability mode.",
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -172,39 +161,37 @@ class GlobalPlacementSkipIO(_GlobalPlacement):
     id = "OpenROAD.GlobalPlacementSkipIO"
     name = "Global Placement Skip IO"
 
-    config_vars = _GlobalPlacement.config_vars + [
-        Variable(
-            "IO_PIN_PLACEMENT_MODE",
-            PPLMode,
-            "Decides the mode of the random IO placement option.",
-            default="matching",
+    class Config(_GlobalPlacement.Config):
+        IO_PIN_PLACEMENT_MODE: PPLMode = variable(
+            "matching",
+            description="Decides the mode of the random IO placement option.",
             deprecated_names=["FP_PPL_MODE"],
             validator=_validate_io_ppl_mode,
-        ),
-        # Only used by this step to skip:
-        Variable(
-            "IO_PIN_ORDER_CFG",
-            Optional[Path],
-            "Path to a custom pin configuration file.",
+        )
+
+        IO_PIN_ORDER_CFG: Optional[Path] = variable(
+            None,
+            description="Path to a custom pin configuration file.",
             deprecated_names=["FP_PIN_ORDER_CFG"],
-        ),
-        Variable(
-            "FP_DEF_TEMPLATE",
-            Optional[Path],
-            "Points to the DEF file to be used as a template.",
-        ),
-    ]
+        )
+
+        FP_DEF_TEMPLATE: Optional[Path] = variable(
+            None,
+            description="Points to the DEF file to be used as a template.",
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
-        if self.config["FP_DEF_TEMPLATE"] is not None:
+        if self.config.FP_DEF_TEMPLATE is not None:
             logger.info(
-                f"I/O pins were loaded from {self.config['FP_DEF_TEMPLATE']}. Returning state unaltered…"
+                f"I/O pins were loaded from {self.config.FP_DEF_TEMPLATE}. Returning state unaltered…"
             )
             return {}, {}
-        if self.config["IO_PIN_ORDER_CFG"] is not None:
+        if self.config.IO_PIN_ORDER_CFG is not None:
             logger.info(
-                f"I/O pins to be placed from {self.config['IO_PIN_ORDER_CFG']}. Returning state unaltered…"
+                f"I/O pins to be placed from {self.config.IO_PIN_ORDER_CFG}. Returning state unaltered…"
             )
             return {}, {}
         env["__PL_SKIP_IO"] = "1"
@@ -221,7 +208,10 @@ class DetailedPlacement(OpenROADStep):
     id = "OpenROAD.DetailedPlacement"
     name = "Detailed Placement"
 
-    config_vars = OpenROADStep.config_vars + dpl_variables
+    class Config(DplConfig, OpenROADStep.Config):
+        pass
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "dpl.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "dpl.tcl")

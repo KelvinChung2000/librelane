@@ -22,4 +22,4 @@ as a number of built-in flows.
 from .flow import FlowError, FlowException, FlowProgressBar, Flow
 from .sequential import SequentialFlow
 from . import builtins
-from .cli import cloup_flow_opts
+from .cli import ResolvedPdkOptions, resolve_pdk_options

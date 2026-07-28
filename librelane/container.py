@@ -21,7 +21,7 @@ import uuid
 import shlex
 import pathlib
 import subprocess
-from .resources import package_path
+from importlib.resources import files
 from typing import NoReturn, Optional, Union
 from collections.abc import Sequence
 
@@ -263,7 +263,11 @@ def run_in_container(
     container_id = str(uuid.uuid4())
 
     if os.getenv("_MOUNT_HOST_LIBRELANE") == "1":
-        host_librelane_pythonpath = package_path().parent
+        # librelane always ships unpacked, so files() is a real filesystem path.
+        # typeshed only promises Traversable, which has no __fspath__.
+        host_librelane_pythonpath = pathlib.Path(
+            files("librelane")  # type: ignore[arg-type]
+        ).parent
         mount_args += ["-v", f"{host_librelane_pythonpath}:/host_librelane"]
 
     cmd = (

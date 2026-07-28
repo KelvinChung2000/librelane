@@ -15,557 +15,411 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from loguru import logger
-
-import os
-import sys
+from dataclasses import dataclass
 import json
-from functools import partial, wraps
-from concurrent.futures import ThreadPoolExecutor
+import os
+from pathlib import Path
+from typing import Annotated
 
-from click import (
-    Context,
-    Parameter,
-    echo,
-)
-from click.formatting import join_options
-from cloup import (
-    option,
-    argument,
-    option_group,
-    Choice,
-    Argument,
-    Option as CloupOption,
-    Path as CloupPath,
-)
-from cloup.constraints import (
-    mutually_exclusive,
-)
-from cloup.typing import Decorator
+from loguru import logger
+import typer
 
 from .flow import Flow
-from ..common import set_tpe, cli, get_pdk_hash, _get_process_limit
-from ..logging import set_log_level, options, LogLevels
-from ..state import State, InvalidState
+from ..common import (
+    ContextPropagatingThreadPoolExecutor,
+    _get_process_limit,
+    get_pdk_hash,
+    set_tpe,
+)
+from ..logging import options, set_log_level
+from ..state import InvalidState, State
 
 
-class Option(CloupOption):
-    """
-    A slight modification of cloup.Option that consumes the environment
-    variable(s) in envvar upon use.
-    """
+FLOW_OPTIONS = "Flow configuration options"
+RUN_OPTIONS = "Run options"
+SEQUENTIAL_OPTIONS = "Sequential flow controls"
+PDK_OPTIONS = "PDK options"
+DISPLAY_OPTIONS = "Logging and display options"
 
-    def resolve_envvar_value(self, ctx: Context) -> str | None:
-        if self.envvar is None:
-            return None
-        evs = self.envvar
-        if isinstance(evs, str):
-            evs = [evs]
-        for envvar in self.envvar:
-            rv = os.environ.pop(envvar, None)
-            if rv:
-                return rv
+
+FlowNameOption = Annotated[
+    str | None,
+    typer.Option(
+        "--flow",
+        "-f",
+        help="The built-in LibreLane flow to use for this run.",
+        rich_help_panel=FLOW_OPTIONS,
+    ),
+]
+ConfigOverridesOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--override-config",
+        "-c",
+        help=(
+            "Override a configuration variable for this run, in KEY=VALUE "
+            "format. May be specified multiple times; values must be valid JSON."
+        ),
+        rich_help_panel=FLOW_OPTIONS,
+    ),
+]
+InitialStateFilesOption = Annotated[
+    list[Path] | None,
+    typer.Option(
+        "--with-initial-state",
+        "-i",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        help=(
+            "Use these JSON files as an initial state. Multiple files are merged "
+            "in order, with later keys overriding earlier keys."
+        ),
+        rich_help_panel=RUN_OPTIONS,
+    ),
+]
+DesignDirOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--design-dir",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        help=(
+            "The top-level design directory that configuration paths may resolve "
+            "relative to."
+        ),
+        rich_help_panel=RUN_OPTIONS,
+    ),
+]
+RunTagOption = Annotated[
+    str | None,
+    typer.Option(
+        "--run-tag",
+        help="An optional name for this flow run.",
+        rich_help_panel=RUN_OPTIONS,
+    ),
+]
+LastRunOption = Annotated[
+    bool,
+    typer.Option(
+        "--last-run",
+        help="Use the last run as the run tag.",
+        rich_help_panel=RUN_OPTIONS,
+    ),
+]
+FromOption = Annotated[
+    str | None,
+    typer.Option(
+        "--from",
+        "-F",
+        help="Start from this step ID. Supported by sequential flows.",
+        rich_help_panel=SEQUENTIAL_OPTIONS,
+    ),
+]
+ToOption = Annotated[
+    str | None,
+    typer.Option(
+        "--to",
+        "-T",
+        help="Stop at this step ID. Supported by sequential flows.",
+        rich_help_panel=SEQUENTIAL_OPTIONS,
+    ),
+]
+OnlyOption = Annotated[
+    str | None,
+    typer.Option(
+        "--only",
+        help="Set both --from and --to to this step ID.",
+        rich_help_panel=SEQUENTIAL_OPTIONS,
+    ),
+]
+SkipOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--skip",
+        "-S",
+        help="Skip this step ID. May be specified multiple times.",
+        rich_help_panel=SEQUENTIAL_OPTIONS,
+    ),
+]
+ReproducibleOption = Annotated[
+    str | None,
+    typer.Option(
+        "--reproducible",
+        help="Create a reproducible for this step ID, then abort the flow.",
+        rich_help_panel=SEQUENTIAL_OPTIONS,
+    ),
+]
+LogLevelOption = Annotated[
+    str | None,
+    typer.Option(
+        "--log-level",
+        metavar="LEVEL",
+        help=(
+            "Logging level name or number. VERBOSE and higher silence subprocess "
+            "logs. [default: unchanged from SUBPROCESS]"
+        ),
+        rich_help_panel=DISPLAY_OPTIONS,
+    ),
+]
+ShowProgressBarOption = Annotated[
+    bool | None,
+    typer.Option(
+        "--show-progress-bar/--hide-progress-bar",
+        help="Whether to show the progress bar while running flows.",
+        rich_help_panel=DISPLAY_OPTIONS,
+    ),
+]
+CondensedOption = Annotated[
+    bool,
+    typer.Option(
+        "--condensed/--full",
+        help=(
+            "Use terse log messages, suppress subprocess logs, and hide the "
+            "progress bar by default."
+        ),
+        rich_help_panel=DISPLAY_OPTIONS,
+    ),
+]
+UseCielOption = Annotated[
+    bool,
+    typer.Option(
+        "--volare-pdk/--manual-pdk",
+        "--ciel-pdk/--manual-pdk",
+        help="Automatically install and enable the requested PDK with Ciel.",
+        rich_help_panel=PDK_OPTIONS,
+    ),
+]
+PdkRootOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--pdk-root",
+        envvar="PDK_ROOT",
+        file_okay=False,
+        dir_okay=True,
+        help="Override the Ciel PDK root directory.",
+        rich_help_panel=PDK_OPTIONS,
+    ),
+]
+PdkOption = Annotated[
+    str,
+    typer.Option(
+        "--pdk",
+        "-p",
+        envvar="PDK",
+        help="The process design kit to use.",
+        rich_help_panel=PDK_OPTIONS,
+    ),
+]
+SclOption = Annotated[
+    str | None,
+    typer.Option(
+        "--scl",
+        "-s",
+        envvar="STD_CELL_LIBRARY",
+        help="The standard cell library to use.",
+        rich_help_panel=PDK_OPTIONS,
+    ),
+]
+PadOption = Annotated[
+    str | None,
+    typer.Option(
+        "--pad",
+        envvar="PAD_CELL_LIBRARY",
+        help="The standard pad library to use.",
+        rich_help_panel=PDK_OPTIONS,
+    ),
+]
+JobsOption = Annotated[
+    int,
+    typer.Option(
+        "--jobs",
+        "-j",
+        min=1,
+        help="The maximum number of threads or processes LibreLane may use.",
+        rich_help_panel=RUN_OPTIONS,
+    ),
+]
+InitialStateElementOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--initial-state-element-override",
+        "-e",
+        help=(
+            "Override an initial-state element in DESIGN_FORMAT_ID=PATH format. "
+            "May be specified multiple times."
+        ),
+        rich_help_panel=RUN_OPTIONS,
+    ),
+]
+ConfigFilesArgument = Annotated[
+    list[Path] | None,
+    typer.Argument(
+        exists=True,
+        file_okay=True,
+        dir_okay=True,
+        readable=True,
+        help="One or more LibreLane configuration files.",
+    ),
+]
+
+
+@dataclass(frozen=True)
+class ResolvedPdkOptions:
+    pdk_root: str | None
+    pdk: str
+    scl: str | None
+    pad: str | None
+
+
+def validate_flow_name(flow_name: str | None) -> str | None:
+    """Resolve a flow ID case-insensitively while preserving its registered name."""
+    if flow_name is None:
         return None
+    for candidate in Flow.factory.list():
+        if candidate.casefold() == flow_name.casefold():
+            return candidate
+    choices = ", ".join(Flow.factory.list())
+    raise typer.BadParameter(f"unknown flow {flow_name!r}; choose from: {choices}")
 
 
-class Path(CloupPath):
-    """
-    A modification of cloup.Path that rejects paths starting with a tilde (~)
-    as too ambiguous. This is because of user confusion.
-    """
-
-    def convert(
-        self,
-        value: str | os.PathLike,
-        param: Parameter | None,
-        ctx: Context | None,
-    ):
-        value = str(value)
-        assert param is not None
-        assert ctx is not None
-
-        is_cmd = False
-        if sys.platform == "win32":
-            import psutil
-
-            is_cmd = psutil.Process(os.getppid()).name().lower().endswith("cmd.exe")
-        if not is_cmd and value.startswith("~"):
-            usage, _ = join_options(param.opts)
-            if isinstance(param, Argument):
-                usage = ""
-            buffer = f"'{value}' starts with a tilde, which is ambiguous.\n"
-            buffer += "  * If you meant your home directory, make sure your POSIX shell is able to expand the tilde:\n"
-            buffer += f"    * GOOD: {ctx.command_path} {usage} {value}   …\n"
-            if usage != "":
-                buffer += f"    * BAD:  {ctx.command_path} {usage}={value}   …\n"
-            buffer += f'    * BAD:  {ctx.command_path} {usage} "{value}" …\n'
-            env_vars = []
-            if param.envvar is not None:
-                if isinstance(param.envvar, str):
-                    env_vars = [param.envvar]
-                else:
-                    env_vars = list(param.envvar)
-            for var in env_vars:
-                buffer += f"    * GOOD: {var}={value}   {ctx.command_path} …\n"
-                buffer += f'    * BAD:  {var}="{value}" {ctx.command_path} …\n'
-            buffer += '  * If you want a relative file or directory that starts with a literal "~", use an absolute path.\n'
-            self.fail(buffer, param, ctx)
-        return super().convert(value, param, ctx)
-
-
-def set_log_level_cb(
-    ctx: Context,
-    param: Parameter,
-    value: str | None,
-):
-    if value is None:
-        return
-
-    level: str | int = value
-    try:
+def apply_runtime_options(
+    *,
+    log_level: str | None,
+    show_progress_bar: bool | None,
+    condensed: bool,
+    jobs: int | None,
+) -> None:
+    """Apply process-wide execution options after Typer has validated them."""
+    if log_level is not None:
+        level: str | int = log_level
         try:
-            level = int(value)
+            level = int(log_level)
         except ValueError:
             pass
-        set_log_level(level)
-    except ValueError as e:
-        logger.error(f"Invalid logging level {value}: {e}.")
-        echo(ctx.get_help())
-        ctx.exit(-1)
-
-
-def set_worker_count_cb(
-    ctx: Context,
-    param: Parameter,
-    value: int | None,
-):
-    if value is None:
-        return None
-
-    set_tpe(ThreadPoolExecutor(max_workers=value))
-
-
-def initial_state_cb(
-    ctx: Context,
-    param: Parameter,
-    value: tuple[str],
-):
-    if len(value) == 0:
-        return None
-
-    raw = {}
-    for state_json in value:
         try:
-            with open(state_json, encoding="utf8") as f:
-                state_dict = json.load(f)
-                if not isinstance(state_dict, dict):
-                    raise ValueError(f"JSON data {value} is not a dictionary")
-                raw.update(state_dict)
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON file: {e}")
-            ctx.exit(-1)
-        except Exception as e:
-            logger.error(f"Failed to read initial state: {e}")
-            ctx.exit(-1)
-    try:
-        initial_state = State.load(raw, validate_path=True)
-    except InvalidState as e:
-        logger.error(e)
-        ctx.exit(-1)
+            set_log_level(level)
+        except ValueError as error:
+            raise typer.BadParameter(
+                f"invalid logging level {log_level!r}: {error}",
+                param_hint="--log-level",
+            ) from error
 
-    return initial_state
-
-
-def only_cb(
-    ctx: Context,
-    param: Parameter,
-    value: str | None,
-):
-    if value is not None:
-        ctx.obj = ctx.obj or {}
-        ctx.obj["only"] = value
-    return value
-
-
-def from_to_cb(
-    ctx: Context,
-    param: Parameter,
-    value: str | None,
-):
-    if isinstance(ctx.obj, dict) and ctx.obj.get("only"):
-        return ctx.obj.get("only")
-    return value
-
-
-def condensed_cb(ctx: Context, param: Parameter, value: bool):
-    if value:
+    if condensed:
         options.set_condensed_mode(True)
         options.set_show_progress_bar(False)
+    if show_progress_bar is not None:
+        options.set_show_progress_bar(show_progress_bar)
+
+    if jobs is not None:
+        set_tpe(ContextPropagatingThreadPoolExecutor(max_workers=jobs))
 
 
-def progressbar_cb(ctx: Context, param: Parameter, value: bool | None):
-    if value is not None:
-        options.set_show_progress_bar(value)
+def load_initial_state(state_files: list[Path] | None) -> State | None:
+    """Load and merge state JSON files in command-line order."""
+    if not state_files:
+        return None
+
+    raw: dict = {}
+    for state_file in state_files:
+        try:
+            with state_file.open(encoding="utf8") as file:
+                state_dict = json.load(file)
+            if not isinstance(state_dict, dict):
+                raise ValueError(f"JSON data in {state_file} is not a dictionary")
+            raw.update(state_dict)
+        except json.JSONDecodeError as error:
+            logger.error(f"Invalid JSON file {state_file}: {error}")
+            raise typer.Exit(-1) from error
+        except OSError as error:
+            logger.error(f"Failed to read initial state {state_file}: {error}")
+            raise typer.Exit(-1) from error
+        except ValueError as error:
+            logger.error(error)
+            raise typer.Exit(-1) from error
+
+    try:
+        return State.load(raw, validate_path=True)
+    except InvalidState as error:
+        logger.error(error)
+        raise typer.Exit(-1) from error
 
 
-def cloup_flow_opts(
+def normalize_sequential_controls(
+    frm: str | None,
+    to: str | None,
+    only: str | None,
+) -> tuple[str | None, str | None]:
+    if only is not None:
+        return only, only
+    return frm, to
+
+
+def resolve_pdk_options(
     *,
-    config_options: bool = True,
-    run_options: bool = True,
-    sequential_flow_controls: bool = True,
-    sequential_flow_reproducible: bool = False,
-    pdk_options: bool = True,
-    log_level: bool = True,
-    jobs: bool = True,
-    accept_config_files: bool = True,
-    volare_by_default: bool = True,
+    use_ciel: bool,
+    pdk_root: Path | None,
+    pdk: str,
+    scl: str | None,
+    pad: str | None,
     volare_pdk_override: str | None = None,
-    _enable_debug_flags: bool = False,
-    enable_overwrite_flag: bool = False,
-    enable_initial_state_element: bool = False,
-) -> Decorator:
-    """
-    Creates a wrapper that appends a number of LibreLane flow-related flags to a
-    function decorated with @cloup.command (https://cloup.readthedocs.io/en/stable/autoapi/cloup/index.html#cloup.command).
+) -> ResolvedPdkOptions:
+    """Resolve manual or Ciel-managed PDK inputs and consume their environment."""
+    for variable in ("PDK_ROOT", "PDK", "STD_CELL_LIBRARY", "PAD_CELL_LIBRARY"):
+        os.environ.pop(variable, None)
 
-    The following keyword arguments will be passed to the decorated function.
+    pdk_root_string = str(pdk_root) if pdk_root is not None else None
+    if not use_ciel:
+        if pdk_root_string is None:
+            logger.error("Argument --pdk-root must be present with --manual-pdk.")
+            raise typer.Exit(1)
+        return ResolvedPdkOptions(pdk_root_string, pdk, scl, pad)
 
-    * Those postfixed ‡ are compatible with the constructor for :class:`Flow`.
-    * Those postfixed § are compatible with the :meth:`Flow.start`.
+    import ciel
+    from ciel.source import StaticWebDataSource
 
-    ---
+    opdks_rev = volare_pdk_override or get_pdk_hash(pdk)
+    ciel_home = ciel.get_ciel_home(pdk_root_string)
 
-    * Flow configuration options (if parameter ``config_options`` is ``True``):
-        * ``flow_name``: ``Optional[str]``: A valid flow ID to be used with :meth:`Flow.factory.get`
-        * ``config_override_strings`` ‡: ``Optional[Iterable[str]]``
-    * Sequential flow controls (if parameter ``sequential_flow_controls`` is ``True``)
-        * ``frm`` §: ``Optional[str]``: Start from a step with this ID. Supported by sequential flows.
-        * ``to`` §: ``Optional[str]``: Stop at a step with this id. Supported by sequential flows.
-        * ``skip`` §: ``Iterable[str]``: Skip these steps. Supported by sequential flows.
-    * Sequential flow reproducible (if parameter ``sequential_flow_reproducible`` is ``True``)
-        * ``reproducible`` §: ``str``: Create a reproducible for a step with is ID, aborting the flow afterwards. Supported by sequential flows.
-    * Flow run options (if parameter ``run_options`` is ``True``):
-        * ``tag`` §: ``Optional[str]``
-        * ``last_run`` §: ``bool``: If ``True``, ``tag`` is guaranteed to be None.
-        * ``with_initial_state`` §: ``Optional[State]``
-    * PDK options
-        * ``use_volare`` : ``bool``
-        * ``pdk_root`` ‡: ``Optional[str]``
-        * ``pdk`` ‡: ``str``
-        * ``scl`` ‡: ``Optional[str]``
-        * ``pad`` ‡: ``Optional[str]``
-    * ``config_files``: ``Iterable[str]``: Paths to configuration files (if
-      parameter  ``accept_config_files`` is ``True``)
+    include_libraries = ["default"]
+    if scl is not None:
+        include_libraries.append(scl)
+    if pad is not None:
+        include_libraries.append(pad)
 
-    :param config_options: Enables flow configuration and starting CLI flags
-    :param sequential_flow_controls: Enables flow control CLI flags
-    :param flow_run_options: Enables tag CLI flags
-    :param pdk_options: Enables PDK CLI flags
-    :param log_level: Enables ``--log-level`` CLI flag
-    :param jobs: Enables ``-j/--jobs`` CLI flag
-    :param accept_config_files: Accepts configuration file paths as CLI arguments
-    :param volare_by_default: If ``pdk_options`` is ``True``, this changes whether
-        Ciel is used by default for this CLI or not.
-    :returns: The wrapper
-    """
-    o = partial(option, cls=CloupOption, show_default=True)
+    pdk_family = None
+    if family := ciel.Family.by_name.get(pdk):
+        pdk = family.default_variant
+        pdk_family = family.name
+        logger.log("VERBOSE", f"Resolved PDK variant {family.default_variant}.")
+    else:
+        for family in ciel.Family.by_name.values():
+            if pdk in family.variants:
+                pdk_family = family.name
+                break
 
-    def decorate(f):
-        if config_options:
-            f = option_group(
-                "Flow configuration options",
-                o(
-                    "-f",
-                    "--flow",
-                    "flow_name",
-                    type=Choice(Flow.factory.list(), case_sensitive=False),
-                    default=None,
-                    help="The built-in LibreLane flow to use for this run",
-                ),
-                o(
-                    "-c",
-                    "--override-config",
-                    "config_override_strings",
-                    type=str,
-                    multiple=True,
-                    help="For this run only- override a configuration variable with a certain value. In the format KEY=VALUE. Can be specified multiple times. Values must be valid JSON values, and keys must not use their deprecated names.",
-                ),
-            )(f)
-        if run_options:
-            f = o(
-                "-i",
-                "--with-initial-state",
-                type=Path(
-                    exists=True,
-                    file_okay=True,
-                    dir_okay=False,
-                ),
-                multiple=True,
-                callback=initial_state_cb,
-                help="Use these JSON files as an initial state. If multiple are provided, they are merged with keys in later files overriding keys in prior files. If none are specified, the latest `state_out.json` of the run directory will be used. If none exist, an empty initial state is created.",
-            )(f)
-            f = o(
-                "--design-dir",
-                "design_dir",
-                type=Path(
-                    exists=True,
-                    file_okay=False,
-                    dir_okay=True,
-                ),
-                default=None,
-                help="The top-level directory for your design that configuration objects may resolve paths relative to.",
-            )(f)
-            if enable_overwrite_flag:
-                f = o(
-                    "--overwrite",
-                    is_flag=True,
-                    default=False,
-                    help="Overwrite run, if exists.",
-                )(f)
-            if _enable_debug_flags:
-                f = option_group(
-                    "Debug flags",
-                    o(
-                        "--force-run-dir",
-                        "_force_run_dir",
-                        type=Path(
-                            exists=True,
-                            file_okay=False,
-                            dir_okay=True,
-                        ),
-                        hidden=True,
-                        default=None,
-                    ),
-                )(f)
-            f = option_group(
-                "Run options",
-                o(
-                    "--run-tag",
-                    "tag",
-                    default=None,
-                    type=str,
-                    help="An optional name to use for this particular run of an LibreLane-based flow. Used to create the run directory.",
-                ),
-                o(
-                    "--last-run",
-                    is_flag=True,
-                    default=False,
-                    help="Use the last run as the run tag.",
-                ),
-                constraint=mutually_exclusive,
-            )(f)
-        if sequential_flow_controls:
-            f = option_group(
-                "Sequential flow controls",
-                o(
-                    "-F",
-                    "--from",
-                    "frm",
-                    type=str,
-                    default=None,
-                    callback=from_to_cb,
-                    help="Start from a step with this id. Supported by sequential flows.",
-                ),
-                o(
-                    "-T",
-                    "--to",
-                    type=str,
-                    default=None,
-                    callback=from_to_cb,
-                    help="Stop at a step with this id. Supported by sequential flows.",
-                ),
-                o(
-                    "--only",
-                    type=str,
-                    default=None,
-                    expose_value=False,
-                    is_eager=True,
-                    callback=only_cb,
-                    help="Shorthand to set both --from and --to to the same value. Overrides the values from both.",
-                ),
-                o(
-                    "-S",
-                    "--skip",
-                    type=str,
-                    multiple=True,
-                    help="Skip these steps. Supported by sequential flows.",
-                ),
-            )(f)
-        if sequential_flow_reproducible:
-            f = o(
-                "--reproducible",
-                type=str,
-                help="Create a reproducible for the step matching this ID, then abort the flow. Supported by sequential flows.",
-            )(f)
-        if log_level:
-            f = o(
-                "--log-level",
-                type=cli.IntEnumChoice(LogLevels),
-                default=None,
-                help="A logging level. Set to VERBOSE or higher to silence subprocess logs. [default: unchanged from SUBPROCESS]",
-                callback=set_log_level_cb,
-                expose_value=False,
-                show_default=False,
-            )(f)
-            f = o(
-                "--show-progress-bar/--hide-progress-bar",
-                type=bool,
-                help="Whether to show the progress bar when running Flows. [default: show]",
-                default=None,
-                callback=progressbar_cb,
-                expose_value=False,
-            )(f)
-            f = o(
-                "--condensed/--full",
-                type=bool,
-                help="In condensed mode, subprocess logs are suppressed regardless of step, --hide-progress-bar is the default, and the log messages themselves are a bit more terse. Useful for debugging.",
-                default=False,
-                is_eager=True,
-                callback=condensed_cb,
-                expose_value=False,
-            )(f)
-        if pdk_options:
-            f = option_group(
-                "PDK options",
-                o(
-                    "--volare-pdk/--manual-pdk",
-                    "--ciel-pdk/--manual-pdk",
-                    "use_ciel",
-                    is_eager=True,
-                    default=volare_by_default,
-                    help="Automatically use Ciel for PDK version installation and enablement. Set --manual if you want to use a custom PDK version.",
-                ),
-                o(
-                    "--pdk-root",
-                    type=Path(
-                        file_okay=False,
-                        dir_okay=True,
-                    ),
-                    is_eager=True,
-                    envvar=["PDK_ROOT"],
-                    help="Override Ciel PDK root folder. Required if Ciel is not installed, but a default value can also be set via the environment variable PDK_ROOT.",
-                ),
-                o(
-                    "-p",
-                    "--pdk",
-                    type=str,
-                    envvar=["PDK"],
-                    default="sky130A",
-                    help="The process design kit to use.",
-                ),
-                o(
-                    "-s",
-                    "--scl",
-                    type=str,
-                    envvar=["STD_CELL_LIBRARY"],
-                    # no default, default is obtained dynamically from PDK
-                    help="The standard cell library to use. If None, the PDK's default standard cell library is used.",
-                ),
-                o(
-                    "--pad",
-                    type=str,
-                    envvar=["PAD_CELL_LIBRARY"],
-                    # no default, default is obtained dynamically from PDK
-                    help="The standard pad library to use. If None, the PDK's default standard cell library is used (if it exists).",
-                ),
-            )(f)
-        if jobs:
-            f = o(
-                "-j",
-                "--jobs",
-                type=int,
-                default=_get_process_limit(),
-                help="The maximum number of threads or processes that can be used by LibreLane.",
-                callback=set_worker_count_cb,
-                expose_value=False,
-            )(f)
-        if enable_initial_state_element:
-            f = o(
-                "-e",
-                "--initial-state-element-override",
-                type=str,
-                multiple=True,
-                default=(),
-                help="Elements to override in the used initial state in the format DESIGN_FORMAT_ID=PATH",
-            )(f)
-        if accept_config_files:
-            f = argument(
-                "config_files",
-                nargs=-1,
-                type=Path(
-                    exists=True,
-                    file_okay=True,
-                    dir_okay=True,
-                ),
-            )(f)
-        if pdk_options:
+    if pdk_family is None:
+        logger.error(f"Could not resolve the PDK '{pdk}'.")
+        raise typer.Exit(1)
 
-            @wraps(f)
-            def pdk_resolve_wrapper(
-                *args,
-                pdk_root: str | None,
-                pdk: str,
-                scl: str | None,
-                pad: str | None,
-                use_ciel: bool,
-                **kwargs,
-            ) -> str:
-                if not use_ciel:
-                    if pdk_root is None:
-                        logger.error(
-                            "Argument --pdk-root must be present with --manual-pdk."
-                        )
-                        exit(1)
-                else:
-                    import ciel
-                    from ciel.source import StaticWebDataSource
+    try:
+        version = ciel.fetch(
+            ciel_home,
+            pdk_family,
+            opdks_rev,
+            data_source=StaticWebDataSource(
+                "https://fossi-foundation.github.io/ciel-releases"
+            ),
+            include_libraries=include_libraries,
+        )
+        pdk_root_string = version.get_dir(ciel_home)
+    except ValueError as error:
+        logger.error(f"Failed to download PDK: {error}")
+        raise typer.Exit(1) from error
 
-                    opdks_rev = volare_pdk_override or get_pdk_hash(pdk)
-                    ciel_home = ciel.get_ciel_home(pdk_root)
+    return ResolvedPdkOptions(pdk_root_string, pdk, scl, pad)
 
-                    include_libraries = ["default"]
-                    if scl is not None:
-                        include_libraries.append(scl)
 
-                    if pad is not None:
-                        include_libraries.append(pad)
-
-                    pdk_family = None
-                    if family := ciel.Family.by_name.get(pdk):
-                        pdk = family.default_variant
-                        pdk_family = family.name
-                        logger.log(
-                            "VERBOSE", f"Resolved PDK variant {family.default_variant}."
-                        )
-                    else:
-                        for family in ciel.Family.by_name.values():
-                            if pdk in family.variants:
-                                pdk_family = family.name
-                                break
-
-                    if pdk_family is None:
-                        logger.error(f"Could not resolve the PDK '{pdk}'.")
-                        exit(1)
-
-                    try:
-                        version = ciel.fetch(
-                            ciel_home,
-                            pdk_family,
-                            opdks_rev,
-                            data_source=StaticWebDataSource(
-                                "https://fossi-foundation.github.io/ciel-releases"
-                            ),
-                            include_libraries=include_libraries,
-                        )
-                        pdk_root = version.get_dir(ciel_home)
-                    except ValueError as e:
-                        logger.error(f"Failed to download PDK: {e}")
-                        exit(1)
-
-                return f(*args, pdk_root=pdk_root, pdk=pdk, scl=scl, pad=pad, **kwargs)
-
-            return pdk_resolve_wrapper
-        else:
-            return f
-
-    return decorate
+DEFAULT_JOBS = _get_process_limit()

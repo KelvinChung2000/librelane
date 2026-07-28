@@ -19,31 +19,30 @@ import shutil
 import datetime
 import subprocess
 from functools import partial
-from typing import IO, Any
+from pathlib import Path
+from typing import Annotated, IO, Any
 from collections.abc import Sequence
 
-from click import pass_context, Context, argument
-from cloup import (
-    group,
-    option,
-    command,
-    Path,
-)
+import typer
 
 from .step import Step, StepError, StepException
-from ..flows import cloup_flow_opts
 from ..__version__ import __version__
-from ..common.cli import formatter_settings
 from ..common import mkdirp, recreate_tree, Toolbox
-from ..resources import package_path
+from ..flows.cli import (
+    CondensedOption,
+    LogLevelOption,
+    ShowProgressBarOption,
+    apply_runtime_options,
+)
+from importlib.resources import files
 
 
 def load_step_from_inputs(
-    ctx: Context,
+    ctx: typer.Context,
     id: str | None,
-    config: str,
-    state_in: str,
-    pdk_root: str | None = None,
+    config: str | os.PathLike,
+    state_in: str | os.PathLike,
+    pdk_root: str | os.PathLike | None = None,
 ) -> Step:
     Target = Step
     if id is not None:
@@ -59,76 +58,82 @@ def load_step_from_inputs(
     return Target.load(
         config=config,
         state_in=state_in,
-        pdk_root=pdk_root,
+        pdk_root=str(pdk_root) if pdk_root is not None else None,
     )
 
 
-o = partial(option, show_default=True)
+cli = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+    rich_markup_mode="rich",
+    help=("Run standalone steps and create filesystem-independent step reproducibles."),
+)
 
 
-@command(formatter_settings=formatter_settings)
-@o(
-    "-o",
-    "--output",
-    type=Path(
-        exists=False,
-        file_okay=False,
-        dir_okay=True,
-    ),
-    help="The directory to store artifacts from step execution in",
-    default=os.path.join(
+@cli.command()
+def run(
+    ctx: typer.Context,
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            "-c",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help="A step-specific config.json file.",
+        ),
+    ],
+    state_in: Annotated[
+        Path,
+        typer.Option(
+            "--state-in",
+            "-i",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help="The input state JSON file.",
+        ),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            file_okay=False,
+            dir_okay=True,
+            help="The directory in which to store step artifacts.",
+        ),
+    ] = Path(
         os.getcwd(),
         datetime.datetime.now().astimezone().strftime("STEP_RUN_%Y-%m-%d_%H-%M-%S"),
     ),
-)
-@o(
-    "--id",
-    type=str,
-    required=False,
-    help="The ID for the step. Can be omitted if the configuration object has the ID in the key-path .meta.step.",
-)
-@o(
-    "-c",
-    "--config",
-    type=Path(
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-    ),
-    required=True,
-    help="A step-specific config.json file",
-)
-@o(
-    "-i",
-    "--state-in",
-    type=Path(
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-    ),
-    required=False,
-)
-@o(
-    "--pdk-root",
-    type=Path(
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-    ),
-    is_eager=True,
-    default=os.environ.pop("PDK_ROOT", None),
-    help="Use this folder as the PDK root, if running a reproducible that doesn't include the PDK.",
-)
-@cloup_flow_opts(
-    config_options=False,
-    run_options=False,
-    sequential_flow_controls=False,
-    jobs=False,
-    accept_config_files=False,
-    pdk_options=False,
-)
-@pass_context
-def run(ctx, output, state_in, config, id, pdk_root):
+    id: Annotated[
+        str | None,
+        typer.Option(
+            "--id",
+            help=(
+                "The registered step ID. May be omitted when config.meta.step "
+                "provides it."
+            ),
+        ),
+    ] = None,
+    pdk_root: Annotated[
+        Path | None,
+        typer.Option(
+            "--pdk-root",
+            envvar="PDK_ROOT",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            help=("A PDK root for reproducibles that do not include their own PDK."),
+        ),
+    ] = None,
+    log_level: LogLevelOption = None,
+    show_progress_bar: ShowProgressBarOption = None,
+    condensed: CondensedOption = False,
+) -> None:
     """
     Runs a step using a step-specific configuration object and an input state.
 
@@ -136,6 +141,13 @@ def run(ctx, output, state_in, config, id, pdk_root):
     filesystem-independent reproducibles.
     """
 
+    apply_runtime_options(
+        log_level=log_level,
+        show_progress_bar=show_progress_bar,
+        condensed=condensed,
+        jobs=None,
+    )
+    os.environ.pop("PDK_ROOT", None)
     step = load_step_from_inputs(ctx, id, config, state_in, pdk_root)
 
     if step.config.meta.librelane_version != __version__:
@@ -160,47 +172,52 @@ def run(ctx, output, state_in, config, id, pdk_root):
         ctx.exit(-1)
 
 
-@command(formatter_settings=formatter_settings)
-@o(
-    "-o",
-    "--output",
-    type=Path(
-        exists=False,
-        file_okay=True,
-        dir_okay=False,
-    ),
-    help="Ejected run script",
-    default="run.sh",
-)
-@o(
-    "--id",
-    type=str,
-    required=False,
-    help="The ID for the step. Can be omitted if the configuration object has the ID in the key-path .meta.step.",
-)
-@o(
-    "-c",
-    "--config",
-    type=Path(
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-    ),
-    required=True,
-    help="A step-specific config.json file",
-)
-@o(
-    "-i",
-    "--state-in",
-    type=Path(
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-    ),
-    required=False,
-)
-@pass_context
-def eject(ctx, output, state_in, config, id):
+@cli.command()
+def eject(
+    ctx: typer.Context,
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            "-c",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help="A step-specific config.json file.",
+        ),
+    ],
+    state_in: Annotated[
+        Path,
+        typer.Option(
+            "--state-in",
+            "-i",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help="The input state JSON file.",
+        ),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            file_okay=True,
+            dir_okay=False,
+            help="The ejected run script.",
+        ),
+    ] = Path("run.sh"),
+    id: Annotated[
+        str | None,
+        typer.Option(
+            "--id",
+            help=(
+                "The registered step ID. May be omitted when config.meta.step "
+                "provides it."
+            ),
+        ),
+    ] = None,
+) -> None:
     """
     For steps that rely on underlying utilities using a subprocess, this scripts
     "ejects" LibreLane and just returns a shell script that runs this subprocess.
@@ -266,7 +283,7 @@ def eject(ctx, output, state_in, config, id):
         )
         exit(-1)
 
-    canon_scripts_dir = package_path().joinpath("scripts")
+    canon_scripts_dir = files("librelane").joinpath("scripts")
     canon_scripts_dir_string = str(canon_scripts_dir)
     target_scripts_dir = os.path.join(".", "scripts")
 
@@ -327,89 +344,71 @@ def eject(ctx, output, state_in, config, id):
     logger.info("Ejected successfully.")
 
 
-@command(formatter_settings=formatter_settings)
-@o(
-    "-o",
-    "--output",
-    type=Path(
-        exists=False,
-        file_okay=False,
-        dir_okay=True,
-    ),
-    help="The output directory for the reproducible.",
-    default="reproducible",
-)
-@o(
-    "-d",
-    "--step-dir",
-    type=Path(
-        exists=False,
-        file_okay=False,
-        dir_okay=True,
-    ),
-    help="The step directory from which to create the reproducible. If provided, --config and the input state can be omitted, and vice versa.",
-    default=None,
-)
-@o(
-    "--id",
-    type=str,
-    required=False,
-    help="The ID for the step. Can be omitted if the configuration object has the ID in the key-path .meta.step.",
-)
-@o(
-    "-c",
-    "--config",
-    type=Path(
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-    ),
-    required=False,
-    help="A step-specific config.json file",
-)
-@o(
-    "-i",
-    "--state-in",
-    type=Path(
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-    ),
-    required=False,
-)
-@o(
-    "--include-pdk/--no-include-pdk",
-    type=bool,
-    default=True,
-)
-@o(
-    "--flatten/--no-flatten",
-    type=bool,
-    default=False,
-)
-@pass_context
-@argument(
-    "step_dir_arg",
-    type=Path(
-        exists=False,
-        file_okay=False,
-        dir_okay=True,
-    ),
-    default=None,
-    required=False,
-    nargs=1,
-)
+@cli.command("create-reproducible")
 def create_reproducible(
-    ctx,
-    output,
-    step_dir,
-    step_dir_arg,
-    id,
-    config,
-    state_in,
-    include_pdk,
-    flatten,
-):
+    ctx: typer.Context,
+    step_dir_arg: Annotated[
+        Path | None,
+        typer.Argument(
+            file_okay=False,
+            dir_okay=True,
+            help="A step directory from a previous run.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            file_okay=False,
+            dir_okay=True,
+            help="The output directory for the reproducible.",
+        ),
+    ] = Path("reproducible"),
+    step_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--step-dir",
+            "-d",
+            file_okay=False,
+            dir_okay=True,
+            help="A step directory from a previous run.",
+        ),
+    ] = None,
+    id: Annotated[
+        str | None,
+        typer.Option(
+            "--id",
+            help=(
+                "The registered step ID. May be omitted when config.meta.step "
+                "provides it."
+            ),
+        ),
+    ] = None,
+    config: Annotated[
+        Path | None,
+        typer.Option(
+            "--config",
+            "-c",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help="A step-specific config.json file.",
+        ),
+    ] = None,
+    state_in: Annotated[
+        Path | None,
+        typer.Option(
+            "--state-in",
+            "-i",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+        ),
+    ] = None,
+    include_pdk: Annotated[bool, typer.Option("--include-pdk/--no-include-pdk")] = True,
+    flatten: Annotated[bool, typer.Option("--flatten/--no-flatten")] = False,
+) -> None:
     """
     Creates a filesystem-independent step reproducible.
 
@@ -430,89 +429,60 @@ def create_reproducible(
     emit a warning if the installed version of LibreLane mismatches the one
     declared in the config file.
     """
-    step_dir = step_dir or step_dir_arg or os.getcwd()
-
-    if step_dir is None:
+    selected_step_dir = step_dir or step_dir_arg
+    if selected_step_dir is None and (config is not None or state_in is not None):
         if config is None or state_in is None:
             logger.error(
-                "Either --step-dir or both --config and --state-in must be provided."
-            )
-            ctx.exit(-1)
-        elif None in [config, state_in]:
-            logger.error(
-                "Both --config and --state-in must be provided if the --step-dir is not provided."
+                "Both --config and --state-in must be provided when --step-dir "
+                "is omitted."
             )
             ctx.exit(-1)
     else:
+        selected_step_dir = selected_step_dir or Path.cwd()
         if config is None:
-            config = os.path.join(step_dir, "config.json")
+            config = selected_step_dir / "config.json"
         if state_in is None:
-            state_in = os.path.join(step_dir, "state_in.json")
+            state_in = selected_step_dir / "state_in.json"
 
+    assert config is not None
+    assert state_in is not None
     step = load_step_from_inputs(ctx, id, config, state_in)
     step.create_reproducible(output, include_pdk, flatten=flatten)
 
 
-@command(formatter_settings=formatter_settings, hidden=True)
-@o(
-    "-d",
-    "--step-dir",
-    type=Path(
-        exists=False,
-        file_okay=False,
-        dir_okay=True,
-    ),
-    help="The step directory from which to create the test. If provided, --config and the input state can be omitted, and vice versa.",
-    default=None,
-)
-@o(
-    "--output",
-    type=Path(
-        exists=False,
-        file_okay=False,
-        dir_okay=True,
-    ),
-    default=None,
-)
-@argument(
-    "step_dir_arg",
-    type=Path(
-        exists=False,
-        file_okay=False,
-        dir_okay=True,
-    ),
-    default=None,
-    required=False,
-    nargs=1,
-)
-@pass_context
-def create_test(ctx, step_dir, step_dir_arg, output):
-    step_dir = step_dir or step_dir_arg or os.getcwd()
-    config = os.path.join(step_dir, "config.json")
-    state_in = os.path.join(step_dir, "state_in.json")
-    if output is None:
-        output = os.path.join(step_dir, "test")
+@cli.command("create-test", hidden=True)
+def create_test(
+    ctx: typer.Context,
+    step_dir_arg: Annotated[
+        Path | None,
+        typer.Argument(file_okay=False, dir_okay=True),
+    ] = None,
+    step_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--step-dir",
+            "-d",
+            file_okay=False,
+            dir_okay=True,
+            help="The step directory from which to create the test.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", file_okay=False, dir_okay=True),
+    ] = None,
+) -> None:
+    selected_step_dir = step_dir or step_dir_arg or Path.cwd()
+    config = selected_step_dir / "config.json"
+    state_in = selected_step_dir / "state_in.json"
+    selected_output = output or selected_step_dir / "test"
 
     step = load_step_from_inputs(ctx, None, config, state_in)
-    step.create_reproducible(output, include_pdk=False, flatten=True)
-    os.remove(os.path.join(output, "run_ol.sh"))
-    if os.path.exists(os.path.join(output, "base.sdc")):
-        os.remove(os.path.join(output, "base.sdc"))
+    step.create_reproducible(selected_output, include_pdk=False, flatten=True)
+    os.remove(selected_output / "run_ol.sh")
+    if (selected_output / "base.sdc").exists():
+        os.remove(selected_output / "base.sdc")
 
-
-@group(formatter_settings=formatter_settings)
-def cli():
-    """
-    Try 'python3 -m librelane.steps COMMAND --help' for help with a specific
-    command.
-    """
-    pass
-
-
-cli.add_command(run)
-cli.add_command(eject)
-cli.add_command(create_reproducible)
-cli.add_command(create_test)
 
 if __name__ == "__main__":
     cli()

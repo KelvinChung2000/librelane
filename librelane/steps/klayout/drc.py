@@ -16,14 +16,14 @@
 # See the License for the specific language governing permissions and
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 import os
 from os.path import abspath
 from typing import Optional
 
 from ..step import ViewsUpdate, MetricsUpdate, Step
 
-from ...config import Variable
+from ...config import variable
 from ...state import DesignFormat, State
 from ...common import Path, mkdirp, _get_process_limit
 
@@ -49,35 +49,35 @@ class DRC(KLayoutStep):
     ]
     outputs = []
 
-    config_vars = KLayoutStep.config_vars + [
-        Variable(
-            "KLAYOUT_DRC_RUNSET",
-            Optional[Path],
-            "A path to KLayout DRC runset.",
+    class Config(KLayoutStep.Config):
+        KLAYOUT_DRC_RUNSET: Optional[Path] = variable(
+            None,
+            description="A path to KLayout DRC runset.",
             pdk=True,
             deprecated_names=["KLAYOUT_DRC_TECH_SCRIPT"],
-        ),
-        Variable(
-            "KLAYOUT_DRC_OPTIONS",
-            Optional[dict[str, bool | int | str]],
-            "Options passed directly to the KLayout DRC runset. They vary from one PDK to another.",
+        )
+
+        KLAYOUT_DRC_OPTIONS: Optional[dict[str, bool | int | str]] = variable(
+            None,
+            description="Options passed directly to the KLayout DRC runset. They vary from one PDK to another.",
             pdk=True,
-        ),
-        Variable(
-            "KLAYOUT_DRC_THREADS",
-            Optional[int],
-            "Specifies the number of threads to be used in KLayout DRC."
+        )
+
+        KLAYOUT_DRC_THREADS: Optional[int] = variable(
+            None,
+            description="Specifies the number of threads to be used in KLayout DRC."
             + "If unset, this will be equal to your machine's thread count.",
-        ),
-    ]
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
-        if self.config["PDK"] in ["sky130A", "sky130B"]:
+        if self.config.PDK in ["sky130A", "sky130B"]:
             metrics_updates = self.run_sky130(state_in, **kwargs)
-        elif self.config["PDK"] in ["gf180mcuA", "gf180mcuB", "gf180mcuC", "gf180mcuD"]:
+        elif self.config.PDK in ["gf180mcuA", "gf180mcuB", "gf180mcuC", "gf180mcuD"]:
             metrics_updates = self.run_gf180mcu(state_in, **kwargs)
-        elif self.config["PDK"] in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
+        elif self.config.PDK in ["ihp-sg13g2", "ihp-sg13cmos5l"]:
             metrics_updates = self.run_ihp_sg13g2(state_in, **kwargs)
         else:
             metrics_updates = self.run_generic(state_in, **kwargs)
@@ -87,13 +87,13 @@ class DRC(KLayoutStep):
     def run_generic(self, state_in: State, **kwargs) -> MetricsUpdate:
         kwargs, env = self.extract_env(kwargs)
 
-        if not self.config["KLAYOUT_DRC_RUNSET"]:
+        if not self.config.KLAYOUT_DRC_RUNSET:
             logger.bind(step=self.id).warning(
-                f"KLAYOUT_DRC_RUNSET is unset. KLayout.DRC may not be supported for the {self.config['PDK']} PDK. This step will be skipped."
+                f"KLAYOUT_DRC_RUNSET is unset. KLayout.DRC may not be supported for the {self.config.PDK} PDK. This step will be skipped."
             )
             return {}
 
-        drc_script_path = self.config["KLAYOUT_DRC_RUNSET"]
+        drc_script_path = self.config.KLAYOUT_DRC_RUNSET
 
         reports_dir = os.path.join(self.step_dir, "reports")
         mkdirp(reports_dir)
@@ -104,8 +104,8 @@ class DRC(KLayoutStep):
         assert isinstance(input_view, Path)
 
         opts = []
-        if self.config["KLAYOUT_DRC_OPTIONS"]:
-            for k, v in self.config["KLAYOUT_DRC_OPTIONS"].items():
+        if self.config.KLAYOUT_DRC_OPTIONS:
+            for k, v in self.config.KLAYOUT_DRC_OPTIONS.items():
                 opts.extend(
                     [
                         "-rd",
@@ -113,7 +113,7 @@ class DRC(KLayoutStep):
                     ]
                 )
 
-        threads = self.config["KLAYOUT_DRC_THREADS"] or str(_get_process_limit())
+        threads = self.config.KLAYOUT_DRC_THREADS or str(_get_process_limit())
         if threads != "1":
             opts.extend(
                 [
@@ -137,7 +137,7 @@ class DRC(KLayoutStep):
                 "-rd",
                 f"input={abspath(input_view)}",
                 "-rd",
-                f"topcell={self.config['DESIGN_NAME']}",
+                f"topcell={self.config.DESIGN_NAME}",
                 "-rd",
                 f"report={abspath(lyrdb_report)}",
                 *opts,
@@ -148,7 +148,7 @@ class DRC(KLayoutStep):
             [
                 "python3",
                 str(
-                    package_path().joinpath(
+                    files("librelane").joinpath(
                         "scripts", "klayout", "xml_drc_report_to_json.py"
                     )
                 ),
@@ -165,17 +165,15 @@ class DRC(KLayoutStep):
         kwargs, env = self.extract_env(kwargs)
         reports_dir = os.path.join(self.step_dir, "reports")
         mkdirp(reports_dir)
-        drc_script_path = self.config["KLAYOUT_DRC_RUNSET"]
+        drc_script_path = self.config.KLAYOUT_DRC_RUNSET
         lyrdb_report = os.path.join(reports_dir, "drc.klayout.lyrdb")
         json_report = os.path.join(reports_dir, "drc.klayout.json")
-        feol = str(self.config["KLAYOUT_DRC_OPTIONS"]["feol"]).lower()
-        beol = str(self.config["KLAYOUT_DRC_OPTIONS"]["beol"]).lower()
-        floating_metal = str(
-            self.config["KLAYOUT_DRC_OPTIONS"]["floating_metal"]
-        ).lower()
-        offgrid = str(self.config["KLAYOUT_DRC_OPTIONS"]["offgrid"]).lower()
-        seal = str(self.config["KLAYOUT_DRC_OPTIONS"]["seal"]).lower()
-        threads = self.config["KLAYOUT_DRC_THREADS"] or _get_process_limit()
+        feol = str(self.config.KLAYOUT_DRC_OPTIONS["feol"]).lower()
+        beol = str(self.config.KLAYOUT_DRC_OPTIONS["beol"]).lower()
+        floating_metal = str(self.config.KLAYOUT_DRC_OPTIONS["floating_metal"]).lower()
+        offgrid = str(self.config.KLAYOUT_DRC_OPTIONS["offgrid"]).lower()
+        seal = str(self.config.KLAYOUT_DRC_OPTIONS["seal"]).lower()
+        threads = self.config.KLAYOUT_DRC_THREADS or _get_process_limit()
         logger.info(f"Running KLayout DRC with {threads} threads…")
 
         input_view = state_in[DesignFormat.GDS]
@@ -192,7 +190,7 @@ class DRC(KLayoutStep):
                 "-rd",
                 f"input={abspath(input_view)}",
                 "-rd",
-                f"topcell={self.config['DESIGN_NAME']}",
+                f"topcell={self.config.DESIGN_NAME}",
                 "-rd",
                 f"report={abspath(lyrdb_report)}",
                 "-rd",
@@ -215,7 +213,7 @@ class DRC(KLayoutStep):
             [
                 "python3",
                 str(
-                    package_path().joinpath(
+                    files("librelane").joinpath(
                         "scripts", "klayout", "xml_drc_report_to_json.py"
                     )
                 ),
@@ -231,13 +229,13 @@ class DRC(KLayoutStep):
     def run_gf180mcu(self, state_in: State, **kwargs) -> MetricsUpdate:
         kwargs, env = self.extract_env(kwargs)
 
-        if not self.config["KLAYOUT_DRC_RUNSET"]:
+        if not self.config.KLAYOUT_DRC_RUNSET:
             logger.bind(step=self.id).warning(
-                f"KLAYOUT_DRC_RUNSET is unset. KLayout.DRC may not be supported for the {self.config['PDK']} PDK. This step will be skipped."
+                f"KLAYOUT_DRC_RUNSET is unset. KLayout.DRC may not be supported for the {self.config.PDK} PDK. This step will be skipped."
             )
             return {}
 
-        drc_script_path = self.config["KLAYOUT_DRC_RUNSET"]
+        drc_script_path = self.config.KLAYOUT_DRC_RUNSET
 
         reports_dir = os.path.join(self.step_dir, "reports")
         mkdirp(reports_dir)
@@ -248,8 +246,8 @@ class DRC(KLayoutStep):
         assert isinstance(input_view, Path)
 
         opts = []
-        if self.config["KLAYOUT_DRC_OPTIONS"]:
-            for k, v in self.config["KLAYOUT_DRC_OPTIONS"].items():
+        if self.config.KLAYOUT_DRC_OPTIONS:
+            for k, v in self.config.KLAYOUT_DRC_OPTIONS.items():
                 opts.extend(
                     [
                         "-rd",
@@ -257,7 +255,7 @@ class DRC(KLayoutStep):
                     ]
                 )
 
-        threads = self.config["KLAYOUT_DRC_THREADS"] or str(_get_process_limit())
+        threads = self.config.KLAYOUT_DRC_THREADS or str(_get_process_limit())
         if threads != "1":
             opts.extend(
                 [
@@ -279,7 +277,7 @@ class DRC(KLayoutStep):
                 "-rd",
                 f"input={abspath(input_view)}",
                 "-rd",
-                f"topcell={self.config['DESIGN_NAME']}",
+                f"topcell={self.config.DESIGN_NAME}",
                 "-rd",
                 f"report={abspath(lyrdb_report)}",
                 *opts,
@@ -290,7 +288,7 @@ class DRC(KLayoutStep):
             [
                 "python3",
                 str(
-                    package_path().joinpath(
+                    files("librelane").joinpath(
                         "scripts", "klayout", "xml_drc_report_to_json.py"
                     )
                 ),
@@ -306,7 +304,7 @@ class DRC(KLayoutStep):
     def run_ihp_sg13g2(self, state_in: State, **kwargs) -> MetricsUpdate:
         kwargs, env = self.extract_env(kwargs)
 
-        drc_script_path = self.config["KLAYOUT_DRC_RUNSET"]
+        drc_script_path = self.config.KLAYOUT_DRC_RUNSET
 
         reports_dir = os.path.join(self.step_dir, "reports")
         mkdirp(reports_dir)
@@ -317,8 +315,8 @@ class DRC(KLayoutStep):
         assert isinstance(input_view, Path)
 
         opts = []
-        if self.config["KLAYOUT_DRC_OPTIONS"]:
-            for k, v in self.config["KLAYOUT_DRC_OPTIONS"].items():
+        if self.config.KLAYOUT_DRC_OPTIONS:
+            for k, v in self.config.KLAYOUT_DRC_OPTIONS.items():
                 opts.extend(
                     [
                         "-rd",
@@ -326,7 +324,7 @@ class DRC(KLayoutStep):
                     ]
                 )
 
-        threads = self.config["KLAYOUT_DRC_THREADS"] or str(_get_process_limit())
+        threads = self.config.KLAYOUT_DRC_THREADS or str(_get_process_limit())
         if threads != "1":
             opts.extend(
                 [
@@ -348,7 +346,7 @@ class DRC(KLayoutStep):
                 "-rd",
                 f"input={abspath(input_view)}",
                 "-rd",
-                f"topcell={self.config['DESIGN_NAME']}",
+                f"topcell={self.config.DESIGN_NAME}",
                 "-rd",
                 f"report={abspath(lyrdb_report)}",
                 *opts,
@@ -359,7 +357,7 @@ class DRC(KLayoutStep):
             [
                 "python3",
                 str(
-                    package_path().joinpath(
+                    files("librelane").joinpath(
                         "scripts", "klayout", "xml_drc_report_to_json.py"
                     )
                 ),

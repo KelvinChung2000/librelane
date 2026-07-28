@@ -187,17 +187,22 @@ class SubprocessMixin:
             process_stats_thread.start()
 
             line_buffer: deque[str] = deque(maxlen=10)
-            if process_stdout := process.stdout:
-                try:
-                    for line in process_stdout:
-                        log_file.write(line)
-                        line_buffer.append(line)
-                        for processor in output_processors:
-                            if processor.process_line(line):
-                                break
-                except UnicodeDecodeError as e:
-                    raise StepException(f"Subprocess emitted non-UTF-8 output: {e}")
-            process_stats_thread.join()
+            try:
+                if process_stdout := process.stdout:
+                    try:
+                        for line in process_stdout:
+                            log_file.write(line)
+                            line_buffer.append(line)
+                            for processor in output_processors:
+                                if processor.process_line(line):
+                                    break
+                    except UnicodeDecodeError as e:
+                        raise StepException(f"Subprocess emitted non-UTF-8 output: {e}")
+            finally:
+                # Whatever happened to the output, the monitor has to come back:
+                # left running it keeps polling a process nobody is waiting on.
+                process_stats_thread.stop()
+                process_stats_thread.join()
             returncode = process.wait()
 
         json_stats = log_path.with_suffix(".process_stats.json")

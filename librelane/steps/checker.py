@@ -22,7 +22,7 @@ from typing import Optional
 
 from .step import ViewsUpdate, MetricsUpdate, Step, StepError, DeferredStepError
 
-from ..config import Variable
+from ..config import extend_model, variable
 from ..common import Filter, parse_metric_modifiers
 from ..state import DesignFormat, State
 
@@ -41,19 +41,18 @@ class NetlistAssignStatements(Step):
     inputs = [DesignFormat.NETLIST]
     outputs = []
 
-    config_vars = [
-        Variable(
-            "ERROR_ON_NL_ASSIGN_STATEMENTS",
-            bool,
-            "Whether to emit an error or simply warn about the existence",
-            default=True,
+    class Config(Step.Config):
+        ERROR_ON_NL_ASSIGN_STATEMENTS: bool = variable(
+            True,
+            description="Whether to emit an error or simply warn about the existence",
         )
-    ]
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         assign_rx = re.compile(r"^\s*\bassign\b")
         netlist_in = str(state_in[DesignFormat.NETLIST])
-        emit_error = self.config["ERROR_ON_NL_ASSIGN_STATEMENTS"]
+        emit_error = self.config.ERROR_ON_NL_ASSIGN_STATEMENTS
         found = False
         with open(netlist_in, "r", encoding="utf8") as f:
             for i, line in enumerate(f, start=1):
@@ -63,7 +62,7 @@ class NetlistAssignStatements(Step):
                     (step_logger.error if emit_error else step_logger.warning)(
                         f"{os.path.relpath(netlist_in)}:{i}: assign statement found in netlist"
                     )
-        if found and self.config["ERROR_ON_NL_ASSIGN_STATEMENTS"]:
+        if found and self.config.ERROR_ON_NL_ASSIGN_STATEMENTS:
             raise StepError("One or more assign statements found in the netlist.")
         return {}, {}
 
@@ -79,7 +78,7 @@ class MetricChecker(Step):
     metric_name: ClassVar[str] = NotImplemented
     metric_description: ClassVar[str] = NotImplemented
     deferred: ClassVar[bool] = True
-    error_on_var: Variable | None = None
+    error_on_var: str | None = None
 
     def __init_subclass__(cls):
         threshold_string = cls.get_threshold_description(None)
@@ -118,9 +117,9 @@ class MetricChecker(Step):
                     if (
                         hasattr(self, "error_on_var")
                         and self.error_on_var
-                        and not self.config.get(self.error_on_var.name)
+                        and not self.config.get(self.error_on_var)
                     ):
-                        logger.debug(self.config.get(self.error_on_var.name))
+                        logger.debug(self.config.get(self.error_on_var))
                         logger.bind(step=self.id).warning(f"{error_msg}")
                     elif self.deferred:
                         logger.bind(step=self.id).error(f"{error_msg} - deferred")
@@ -148,14 +147,16 @@ class YosysUnmappedCells(MetricChecker):
     metric_name = "design__instance_unmapped__count"
     metric_description = "Unmapped Yosys instances"
 
-    error_on_var = Variable(
-        "ERROR_ON_UNMAPPED_CELLS",
-        bool,
-        "Checks for unmapped cells after synthesis and quits immediately if so.",
-        deprecated_names=["QUIT_ON_UNMAPPED_CELLS", "CHECK_UNMAPPED_CELLS"],
-        default=True,
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_UNMAPPED_CELLS"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_UNMAPPED_CELLS: bool = variable(
+            True,
+            description="Checks for unmapped cells after synthesis and quits immediately if so.",
+            deprecated_names=["QUIT_ON_UNMAPPED_CELLS", "CHECK_UNMAPPED_CELLS"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -166,14 +167,16 @@ class YosysSynthChecks(MetricChecker):
 
     metric_name = "synthesis__check_error__count"
     metric_description = "Yosys check errors"
-    error_on_var = Variable(
-        "ERROR_ON_SYNTH_CHECKS",
-        bool,
-        "Quits the flow immediately if one or more synthesis check errors are flagged. This checks for combinational loops and/or wires with no drivers.",
-        default=True,
-        deprecated_names=["QUIT_ON_SYNTH_CHECKS"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_SYNTH_CHECKS"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_SYNTH_CHECKS: bool = variable(
+            True,
+            description="Quits the flow immediately if one or more synthesis check errors are flagged. This checks for combinational loops and/or wires with no drivers.",
+            deprecated_names=["QUIT_ON_SYNTH_CHECKS"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -185,14 +188,16 @@ class TrDRC(MetricChecker):
     metric_name = "route__drc_errors"
     metric_description = "Routing DRC errors"
 
-    error_on_var = Variable(
-        "ERROR_ON_TR_DRC",
-        bool,
-        "Checks for DRC violations after routing and exits the flow if any was found.",
-        default=True,
-        deprecated_names=["QUIT_ON_TR_DRC"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_TR_DRC"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_TR_DRC: bool = variable(
+            True,
+            description="Checks for DRC violations after routing and exits the flow if any was found.",
+            deprecated_names=["QUIT_ON_TR_DRC"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -204,14 +209,16 @@ class MagicDRC(MetricChecker):
     metric_name = "magic__drc_error__count"
     metric_description = "Magic DRC errors"
 
-    error_on_var = Variable(
-        "ERROR_ON_MAGIC_DRC",
-        bool,
-        "Checks for DRC violations after magic DRC is executed and exits the flow if any was found.",
-        default=True,
-        deprecated_names=["QUIT_ON_MAGIC_DRC"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_MAGIC_DRC"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_MAGIC_DRC: bool = variable(
+            True,
+            description="Checks for DRC violations after magic DRC is executed and exits the flow if any was found.",
+            deprecated_names=["QUIT_ON_MAGIC_DRC"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -223,14 +230,16 @@ class IllegalOverlap(MetricChecker):
     metric_name = "magic__illegal_overlap__count"
     metric_description = "Magic Illegal Overlap errors"
 
-    error_on_var = Variable(
-        "ERROR_ON_ILLEGAL_OVERLAPS",
-        bool,
-        "Checks for illegal overlaps during Magic extraction. In some cases, these imply existing undetected shorts in the design. It raises an error at the end of the flow if so.",
-        default=True,
-        deprecated_names=["QUIT_ON_ILLEGAL_OVERLAPS"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_ILLEGAL_OVERLAPS"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_ILLEGAL_OVERLAPS: bool = variable(
+            True,
+            description="Checks for illegal overlaps during Magic extraction. In some cases, these imply existing undetected shorts in the design. It raises an error at the end of the flow if so.",
+            deprecated_names=["QUIT_ON_ILLEGAL_OVERLAPS"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -242,14 +251,16 @@ class DisconnectedPins(MetricChecker):
     metric_name = "design__critical_disconnected_pin__count"
     metric_description = "critical disconnected pins"
 
-    error_on_var = Variable(
-        "ERROR_ON_DISCONNECTED_PINS",
-        bool,
-        "Checks for disconnected instance pins after detailed routing and quits immediately if so.",
-        default=True,
-        deprecated_names=["QUIT_ON_DISCONNECTED_PINS"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_DISCONNECTED_PINS"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_DISCONNECTED_PINS: bool = variable(
+            True,
+            description="Checks for disconnected instance pins after detailed routing and quits immediately if so.",
+            deprecated_names=["QUIT_ON_DISCONNECTED_PINS"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -260,26 +271,26 @@ class WireLength(MetricChecker):
     metric_name = "route__wirelength__max"
     metric_description = "Threshold-surpassing long wires"
 
-    error_on_var = Variable(
-        "ERROR_ON_LONG_WIRE",
-        bool,
-        "Checks if any wire length exceeds the threshold set in the PDK. If so, an error is raised at the end of the flow.",
-        default=True,
-        deprecated_names=["QUIT_ON_LONG_WIRE"],
-    )
-    config_vars = [
-        error_on_var,
-        Variable(
-            "WIRE_LENGTH_THRESHOLD",
-            Optional[Decimal],
-            "A value above which wire lengths generate warnings.",
+    error_on_var = "ERROR_ON_LONG_WIRE"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_LONG_WIRE: bool = variable(
+            True,
+            description="Checks if any wire length exceeds the threshold set in the PDK. If so, an error is raised at the end of the flow.",
+            deprecated_names=["QUIT_ON_LONG_WIRE"],
+        )
+
+        WIRE_LENGTH_THRESHOLD: Optional[Decimal] = variable(
+            None,
+            description="A value above which wire lengths generate warnings.",
             units="µm",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     def get_threshold(self) -> Decimal | None:
-        threshold = self.config["WIRE_LENGTH_THRESHOLD"]
+        threshold = self.config.WIRE_LENGTH_THRESHOLD
         assert threshold is None or isinstance(threshold, Decimal)
         return threshold
 
@@ -296,14 +307,16 @@ class XOR(MetricChecker):
     metric_name = "design__xor_difference__count"
     metric_description = "XOR differences"
 
-    error_on_var = Variable(
-        "ERROR_ON_XOR_ERROR",
-        bool,
-        "Checks for geometric differences between the Magic and KLayout stream-outs. If any exist, raise an error at the end of the flow.",
-        default=True,
-        deprecated_names=["QUIT_ON_XOR_ERROR"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_XOR_ERROR"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_XOR_ERROR: bool = variable(
+            True,
+            description="Checks for geometric differences between the Magic and KLayout stream-outs. If any exist, raise an error at the end of the flow.",
+            deprecated_names=["QUIT_ON_XOR_ERROR"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -315,14 +328,16 @@ class LVS(MetricChecker):
     metric_name = "design__lvs_error__count"
     metric_description = "LVS errors"
 
-    error_on_var = Variable(
-        "ERROR_ON_LVS_ERROR",
-        bool,
-        "Checks for LVS errors after Netgen is executed. If any exist, it raises an error at the end of the flow.",
-        default=True,
-        deprecated_names=["QUIT_ON_LVS_ERROR"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_LVS_ERROR"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_LVS_ERROR: bool = variable(
+            True,
+            description="Checks for LVS errors after Netgen is executed. If any exist, it raises an error at the end of the flow.",
+            deprecated_names=["QUIT_ON_LVS_ERROR"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -333,14 +348,16 @@ class PowerGridViolations(MetricChecker):
     metric_name = "design__power_grid_violation__count"
     metric_description = "power grid violations (as reported by OpenROAD PSM- you may ignore these if LVS passes)"
 
-    error_on_var = Variable(
-        "ERROR_ON_PDN_VIOLATIONS",
-        bool,
-        "Checks for unconnected nodes in the power grid. If any exists, an error is raised at the end of the flow.",
-        default=True,
-        deprecated_names=["QUIT_ON_PDN_VIOLATIONS", "FP_PDN_CHECK_NODES"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_PDN_VIOLATIONS"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_PDN_VIOLATIONS: bool = variable(
+            True,
+            description="Checks for unconnected nodes in the power grid. If any exists, an error is raised at the end of the flow.",
+            deprecated_names=["QUIT_ON_PDN_VIOLATIONS", "FP_PDN_CHECK_NODES"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -353,14 +370,16 @@ class LintErrors(MetricChecker):
     metric_name = "design__lint_error__count"
     metric_description = "Lint errors"
 
-    error_on_var = Variable(
-        "ERROR_ON_LINTER_ERRORS",
-        bool,
-        "Quit immediately on any linter errors.",
-        default=True,
-        deprecated_names=["QUIT_ON_VERILATOR_ERRORS", "QUIT_ON_LINTER_ERRORS"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_LINTER_ERRORS"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_LINTER_ERRORS: bool = variable(
+            True,
+            description="Quit immediately on any linter errors.",
+            deprecated_names=["QUIT_ON_VERILATOR_ERRORS", "QUIT_ON_LINTER_ERRORS"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -373,14 +392,16 @@ class LintWarnings(MetricChecker):
     metric_name = "design__lint_warning__count"
     metric_description = "Lint warnings"
 
-    error_on_var = Variable(
-        "ERROR_ON_LINTER_WARNINGS",
-        bool,
-        "Raise an error immediately on any linter warnings.",
-        default=False,
-        deprecated_names=["QUIT_ON_VERILATOR_WARNINGS", "QUIT_ON_LINTER_WARNINGS"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_LINTER_WARNINGS"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_LINTER_WARNINGS: bool = variable(
+            False,
+            description="Raise an error immediately on any linter warnings.",
+            deprecated_names=["QUIT_ON_VERILATOR_WARNINGS", "QUIT_ON_LINTER_WARNINGS"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -393,14 +414,16 @@ class LintTimingConstructs(MetricChecker):
     metric_name = "design__lint_timing_construct__count"
     metric_description = "Lint Timing Errors"
 
-    error_on_var = Variable(
-        "ERROR_ON_LINTER_TIMING_CONSTRUCTS",
-        bool,
-        "Quit immediately on any discovered timing constructs during linting.",
-        default=True,
-        deprecated_names=["QUIT_ON_LINTER_TIMING_CONSTRUCTS"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_LINTER_TIMING_CONSTRUCTS"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_LINTER_TIMING_CONSTRUCTS: bool = variable(
+            True,
+            description="Quit immediately on any discovered timing constructs during linting.",
+            deprecated_names=["QUIT_ON_LINTER_TIMING_CONSTRUCTS"],
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metric_value = state_in.metrics.get(self.metric_name)
@@ -429,14 +452,16 @@ class KLayoutDRC(MetricChecker):
     metric_name = "klayout__drc_error__count"
     metric_description = "KLayout DRC errors"
 
-    error_on_var = Variable(
-        "ERROR_ON_KLAYOUT_DRC",
-        bool,
-        "Checks for DRC violations after KLayout DRC is executed and exits the flow if any was found.",
-        default=True,
-        deprecated_names=["QUIT_ON_KLAYOUT_DRC"],
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_KLAYOUT_DRC"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_KLAYOUT_DRC: bool = variable(
+            True,
+            description="Checks for DRC violations after KLayout DRC is executed and exits the flow if any was found.",
+            deprecated_names=["QUIT_ON_KLAYOUT_DRC"],
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -448,13 +473,15 @@ class KLayoutDensity(MetricChecker):
     metric_name = "klayout__density_error__count"
     metric_description = "KLayout density errors"
 
-    error_on_var = Variable(
-        "ERROR_ON_KLAYOUT_DENSITY",
-        bool,
-        "Checks for density violations after KLayout density check is executed and exits the flow if any was found.",
-        default=True,
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_KLAYOUT_DENSITY"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_KLAYOUT_DENSITY: bool = variable(
+            True,
+            description="Checks for density violations after KLayout density check is executed and exits the flow if any was found.",
+        )
+
+    config: Config
 
 
 @Step.factory.register()
@@ -466,13 +493,15 @@ class KLayoutAntenna(MetricChecker):
     metric_name = "klayout__antenna_error__count"
     metric_description = "KLayout antenna errors"
 
-    error_on_var = Variable(
-        "ERROR_ON_KLAYOUT_ANTENNA",
-        bool,
-        "Checks for antenna violations after KLayout antenna check is executed and exits the flow if any was found.",
-        default=True,
-    )
-    config_vars = [error_on_var]
+    error_on_var = "ERROR_ON_KLAYOUT_ANTENNA"
+
+    class Config(MetricChecker.Config):
+        ERROR_ON_KLAYOUT_ANTENNA: bool = variable(
+            True,
+            description="Checks for antenna violations after KLayout antenna check is executed and exits the flow if any was found.",
+        )
+
+    config: Config
 
 
 class TimingViolations(MetricChecker):
@@ -501,36 +530,41 @@ class TimingViolations(MetricChecker):
     corner_override: list[str] | None = None
     base_corner_var_name = "TIMING_VIOLATION_CORNERS"
 
+    class Config(MetricChecker.Config):
+        TIMING_VIOLATION_CORNERS: list[str] = variable(
+            description="A list of wildcards matching IPVT corners to use during checking for timing violations.",
+            pdk=True,
+            deprecated_names=["TIMING_VIOLATIONS_CORNERS"],
+        )
+
+    config: Config
+
     def __init_subclass__(cls, **kwargs):
+        cls.install_config_model(
+            extend_model(
+                f"{cls.__name__}Config",
+                TimingViolations.Config,
+                {
+                    cls.get_corner_variable_name(): (
+                        Optional[list[str]],
+                        variable(
+                            cls.corner_override,
+                            description=f"A list of wildcards matching IPVT corners to use during checking for {cls.violation_type} violations.",
+                            pdk=True,
+                        ),
+                    )
+                },
+            )
+        )
         super().__init_subclass__(**kwargs)
 
-        cls.config_vars = cls.config_vars.copy()
-        cls.config_vars += [
-            Variable(
-                cls.base_corner_var_name,
-                list[str],
-                "A list of wildcards matching IPVT corners to use during checking for timing violations.",
-                pdk=True,
-                deprecated_names=["TIMING_VIOLATIONS_CORNERS"],
-            ),
-            cls.get_corner_variable(),
-        ]
-
     @classmethod
-    def get_corner_variable(cls) -> Variable:
+    def get_corner_variable_name(cls) -> str:
         replace_by = cls.violation_type.upper().replace(" ", "_")
-        variable = Variable(
-            cls.base_corner_var_name.replace("TIMING", replace_by),
-            Optional[list[str]],
-            f"A list of wildcards matching IPVT corners to use during checking for {cls.violation_type} violations.",
-            pdk=True,
-        )
-        if cls.corner_override:
-            variable.default = cls.corner_override
-        return variable
+        return cls.base_corner_var_name.replace("TIMING", replace_by)
 
     def get_corner_wildcards(self):
-        wildcards = self.config.get(self.get_corner_variable().name) or self.config.get(
+        wildcards = self.config.get(self.get_corner_variable_name()) or self.config.get(
             self.base_corner_var_name
         )
         assert wildcards is not None
@@ -607,7 +641,7 @@ class TimingViolations(MetricChecker):
             warn_msg = []
             if len(unmatched_config_wildcards):
                 err_msg.append(
-                    f"One or more wildcards specified in {self.get_corner_variable().name} did not match any corners:"
+                    f"One or more wildcards specified in {self.get_corner_variable_name()} did not match any corners:"
                 )
                 for wildcard in sorted(unmatched_config_wildcards):
                     err_msg.append(f"- {wildcard}")

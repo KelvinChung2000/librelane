@@ -88,8 +88,8 @@ class Instance:
     :param orientation: The orientation of the object's placement. 'N'/'R0' by default.
     """
 
-    location: tuple[Decimal, Decimal] | None
-    orientation: Orientation | None
+    location: tuple[Decimal, Decimal] | None = None
+    orientation: Orientation | None = None
 
 
 @dataclass
@@ -265,7 +265,7 @@ def repr_type(t: type[Any], for_document: bool = False) -> str:  # pragma: no co
     else:
         origin, args = get_origin(some), get_args(some)
         if origin is not None:
-            if origin == Union:
+            if origin is Union or origin is types.UnionType:
                 arg_strings = [repr_type(arg) for arg in args]
                 type_string = separator.join(arg_strings)
                 type_string = f"({type_string})"
@@ -656,7 +656,7 @@ class Variable:
                 processed[key_validated] = value_validated
 
             return processed
-        elif type_origin == Union:
+        elif type_origin is Union or type_origin is types.UnionType:
             final_value = None
             errors = []
             for arg in type_args:

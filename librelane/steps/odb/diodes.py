@@ -16,11 +16,11 @@
 # See the License for the specific language governing permissions and
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 from decimal import Decimal
 from typing import Literal, Optional
 
-from ...config import Variable
+from ...config import variable
 from ...state import State
 
 from ..openroad import DetailedPlacement, GlobalRouting
@@ -49,30 +49,28 @@ class PortDiodePlacement(OdbpyStep):
     id = "Odb.PortDiodePlacement"
     name = "Port Diode Placement Script"
 
-    config_vars = [
-        Variable(
-            "DIODE_ON_PORTS",
-            Literal["none", "in", "out", "both"],
-            "Always insert diodes on ports with the specified polarities.",
-            default="none",
-        ),
-        Variable(
-            "GPL_CELL_PADDING",
-            int,
-            "Cell padding value (in sites) for global placement. Used by this step only to emit a warning if it's 0.",
+    class Config(Step.Config):
+        DIODE_ON_PORTS: Literal["none", "in", "out", "both"] = variable(
+            "none",
+            description="Always insert diodes on ports with the specified polarities.",
+        )
+
+        GPL_CELL_PADDING: int = variable(
+            description="Cell padding value (in sites) for global placement. Used by this step only to emit a warning if it's 0.",
             units="sites",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "diodes.py")
+        return files("librelane").joinpath("scripts", "odbpy", "diodes.py")
 
     def get_subcommand(self) -> list[str]:
         return ["place"]
 
     def get_command(self) -> list[str]:
-        cell, pin = self.config["DIODE_CELL"].split("/")
+        cell, pin = self.config.DIODE_CELL.split("/")
 
         return super().get_command() + [
             "--diode-cell",
@@ -80,21 +78,21 @@ class PortDiodePlacement(OdbpyStep):
             "--diode-pin",
             pin,
             "--port-protect",
-            self.config["DIODE_ON_PORTS"],
+            self.config.DIODE_ON_PORTS,
             "--threshold",
             "Infinity",
         ]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["DIODE_ON_PORTS"] == "none":
+        if self.config.DIODE_ON_PORTS == "none":
             logger.info(f"'DIODE_ON_PORTS' is set to 'none': skipping '{self.id}'…")
             return {}, {}
 
-        if self.config["DIODE_CELL"] is None:
+        if self.config.DIODE_CELL is None:
             logger.info(f"'DIODE_CELL' not set. Skipping '{self.id}'…")
             return {}, {}
 
-        if self.config["GPL_CELL_PADDING"] == 0:
+        if self.config.GPL_CELL_PADDING == 0:
             logger.bind(step=self.id).warning(
                 "'GPL_CELL_PADDING' is set to 0. This step may cause overlap failures."
             )
@@ -130,10 +128,10 @@ class DiodesOnPorts(CompositeStep):
     ]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["DIODE_ON_PORTS"] == "none":
+        if self.config.DIODE_ON_PORTS == "none":
             logger.info(f"'DIODE_ON_PORTS' is set to 'none': skipping '{self.id}'…")
             return {}, {}
-        if self.config["DIODE_CELL"] is None:
+        if self.config.DIODE_CELL is None:
             logger.info(f"'DIODE_CELL' not set. Skipping '{self.id}'…")
             return {}, {}
         return super().run(state_in, **kwargs)
@@ -158,31 +156,30 @@ class FuzzyDiodePlacement(OdbpyStep):
     id = "Odb.FuzzyDiodePlacement"
     name = "Fuzzy Diode Placement"
 
-    config_vars = [
-        Variable(
-            "HEURISTIC_ANTENNA_THRESHOLD",
-            Optional[Decimal],
-            "A Manhattan distance above which a diode is recommended to be inserted by the heuristic inserter. If not specified, the heuristic algorithm.",
+    class Config(Step.Config):
+        HEURISTIC_ANTENNA_THRESHOLD: Optional[Decimal] = variable(
+            None,
+            description="A Manhattan distance above which a diode is recommended to be inserted by the heuristic inserter. If not specified, the heuristic algorithm.",
             units="µm",
             pdk=True,
-        ),
-        Variable(
-            "GPL_CELL_PADDING",
-            int,
-            "Cell padding value (in sites) for global placement. Used by this step only to emit a warning if it's 0.",
+        )
+
+        GPL_CELL_PADDING: int = variable(
+            description="Cell padding value (in sites) for global placement. Used by this step only to emit a warning if it's 0.",
             units="sites",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "diodes.py")
+        return files("librelane").joinpath("scripts", "odbpy", "diodes.py")
 
     def get_subcommand(self) -> list[str]:
         return ["place"]
 
     def get_command(self) -> list[str]:
-        cell, pin = self.config["DIODE_CELL"].split("/")
+        cell, pin = self.config.DIODE_CELL.split("/")
 
         return super().get_command() + [
             "--diode-cell",
@@ -190,20 +187,20 @@ class FuzzyDiodePlacement(OdbpyStep):
             "--diode-pin",
             pin,
             "--threshold",
-            str(self.config["HEURISTIC_ANTENNA_THRESHOLD"]),
+            str(self.config.HEURISTIC_ANTENNA_THRESHOLD),
         ]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["GPL_CELL_PADDING"] == 0:
+        if self.config.GPL_CELL_PADDING == 0:
             logger.bind(step=self.id).warning(
                 "'GPL_CELL_PADDING' is set to 0. This step may cause overlap failures."
             )
 
-        if self.config["DIODE_CELL"] is None:
+        if self.config.DIODE_CELL is None:
             logger.info(f"'DIODE_CELL' not set. Skipping '{self.id}'…")
             return {}, {}
 
-        if self.config["HEURISTIC_ANTENNA_THRESHOLD"] is None:
+        if self.config.HEURISTIC_ANTENNA_THRESHOLD is None:
             logger.info(f"'HEURISTIC_ANTENNA_THRESHOLD' not set. Skipping '{self.id}'…")
             return {}, {}
 
@@ -242,10 +239,10 @@ class HeuristicDiodeInsertion(CompositeStep):
     ]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["DIODE_CELL"] is None:
+        if self.config.DIODE_CELL is None:
             logger.info(f"'DIODE_CELL' not set. Skipping '{self.id}'…")
             return {}, {}
-        if self.config["HEURISTIC_ANTENNA_THRESHOLD"] is None:
+        if self.config.HEURISTIC_ANTENNA_THRESHOLD is None:
             logger.info(f"'HEURISTIC_ANTENNA_THRESHOLD' not set. Skipping '{self.id}'…")
             return {}, {}
 

@@ -11,50 +11,70 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import sys
 import json
+from pathlib import Path
+from typing import Annotated
 
-import cloup
+import typer
 
 from ..common import get_latest_file
-from ..common.cli import formatter_settings
 
 
-@cloup.group(
+cli = typer.Typer(
+    add_completion=False,
     no_args_is_help=True,
-    formatter_settings=formatter_settings,
+    pretty_exceptions_enable=False,
+    rich_markup_mode="rich",
 )
-def cli():
-    pass
 
 
-@cloup.command()
-@cloup.option(
-    "--extract-metrics-to",
-    default=None,
-)
-@cloup.argument("run_dir")
-def latest(extract_metrics_to: str | None, run_dir: str):
-    exit_code = 0
+@cli.callback()
+def state_cli() -> None:
+    """Inspect state files produced by LibreLane runs."""
 
-    if latest_state := get_latest_file(run_dir, "state_*.json"):
+
+@cli.command()
+def latest(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            help="A LibreLane run directory.",
+        ),
+    ],
+    extract_metrics_to: Annotated[
+        Path | None,
+        typer.Option(
+            "--extract-metrics-to",
+            file_okay=True,
+            dir_okay=False,
+            help="Also write the latest state's metrics to this JSON file.",
+        ),
+    ] = None,
+) -> None:
+    """Print the path to the latest state in a run directory."""
+    if latest_state := get_latest_file(str(run_dir), "state_*.json"):
         try:
-            state = json.load(open(latest_state, encoding="utf8"))
-        except json.JSONDecodeError as e:
-            print(f"Latest state at {latest_state} is invalid: {e}", file=sys.stderr)
-            exit(1)
-        metrics = state["metrics"]
-        print(latest_state, end="")
-        if output := extract_metrics_to:
-            json.dump(metrics, open(output, "w", encoding="utf8"))
-    else:
-        print("No state_*.json files found", file=sys.stderr)
-        exit_code = 1
+            with open(latest_state, encoding="utf8") as state_file:
+                state = json.load(state_file)
+        except json.JSONDecodeError as error:
+            typer.echo(
+                f"Latest state at {latest_state} is invalid: {error}",
+                err=True,
+            )
+            raise typer.Exit(1) from error
 
-    exit(exit_code)
+        typer.echo(latest_state, nl=False)
+        if extract_metrics_to is not None:
+            with extract_metrics_to.open("w", encoding="utf8") as output:
+                json.dump(state["metrics"], output)
+        return
 
+    typer.echo("No state_*.json files found", err=True)
+    raise typer.Exit(1)
 
-cli.add_command(latest)
 
 if __name__ == "__main__":
     cli()

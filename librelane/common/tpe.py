@@ -13,9 +13,41 @@
 # limitations under the License.
 from .misc import _get_process_limit
 
-from concurrent.futures import ThreadPoolExecutor
+import contextvars
+from concurrent.futures import Future, ThreadPoolExecutor
+from collections.abc import Callable
+from typing import Any, ParamSpec, TypeVar
 
-TPE = ThreadPoolExecutor(max_workers=_get_process_limit())
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+class ContextPropagatingThreadPoolExecutor(ThreadPoolExecutor):
+    """
+    A ``ThreadPoolExecutor`` that runs submitted callables inside a copy of the
+    submitting thread's :mod:`contextvars` context.
+
+    Every new thread starts with an empty context, so without this the
+    ``logger.contextualize`` binding that identifies the running step is lost
+    the moment work is handed to a worker. That would leave records from
+    fanned-out work -- one job per timing corner in ``OpenROAD.STAPrePNR``, one
+    job per step in a flow -- with no step attribution.
+    """
+
+    def submit(  # type: ignore[override]
+        self,
+        fn: Callable[P, R],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Future[R]:
+        context = contextvars.copy_context()
+        return super().submit(context.run, fn, *args, **kwargs)  # type: ignore[arg-type]
+
+
+TPE: ThreadPoolExecutor = ContextPropagatingThreadPoolExecutor(
+    max_workers=_get_process_limit()
+)
 
 
 def set_tpe(tpe: ThreadPoolExecutor):

@@ -22,7 +22,13 @@ configuration objects. Configuration objects are the primary input to a flow.
 from .preprocessor import Keys
 from .diagnostics import Diagnostic, DiagnosticSet, Severity
 from .legacy import Variable
-from .model import BaseConfigModel, model_to_variables, variable, variables_to_model
+from .model import (
+    BaseConfigModel,
+    extend_model,
+    model_to_variables,
+    variable,
+    variables_to_model,
+)
 from .types import Instance, Macro, Orientation
 from .config import (
     Meta,

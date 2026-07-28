@@ -16,11 +16,11 @@
 # See the License for the specific language governing permissions and
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 import os
 from typing import Optional
 
-from ...config import Variable
+from ...config import variable
 from ...state import DesignFormat, State
 
 from ..step import (
@@ -45,14 +45,14 @@ class CheckMacroAntennaProperties(OdbpyStep):
     outputs = []
 
     def get_script_path(self):
-        return package_path().joinpath(
+        return files("librelane").joinpath(
             "scripts",
             "odbpy",
             "check_antenna_properties.py",
         )
 
     def get_cells(self) -> list[str]:
-        macros = self.config["MACROS"]
+        macros = self.config.MACROS
         cells = []
         if macros:
             cells = list(macros.keys())
@@ -85,7 +85,7 @@ class CheckDesignAntennaProperties(CheckMacroAntennaProperties):
     inputs = CheckMacroAntennaProperties.inputs + [DesignFormat.LEF]
 
     def get_cells(self) -> list[str]:
-        return [self.config["DESIGN_NAME"]]
+        return [self.config.DESIGN_NAME]
 
 
 @Step.factory.register()
@@ -102,7 +102,7 @@ class ReportWireLength(OdbpyStep):
     outputs = []
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "wire_lengths.py")
+        return files("librelane").joinpath("scripts", "odbpy", "wire_lengths.py")
 
     def get_command(self) -> list[str]:
         return super().get_command() + [
@@ -140,21 +140,21 @@ class ReportDisconnectedPins(OdbpyStep):
     id = "Odb.ReportDisconnectedPins"
     name = "Report Disconnected Pins"
 
-    config_vars = OdbpyStep.config_vars + [
-        Variable(
-            "IGNORE_DISCONNECTED_MODULES",
-            Optional[list[str]],
-            "Modules (or cells) to ignore when checking for disconnected pins.",
+    class Config(OdbpyStep.Config):
+        IGNORE_DISCONNECTED_MODULES: Optional[list[str]] = variable(
+            None,
+            description="Modules (or cells) to ignore when checking for disconnected pins.",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "disconnected_pins.py")
+        return files("librelane").joinpath("scripts", "odbpy", "disconnected_pins.py")
 
     def get_command(self) -> list[str]:
         command = super().get_command()
-        if ignored_modules := self.config["IGNORE_DISCONNECTED_MODULES"]:
+        if ignored_modules := self.config.IGNORE_DISCONNECTED_MODULES:
             for module in ignored_modules:
                 command.append("--ignore-module")
                 command.append(module)
@@ -181,7 +181,7 @@ class CellFrequencyTables(OdbpyStep):
     name = "Generate Cell Frequency Tables"
 
     def get_script_path(self):
-        return package_path().joinpath(
+        return files("librelane").joinpath(
             "scripts",
             "odbpy",
             "cell_frequency.py",
@@ -191,13 +191,13 @@ class CellFrequencyTables(OdbpyStep):
         return os.path.join(self.step_dir, "buffer_list.txt")
 
     def get_buffer_list_script(self):
-        return package_path().joinpath("scripts", "openroad", "buffer_list.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "buffer_list.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
 
         env_copy = env.copy()
-        lib_list = self.toolbox.filter_views(self.config, self.config["LIB"])
+        lib_list = self.toolbox.filter_views(self.config, self.config.LIB)
         env_copy["_PNR_LIBS"] = TclStep.value_to_tcl(lib_list)
         super().run_subprocess(
             [

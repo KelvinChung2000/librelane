@@ -25,16 +25,16 @@ from typing import Any, Literal, Optional
 from collections.abc import Mapping
 
 from .tclstep import TclStep
-from .step import ViewsUpdate, MetricsUpdate, Step
+from .step import ViewsUpdate, MetricsUpdate, Step, StepException
 from .pyosys import (
     PyosysStep,
     JsonHeader,
-    verilog_rtl_cfg_vars,
+    VerilogRtlConfig,
     Synthesis,
     VHDLSynthesis,
 )
 
-from ..config import Variable
+from ..config import variable
 from ..state import State, DesignFormat
 from ..common import Path, Toolbox, TclUtils, process_list_file
 
@@ -163,48 +163,47 @@ def _generate_read_deps(
 
 # No longer used by us, kept for back-compat
 class YosysStep(TclStep):
-    config_vars = [
-        Variable(
-            "SYNTH_LATCH_MAP",
-            Optional[Path],
-            "A path to a file containing the latch mapping for Yosys.",
+    class Config(Step.Config):
+        SYNTH_LATCH_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the latch mapping for Yosys.",
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_TRISTATE_MAP",
-            Optional[Path],
-            "A path to a file containing the tri-state buffer mapping for Yosys.",
+        )
+
+        SYNTH_TRISTATE_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the tri-state buffer mapping for Yosys.",
             deprecated_names=["TRISTATE_BUFFER_MAP"],
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_CSA_MAP",
-            Optional[Path],
-            "A path to a file containing the carry-select adder mapping for Yosys.",
+        )
+
+        SYNTH_CSA_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the carry-select adder mapping for Yosys.",
             deprecated_names=["CARRY_SELECT_ADDER_MAP"],
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_RCA_MAP",
-            Optional[Path],
-            "A path to a file containing the ripple-carry adder mapping for Yosys.",
+        )
+
+        SYNTH_RCA_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the ripple-carry adder mapping for Yosys.",
             deprecated_names=["RIPPLE_CARRY_ADDER_MAP"],
             pdk=True,
-        ),
-        Variable(
-            "SYNTH_FA_MAP",
-            Optional[Path],
-            "A path to a file containing the full adder mapping for Yosys.",
+        )
+
+        SYNTH_FA_MAP: Optional[Path] = variable(
+            None,
+            description="A path to a file containing the full adder mapping for Yosys.",
             deprecated_names=["FULL_ADDER_MAP"],
             pdk=True,
-        ),
-        Variable(
-            "YOSYS_LOG_LEVEL",
-            Literal["ALL", "WARNING", "ERROR"],
-            "Which log level for Yosys. At WARNING or higher, the initialization splash is also disabled.",
-            default="ALL",
-        ),
-    ]
+        )
+
+        YOSYS_LOG_LEVEL: Literal["ALL", "WARNING", "ERROR"] = variable(
+            "ALL",
+            description="Which log level for Yosys. At WARNING or higher, the initialization splash is also disabled.",
+        )
+
+    config: Config
 
     @classmethod
     def get_yosys_path(Self) -> str:
@@ -217,11 +216,11 @@ class YosysStep(TclStep):
     def get_command(self) -> list[str]:
         script_path = self.get_script_path()
         cmd = [self.get_yosys_path(), "-c", script_path]
-        if self.config["YOSYS_LOG_LEVEL"] != "ALL":
+        if self.config.YOSYS_LOG_LEVEL != "ALL":
             cmd += ["-Q"]
-        if self.config["YOSYS_LOG_LEVEL"] == "WARNING":
+        if self.config.YOSYS_LOG_LEVEL == "WARNING":
             cmd += ["-q"]
-        elif self.config["YOSYS_LOG_LEVEL"] == "ERROR":
+        elif self.config.YOSYS_LOG_LEVEL == "ERROR":
             cmd += ["-qq"]
         return cmd
 
@@ -263,58 +262,59 @@ class EQY(Step):
     inputs = [DesignFormat.NETLIST]
     outputs = []
 
-    config_vars = (
-        YosysStep.config_vars
-        + verilog_rtl_cfg_vars
-        + [
-            Variable(
-                "EQY_SCRIPT",
-                Optional[Path],
-                "The EQY script to use. If unset, a generic EQY script will be generated, but this fails in a number of scenarios.",
-            ),
-            Variable(
-                "MACRO_PLACEMENT_CFG",
-                Optional[Path],
-                "This step will warn if this deprecated variable is used, as it indicates Macros are used without the new Macro object.",
-            ),
-            Variable(
-                "EQY_FORCE_ACCEPT_PDK",
-                bool,
-                "Attempt to run EQY even if the PDK's Verilog models are supported by this step. Will likely result in a failure.",
-                default=False,
-            ),
-        ]
-    )
+    class Config(VerilogRtlConfig, YosysStep.Config):
+        EQY_SCRIPT: Optional[Path] = variable(
+            None,
+            description="The EQY script to use. If unset, a generic EQY script will be generated, but this fails in a number of scenarios.",
+        )
+
+        MACRO_PLACEMENT_CFG: Optional[Path] = variable(
+            None,
+            description="This step will warn if this deprecated variable is used, as it indicates Macros are used without the new Macro object.",
+        )
+
+        EQY_FORCE_ACCEPT_PDK: bool = variable(
+            False,
+            description="Attempt to run EQY even if the PDK's Verilog models are supported by this step. Will likely result in a failure.",
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         processed_pdk = os.path.join(self.step_dir, "formal_pdk.v")
 
-        if self.config["PDK"].startswith("sky130A"):
+        supported_pdk = self.config.PDK.startswith("sky130A")
+        if not supported_pdk and not self.config.EQY_FORCE_ACCEPT_PDK:
+            logger.info(
+                f"PDK {self.config.PDK} is not supported by the EQY step. Skipping '{self.id}'…"
+            )
+            return {}, {}
+
+        models = self.config.CELL_VERILOG_MODELS
+        if models is None:
+            raise StepException(
+                "The standard cell library declares no 'CELL_VERILOG_MODELS' to process."
+            )
+
+        if supported_pdk:
             subprocess.check_call(
                 [
                     "eqy.formal_pdk_proc",
                     "--output",
                     processed_pdk,
                 ]
-                + [str(model) for model in self.config["CELL_VERILOG_MODELS"]]
-            )
-        elif self.config["EQY_FORCE_ACCEPT_PDK"]:
-            subprocess.check_call(
-                ["iverilog", "-E", "-o", processed_pdk, "-DFUNCTIONAL"]
-                + [str(model) for model in self.config["CELL_VERILOG_MODELS"]]
+                + [str(model) for model in models]
             )
         else:
-            logger.info(
-                f"PDK {self.config['PDK']} is not supported by the EQY step. Skipping '{self.id}'…"
+            subprocess.check_call(
+                ["iverilog", "-E", "-o", processed_pdk, "-DFUNCTIONAL"]
+                + [str(model) for model in models]
             )
-            return {}, {}
 
-        eqy_script_path = os.path.join(
-            self.step_dir, f"{self.config['DESIGN_NAME']}.eqy"
-        )
+        eqy_script_path = os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.eqy")
 
         with open(eqy_script_path, "w", encoding="utf8") as f:
-            if eqy_script := self.config["EQY_SCRIPT"]:
+            if eqy_script := self.config.EQY_SCRIPT:
                 for line in open(eqy_script, "r", encoding="utf8"):
                     f.write(line)
             else:
@@ -358,12 +358,12 @@ class EQY(Step):
                     engine smtbmc bitwuzla
                     """
                 ).format(
-                    design_name=self.config["DESIGN_NAME"],
+                    design_name=self.config.DESIGN_NAME,
                     dep_commands=_generate_read_deps(
                         self.config, self.toolbox, tcl=False
                     ),
                     files=TclUtils.join(
-                        [str(file) for file in self.config["VERILOG_FILES"]]
+                        [str(file) for file in self.config.VERILOG_FILES]
                     ),
                     nl=state_in[DesignFormat.NETLIST],
                     processed_pdk=processed_pdk,

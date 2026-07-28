@@ -21,7 +21,7 @@ from .flow import Flow
 from ..state import State
 from ..config import Config
 from ..steps import Step, Yosys, OpenROAD, StepError
-from ..logging import LogLevels, temporary_log_level
+from ..logging import temporary_log_level
 
 
 #   "Optimizing" is a custom demo flow to show what's possible with non-sequential Flows in LibreLan
@@ -53,7 +53,7 @@ class Optimizing(Flow):
         synthesis_futures: list[tuple[Config, Future[State]]] = []
         self.start_stage("Synthesis Exploration")
 
-        with temporary_log_level(LogLevels.ERROR):
+        with temporary_log_level("ERROR"):
             for strategy in ["AREA 0", "AREA 2", "DELAY 1"]:
                 config = self.config.copy(SYNTH_STRATEGY=strategy)
 

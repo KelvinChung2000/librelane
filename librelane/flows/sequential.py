@@ -109,6 +109,7 @@ class SequentialFlow(Flow):
     # ---
 
     def __init_subclass__(Self, scm_type=None, name=None, **kwargs):
+        super().__init_subclass__(**kwargs)
         Self.Steps = Self.Steps.copy()  # Break global reference
         Self.config_vars = Self.config_vars.copy()
         Self.gating_config_vars = Self.gating_config_vars.copy()

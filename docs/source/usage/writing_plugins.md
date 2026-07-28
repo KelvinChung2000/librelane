@@ -59,36 +59,86 @@ including the Flakes feature, to follow.
 
 You may bundle either the plugin alone or the plugin and the tool using Nix.
 
-The flake for LibreLane contains a function named `createOpenLaneShell` in its 
-outputs. This creates a [devshell](https://github.com/numtide/devshell), which
-is an executable script that drops you into an environment with LibreLane, its
-dependencies, and optionally plugins, installed.
-
-The plugins are to be regular Python Nix derivations, built using the
-[`buildPythonPackage` function](https://github.com/NixOS/nixpkgs/blob/master/doc/languages-frameworks/python.section.md#buildpythonpackage-function-buildpythonpackage-function)
-with one addition: Plugins must have the attribute `includedTools`, declaring
-tool dependencies (so they may be available to the user standalone in the
-environment).
-
-For example, if a plugin, for some reason, depends on the Python `numpy` library
-and incorporates `bash`, it can declare its dependencies as follows:
+LibreLane's overlay adds a package named `librelane-shell`. It builds a
+[devshell](https://github.com/numtide/devshell), an executable script that drops
+you into an environment with LibreLane, its dependencies, and optionally your
+plugins, installed. Override it to add plugins:
 
 ```nix
-  propagatedBuildInputs = includedTools ++ [
-    librelane
-    …
-  ];
+pkgs.librelane-shell.override {
+  librelane-plugins = ps: [ ps.librelane_plugin_example ];
+}
 ```
 
-Then to create a devshell with both LibreLane and the plugin available, use this
-Nix expression:
+`librelane-plugins` is a function of the Python package set, in the same style
+as `python3.withPackages`, so the plugin has to be a member of `python3.pkgs` —
+add it there with an overlay of your own.
+
+The plugins themselves are regular Python Nix derivations, built with the
+[`buildPythonPackage` function](https://github.com/NixOS/nixpkgs/blob/master/doc/languages-frameworks/python.section.md#buildpythonpackage-function-buildpythonpackage-function),
+with two additions:
+
+- A `librelane` argument, which the shell overrides so the plugin is built
+  against the same LibreLane the shell ships.
+- An `includedTools` attribute listing the plugin's tool dependencies, so they
+  are also available to the user standalone in the environment. Add
+  `addedYosysPlugins` too if the plugin needs Yosys plugins.
+
+For example, a plugin that depends on the Python `numpy` library and
+incorporates `bash` declares its dependencies as follows:
 
 ```nix
-devShells = librelane.inputs.nix-eda.forAllSystems { withInputs = [librelane self]; } (utils: with utils; {
-  default = callPackage (librelane.createOpenLaneShell {
-    extra-python-packages = [
-      pkgs.librelane_plugin_example
-    ];
-  }) {};
-});
+{ buildPythonPackage, librelane, numpy, bash, ... }:
+buildPythonPackage {
+  pname = "librelane_plugin_example";
+  # …
+  includedTools = [ bash ];
+  propagatedBuildInputs = [ librelane numpy ];
+}
+```
+
+Putting it together, a downstream flake that provides a shell with both
+LibreLane and the plugin available looks like this:
+
+```nix
+{
+  inputs.librelane.url = "github:librelane/librelane";
+
+  outputs = { self, librelane, ... }: {
+    overlays.default = final: prev: {
+      python3 = prev.python3.override (old: {
+        packageOverrides = final.lib.composeExtensions
+          (old.packageOverrides or (_: _: { }))
+          (pfinal: pprev: {
+            librelane_plugin_example = pfinal.callPackage ./nix/plugin.nix { };
+          });
+      });
+    };
+
+    devShells = librelane.inputs.nix-eda.forAllSystems (system:
+      let
+        pkgs = import librelane.inputs.nix-eda.inputs.nixpkgs {
+          inherit system;
+          overlays = [
+            librelane.inputs.devshell.overlays.default
+            librelane.inputs.nix-eda.overlays.default
+            librelane.overlays.default
+            self.overlays.default
+          ];
+        };
+      in
+      {
+        default = pkgs.librelane-shell.override {
+          librelane-plugins = ps: [ ps.librelane_plugin_example ];
+        };
+      });
+  };
+}
+```
+
+```{note}
+LibreLane ships as a virtual environment, which plugins are not built into.
+The shell instead puts each plugin's `site-packages` on `PYTHONPATH`, which is
+why plugins must be importable on their own rather than being installed
+alongside LibreLane.
 ```

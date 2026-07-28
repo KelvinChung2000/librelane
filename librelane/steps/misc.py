@@ -40,9 +40,9 @@ class LoadBaseSDC(Step):
     outputs = [DesignFormat.SDC]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        path = self.config["FALLBACK_SDC"]
+        path = self.config.FALLBACK_SDC
 
-        target = os.path.join(self.step_dir, f"{self.config['DESIGN_NAME']}.sdc")
+        target = os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.sdc")
 
         # Otherwise, you'll end up with weird permissions and may have to chmod
         with open(target, "w", encoding="utf8") as out:

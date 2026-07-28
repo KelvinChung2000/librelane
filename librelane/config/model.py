@@ -1,7 +1,7 @@
 # Copyright 2026 LibreLane Contributors
 import json
 from dataclasses import dataclass
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, TypeVar, cast
 from collections.abc import Iterator, Mapping
 
 from pydantic import (
@@ -19,6 +19,9 @@ from pydantic.fields import FieldInfo, PydanticUndefined
 
 from .diagnostics import DiagnosticSet
 from .types import _shape
+
+
+BaseConfigModelT = TypeVar("BaseConfigModelT", bound="BaseConfigModel")
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,25 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
     _diagnostics: DiagnosticSet = PrivateAttr(default_factory=DiagnosticSet)
     _meta: Any = PrivateAttr(default=None)
     _deprecation_warnings_enabled: ClassVar[bool] = False
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        """Normalise declared defaults to the shape of their annotation.
+
+        Defaults are written as plain literals -- ``0`` for a ``Decimal``, a
+        list for a tuple -- but ``validate_default`` holds them to the same
+        strict rules as user input, so shape them the way input is shaped.
+        """
+        rebuild = False
+        for field in cls.model_fields.values():
+            if field.default is PydanticUndefined or field.default is None:
+                continue
+            shaped = _shape(field.default, field.annotation, split_strings=False)
+            if shaped is not field.default:
+                field.default = shaped
+                rebuild = True
+        if rebuild:
+            cls.model_rebuild(force=True)
 
     @model_validator(mode="before")
     @classmethod
@@ -95,11 +117,11 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
         return self._meta
 
     def attach_context(
-        self,
+        self: "BaseConfigModelT",
         *,
         diagnostics: DiagnosticSet | None = None,
         meta: Any = None,
-    ) -> "BaseConfigModel":
+    ) -> "BaseConfigModelT":
         if diagnostics is not None:
             object.__setattr__(self, "_diagnostics", diagnostics)
         if meta is not None:
@@ -204,15 +226,36 @@ def _field_for_legacy(variable: Any) -> FieldInfo:
     return field
 
 
+def extend_model(
+    name: str,
+    base: type[BaseConfigModel],
+    fields: Mapping[str, tuple[Any, Any]],
+) -> type[BaseConfigModel]:
+    """
+    Derive a model from ``base`` with additional, dynamically named fields.
+
+    :param name: The name of the generated model.
+    :param base: The model to derive from.
+    :param fields: Field names mapped to ``(annotation, field)`` pairs, in the
+        same shape Pydantic's ``create_model`` expects.
+    """
+    # create_model's overloads describe fields as keyword arguments written out
+    # by hand, which a computed set of names cannot be.
+    return cast(
+        type[BaseConfigModel],
+        create_model(name, __base__=base, **fields),  # type: ignore[call-overload]
+    )
+
+
 def variables_to_model(
     name: str,
     variables: list[Any],
     base: type[BaseConfigModel] = BaseConfigModel,
 ) -> type[BaseConfigModel]:
-    fields = {item.name: (item.type, _field_for_legacy(item)) for item in variables}
-    return cast(
-        type[BaseConfigModel],
-        create_model(name, __base__=base, **fields),  # type: ignore[call-overload]
+    return extend_model(
+        name,
+        base,
+        {item.name: (item.type, _field_for_legacy(item)) for item in variables},
     )
 
 

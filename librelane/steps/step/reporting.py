@@ -264,14 +264,12 @@ class ReportingMixin:
 
         files_path = target_path if flatten else target_path / "files"
         pdk_root_flat_dirname = pathlib.Path("pdk")
-        pdk_flat_dirname = pdk_root_flat_dirname / self.config["PDK"]
+        pdk_flat_dirname = pdk_root_flat_dirname / self.config.PDK
         pdk_flat_path = target_path / pdk_flat_dirname
         if flatten and include_pdk:
             pdk_flat_path.mkdir(parents=True)
 
-        pdk_path = (
-            pathlib.Path(str(self.config["PDK_ROOT"])) / self.config["PDK"]
-        ).resolve()
+        pdk_path = (pathlib.Path(str(self.config.PDK_ROOT)) / self.config.PDK).resolve()
 
         def visitor(x: Any) -> Any:
             if not isinstance(x, Path):

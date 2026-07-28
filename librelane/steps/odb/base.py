@@ -16,7 +16,7 @@
 # See the License for the specific language governing permissions and
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 import os
 import re
 import json
@@ -77,7 +77,7 @@ class OdbpyStep(Step):
         views_updates: ViewsUpdate = {}
         command = self.get_command()
         for output in automatic_outputs:
-            filename = f"{self.config['DESIGN_NAME']}.{output.extension}"
+            filename = f"{self.config.DESIGN_NAME}.{output.extension}"
             file_path = os.path.join(self.step_dir, filename)
             command.append(f"--output-{output.id}")
             command.append(file_path)
@@ -90,7 +90,7 @@ class OdbpyStep(Step):
         env["PYTHONPATH"] = ":".join(
             (
                 env.get("PYTHONPATH", ""),
-                str(package_path().joinpath("scripts", "odbpy")),
+                str(files("librelane").joinpath("scripts", "odbpy")),
             )
         )
         check = False
@@ -147,24 +147,24 @@ class OdbpyStep(Step):
     def get_command(self) -> list[str]:
         metrics_path = os.path.join(self.step_dir, "or_metrics_out.json")
 
-        tech_lefs = self.toolbox.filter_views(self.config, self.config["TECH_LEFS"])
+        tech_lefs = self.toolbox.filter_views(self.config, self.config.TECH_LEFS)
         if len(tech_lefs) != 1:
             raise StepException(
                 "Misconfigured SCL: 'TECH_LEFS' must return exactly one Tech LEF for its default timing corner."
             )
 
         lefs = ["--input-lef", str(tech_lefs[0])]
-        for lef in self.config["CELL_LEFS"]:
+        for lef in self.config.CELL_LEFS:
             lefs.append("--input-lef")
-            lefs.append(lef)
-        if extra_lefs := self.config["EXTRA_LEFS"]:
+            lefs.append(str(lef))
+        if extra_lefs := self.config.EXTRA_LEFS:
             for lef in extra_lefs:
                 lefs.append("--input-lef")
-                lefs.append(lef)
-        if pad_lefs := self.config["PAD_LEFS"]:
+                lefs.append(str(lef))
+        if pad_lefs := self.config.PAD_LEFS:
             for lef in pad_lefs:
                 lefs.append("--input-lef")
-                lefs.append(lef)
+                lefs.append(str(lef))
         if (design_lef := self.state_in.result().get(DesignFormat.LEF)) and (
             DesignFormat.LEF in self.inputs
         ):

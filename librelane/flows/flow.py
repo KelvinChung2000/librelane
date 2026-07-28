@@ -34,22 +34,35 @@ from collections.abc import Sequence, Callable
 
 from rich.progress import (
     Progress,
+    ProgressColumn,
+    SpinnerColumn,
+    Task,
     TextColumn,
     BarColumn,
     MofNCompleteColumn,
     TimeElapsedColumn,
     TaskID,
 )
+from rich.text import Text
 from deprecated.sphinx import deprecated
+import rich.console
 from librelane.common.types import Path
 
-from ..config import Config, Variable, universal_flow_config_variables, AnyConfigs
+from ..config import (
+    AnyConfigs,
+    BaseConfigModel,
+    Config,
+    Variable,
+    model_to_variables,
+    universal_flow_config_variables,
+)
 from ..state import State, DesignFormat
 from ..steps import Step, StepNotFound
 from ..logging import (
-    LevelFilter,
+    LiveLog,
     additional_sink,
-    console,
+    console as default_console,
+    live as default_live,
     options,
 )
 from ..common import (
@@ -120,24 +133,55 @@ def ensure_progress_started(method: T) -> Callable:
     return _impl
 
 
+class _StepActivityColumn(ProgressColumn):
+    """
+    Renders a step row's most recent log line.
+
+    The text is read here, during Rich's refresh, rather than pushed by
+    whoever produced the line. That is what keeps the bar's cost proportional
+    to the refresh rate instead of to how much output a tool produces.
+    """
+
+    def __init__(self, live: LiveLog) -> None:
+        super().__init__()
+        self._live = live
+
+    def render(self, task: Task) -> Text:
+        display = self._live.get(str(task.description))
+        if display is None or not display.last_line:
+            return Text("")
+        return Text(display.last_line, style="dim", no_wrap=True, overflow="ellipsis")
+
+
 class FlowProgressBar(object):
     """
     A wrapper for a flow's progress bar, rendered using Rich at the bottom of
     interactive terminals.
     """
 
-    def __init__(self, flow_name: str, starting_ordinal: int = 1) -> None:
+    def __init__(
+        self,
+        flow_name: str,
+        starting_ordinal: int = 1,
+        live: LiveLog | None = None,
+        console: rich.console.Console | None = None,
+    ) -> None:
         self.__flow_name: str = flow_name
         self.__stages_completed: int = 0
         self.__max_stage: int = 0
         self.__task_id: TaskID = TaskID(-1)
         self.__ordinal: int = starting_ordinal
+        self.__live = live if live is not None else default_live
+        #: Row per in-flight step, keyed by step ID.
+        self.step_row_ids: dict[str, TaskID] = {}
         self.__progress = Progress(
+            SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
+            _StepActivityColumn(self.__live),
             BarColumn(),
             MofNCompleteColumn(),
             TimeElapsedColumn(),
-            console=console,
+            console=console if console is not None else default_console,
             disable=not options.get_show_progress_bar(),
         )
 
@@ -149,13 +193,43 @@ class FlowProgressBar(object):
         self.__task_id = self.__progress.add_task(
             f"{self.__flow_name}",
         )
+        # Rows follow the live-step registry, so they appear and disappear
+        # without any flow having to announce its fan-out.
+        self.__live.add_listener(self.sync_step_rows)
 
     def end(self):
         """
         Stops rendering the progress bar.
         """
+        self.__live.remove_listener(self.sync_step_rows)
+        for task_id in self.step_row_ids.values():
+            self.__progress.remove_task(task_id)
+        self.step_row_ids.clear()
         self.__progress.stop()
         self.__task_id = TaskID(-1)
+
+    def refresh(self):
+        """Forces a render. Rich otherwise refreshes on its own schedule."""
+        self.__progress.refresh()
+
+    def sync_step_rows(self):
+        """
+        Reconciles the rows against the steps currently running.
+
+        Only membership is reconciled here. The text of a row is pulled by
+        :class:`_StepActivityColumn` during Rich's own refresh, so a tool
+        emitting a hundred thousand lines costs the bar nothing.
+        """
+        if self.__task_id == TaskID(-1):
+            return
+        current = {display.step_id for display in self.__live.snapshot()}
+        for step_id in current - self.step_row_ids.keys():
+            self.step_row_ids[step_id] = self.__progress.add_task(
+                step_id,
+                total=None,
+            )
+        for step_id in self.step_row_ids.keys() - current:
+            self.__progress.remove_task(self.step_row_ids.pop(step_id))
 
     @property
     def started(self) -> bool:
@@ -281,13 +355,40 @@ class Flow(ABC):
         If :meth:`start` is called again, the reference is destroyed.
     """
 
-    class _StepWarningSink:
+    class _StepIssueSink:
+        """
+        Collects warnings and errors for replay once the run is over.
+
+        The terminal is a live view, so an issue early in a long run scrolls
+        away. Each collected issue keeps a pointer into the step's own log --
+        the durable record -- so it can be followed rather than grepped for.
+        """
+
         @dataclass
         class Record:
             message: str
+            level: str = "WARNING"
             step: str | None = None
+            step_log: str | None = None
             repeats: int = 0
             similar: int = 0
+
+            def locate(self) -> str:
+                """
+                :returns: A ``path:line`` pointer into the step log, or the bare
+                    path when the message cannot be found in it.
+                """
+                if self.step_log is None:
+                    return ""
+                try:
+                    lines = pathlib.Path(self.step_log).read_text().splitlines()
+                except OSError:
+                    return ""
+                relative = os.path.relpath(self.step_log)
+                for number, line in enumerate(lines, start=1):
+                    if self.message.splitlines()[0] in line:
+                        return f"{relative}:{number}"
+                return relative
 
             def __str__(self) -> str:
                 prefix = ""
@@ -295,36 +396,56 @@ class Flow(ABC):
                     prefix = f"[{self.step}] "
                 postfix = ""
                 if self.repeats + self.similar:
-                    postfix = f"and {self.repeats + self.similar} similar warnings"
-                if len(postfix):
-                    postfix = f" ({postfix})"
+                    postfix = f" (and {self.repeats + self.similar} similar messages)"
+                pointer = self.locate()
+                if pointer:
+                    postfix = f"{postfix} ▸ {pointer}"
                 return f"{prefix}{self.message}{postfix}"
 
         def __init__(self) -> None:
-            self.warnings: dict[str, Flow._StepWarningSink.Record] = {}
+            self.warnings: dict[str, Flow._StepIssueSink.Record] = {}
+            self.errors: dict[str, Flow._StepIssueSink.Record] = {}
 
         def __call__(self, message) -> None:
             record = message.record
             extra = record["extra"]
-            step = extra.get("step")
+            level = record["level"].name
+            collected = self.errors if level in ("ERROR", "CRITICAL") else self.warnings
             text = str(record["message"])
             key = extra.get("key", text)
-            if key in self.warnings:
-                existing = self.warnings[key]
+            if key in collected:
+                existing = collected[key]
                 if text == existing.message:
                     existing.repeats += 1
                 else:
                     existing.similar += 1
             else:
-                self.warnings[key] = Flow._StepWarningSink.Record(text, step)
+                collected[key] = Flow._StepIssueSink.Record(
+                    text,
+                    level=level,
+                    step=extra.get("step"),
+                    step_log=extra.get("step_log"),
+                )
+
+    #: Retained under its former name for external callers.
+    _StepWarningSink = _StepIssueSink
 
     name: str = NotImplemented
     Steps: list[type[Step]] = NotImplemented  # Override
     config_vars: list[Variable] = []
+
+    class Config(BaseConfigModel):
+        pass
+
     step_objects: list[Step] | None = None
     run_dir: pathlib.Path | None = None
     toolbox: Toolbox | None = None
     config_resolved_path: pathlib.Path | None = None
+
+    def __init_subclass__(cls):
+        if "Config" in cls.__dict__ and "config_vars" not in cls.__dict__:
+            cls.config_vars = model_to_variables(cls.Config)
+        return super().__init_subclass__()
 
     def __init__(
         self,
@@ -642,21 +763,23 @@ class Flow(ABC):
         # Stored until next start()
         self.toolbox = Toolbox(os.fspath(self.run_dir / "tmp"))
 
-        warning_handler = Flow._StepWarningSink()
+        issue_handler = Flow._StepIssueSink()
         try:
             with ExitStack() as sink_stack:
                 sink_stack.enter_context(
-                    additional_sink(
-                        warning_handler,
-                        filter=LevelFilter(["WARNING"]),
-                    )
+                    additional_sink(issue_handler, level="WARNING")
                 )
                 for level in ["WARNING", "ERROR"]:
                     sink_stack.enter_context(
                         additional_sink(
                             self.run_dir / f"{level.lower()}.log",
                             mode="a+",
-                            filter=LevelFilter([level]),
+                            # Exactly one level, so error.log stays out of
+                            # warning.log. Loguru's ``level`` is a minimum and
+                            # its ``filter`` dict form keys on the module name,
+                            # so neither expresses this.
+                            filter=lambda record, level=level: record["level"].name
+                            == level,
                         )
                     )
                 sink_stack.enter_context(
@@ -695,10 +818,16 @@ class Flow(ABC):
                 self.step_objects += step_objects
 
         finally:
-            if len(warning_handler.warnings):
+            # Replayed after the run because the terminal is a live view: an
+            # issue raised early in a long flow has long since scrolled away.
+            if len(issue_handler.warnings):
                 logger.warning("The following warnings were generated by the flow:")
-                for record in warning_handler.warnings.values():
+                for record in issue_handler.warnings.values():
                     logger.warning(f"{record}")
+            if len(issue_handler.errors):
+                logger.error("The following errors were generated by the flow:")
+                for record in issue_handler.errors.values():
+                    logger.error(f"{record}")
 
         return final_state
 

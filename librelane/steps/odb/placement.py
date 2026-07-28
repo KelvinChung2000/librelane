@@ -16,16 +16,16 @@
 # See the License for the specific language governing permissions and
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 import os
 import shutil
 from typing import Literal, Optional
 
 from ...common import Path
-from ...config import Instance, Macro, Variable
+from ...config import Instance, Macro, variable
 from ...state import State
 
-from ..common_variables import io_layer_variables
+from ..common_variables import IoLayerConfig
 from ..step import (
     MetricsUpdate,
     Step,
@@ -51,16 +51,16 @@ class ManualMacroPlacement(OdbpyStep):
     id = "Odb.ManualMacroPlacement"
     name = "Manual Macro Placement"
 
-    config_vars = [
-        Variable(
-            "MACRO_PLACEMENT_CFG",
-            Optional[Path],
-            "Path to an optional override for instance placement instead of the `MACROS` object for compatibility with LibreLane 1. If both are `None`, this step is skipped.",
-        ),
-    ]
+    class Config(Step.Config):
+        MACRO_PLACEMENT_CFG: Optional[Path] = variable(
+            None,
+            description="Path to an optional override for instance placement instead of the `MACROS` object for compatibility with LibreLane 1. If both are `None`, this step is skipped.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "placers.py")
+        return files("librelane").joinpath("scripts", "odbpy", "placers.py")
 
     def get_subcommand(self) -> list[str]:
         return ["manual-macro-placement"]
@@ -123,59 +123,58 @@ class CustomIOPlacement(OdbpyStep):
     name = "Custom I/O Placement"
     long_name = "Custom I/O Pin Placement Script"
 
-    config_vars = io_layer_variables + [
-        Variable(
-            "IO_PIN_ORDER_CFG",
-            Optional[Path],
-            "Path to a custom pin configuration file.",
+    class Config(IoLayerConfig):
+        IO_PIN_ORDER_CFG: Optional[Path] = variable(
+            None,
+            description="Path to a custom pin configuration file.",
             deprecated_names=["FP_PIN_ORDER_CFG"],
-        ),
-        Variable(
-            "ERRORS_ON_UNMATCHED_IO",
-            Literal["none", "unmatched_design", "unmatched_cfg", "both"],
-            "Controls whether to emit an error in: no situation, when pins exist in the design that do not exist in the config file, when pins exist in the config file that do not exist in the design, and both respectively. `both` is recommended, as the default is only for backwards compatibility with LibreLane 1.",
-            default="unmatched_design",  # Backwards compatible with LibreLane 1
-            deprecated_names=[
-                ("QUIT_ON_UNMATCHED_IO", _migrate_unmatched_io),
-            ],
-        ),
-    ]
+        )
+
+        ERRORS_ON_UNMATCHED_IO: Literal[
+            "none", "unmatched_design", "unmatched_cfg", "both"
+        ] = variable(
+            "unmatched_design",
+            description="Controls whether to emit an error in: no situation, when pins exist in the design that do not exist in the config file, when pins exist in the config file that do not exist in the design, and both respectively. `both` is recommended, as the default is only for backwards compatibility with LibreLane 1.",
+            deprecated_names=[("QUIT_ON_UNMATCHED_IO", _migrate_unmatched_io)],
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "io_place.py")
+        return files("librelane").joinpath("scripts", "odbpy", "io_place.py")
 
     def get_command(self) -> list[str]:
         length_args = []
-        if self.config["IO_PIN_V_LENGTH"] is not None:
-            length_args += ["--ver-length", self.config["IO_PIN_V_LENGTH"]]
-        if self.config["IO_PIN_H_LENGTH"] is not None:
-            length_args += ["--hor-length", self.config["IO_PIN_H_LENGTH"]]
+        if self.config.IO_PIN_V_LENGTH is not None:
+            length_args += ["--ver-length", self.config.IO_PIN_V_LENGTH]
+        if self.config.IO_PIN_H_LENGTH is not None:
+            length_args += ["--hor-length", self.config.IO_PIN_H_LENGTH]
 
         return (
             super().get_command()
             + [
                 "--config",
-                self.config["IO_PIN_ORDER_CFG"],
+                self.config.IO_PIN_ORDER_CFG,
                 "--hor-layer",
-                self.config["IO_PIN_H_LAYER"],
+                self.config.IO_PIN_H_LAYER,
                 "--ver-layer",
-                self.config["IO_PIN_V_LAYER"],
+                self.config.IO_PIN_V_LAYER,
                 "--hor-width-mult",
-                str(self.config["IO_PIN_V_THICKNESS_MULT"]),
+                str(self.config.IO_PIN_V_THICKNESS_MULT),
                 "--ver-width-mult",
-                str(self.config["IO_PIN_H_THICKNESS_MULT"]),
+                str(self.config.IO_PIN_H_THICKNESS_MULT),
                 "--hor-extension",
-                str(self.config["IO_PIN_H_EXTENSION"]),
+                str(self.config.IO_PIN_H_EXTENSION),
                 "--ver-extension",
-                str(self.config["IO_PIN_V_EXTENSION"]),
+                str(self.config.IO_PIN_V_EXTENSION),
                 "--unmatched-error",
-                self.config["ERRORS_ON_UNMATCHED_IO"],
+                self.config.ERRORS_ON_UNMATCHED_IO,
             ]
             + length_args
         )
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["IO_PIN_ORDER_CFG"] is None:
+        if self.config.IO_PIN_ORDER_CFG is None:
             logger.info(
                 f"No custom I/O placement file configured, skipping '{self.id}'…"
             )
@@ -196,16 +195,16 @@ class ManualGlobalPlacement(OdbpyStep):
     id = "Odb.ManualGlobalPlacement"
     name = "Manual Global Placement"
 
-    config_vars = OdbpyStep.config_vars + [
-        Variable(
-            "MANUAL_GLOBAL_PLACEMENTS",
-            Optional[dict[str, Instance]],
+    class Config(OdbpyStep.Config):
+        MANUAL_GLOBAL_PLACEMENTS: Optional[dict[str, Instance]] = variable(
+            None,
             description="A dictionary of instances to their global (non-legalized and unfixed) placement location.",
         )
-    ]
+
+    config: Config
 
     def get_script_path(self) -> str:
-        return str(package_path().joinpath("scripts", "odbpy", "placers.py"))
+        return str(files("librelane").joinpath("scripts", "odbpy", "placers.py"))
 
     def get_subcommand(self) -> list[str]:
         return ["manual-global-placement"]
@@ -218,7 +217,7 @@ class ManualGlobalPlacement(OdbpyStep):
         ]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["MANUAL_GLOBAL_PLACEMENTS"] is None:
+        if self.config.MANUAL_GLOBAL_PLACEMENTS is None:
             logger.info(f"'MANUAL_GLOBAL_PLACEMENTS' not set. Skipping '{self.id}'…")
             return {}, {}
         return super().run(state_in, **kwargs)

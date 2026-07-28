@@ -30,6 +30,7 @@ def test_create_reproducible_uses_portable_paths(tmp_path, monkeypatch):
     from concurrent.futures import Future
 
     from librelane.common import Path
+    from librelane.config import BaseConfigModel
     from librelane.state import State
     from librelane.steps.step.reporting import ReportingMixin
 
@@ -55,15 +56,17 @@ def test_create_reproducible_uses_portable_paths(tmp_path, monkeypatch):
     state_in.set_result(State({}))
     target = ReproducibleStep()
     target.state_in = state_in
-    target.config = {
-        "DESIGN_DIR": Path(tmp_path),
-        "DESIGN_NAME": "design",
-        "PDK": "dummy",
-        "PDK_ROOT": Path(pdk_root),
-        "DESIGN_FILE": Path(design_file),
-        "RELATIVE_FILE": Path("relative.v"),
-        "TECH_FILE": Path(pdk_file),
-    }
+    target.config = BaseConfigModel.model_validate(
+        {
+            "DESIGN_DIR": Path(tmp_path),
+            "DESIGN_NAME": "design",
+            "PDK": "dummy",
+            "PDK_ROOT": Path(pdk_root),
+            "DESIGN_FILE": Path(design_file),
+            "RELATIVE_FILE": Path("relative.v"),
+            "TECH_FILE": Path(pdk_file),
+        }
+    )
 
     output = tmp_path / "reproducible"
     target.create_reproducible(output)
@@ -595,3 +598,92 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
 
     with pytest.raises(StepException, match="non-UTF-8"):
         step.start(step_dir=".")
+
+
+@pytest.mark.usefixtures("_chdir_tmp")
+@mock_variables([step])
+def test_a_failed_subprocess_leaves_no_monitor_thread_running():
+    """
+    The resource monitor polls the child through psutil on a timer, so one left
+    running keeps touching the filesystem long after its step is over -- which
+    corrupts the view of any later test that fakes the filesystem.
+    """
+    import threading
+
+    from librelane.config import Config
+    from librelane.state import State
+    from librelane.steps import Step, StepException
+    from librelane.steps.step.process_stats import ProcessStatsThread
+
+    class StepTest(Step):
+        inputs = []
+        outputs = []
+        id = "Test.MonitorLeak"
+        step_dir = os.getcwd()
+
+        def run(self, *args, **kwargs):
+            return {}, {}
+
+    step_object = StepTest(
+        config=Config(
+            {
+                "DESIGN_NAME": "whatever",
+                "DESIGN_DIR": os.getcwd(),
+                "EXAMPLE_PDK_VAR": "bla",
+                "PDK_ROOT": "/pdk",
+                "PDK": "dummy",
+                "STD_CELL_LIBRARY": "dummy_scl",
+                "VERILOG_FILES": ["/cwd/src/a.v"],
+                "GRT_REPAIR_ANTENNAS": True,
+                "RUN_HEURISTIC_DIODE_INSERTION": False,
+                "MACROS": None,
+                "DIODE_ON_PORTS": None,
+                "TECH_LEFS": {
+                    "nom_*": "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
+                },
+                "DEFAULT_CORNER": "nom_tt_025C_1v80",
+                "RANDOM_ARRAY": None,
+            }
+        ),
+        state_in=State(),
+        _no_revalidate_conf=True,
+    )
+
+    before = {
+        thread
+        for thread in threading.enumerate()
+        if isinstance(thread, ProcessStatsThread)
+    }
+
+    with pytest.raises(StepException, match="non-UTF-8"):
+        step_object.run_subprocess(
+            [
+                "python3",
+                "-c",
+                "import sys; sys.stdout.buffer.write(bytes([0xfa]))",
+            ],
+            silent=True,
+        )
+
+    leaked = [
+        thread
+        for thread in threading.enumerate()
+        if isinstance(thread, ProcessStatsThread) and thread not in before
+    ]
+    assert leaked == []
+
+
+def test_steps_only_read_config_variables_they_declare():
+    """A step whose Config omits the variable it reads raises KeyError at run time."""
+    import librelane.steps  # noqa: F401
+    from librelane.steps import Step
+
+    undeclared = []
+    for step_id in Step.factory.list():
+        step = Step.factory.get(step_id)
+        name = getattr(step, "obstruction_variable", None)
+        if name is None:
+            continue
+        if name not in step._get_config_model().model_fields:
+            undeclared.append(f"{step_id} reads '{name}'")
+    assert undeclared == []

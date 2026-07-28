@@ -11,28 +11,36 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from ..common.cli import formatter_settings
+from typing import Annotated
+
+import typer
+
 from ..flows import Flow
-from ..steps import Step
 from ..logging import console
+from ..steps import Step
 
-import cloup
+
+cli = typer.Typer(
+    add_completion=False,
+    pretty_exceptions_enable=False,
+    rich_markup_mode="rich",
+)
 
 
-@cloup.command(formatter_settings=formatter_settings)
-@cloup.argument("step_or_flow")
-@cloup.pass_context
-def cli(ctx, step_or_flow):
-    """
-    Displays rich help for the step or flow in question.
-    """
-    if TargetFlow := Flow.factory.get(step_or_flow):
-        TargetFlow.display_help()
-    elif TargetStep := Step.factory.get(step_or_flow):
-        TargetStep.display_help()
+@cli.command()
+def main(
+    step_or_flow: Annotated[
+        str, typer.Argument(help="The registered step or flow ID to describe.")
+    ],
+) -> None:
+    """Display detailed help for a registered step or flow."""
+    if target_flow := Flow.factory.get(step_or_flow):
+        target_flow.display_help()
+    elif target_step := Step.factory.get(step_or_flow):
+        target_step.display_help()
     else:
         console.log(f"Unknown Flow or Step '{step_or_flow}'.")
-        ctx.exit(-1)
+        raise typer.Exit(-1)
 
 
 if __name__ == "__main__":

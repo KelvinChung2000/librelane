@@ -56,5 +56,4 @@ from .types import (
 )
 from .toolbox import Toolbox
 from .drc import DRC, Violation, BoundingBox
-from . import cli
-from .tpe import get_tpe, set_tpe
+from .tpe import get_tpe, set_tpe, ContextPropagatingThreadPoolExecutor

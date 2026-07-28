@@ -7,7 +7,6 @@
   stdenv,
   pkgs,
   lib,
-  python3,
   librelane,
   git,
   zsh,
@@ -15,9 +14,7 @@
   coreutils,
 }:
 let
-  librelane-env = python3.withPackages (ps: with ps; [ librelane ]);
-  librelane-env-sitepackages = "${librelane-env}/${librelane-env.sitePackages}";
-  librelane-env-bin = "${librelane-env}/bin";
+  librelane-env-bin = "${librelane}/bin";
 in
 createDockerImage {
   inherit pkgs;
@@ -29,7 +26,7 @@ createDockerImage {
     zsh
     silver-searcher
 
-    librelane-env
+    librelane
   ];
   nixConf = {
     extra-experimental-features = "nix-command flakes repl-flake";
@@ -57,7 +54,11 @@ createDockerImage {
     "LC_ALL=C.UTF-8"
     "LC_CTYPE=C.UTF-8"
     "EDITOR=nvim"
-    "NIX_PYTHONPATH=/host_librelane:${librelane-env-sitepackages}"
+    # Where 'librelane --dockerized' mounts the host's copy of the package, so
+    # that it takes precedence over the one baked into the image. LibreLane now
+    # ships as a virtual environment, whose interpreter reads PYTHONPATH rather
+    # than nixpkgs' NIX_PYTHONPATH.
+    "PYTHONPATH=/host_librelane"
     "TMPDIR=/tmp"
   ];
   image-config-extra-path = [

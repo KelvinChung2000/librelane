@@ -34,7 +34,7 @@ But also, each Step is required to:
   * This list is checked for completeness and validity- i.e. the {class}`Step`
     superclass WILL throw a `StepException` if a Step modifies any State variable
     it does not declare.
-* Declare any used configuration variables in the `config_vars` attribute.
+* Declare any used configuration variables in a nested `Config` model.
 
 ```{important}
 Don't forget the [`Step` strictures](#ref-step-strictures). Some of them are
@@ -43,19 +43,57 @@ programmatically enforced, but some are still not.
 
 ### Writing Config Variables
 
-Config variables are declared using the {class}`librelane.config.Variable` object.
+Configuration variables are declared as fields of a `Config` model nested inside
+the step, which subclasses the `Config` of the step you are deriving from. Each
+field is a normal Python annotation whose default comes from
+{func}`librelane.config.variable`:
+
+```python
+from decimal import Decimal
+from typing import Optional
+
+from librelane.common import Path
+from librelane.config import variable
+from librelane.steps import Step
+
+
+@Step.factory.register()
+class MyCustomStep(Step):
+    id = "ToolName.MyCustomStep"
+    inputs = []
+    outputs = []
+
+    class Config(Step.Config):
+        MY_CUSTOM_MARGIN: Decimal = variable(
+            0.5,
+            description="How much slack to leave around the thing.",
+            units="µm",
+        )
+
+        MY_CUSTOM_RULES: Optional[list[Path]] = variable(
+            None,
+            description="Rule decks to apply. If unset, the step is skipped.",
+        )
+
+    config: Config
+```
+
+The `config: Config` annotation carries no runtime effect: it tells type
+checkers which model `self.config` is, so that reading a field the step never
+declared is a type error rather than a surprise at runtime.
+
+`config_vars`, the flat list of {class}`librelane.config.Variable` objects, is
+derived from `Config` automatically and remains available for introspection and
+for the generated documentation.
 
 There are some conventions to writing these variables.
 
 * Variable names are declared in `UPPER_SNAKE_CASE`, and must be valid
   identifiers in the Python programming language.
-* Composite types should be declared using the `typing` module, i.e., for a list
-  of strings, try `typing.List[str]` instead of `list[str]` or just `list`.
-  * `list[str]` will technically work as of LibreLane 3.0.0, but in older
-    versions it did not and even in current versions of Python the type objects
-    do not match, i.e. `List[str] != list[str]`. This may cause unexpected bugs.
-  * `list` does not give LibreLane adequate information to validate the child
-    variables and should not be used under any cirumstance.
+* Composite types are declared with the builtin generics, i.e. `list[str]` for a
+  list of strings.
+  * A bare `list` does not give LibreLane adequate information to validate the
+    child variables and should not be used under any circumstance.
 * Variables that capture a physical quantity, such as time, distance or similar,
   must declare units using their `"units"` field.
   * In case of micro-, the only SI prefix denoted with a non-Latin letter, use
@@ -74,7 +112,7 @@ There are some conventions to writing these variables.
   objects which adds some very necessary validation and enables easier
   processing of the variables down the line.
   * Avoid pointing to directories. If your step may require multiple files
-    within a directory, try using the type `List[Path]`.
+    within a directory, try using the type `list[Path]`.
 
 ### Implementing `run`
 
@@ -87,19 +125,19 @@ def run(self, state_in: State, *args, **kwargs):
 The `*args` and `**kwargs` allow subclasses to pass arguments to subprocesses-
 more on that later.
 
-You can access configuration variables- which are validated by this point- using
-`self.config[KEY]`. If you need to save files, you can get the step directory
-using `self.step_dir`. For example:
+You can access configuration variables- which are validated by this point- as
+attributes of `self.config`. If you need to save files, you can get the step
+directory using `self.step_dir`. For example:
 
 ```python
-design_name = self.config["DESIGN_NAME"]
+design_name = self.config.DESIGN_NAME
 output_path = os.path.join(self.step_dir, f"{design_name}.def")
 ```
 
 ```{note}
 A step has access to:
 
-* Its declared `config_vars`
+* The fields of its own `Config` model
 * [All Common Flow Variables](../reference/common_flow_vars.md#universal-flow-configuration-variables)
 
 Attempting to access any other variable is undefined behavior.
@@ -167,7 +205,7 @@ The state is also exposed to the TclStep as is:
 If a TclStep-based step fails, a reproducible is created, which can be submitted
 to the respective repository of the tool.
 
-Keep in mind that TclStep-based tools still have to define their `config_vars`,
+Keep in mind that TclStep-based tools still have to define their `Config`,
 `inputs` and `outputs`.
 
 #### Subclasses
@@ -182,11 +220,13 @@ These subclasses acts as an abstract base class for steps that use their
 respective utility. They have one abstract method, `get_script_path`.
 Most steps subclassing them might not need to even override `run`.
 
-Additionally, they comes with a common set of `config_vars` required by all invocations
-of said tool; you can declare more for your step, however, as shown in this example.:
+Additionally, they come with a common set of configuration variables required by
+all invocations of said tool; you can declare more for your step by subclassing
+that step's `Config`, as shown in this example:
 
 ```python
-config_vars = OpenROADStep.config_vars + [...]
+class Config(OpenROADStep.Config):
+    ...
 ```
 
 Be sure to read the subclasses' `run` docstrings as they may contain critical information.

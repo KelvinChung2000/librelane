@@ -2,6 +2,7 @@
 from decimal import Decimal
 
 import pytest
+from pydantic import ValidationError
 
 
 def test_typed_model_mapping_and_schema():
@@ -94,6 +95,72 @@ def test_decimal_is_preserved():
     assert value.VALUE == Decimal("1.25")
 
 
+@pytest.mark.parametrize("given", [0, 10])
+def test_whole_numbers_are_accepted_for_decimals(given):
+    from librelane.config import BaseConfigModel, variable
+
+    class Example(BaseConfigModel):
+        VALUE: Decimal = variable(given, description="Value.")
+
+    assert Example.model_validate({}, strict=True).VALUE == Decimal(given)
+    assert Example.model_validate({"VALUE": given}, strict=True).VALUE == Decimal(given)
+
+
+def test_booleans_are_not_accepted_for_decimals():
+    from librelane.config import BaseConfigModel, variable
+
+    class Example(BaseConfigModel):
+        VALUE: Decimal = variable(description="Value.")
+
+    with pytest.raises(ValidationError):
+        Example.model_validate({"VALUE": True}, strict=True)
+
+
+def test_sequences_are_shaped_into_tuples():
+    from librelane.config import BaseConfigModel, variable
+
+    class Example(BaseConfigModel):
+        OBSTRUCTIONS: list[tuple[str, Decimal, Decimal]] = variable(
+            description="Obstructions.",
+        )
+
+    model = Example.model_validate(
+        {"OBSTRUCTIONS": [["met2", 0, 1]]},
+        strict=True,
+    )
+    assert model.OBSTRUCTIONS == [("met2", Decimal(0), Decimal(1))]
+
+
+def test_dataclass_mappings_are_shaped_into_instances(tmp_path):
+    """Dumping a config flattens Macros to dicts; re-validating must rebuild them."""
+    from librelane.config import BaseConfigModel, variable
+    from librelane.config.legacy import Macro
+
+    gds = tmp_path / "a.gds"
+    lef = tmp_path / "a.lef"
+    gds.touch()
+    lef.touch()
+
+    class Example(BaseConfigModel):
+        MACROS: dict[str, Macro] | None = variable(None, description="Macros.")
+
+    raw = {
+        "MACROS": {
+            "spm": {
+                "gds": [str(gds)],
+                "lef": [str(lef)],
+                "instances": {"i1": {"location": [1, 2], "orientation": "N"}},
+            }
+        }
+    }
+    model = Example.model_validate(raw, strict=True)
+    assert isinstance(model.MACROS["spm"], Macro)
+    assert model.MACROS["spm"].lef == [str(lef)]
+
+    round_tripped = Example.model_validate(model.to_raw_dict(), strict=True)
+    assert isinstance(round_tripped.MACROS["spm"], Macro)
+
+
 def test_legacy_validator_survives_model_bridge():
     from librelane.config import BaseConfigModel, model_to_variables, variable
 
@@ -127,3 +194,44 @@ def test_model_bridge_can_select_only_declared_fields():
     assert [
         item.name for item in model_to_variables(Child, include_inherited=False)
     ] == ["CHILD"]
+
+
+def test_validating_a_mapping_keeps_dataclass_values(tmp_path):
+    """Steps read config values directly, so validation must not flatten them."""
+    from librelane.config.legacy import Macro, Variable
+    from librelane.config.validation import validate_mapping
+
+    gds = tmp_path / "a.gds"
+    lef = tmp_path / "a.lef"
+    gds.touch()
+    lef.touch()
+
+    variables = [
+        Variable("MACROS", dict[str, Macro] | None, "Macros.", default=None),
+    ]
+    final, diagnostics = validate_mapping(
+        {
+            "MACROS": {
+                "spm": {
+                    "gds": [str(gds)],
+                    "lef": [str(lef)],
+                    "instances": {"i1": {"location": [1, 2], "orientation": "N"}},
+                }
+            }
+        },
+        variables,
+        permissive=True,
+    )
+    assert diagnostics.rendered_errors() == []
+    assert isinstance(final["MACROS"]["spm"], Macro)
+
+
+def test_instance_placement_fields_are_optional():
+    """'Leave empty for automatic placement' -- so an empty instance is valid."""
+    from pydantic import TypeAdapter
+
+    from librelane.config.legacy import Instance
+
+    instance = TypeAdapter(Instance).validate_python({})
+    assert instance.location is None
+    assert instance.orientation is None

@@ -20,7 +20,7 @@ import re
 from typing import Optional
 
 from .step import Step, StepException, ViewsUpdate, MetricsUpdate
-from ..config import Variable
+from ..config import variable
 from ..state import DesignFormat, State
 from ..common import Path
 
@@ -40,78 +40,70 @@ class Lint(Step):
     inputs = []  # The input RTL is part of the configuration
     outputs = []
 
-    config_vars = [
-        Variable(
-            "VERILOG_FILES",
-            list[Path],
-            "The paths of the design's Verilog files.",
-        ),
-        Variable(
-            "VERILOG_INCLUDE_DIRS",
-            Optional[list[Path]],
-            "Specifies the Verilog `include` directories.",
-        ),
-        Variable(
-            "VERILOG_POWER_DEFINE",
-            Optional[str],
-            "Specifies the name of the define used to guard power and ground connections in the input RTL.",
+    class Config(Step.Config):
+        VERILOG_FILES: list[Path] = variable(
+            description="The paths of the design's Verilog files.",
+        )
+
+        VERILOG_INCLUDE_DIRS: Optional[list[Path]] = variable(
+            None,
+            description="Specifies the Verilog `include` directories.",
+        )
+
+        VERILOG_POWER_DEFINE: Optional[str] = variable(
+            "USE_POWER_PINS",
+            description="Specifies the name of the define used to guard power and ground connections in the input RTL.",
             deprecated_names=["SYNTH_USE_PG_PINS_DEFINES", "SYNTH_POWER_DEFINE"],
-            default="USE_POWER_PINS",
-        ),
-        Variable(
-            "LINTER_INCLUDE_PDK_MODELS",
-            bool,
-            "Include Verilog models of the PDK",
-            default=False,
-        ),
-        Variable(
-            "LINTER_RELATIVE_INCLUDES",
-            bool,
-            "When a file references an include file, resolve the filename relative to the path of the referencing file, instead of relative to the current directory.",
-            default=True,
+        )
+
+        LINTER_INCLUDE_PDK_MODELS: bool = variable(
+            False,
+            description="Include Verilog models of the PDK",
+        )
+
+        LINTER_RELATIVE_INCLUDES: bool = variable(
+            True,
+            description="When a file references an include file, resolve the filename relative to the path of the referencing file, instead of relative to the current directory.",
             deprecated_names=["VERILATOR_RELATIVE_INCLUDES"],
-        ),
-        Variable(
-            "LINTER_ERROR_ON_LATCH",
-            bool,
-            "When a latch is inferred by an `always` block that is not explicitly marked as `always_latch`, report this as a linter error.",
-            default=True,
-        ),
-        Variable(
-            "LINTER_ERROR_ON_MULTIDRIVEN",
-            bool,
-            "When a net has multiple drivers, report this as a linter error.",
-            default=True,
-        ),
-        Variable(
-            "VERILOG_DEFINES",
-            Optional[list[str]],
-            "Preprocessor defines for input Verilog files",
+        )
+
+        LINTER_ERROR_ON_LATCH: bool = variable(
+            True,
+            description="When a latch is inferred by an `always` block that is not explicitly marked as `always_latch`, report this as a linter error.",
+        )
+
+        LINTER_ERROR_ON_MULTIDRIVEN: bool = variable(
+            True,
+            description="When a net has multiple drivers, report this as a linter error.",
+        )
+
+        VERILOG_DEFINES: Optional[list[str]] = variable(
+            None,
+            description="Preprocessor defines for input Verilog files",
             deprecated_names=["SYNTH_DEFINES"],
-        ),
-        Variable(
-            "LINTER_DEFINES",
-            Optional[list[str]],
-            "Linter-specific preprocessor definitions; overrides VERILOG_DEFINES for the lint step if exists",
-        ),
-        Variable(
-            "LINTER_DISABLE_WARNINGS",
-            Optional[list[str]],
-            "Warning codes that are passed to the linter to be disabled.",
-            default=["DECLFILENAME", "EOFNEWLINE"],
-        ),
-        Variable(
-            "LINTER_DISABLE_WARNINGS_BLACKBOX",
-            Optional[list[str]],
-            "Warning codes that are passed to the linter to be disabled for all blackbox modules.",
-            default=["UNDRIVEN", "UNUSEDSIGNAL"],
-        ),
-        Variable(
-            "LINTER_VLT",
-            Optional[Path],
-            "Path to a Verilator Configuration format file (`.vlt`) that is passed to the linter.",
-        ),
-    ]
+        )
+
+        LINTER_DEFINES: Optional[list[str]] = variable(
+            None,
+            description="Linter-specific preprocessor definitions; overrides VERILOG_DEFINES for the lint step if exists",
+        )
+
+        LINTER_DISABLE_WARNINGS: Optional[list[str]] = variable(
+            ["DECLFILENAME", "EOFNEWLINE"],
+            description="Warning codes that are passed to the linter to be disabled.",
+        )
+
+        LINTER_DISABLE_WARNINGS_BLACKBOX: Optional[list[str]] = variable(
+            ["UNDRIVEN", "UNUSEDSIGNAL"],
+            description="Warning codes that are passed to the linter to be disabled for all blackbox modules.",
+        )
+
+        LINTER_VLT: Optional[Path] = variable(
+            None,
+            description="Path to a Verilator Configuration format file (`.vlt`) that is passed to the linter.",
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -124,7 +116,7 @@ class Lint(Step):
         model_list: list[str] = []
         model_set: set[str] = set()
 
-        if cell_verilog_models := self.config["CELL_VERILOG_MODELS"]:
+        if cell_verilog_models := self.config.CELL_VERILOG_MODELS:
             blackboxes.append(
                 self.toolbox.create_blackbox_model(
                     frozenset(cell_verilog_models),
@@ -132,7 +124,7 @@ class Lint(Step):
                 )
             )
 
-        if pad_verilog_models := self.config["PAD_VERILOG_MODELS"]:
+        if pad_verilog_models := self.config.PAD_VERILOG_MODELS:
             blackboxes.append(
                 self.toolbox.create_blackbox_model(
                     frozenset(pad_verilog_models),
@@ -157,22 +149,22 @@ class Lint(Step):
                     model_set.add(str_view)
                     model_list.append(str_view)
 
-        if extra_verilog_models := self.config["EXTRA_VERILOG_MODELS"]:
+        if extra_verilog_models := self.config.EXTRA_VERILOG_MODELS:
             for model in extra_verilog_models:
                 str_model = str(model)
                 if str_model not in model_set:
                     model_set.add(str_model)
                     model_list.append(str_model)
         defines = [
-            f"PDK_{self.config['PDK']}",
-            f"SCL_{self.config['STD_CELL_LIBRARY']}",
+            f"PDK_{self.config.PDK}",
+            f"SCL_{self.config.STD_CELL_LIBRARY}",
             "__librelane__",
             "__pnr__",
         ]
         if verilog_power_define := self.config.get("VERILOG_POWER_DEFINE"):
             defines += [verilog_power_define]
 
-        defines += self.config["LINTER_DEFINES"] or self.config["VERILOG_DEFINES"] or []
+        defines += self.config.LINTER_DEFINES or self.config.VERILOG_DEFINES or []
 
         if len(model_list):
             bb_path = self.toolbox.create_blackbox_model(
@@ -184,37 +176,35 @@ class Lint(Step):
         vlt_file = os.path.join(self.step_dir, "_deps.vlt")
         with open(vlt_file, "w") as f:
             f.write("`verilator_config\n")
-            if disable_warnings := self.config["LINTER_DISABLE_WARNINGS"]:
+            if disable_warnings := self.config.LINTER_DISABLE_WARNINGS:
                 for warn in disable_warnings:
                     f.write(f"lint_off -rule {warn}\n")
 
             for blackbox in blackboxes:
-                if disable_warnings_bb := self.config[
-                    "LINTER_DISABLE_WARNINGS_BLACKBOX"
-                ]:
+                if disable_warnings_bb := self.config.LINTER_DISABLE_WARNINGS_BLACKBOX:
                     for warn in disable_warnings_bb:
                         f.write(f'lint_off -rule {warn} -file "{blackbox}"\n')
 
         extra_args.append("--Wno-fatal")
 
-        if self.config["LINTER_RELATIVE_INCLUDES"]:
+        if self.config.LINTER_RELATIVE_INCLUDES:
             extra_args.append("--relative-includes")
 
-        if self.config["LINTER_ERROR_ON_LATCH"]:
+        if self.config.LINTER_ERROR_ON_LATCH:
             extra_args.append("--Werror-LATCH")
 
         # It's more user-friendly to catch multiple-driver conflicts here in Verilator (if possible) than later in Yosys.
-        if self.config["LINTER_ERROR_ON_MULTIDRIVEN"]:
+        if self.config.LINTER_ERROR_ON_MULTIDRIVEN:
             extra_args.append("--Werror-MULTIDRIVEN")
 
-        if include_dirs := self.config["VERILOG_INCLUDE_DIRS"]:
+        if include_dirs := self.config.VERILOG_INCLUDE_DIRS:
             extra_args.extend([f"-I{dir}" for dir in include_dirs])
 
         for define in defines:
             extra_args.append(f"+define+{define}")
 
-        if linter_vlt := self.config["LINTER_VLT"]:
-            extra_args.append(linter_vlt)
+        if linter_vlt := self.config.LINTER_VLT:
+            extra_args.append(str(linter_vlt))
 
         result = self.run_subprocess(
             [
@@ -224,12 +214,12 @@ class Lint(Step):
                 os.path.join(self.step_dir, "_waivers_output.vlt"),
                 "--Wall",
                 "--top-module",
-                self.config["DESIGN_NAME"],
+                self.config.DESIGN_NAME,
                 vlt_file,
             ]
             + extra_args
             + blackboxes
-            + self.config["VERILOG_FILES"],
+            + self.config.VERILOG_FILES,
             env=env,
             check=False,
         )

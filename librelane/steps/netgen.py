@@ -17,7 +17,7 @@
 # limitations under the License.
 from loguru import logger
 
-from ..resources import package_path
+from importlib.resources import files
 import os
 import re
 import json
@@ -30,7 +30,7 @@ from .step import ViewsUpdate, MetricsUpdate, Step
 from .tclstep import TclStep
 
 from ..common import Path, mkdirp, TclUtils
-from ..config import Variable
+from ..config import variable
 from ..state import DesignFormat, State
 
 
@@ -106,21 +106,19 @@ class NetgenStep(TclStep):
     inputs = []
     outputs = []
 
-    config_vars = [
-        Variable(
-            "MAGIC_EXT_USE_GDS",
-            bool,
-            "A flag to choose whether to use GDS for spice extraction or not. If not, then the extraction will be done using the DEF/LEF, which is faster.",
-            default=False,
-        ),
-        Variable(
-            "NETGEN_SETUP",
-            Path,
-            "A path to the setup file for Netgen used to configure LVS. If set to None, this PDK will not support Netgen-based steps.",
+    class Config(Step.Config):
+        MAGIC_EXT_USE_GDS: bool = variable(
+            False,
+            description="A flag to choose whether to use GDS for spice extraction or not. If not, then the extraction will be done using the DEF/LEF, which is faster.",
+        )
+
+        NETGEN_SETUP: Path = variable(
+            description="A path to the setup file for Netgen used to configure LVS. If set to None, this PDK will not support Netgen-based steps.",
             deprecated_names=["NETGEN_SETUP_FILE"],
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     @abstractmethod
     def get_script_path(self) -> str:
@@ -145,24 +143,24 @@ class LVS(NetgenStep):
     id = "Netgen.LVS"
     name = "Netgen LVS"
     inputs = [DesignFormat.SPICE, DesignFormat.POWERED_NETLIST]
-    config_vars = NetgenStep.config_vars + [
-        Variable(
-            "LVS_INCLUDE_MARCO_NETLISTS",
-            bool,
-            "A flag that enables including the gate-level netlist of macros while running Netgen",
-            default=False,
-        ),
-        Variable(
-            "LVS_FLATTEN_CELLS",
-            Optional[list[str]],
-            "A list of cell names to be flattened while running LVS",
-        ),
-        Variable(
-            "LVS_IGNORE_CELLS",
-            Optional[list[str]],
-            "A list of cell names to be ignored while running LVS",
-        ),
-    ]
+
+    class Config(NetgenStep.Config):
+        LVS_INCLUDE_MARCO_NETLISTS: bool = variable(
+            False,
+            description="A flag that enables including the gate-level netlist of macros while running Netgen",
+        )
+
+        LVS_FLATTEN_CELLS: Optional[list[str]] = variable(
+            None,
+            description="A list of cell names to be flattened while running LVS",
+        )
+
+        LVS_IGNORE_CELLS: Optional[list[str]] = variable(
+            None,
+            description="A list of cell names to be ignored while running LVS",
+        )
+
+    config: Config
 
     def get_command(self) -> list[str]:
         return super().get_command() + [self.get_script_path()]
@@ -172,12 +170,12 @@ class LVS(NetgenStep):
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         spice_files = []
-        if self.config["CELL_SPICE_MODELS"] is None:
+        if self.config.CELL_SPICE_MODELS is None:
             logger.bind(step=self.id).warning(
                 "This PDK does not appear to define any cell SPICE models. LVS will still run, but all cells will be black-boxed and the result may be inaccurate."
             )
         else:
-            spice_files = self.config["CELL_SPICE_MODELS"].copy()
+            spice_files = self.config.CELL_SPICE_MODELS.copy()
 
         if pdk_spice_files := self.config.get("SPICE_MODELS"):
             spice_files = pdk_spice_files.copy()
@@ -188,7 +186,7 @@ class LVS(NetgenStep):
         if pad_spice_files := self.config.get("PAD_SPICE_MODELS"):
             spice_files += pad_spice_files.copy()
 
-        design_name = self.config["DESIGN_NAME"]
+        design_name = self.config.DESIGN_NAME
         reports_dir = os.path.join(self.step_dir, "reports")
         stats_file = os.path.join(reports_dir, "lvs.netgen.rpt")
         stats_file_json = os.path.join(reports_dir, "lvs.netgen.json")
@@ -204,7 +202,9 @@ class LVS(NetgenStep):
                     f"readnet spice {lib} 1",
                     file=f,
                 )
-        netgen_setup_script = package_path().joinpath("scripts", "netgen", "setup.tcl")
+        netgen_setup_script = files("librelane").joinpath(
+            "scripts", "netgen", "setup.tcl"
+        )
         mkdirp(reports_dir)
 
         spice_files_commands = []
@@ -228,7 +228,7 @@ class LVS(NetgenStep):
             DesignFormat.VERILOG_HEADER,
         ]
 
-        if self.config["LVS_INCLUDE_MARCO_NETLISTS"]:
+        if self.config.LVS_INCLUDE_MARCO_NETLISTS:
             macros_views = []
             for view, _ in self.toolbox.get_macro_views_by_priority(
                 self.config, format_list

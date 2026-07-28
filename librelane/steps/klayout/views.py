@@ -14,7 +14,7 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-from ...resources import package_path
+from importlib.resources import files
 import os
 import sys
 import shlex
@@ -26,7 +26,7 @@ from typing import Optional, Literal
 
 from ..step import ViewsUpdate, MetricsUpdate, Step
 
-from ...config import Variable
+from ...config import variable
 from ...state import DesignFormat, State
 from ...common import Path
 
@@ -48,44 +48,38 @@ class Render(KLayoutStep):
     inputs = [DesignFormat.DEF]
     outputs = []
 
-    config_vars = KLayoutStep.config_vars + [
-        Variable(
-            "KLAYOUT_RENDER_GRID_VISBLE",
-            bool,
-            "Render the grid in the image.",
-            default=False,
-        ),
-        Variable(
-            "KLAYOUT_RENDER_SHOW_RULER",
-            bool,
-            "Enable the ruler in the image.",
-            default=False,
-        ),
-        Variable(
-            "KLAYOUT_RENDER_BACKGROUND_COLOR",
-            Literal["white", "black"],
-            "The background color of the image.",
-            default="white",
-        ),
-        Variable(
-            "KLAYOUT_RENDER_TEXT_VISIBLE",
-            bool,
-            "Enable text in the image.",
-            default=False,
-        ),
-        Variable(
-            "KLAYOUT_RENDER_RESOLUTION",
-            int,
-            "The horizontal resolution of the image in pixel.",
-            default=1000,
-        ),
-        Variable(
-            "KLAYOUT_RENDER_OVERSAMPLING",
-            int,
-            "The oversampling factor (1..3), or 0 for disabling oversampling.",
-            default=0,
-        ),
-    ]
+    class Config(KLayoutStep.Config):
+        KLAYOUT_RENDER_GRID_VISBLE: bool = variable(
+            False,
+            description="Render the grid in the image.",
+        )
+
+        KLAYOUT_RENDER_SHOW_RULER: bool = variable(
+            False,
+            description="Enable the ruler in the image.",
+        )
+
+        KLAYOUT_RENDER_BACKGROUND_COLOR: Literal["white", "black"] = variable(
+            "white",
+            description="The background color of the image.",
+        )
+
+        KLAYOUT_RENDER_TEXT_VISIBLE: bool = variable(
+            False,
+            description="Enable text in the image.",
+        )
+
+        KLAYOUT_RENDER_RESOLUTION: int = variable(
+            1000,
+            description="The horizontal resolution of the image in pixel.",
+        )
+
+        KLAYOUT_RENDER_OVERSAMPLING: int = variable(
+            0,
+            description="The oversampling factor (1..3), or 0 for disabling oversampling.",
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates: ViewsUpdate = {}
@@ -98,28 +92,28 @@ class Render(KLayoutStep):
 
         klayout_render = os.path.join(
             self.step_dir,
-            f"{self.config['DESIGN_NAME']}.{DesignFormat.KLAYOUT_RENDER.extension}",
+            f"{self.config.DESIGN_NAME}.{DesignFormat.KLAYOUT_RENDER.extension}",
         )
 
         self.run_pya_script(
             [
                 sys.executable,
-                package_path().joinpath("scripts", "klayout", "render.py"),
+                files("librelane").joinpath("scripts", "klayout", "render.py"),
                 abspath(input_view),
                 "--output",
                 abspath(klayout_render),
                 "--grid-visible",
-                self.config["KLAYOUT_RENDER_GRID_VISBLE"],
+                self.config.KLAYOUT_RENDER_GRID_VISBLE,
                 "--grid-show-ruler",
-                self.config["KLAYOUT_RENDER_SHOW_RULER"],
+                self.config.KLAYOUT_RENDER_SHOW_RULER,
                 "--text-visible",
-                self.config["KLAYOUT_RENDER_TEXT_VISIBLE"],
+                self.config.KLAYOUT_RENDER_TEXT_VISIBLE,
                 "--background-color",
-                self.config["KLAYOUT_RENDER_BACKGROUND_COLOR"],
+                self.config.KLAYOUT_RENDER_BACKGROUND_COLOR,
                 "--resolution",
-                self.config["KLAYOUT_RENDER_RESOLUTION"],
+                self.config.KLAYOUT_RENDER_RESOLUTION,
                 "--oversampling",
-                self.config["KLAYOUT_RENDER_OVERSAMPLING"],
+                self.config.KLAYOUT_RENDER_OVERSAMPLING,
             ]
             + self.get_cli_args(include_lefs=True),
             silent=True,
@@ -149,30 +143,29 @@ class StreamOut(KLayoutStep):
     inputs = [DesignFormat.DEF]
     outputs = [DesignFormat.GDS, DesignFormat.KLAYOUT_GDS]
 
-    config_vars = KLayoutStep.config_vars + [
-        Variable(
-            "KLAYOUT_CONFLICT_RESOLUTION",
-            Optional[
-                Literal["AddToCell", "OverwriteCell", "RenameCell", "SkipNewCell"]
-            ],
-            "Specifies the conflict resolution if a cell name conflict arises.",
-            default="RenameCell",
-        ),
-    ]
+    class Config(KLayoutStep.Config):
+        KLAYOUT_CONFLICT_RESOLUTION: Optional[
+            Literal["AddToCell", "OverwriteCell", "RenameCell", "SkipNewCell"]
+        ] = variable(
+            "RenameCell",
+            description="Specifies the conflict resolution if a cell name conflict arises.",
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates: ViewsUpdate = {}
 
         klayout_gds_out = os.path.join(
             self.step_dir,
-            f"{self.config['DESIGN_NAME']}.{DesignFormat.KLAYOUT_GDS.extension}",
+            f"{self.config.DESIGN_NAME}.{DesignFormat.KLAYOUT_GDS.extension}",
         )
         kwargs, env = self.extract_env(kwargs)
 
         self.run_pya_script(
             [
                 sys.executable,
-                package_path().joinpath(
+                files("librelane").joinpath(
                     "scripts",
                     "klayout",
                     "stream_out.py",
@@ -181,9 +174,9 @@ class StreamOut(KLayoutStep):
                 "--output",
                 abspath(klayout_gds_out),
                 "--top",
-                self.config["DESIGN_NAME"],
+                self.config.DESIGN_NAME,
                 "--conflict-resolution",
-                self.config["KLAYOUT_CONFLICT_RESOLUTION"],
+                self.config.KLAYOUT_CONFLICT_RESOLUTION,
             ]
             + self.get_cli_args(include_lefs=True, include_gds=True),
             env=env,
@@ -191,8 +184,8 @@ class StreamOut(KLayoutStep):
 
         views_updates[DesignFormat.KLAYOUT_GDS] = Path(klayout_gds_out)
 
-        if self.config["PRIMARY_GDSII_STREAMOUT_TOOL"] == "klayout":
-            gds_path = os.path.join(self.step_dir, f"{self.config['DESIGN_NAME']}.gds")
+        if self.config.PRIMARY_GDSII_STREAMOUT_TOOL == "klayout":
+            gds_path = os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.gds")
             shutil.copy(klayout_gds_out, gds_path)
             views_updates[DesignFormat.GDS] = Path(gds_path)
 
@@ -223,30 +216,28 @@ class OpenGUI(KLayoutStep):
     inputs = [DesignFormat.DEF]
     outputs = []
 
-    config_vars = KLayoutStep.config_vars + [
-        Variable(
-            "KLAYOUT_EDITOR_MODE",
-            bool,
-            "Whether to run the KLayout GUI in editor mode or in viewer mode.",
-            default=False,
-        ),
-        Variable(
-            "KLAYOUT_GUI_USE_GDS",
-            bool,
-            "Whether to prioritize GDS (if found) when running this step.",
-            default=True,
+    class Config(KLayoutStep.Config):
+        KLAYOUT_EDITOR_MODE: bool = variable(
+            False,
+            description="Whether to run the KLayout GUI in editor mode or in viewer mode.",
+        )
+
+        KLAYOUT_GUI_USE_GDS: bool = variable(
+            True,
+            description="Whether to prioritize GDS (if found) when running this step.",
             deprecated_names=["KLAYOUT_PRIORITIZE_GDS"],
-        ),
-    ]
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
         mode_args = []
-        if self.config["KLAYOUT_EDITOR_MODE"]:
+        if self.config.KLAYOUT_EDITOR_MODE:
             mode_args.append("--editor")
 
         layout = state_in[DesignFormat.DEF]
-        if self.config["KLAYOUT_GUI_USE_GDS"]:
+        if self.config.KLAYOUT_GUI_USE_GDS:
             if gds := state_in.get(DesignFormat.GDS):
                 layout = gds
         assert isinstance(layout, Path)
@@ -265,7 +256,9 @@ class OpenGUI(KLayoutStep):
             + mode_args
             + [
                 "-rm",
-                str(package_path().joinpath("scripts", "klayout", "open_design.py")),
+                str(
+                    files("librelane").joinpath("scripts", "klayout", "open_design.py")
+                ),
             ]
         )
 

@@ -16,12 +16,12 @@
 # See the License for the specific language governing permissions and
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 import os
 from typing import Optional
 
 from ...common import Path
-from ...config import Variable
+from ...config import variable
 from ...state import DesignFormat, State
 
 from ..step import (
@@ -49,7 +49,7 @@ class SetPowerConnections(OdbpyStep):
     inputs = [DesignFormat.JSON_HEADER, DesignFormat.ODB]
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "power_utils.py")
+        return files("librelane").joinpath("scripts", "odbpy", "power_utils.py")
 
     def get_subcommand(self) -> list[str]:
         return ["set-power-connections"]
@@ -74,18 +74,17 @@ class WriteVerilogHeader(OdbpyStep):
     inputs = [DesignFormat.ODB, DesignFormat.JSON_HEADER]
     outputs = [DesignFormat.VERILOG_HEADER]
 
-    config_vars = OdbpyStep.config_vars + [
-        Variable(
-            "VERILOG_POWER_DEFINE",
-            Optional[str],
-            "Specifies the name of the define used to guard power and ground connections in the output Verilog header.",
+    class Config(OdbpyStep.Config):
+        VERILOG_POWER_DEFINE: Optional[str] = variable(
+            "USE_POWER_PINS",
+            description="Specifies the name of the define used to guard power and ground connections in the output Verilog header.",
             deprecated_names=["SYNTH_USE_PG_PINS_DEFINES", "SYNTH_POWER_DEFINE"],
-            default="USE_POWER_PINS",
-        ),
-    ]
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "power_utils.py")
+        return files("librelane").joinpath("scripts", "odbpy", "power_utils.py")
 
     def get_subcommand(self) -> list[str]:
         return ["write-verilog-header"]
@@ -94,12 +93,13 @@ class WriteVerilogHeader(OdbpyStep):
         state_in = self.state_in.result()
         command = super().get_command() + [
             "--output-vh",
-            os.path.join(self.step_dir, f"{self.config['DESIGN_NAME']}.vh"),
+            os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.vh"),
             "--input-json",
             str(state_in[DesignFormat.JSON_HEADER]),
         ]
-        if self.config.get("VERILOG_POWER_DEFINE") is not None:
-            command += ["--power-define", self.config["VERILOG_POWER_DEFINE"]]
+        power_define = self.config.VERILOG_POWER_DEFINE
+        if power_define is not None:
+            command += ["--power-define", power_define]
         else:
             logger.bind(step=self.id).warning(
                 "VERILOG_POWER_DEFINE undefined. Verilog Header will not include power ports."
@@ -110,6 +110,6 @@ class WriteVerilogHeader(OdbpyStep):
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates, metrics_updates = super().run(state_in, **kwargs)
         views_updates[DesignFormat.VERILOG_HEADER] = Path(
-            os.path.join(self.step_dir, f"{self.config['DESIGN_NAME']}.vh")
+            os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.vh")
         )
         return views_updates, metrics_updates

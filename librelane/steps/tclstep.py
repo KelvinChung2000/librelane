@@ -31,7 +31,7 @@ from ..common import (
     TclUtils,
     protected,
 )
-from ..resources import package_path
+from importlib.resources import files
 
 _ENV_ALLOWLIST = frozenset(
     {
@@ -111,10 +111,10 @@ class TclStep(Step):
         env = env.copy()
 
         env["STEP_ID"] = self.get_implementation_id()
-        env["SCRIPTS_DIR"] = str(package_path().joinpath("scripts"))
+        env["SCRIPTS_DIR"] = str(files("librelane").joinpath("scripts"))
         env["STEP_DIR"] = os.path.abspath(self.step_dir)
 
-        tech_lefs = self.toolbox.filter_views(self.config, self.config["TECH_LEFS"])
+        tech_lefs = self.toolbox.filter_views(self.config, self.config.TECH_LEFS)
         if len(tech_lefs) != 1:
             raise StepException(
                 "Misconfigured SCL: 'TECH_LEFS' must return exactly one Tech LEF for its default timing corner."
@@ -140,7 +140,7 @@ class TclStep(Step):
             if output.multiple:
                 # Too step-specific.
                 continue
-            filename = f"{self.config['DESIGN_NAME']}.{output.extension}"
+            filename = f"{self.config.DESIGN_NAME}.{output.extension}"
             env[f"SAVE_{output.id.upper()}"] = os.path.join(self.step_dir, filename)
 
         return env

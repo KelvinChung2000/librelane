@@ -15,7 +15,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from ..resources import package_path
+from importlib.resources import files
 
 from decimal import Decimal
 from typing import Optional, Union
@@ -386,7 +386,7 @@ class OptionConfig(BaseConfigModel):
     )
 
     FALLBACK_SDC: Path = variable(
-        Path(str(package_path().joinpath("scripts", "base.sdc"))),
+        Path(str(files("librelane").joinpath("scripts", "base.sdc"))),
         description="A fallback SDC file for when a step-specific SDC file is not defined.",
         deprecated_names=["FALLBACK_SDC_FILE", "BASE_SDC_FILE", "SDC_FILE"],
     )

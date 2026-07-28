@@ -15,106 +15,240 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from loguru import logger
-
-import os
-import sys
-import glob
-import shutil
-import marshal
-import tempfile
-import traceback
-from importlib.resources import files
-from textwrap import dedent
-from functools import partial
-from typing import Any, Optional
 from collections.abc import Sequence
+import glob
+from importlib.resources import files
+import marshal
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+from textwrap import dedent
+import traceback
+from typing import Annotated, Any
 
-import click
-from cloup import (
-    option,
-    option_group,
-    command,
-)
-from cloup.constraints import (
-    mutually_exclusive,
-)
+from loguru import logger
+import typer
 
-
-from .__version__ import __version__
-from .state import State, DesignFormat
 from . import common
-from .container import run_in_container
-from .plugins import discovered_plugins
-from .common.cli import formatter_settings
+from .__version__ import __version__
 from .config import Config, InvalidConfig, PassedDirectoryError
-from .flows import Flow, SequentialFlow, FlowException, FlowError, cloup_flow_opts
+from .container import run_in_container
+from .flows import Flow, FlowError, FlowException, SequentialFlow
+from .flows.cli import (
+    DEFAULT_JOBS,
+    CondensedOption,
+    ConfigFilesArgument,
+    ConfigOverridesOption,
+    DesignDirOption,
+    FlowNameOption,
+    FromOption,
+    InitialStateElementOption,
+    InitialStateFilesOption,
+    JobsOption,
+    LastRunOption,
+    LogLevelOption,
+    OnlyOption,
+    PadOption,
+    PdkOption,
+    PdkRootOption,
+    ReproducibleOption,
+    RunTagOption,
+    SclOption,
+    ShowProgressBarOption,
+    SkipOption,
+    ToOption,
+    UseCielOption,
+    apply_runtime_options,
+    load_initial_state,
+    normalize_sequential_controls,
+    resolve_pdk_options,
+    validate_flow_name,
+)
+from .plugins import discovered_plugins
+from .state import DesignFormat, State
+
+
+COPY_OPTIONS = "Copy final views"
+CONTAINER_OPTIONS = "Containerization options"
+ACTION_OPTIONS = "Actions"
+DEBUG_OPTIONS = "Debug options"
+
+
+SaveViewsOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--save-views-to",
+        file_okay=False,
+        dir_okay=True,
+        help=("Copy final views here, with each format stored under its corner ID."),
+        rich_help_panel=COPY_OPTIONS,
+    ),
+]
+EfSaveViewsOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--ef-save-views-to",
+        file_okay=False,
+        dir_okay=True,
+        help="Copy final views here in the Efabless Caravel-compatible format.",
+        rich_help_panel=COPY_OPTIONS,
+    ),
+]
+ContainerMountsOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--docker-mount",
+        "--container-mount",
+        "-m",
+        help=(
+            "Mount an additional directory or pass a mount specification to the "
+            "container engine. May be specified multiple times."
+        ),
+        rich_help_panel=CONTAINER_OPTIONS,
+    ),
+]
+ContainerTtyOption = Annotated[
+    bool,
+    typer.Option(
+        "--docker-tty/--docker-no-tty",
+        "--container-tty/--container-no-tty",
+        help="Control virtual-terminal allocation for the container.",
+        rich_help_panel=CONTAINER_OPTIONS,
+    ),
+]
+ContainerizedOption = Annotated[
+    bool,
+    typer.Option(
+        "--dockerized",
+        "--containerized",
+        help="Run this invocation in the matching LibreLane container image.",
+        rich_help_panel=CONTAINER_OPTIONS,
+    ),
+]
+VersionOption = Annotated[
+    bool,
+    typer.Option(
+        "--version",
+        help="Print version and license information, then exit.",
+        is_eager=True,
+        rich_help_panel=ACTION_OPTIONS,
+    ),
+]
+BareVersionOption = Annotated[
+    bool,
+    typer.Option("--bare-version", hidden=True, is_eager=True),
+]
+SmokeTestOption = Annotated[
+    bool,
+    typer.Option(
+        "--smoke-test",
+        help="Run the bundled smoke test and discard its results.",
+        rich_help_panel=ACTION_OPTIONS,
+    ),
+]
+RunExampleOption = Annotated[
+    str | None,
+    typer.Option(
+        "--run-example",
+        help="Copy and run a bundled LibreLane example.",
+        rich_help_panel=ACTION_OPTIONS,
+    ),
+]
+OverwriteOption = Annotated[
+    bool,
+    typer.Option("--overwrite", help="Overwrite the run if it already exists."),
+]
+ForceRunDirOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--force-run-dir",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        hidden=True,
+        rich_help_panel=DEBUG_OPTIONS,
+    ),
+]
+
+
+cli = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+    rich_markup_mode="rich",
+    help=(
+        "Run a LibreLane flow from one or more design configuration files.\n\n"
+        "Use 'python3 -m librelane.steps --help' for standalone step execution "
+        "and reproducible commands."
+    ),
+)
 
 
 def run(
-    ctx: click.Context,
-    flow_name: Optional[str],
-    pdk_root: Optional[str],
+    ctx: typer.Context,
+    flow_name: str | None,
+    pdk_root: str | None,
     pdk: str,
-    scl: Optional[str],
-    pad: Optional[str],
+    scl: str | None,
+    pad: str | None,
     config_files: Sequence[str],
-    tag: Optional[str],
+    tag: str | None,
     last_run: bool,
-    frm: Optional[str],
-    to: Optional[str],
+    frm: str | None,
+    to: str | None,
     skip: tuple[str, ...],
     overwrite: bool,
-    reproducible: Optional[str],
-    with_initial_state: Optional[State],
+    reproducible: str | None,
+    with_initial_state: State | None,
     config_override_strings: list[str],
-    _force_run_dir: Optional[str],
-    design_dir: Optional[str],
+    _force_run_dir: str | None,
+    design_dir: str | None,
     initial_state_element_override: Sequence[str],
-    view_save_path: Optional[str] = None,
-    ef_view_save_path: Optional[str] = None,
-):
+    view_save_path: str | None = None,
+    ef_view_save_path: str | None = None,
+) -> None:
     try:
-        if len(config_files) == 0:
+        if not config_files:
             logger.error("No config file(s) have been provided.")
-            ctx.exit(1)
+            raise typer.Exit(1)
 
-        TargetFlow: Optional[type[Flow]] = Flow.factory.get("Classic")
+        target_flow: type[Flow] | None = Flow.factory.get("Classic")
 
         for config_file in config_files:
             if meta := Config.get_meta(config_file):
                 if isinstance(meta.flow, str):
                     if found := Flow.factory.get(meta.flow):
-                        TargetFlow = found
+                        target_flow = found
                     else:
                         logger.error(
-                            f"Unknown flow '{meta.flow}' specified in configuration file's 'meta' object."
+                            f"Unknown flow '{meta.flow}' specified in the "
+                            "configuration file's 'meta' object."
                         )
-                        ctx.exit(1)
+                        raise typer.Exit(1)
                 elif isinstance(meta.flow, list):
-                    TargetFlow = SequentialFlow.make(meta.flow)
+                    target_flow = SequentialFlow.make(meta.flow)
                 if meta.substituting_steps is not None:
                     if meta.flow is None:
                         logger.error(
-                            "config_file has substituting_steps set with no flow."
+                            "Configuration has substituting_steps set with no flow."
                         )
-                        ctx.exit(1)
-                    assert TargetFlow is not None, (
-                        "run() failed to properly deduce TargetFlow -- please file an issue"
+                        raise typer.Exit(1)
+                    assert target_flow is not None, (
+                        "run() failed to deduce a target flow; please file an issue"
                     )
-                    if issubclass(TargetFlow, SequentialFlow):
-                        TargetFlow = TargetFlow.Substitute(meta.substituting_steps)  # type: ignore  # Type checker is being rowdy with this one
+                    if issubclass(target_flow, SequentialFlow):
+                        target_flow = target_flow.Substitute(meta.substituting_steps)  # type: ignore
 
         if flow_name is not None:
             if found := Flow.factory.get(flow_name):
-                TargetFlow = found
+                target_flow = found
             else:
-                logger.error(
-                    f"Unknown flow '{flow_name}' passed to initialization function."
-                )
-                ctx.exit(1)
+                logger.error(f"Unknown flow '{flow_name}'.")
+                raise typer.Exit(1)
 
-        if len(initial_state_element_override):
+        if initial_state_element_override:
             if with_initial_state is None:
                 with_initial_state = State()
             overrides = {}
@@ -124,12 +258,12 @@ def run(
                     logger.error(
                         f"Invalid initial state element override: '{element}'."
                     )
-                    ctx.exit(1)
+                    raise typer.Exit(1)
                 df_id, path = element_split
                 design_format = DesignFormat.factory.get(df_id)
                 if design_format is None:
                     logger.error(f"Invalid design format ID: '{df_id}'.")
-                    ctx.exit(1)
+                    raise typer.Exit(1)
                 overrides[design_format] = common.Path(path)
 
             with_initial_state = type(with_initial_state)(
@@ -137,8 +271,8 @@ def run(
                 overrides=overrides,
             )
 
-        assert TargetFlow is not None, (
-            "TargetFlow is unexpectedly None. Please report this as a bug."
+        assert target_flow is not None, (
+            "Target flow is unexpectedly None. Please report this as a bug."
         )
 
         kwargs: dict[str, Any] = {
@@ -149,29 +283,30 @@ def run(
             "config_override_strings": config_override_strings,
             "design_dir": design_dir,
         }
-        flow = TargetFlow(config_files, **kwargs)
-    except PassedDirectoryError as e:
-        logger.error(e)
+        flow = target_flow(config_files, **kwargs)
+    except PassedDirectoryError as error:
+        logger.error(error)
         logger.info(
-            f"If you meant to pass this as a design directory alongside valid configuration files, pass it as '--design-dir {e.config}'."
+            "If this is a design directory, pass it alongside valid configuration "
+            f"files as '--design-dir {error.config}'."
         )
-        ctx.exit(1)
-    except InvalidConfig as e:
-        if len(e.warnings) > 0:
+        raise typer.Exit(1) from error
+    except InvalidConfig as error:
+        if error.warnings:
             logger.warning("The following warnings have been generated:")
-            for warning in e.warnings:
+            for warning in error.warnings:
                 logger.warning(warning)
-        logger.error(f"Errors have occurred while loading the {e.config}.")
-        for error in e.errors:
-            logger.error(error)
+        logger.error(f"Errors occurred while loading {error.config}.")
+        for config_error in error.errors:
+            logger.error(config_error)
 
         logger.error("LibreLane will now quit. Please check your configuration.")
-        ctx.exit(1)
-    except ValueError as e:
-        logger.error(e)
+        raise typer.Exit(1) from error
+    except ValueError as error:
+        logger.error(error)
         logger.debug(traceback.format_exc())
         logger.error("LibreLane will now quit.")
-        ctx.exit(1)
+        raise typer.Exit(1) from error
 
     try:
         state_out = flow.start(
@@ -185,28 +320,23 @@ def run(
             _force_run_dir=_force_run_dir,
             overwrite=overwrite,
         )
-    except FlowException as e:
-        logger.error(f"The flow has encountered an unexpected error:\n{e}")
+    except FlowException as error:
+        logger.error(f"The flow encountered an unexpected error:\n{error}")
         logger.error("LibreLane will now quit.")
-        ctx.exit(1)
-    except FlowError as e:
-        logger.error(
-            f"The following error was encountered while running the flow:\n{e}"
-        )
+        raise typer.Exit(1) from error
+    except FlowError as error:
+        logger.error(f"The flow encountered the following error:\n{error}")
         logger.error("LibreLane will now quit.")
-        ctx.exit(2)
+        raise typer.Exit(2) from error
 
-    if vsp := view_save_path:
-        state_out.save_snapshot(vsp)
-    if evsp := ef_view_save_path:
-        flow._save_snapshot_ef(evsp)
+    if view_save_path:
+        state_out.save_snapshot(view_save_path)
+    if ef_view_save_path:
+        flow._save_snapshot_ef(ef_view_save_path)
 
 
-def print_version(ctx: click.Context, param: click.Parameter, value: bool):
-    if not value:
-        return
-
-    message = dedent(
+def version_message() -> str:
+    return dedent(
         f"""
         LibreLane v{__version__}
 
@@ -222,52 +352,40 @@ def print_version(ctx: click.Context, param: click.Parameter, value: bool):
         """
     ).strip()
 
-    print(message)
 
-    if len(discovered_plugins) > 0:
-        print("Discovered plugins:")
+def print_version() -> None:
+    typer.echo(version_message())
+
+    if discovered_plugins:
+        typer.echo("Discovered plugins:")
         for name, module in discovered_plugins.items():
             if hasattr(module, "__version__"):
-                print(f"{name} -> {module.__version__}")
+                typer.echo(f"{name} -> {module.__version__}")
             else:
-                print(f"{name}")
-
-    ctx.exit(0)
-
-
-def print_bare_version(
-    ctx: click.Context,
-    param: click.Parameter,
-    value: bool,
-):
-    if not value:
-        return
-    print(__version__, end="")
-    ctx.exit(0)
+                typer.echo(name)
 
 
 def run_included_example(
-    ctx: click.Context,
+    ctx: typer.Context,
     smoke_test: bool,
-    example: Optional[str],
-    **kwargs,
-):
+    example: str | None,
+    **kwargs: Any,
+) -> None:
     assert smoke_test or example is not None
-    value = "spm"
-    if not smoke_test and example is not None:
-        value = example
+    value = "spm" if smoke_test else example
+    assert value is not None
 
     example_resource = files("librelane").joinpath("examples", value)
     if not example_resource.is_dir():
-        print(f"Unknown example '{value}'.", file=sys.stderr)
-        ctx.exit(1)
+        typer.echo(f"Unknown example '{value}'.", err=True)
+        raise typer.Exit(1)
 
     status = 0
     final_path = os.path.join(os.getcwd(), value)
     cleanup = False
     if smoke_test:
-        d = tempfile.mkdtemp("librelane")
-        final_path = os.path.join(d, "smoke_test_design")
+        temporary_directory = tempfile.mkdtemp("librelane")
+        final_path = os.path.join(temporary_directory, "smoke_test_design")
         cleanup = True
         kwargs.update(
             flow_name=None,
@@ -286,19 +404,12 @@ def run_included_example(
         )
     try:
         if os.path.isdir(final_path):
-            print(f"A directory named {value} already exists.", file=sys.stderr)
-            ctx.exit(1)
+            typer.echo(f"A directory named {value} already exists.", err=True)
+            raise typer.Exit(1)
 
-        # 1. Copy the files
         common.recreate_tree(example_resource, final_path)
         config_file = glob.glob(os.path.join(final_path, "config.*"))[0]
-
-        # 2. Run
-        run(
-            ctx,
-            config_files=[config_file],
-            **kwargs,
-        )
+        run(ctx, config_files=[config_file], **kwargs)
         if smoke_test:
             logger.info("Smoke test passed.")
     except KeyboardInterrupt:
@@ -306,38 +417,29 @@ def run_included_example(
             logger.info("Smoke test aborted.")
         status = -1
     finally:
-        try:
-            if cleanup:
-                shutil.rmtree(final_path)
-        except FileNotFoundError:
-            pass
+        if cleanup:
+            shutil.rmtree(final_path, ignore_errors=True)
 
-    ctx.exit(status)
+    raise typer.Exit(status)
 
 
-def cli_in_container(
-    ctx: click.Context,
-    param: click.Parameter,
-    value: bool,
-):
-    if not value:
-        return
-
-    mounts = list(ctx.params.get("docker_mounts") or ())
-    tty: bool = ctx.params.get("docker_tty", True)
-    pdk_root = ctx.params.get("pdk_root")
-
+def run_containerized(
+    *,
+    pdk_root: Path | None,
+    mounts: list[str],
+    tty: bool,
+) -> None:
     try:
-        containerized_index = sys.argv.index("--dockerized")
-    except ValueError:
-        containerized_index = sys.argv.index("--containerized")
+        containerized_index = next(
+            index
+            for index, argument in enumerate(sys.argv)
+            if argument in {"--dockerized", "--containerized"}
+        )
+    except StopIteration as error:
+        raise RuntimeError("containerized invocation flag was not found") from error
 
     argv = sys.argv[containerized_index + 1 :]
-
-    final_argv = ["zsh"]
-    if len(argv) != 0:
-        final_argv = ["python3", "-m", "librelane"] + argv
-
+    final_argv = ["zsh"] if not argv else ["python3", "-m", "librelane", *argv]
     container_image = os.getenv(
         "LIBRELANE_IMAGE_OVERRIDE", f"ghcr.io/librelane/librelane:{__version__}"
     )
@@ -346,144 +448,142 @@ def cli_in_container(
         run_in_container(
             container_image,
             final_argv,
-            pdk_root=pdk_root,
+            pdk_root=str(pdk_root) if pdk_root is not None else None,
             other_mounts=mounts,
             tty=tty,
         )
-    except ValueError as e:
-        logger.error(e)
-        ctx.exit(1)
-    except Exception as e:
+    except ValueError as error:
+        logger.error(error)
+        raise typer.Exit(1) from error
+    except Exception as error:
         traceback.print_exc(file=sys.stderr)
-        logger.error(e)
-        ctx.exit(1)
+        logger.error(error)
+        raise typer.Exit(1) from error
 
-    ctx.exit(0)
-
-
-o = partial(option, show_default=True)
+    raise typer.Exit(0)
 
 
-@command(
+@cli.command(
+    context_settings={"help_option_names": ["-h", "--help"]},
     no_args_is_help=True,
-    formatter_settings=formatter_settings,
 )
-@option_group(
-    "Copy final views",
-    o(
-        "--save-views-to",
-        "view_save_path",
-        type=click.Path(file_okay=False, dir_okay=True),
-        default=None,
-        help="A directory to copy the final views to, where each format is saved under a directory named after the corner ID (much like the 'final' directory after running a flow.)",
-    ),
-    o(
-        "--ef-save-views-to",
-        "ef_view_save_path",
-        type=click.Path(file_okay=False, dir_okay=True),
-        default=None,
-        help="A directory to copy the final views to in the Efabless format, compatible with Caravel User Project.",
-    ),
-)
-@option_group(
-    "Containerization options",
-    o(
-        "--docker-mount",
-        "--container-mount",
-        "-m",
-        "docker_mounts",
-        multiple=True,
-        is_eager=True,  # container options should be processed before anything else
-        default=(),
-        help="Used to mount more directories in dockerized mode. If a valid directory is specified, it will be mounted in the same path in the container. Otherwise, the value of the option will be passed to the container engine verbatim. Must be passed before --containerized/--dockerized, has no effect if not set.",
-    ),
-    o(
-        "--docker-tty/--docker-no-tty",
-        "--container-tty/--container-no-tty",
-        is_eager=True,  # container options should be processed before anything else
-        default=True,
-        help="Controls the allocation of a virtual terminal by passing -t to the Docker-compatible container engine invocation. Must be passed before --containerized/--dockerized, has no effect if not set.",
-    ),
-    o(
-        "--dockerized",
-        "--containerized",
-        default=False,
-        is_flag=True,
-        is_eager=True,  # docker options should be processed before anything else
-        help="Run the remaining flags using a containerized version of LibreLane. Some caveats apply. Must precede all options except --{docker,container}-mount, --{docker,container}-[no-]tty.",
-        callback=cli_in_container,
-    ),
-)
-@option_group(
-    "Subcommands",
-    o(
-        "--version",
-        is_flag=True,
-        is_eager=True,
-        help="Prints version information and exits",
-        callback=print_version,
-    ),
-    o(
-        "--bare-version",
-        is_flag=True,
-        is_eager=True,
-        callback=print_bare_version,
-        hidden=True,
-    ),
-    o(
-        "--smoke-test",
-        is_flag=True,
-        help="Runs a basic LibreLane smoke test, the results of which are temporary and discarded.",
-    ),
-    o(
-        "--run-example",
-        default=None,
-        help="Copies one of the LibreLane examples to the current working directory and runs it.",
-    ),
-    constraint=mutually_exclusive,
-)
-@cloup_flow_opts(
-    _enable_debug_flags=True,
-    sequential_flow_reproducible=True,
-    enable_overwrite_flag=True,
-    enable_initial_state_element=True,
-)
-@click.pass_context
-def cli(ctx, /, **kwargs):
-    """
-    Runs an LibreLane flow via the commandline using a design configuration
-    object.
+def main(
+    ctx: typer.Context,
+    config_files: ConfigFilesArgument = None,
+    flow_name: FlowNameOption = None,
+    config_override_strings: ConfigOverridesOption = None,
+    with_initial_state_files: InitialStateFilesOption = None,
+    design_dir: DesignDirOption = None,
+    tag: RunTagOption = None,
+    last_run: LastRunOption = False,
+    frm: FromOption = None,
+    to: ToOption = None,
+    only: OnlyOption = None,
+    skip: SkipOption = None,
+    reproducible: ReproducibleOption = None,
+    log_level: LogLevelOption = None,
+    show_progress_bar: ShowProgressBarOption = None,
+    condensed: CondensedOption = False,
+    use_ciel: UseCielOption = True,
+    pdk_root: PdkRootOption = None,
+    pdk: PdkOption = "sky130A",
+    scl: SclOption = None,
+    pad: PadOption = None,
+    jobs: JobsOption = DEFAULT_JOBS,
+    initial_state_element_override: InitialStateElementOption = None,
+    overwrite: OverwriteOption = False,
+    force_run_dir: ForceRunDirOption = None,
+    view_save_path: SaveViewsOption = None,
+    ef_view_save_path: EfSaveViewsOption = None,
+    docker_mounts: ContainerMountsOption = None,
+    docker_tty: ContainerTtyOption = True,
+    dockerized: ContainerizedOption = False,
+    version: VersionOption = False,
+    bare_version: BareVersionOption = False,
+    smoke_test: SmokeTestOption = False,
+    run_example: RunExampleOption = None,
+) -> None:
+    """Run a LibreLane flow using one or more design configuration files."""
+    if bare_version:
+        typer.echo(__version__, nl=False)
+        raise typer.Exit()
+    if version:
+        print_version()
+        raise typer.Exit()
 
-    Try 'python3 -m librelane.steps --help' for step-specific options, including
-    reproducibles and running a step standalone.
-    """
-    args = kwargs["config_files"]
-    run_kwargs = kwargs.copy()
+    selected_actions = sum((dockerized, smoke_test, run_example is not None))
+    if selected_actions > 1:
+        raise typer.BadParameter(
+            "--dockerized, --smoke-test, and --run-example are mutually exclusive"
+        )
+    if tag is not None and last_run:
+        raise typer.BadParameter("--run-tag and --last-run are mutually exclusive")
 
-    if len(args) == 1 and args[0].endswith(".marshalled"):
-        run_kwargs = marshal.load(open(args[0], "rb"))
-        run_kwargs.update(**{k: kwargs[k] for k in ["pdk_root", "pdk", "scl", "pad"]})
+    if dockerized:
+        run_containerized(
+            pdk_root=pdk_root,
+            mounts=docker_mounts or [],
+            tty=docker_tty,
+        )
 
-    smoke_test = kwargs.pop("smoke_test", False)
-    example = kwargs.pop("run_example", None)
+    apply_runtime_options(
+        log_level=log_level,
+        show_progress_bar=show_progress_bar,
+        condensed=condensed,
+        jobs=jobs,
+    )
+    flow_name = validate_flow_name(flow_name)
+    frm, to = normalize_sequential_controls(frm, to, only)
+    with_initial_state = load_initial_state(with_initial_state_files)
+    resolved_pdk = resolve_pdk_options(
+        use_ciel=use_ciel,
+        pdk_root=pdk_root,
+        pdk=pdk,
+        scl=scl,
+        pad=pad,
+    )
 
-    for subcommand_flag in [
-        "docker_tty",
-        "docker_mounts",
-        "dockerized",
-        "version",
-        "bare_version",
-        "smoke_test",
-        "run_example",
-    ]:
-        if subcommand_flag in run_kwargs:
-            del run_kwargs[subcommand_flag]
-    if smoke_test or example is not None:
+    string_config_files = [str(path) for path in config_files or []]
+    run_kwargs: dict[str, Any] = {
+        "flow_name": flow_name,
+        "pdk_root": resolved_pdk.pdk_root,
+        "pdk": resolved_pdk.pdk,
+        "scl": resolved_pdk.scl,
+        "pad": resolved_pdk.pad,
+        "config_files": string_config_files,
+        "tag": tag,
+        "last_run": last_run,
+        "frm": frm,
+        "to": to,
+        "skip": tuple(skip or []),
+        "overwrite": overwrite,
+        "reproducible": reproducible,
+        "with_initial_state": with_initial_state,
+        "config_override_strings": config_override_strings or [],
+        "_force_run_dir": str(force_run_dir) if force_run_dir is not None else None,
+        "design_dir": str(design_dir) if design_dir is not None else None,
+        "initial_state_element_override": initial_state_element_override or [],
+        "view_save_path": str(view_save_path) if view_save_path is not None else None,
+        "ef_view_save_path": (
+            str(ef_view_save_path) if ef_view_save_path is not None else None
+        ),
+    }
+
+    if len(string_config_files) == 1 and string_config_files[0].endswith(".marshalled"):
+        with open(string_config_files[0], "rb") as marshalled_file:
+            run_kwargs = marshal.load(marshalled_file)
+        run_kwargs.update(
+            pdk_root=resolved_pdk.pdk_root,
+            pdk=resolved_pdk.pdk,
+            scl=resolved_pdk.scl,
+            pad=resolved_pdk.pad,
+        )
+
+    if smoke_test or run_example is not None:
         run_kwargs.pop("config_files", None)
-        run_included_example(ctx, smoke_test, example, **run_kwargs)
+        run_included_example(ctx, smoke_test, run_example, **run_kwargs)
     else:
         run(ctx, **run_kwargs)
-    ctx.exit(0)
 
 
 if __name__ == "__main__":

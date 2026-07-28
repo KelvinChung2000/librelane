@@ -15,18 +15,19 @@ import os
 import sys
 import json
 import gzip
-import click
 import tarfile
 import tempfile
 from io import BytesIO
+from pathlib import Path
 from decimal import Decimal
+from typing import Annotated
+from collections.abc import Sequence
 
-import cloup
 import httpx
+import typer
 
 from .util import MetricDiff, TableVerbosity
 from ..misc import Filter, get_httpx_session, mkdirp
-from ..cli import formatter_settings, IntEnumChoice
 
 default_filter_set = [
     "design__*__area",
@@ -56,67 +57,102 @@ default_filter_set = [
 # ]
 
 
-@cloup.group(
+cli = typer.Typer(
+    add_completion=False,
     no_args_is_help=True,
-    formatter_settings=formatter_settings,
+    pretty_exceptions_enable=False,
+    rich_markup_mode="rich",
 )
-def cli():
-    pass
 
 
-def common_opts(f):
-    f = cloup.option(
+def parse_table_verbosity(value: str) -> TableVerbosity:
+    try:
+        try:
+            return TableVerbosity(int(value))
+        except ValueError:
+            return TableVerbosity[value.upper()]
+    except (KeyError, ValueError) as error:
+        choices = ", ".join(
+            f"{verbosity.name} ({verbosity.value})" for verbosity in TableVerbosity
+        )
+        raise typer.BadParameter(f"choose one of: {choices}") from error
+
+
+FilterOption = Annotated[
+    list[str] | None,
+    typer.Option(
         "-f",
         "--filter",
-        "filter_wildcards",
-        multiple=True,
-        default=("DEFAULT",),
         help="A list of wildcards to filter by. Wildcards prefixed with ! exclude rather than include and take priority. 'DEFAULT' is replaced by a set of default wildcards.",
-    )(f)
-    f = cloup.option(
+    ),
+]
+TableVerbosityOption = Annotated[
+    TableVerbosity,
+    typer.Option(
         "--table-verbosity",
-        type=IntEnumChoice(TableVerbosity),
-        default="ALL",
+        parser=parse_table_verbosity,
+        metavar="NONE|CRITICAL|WORSE|CHANGED|ALL",
+        show_default="ALL",
         help=TableVerbosity.__doc__,
-    )(f)
-    f = cloup.option(
+    ),
+]
+TableOutOption = Annotated[
+    Path | None,
+    typer.Option(
         "--table-out",
-        type=click.Path(file_okay=True, dir_okay=False, writable=True),
+        file_okay=True,
+        dir_okay=False,
+        writable=True,
         help="The place to write the table to.",
-        default=None,
-    )(f)
-    f = cloup.option(
+    ),
+]
+SignificantFiguresOption = Annotated[
+    int,
+    typer.Option(
         "--significant-figures",
-        type=int,
+        min=1,
         help="Number of significant figures.",
-        default=4,
-    )(f)
-    return f
+    ),
+]
 
 
-@cloup.command(no_args_is_help=True)
-@common_opts
-@cloup.argument("metric_files", nargs=2)
+def normalize_filters(filter_wildcards: list[str] | None) -> list[str]:
+    return filter_wildcards or ["DEFAULT"]
+
+
+@cli.command()
 def compare(
-    metric_files: tuple[str, str],
-    table_verbosity: TableVerbosity,
-    filter_wildcards: tuple[str, ...],
-    table_out: str | None,
-    significant_figures: int,
-):
+    metric_files: Annotated[
+        list[Path],
+        typer.Argument(
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help="Exactly two metrics.json files to compare.",
+        ),
+    ],
+    table_verbosity: TableVerbosityOption = TableVerbosity.ALL,
+    filter_wildcards: FilterOption = None,
+    table_out: TableOutOption = None,
+    significant_figures: SignificantFiguresOption = 4,
+) -> None:
     """
     Creates a small summary of the differences between two ``metrics.json`` files.
     """
-    if table_verbosity == "NONE":
-        print("Table is empty.", file=sys.stderr)
-        exit(0)
+    if len(metric_files) != 2:
+        raise typer.BadParameter("exactly two metric files are required")
+    if table_verbosity is TableVerbosity.NONE:
+        typer.echo("Table is empty.", err=True)
+        return
 
     a_path, b_path = metric_files
-    a = json.load(open(a_path, encoding="utf8"), parse_float=Decimal)
-    b = json.load(open(b_path, encoding="utf8"), parse_float=Decimal)
+    with a_path.open(encoding="utf8") as a_file:
+        a = json.load(a_file, parse_float=Decimal)
+    with b_path.open(encoding="utf8") as b_file:
+        b = json.load(b_file, parse_float=Decimal)
 
     final_filters = []
-    for wildcard in filter_wildcards:
+    for wildcard in normalize_filters(filter_wildcards):
         if wildcard == "DEFAULT":
             final_filters += default_filter_set
         else:
@@ -129,19 +165,18 @@ def compare(
     md_str = diff.render_md(sort_by=("corner", ""), table_verbosity=table_verbosity)
 
     table_file = sys.stdout
-    if table_out is not None:
-        table_file = open(table_out, "w", encoding="utf8")
-    print(md_str, file=table_file)
+    if table_out is None:
+        print(md_str)
+    else:
+        with table_out.open("w", encoding="utf8") as table_file:
+            print(md_str, file=table_file)
 
     # When we upgrade to rich 13 (when NixOS 23.11 comes out,
     # it has a proper markdown table renderer, but until then, this will have to do)
 
 
-cli.add_command(compare)
-
-
 def _compare_metric_folders(
-    filter_wildcards: tuple[str, ...],
+    filter_wildcards: Sequence[str],
     table_verbosity: TableVerbosity,
     path_a: str,
     path_b: str,
@@ -222,7 +257,7 @@ def _compare_metric_folders(
         total_critical += stats.critical
         if stats.critical > 0:
             critical_change_report += f"  * `{pdk}/{scl}/{design}` \n"
-        if table_verbosity != "NONE":
+        if table_verbosity is not TableVerbosity.NONE:
             rendered = diff.render_md(("corner", ""), table_verbosity)
             if rendered.strip() != "":
                 tables += f"<details><summary><code>{pdk}/{scl}/{design}</code></summary>\n{rendered}\n</details>\n\n"
@@ -245,16 +280,22 @@ def _compare_metric_folders(
     return report, tables.strip()
 
 
-@cloup.command(no_args_is_help=True)
-@common_opts
-@cloup.argument("metric_folders", nargs=2)
+@cli.command("compare-multiple")
 def compare_multiple(
-    filter_wildcards: tuple[str, ...],
-    table_verbosity: TableVerbosity,
-    metric_folders: tuple[str, str],
-    table_out: str | None,
-    significant_figures: int,
-):
+    metric_folders: Annotated[
+        list[Path],
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            help="Exactly two directories containing metrics files.",
+        ),
+    ],
+    table_verbosity: TableVerbosityOption = TableVerbosity.ALL,
+    filter_wildcards: FilterOption = None,
+    table_out: TableOutOption = None,
+    significant_figures: SignificantFiguresOption = 4,
+) -> None:
     """
     Creates a small summary/report of the differences between two folders with
     metrics files.
@@ -262,65 +303,71 @@ def compare_multiple(
     The metrics files must be named in the format ``{pdk}-{scl}-{design}.metrics.json``.
     All other files are ignored.
     """
-    path_a, path_b = metric_folders
+    if len(metric_folders) != 2:
+        raise typer.BadParameter("exactly two metric folders are required")
+    path_a, path_b = (str(path) for path in metric_folders)
     summary, tables = _compare_metric_folders(
-        filter_wildcards, table_verbosity, path_a, path_b, significant_figures
+        normalize_filters(filter_wildcards),
+        table_verbosity,
+        path_a,
+        path_b,
+        significant_figures,
     )
     print(summary)
-    table_file = sys.stdout
-    if table_out is not None:
-        table_file = open(table_out, "w", encoding="utf8")
-    print(tables, file=table_file)
+    if table_out is None:
+        print(tables)
+    else:
+        with table_out.open("w", encoding="utf8") as table_file:
+            print(tables, file=table_file)
 
 
-cli.add_command(compare_multiple)
-
-
-@cloup.command(hidden=True)
-@cloup.option(
-    "-r",
-    "--repo",
-    default="librelane/librelane",
-    help="The GitHub repository for LibreLane",
-)
-@cloup.option(
-    "-m",
-    "--metric-repo",
-    default="librelane/librelane-metrics",
-    help="The repository storing metrics for --repo",
-)
-@cloup.option(
-    "-b",
-    "--branch",
-    default="main",
-    help="The branch to compare to",
-)
-@cloup.option(
-    "-c",
-    "--commit",
-    default=None,
-    help="The commit of --repo to fetch the metrics for. By default, that's the latest commit in the chosen branch.",
-)
-@cloup.option(
-    "-t",
-    "--token",
-    default=None,
-    help="A GitHub token to use to query the API and fetch the metrics. Not strictly required, but helps avoid rate-limiting.",
-)
-@common_opts
-@cloup.argument("metric_folder", nargs=1)
+@cli.command("compare-remote", hidden=True)
 def compare_remote(
-    filter_wildcards: tuple[str, ...],
-    table_verbosity: TableVerbosity,
-    repo: str,
-    metric_repo: str,
-    commit: str | None,
-    token: str,
-    metric_folder: str,
-    table_out: str | None,
-    significant_figures: int,
-    branch: str,
-):
+    metric_folder: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            help="A directory containing metrics files.",
+        ),
+    ],
+    repo: Annotated[
+        str, typer.Option("--repo", "-r", help="The GitHub repository.")
+    ] = "librelane/librelane",
+    metric_repo: Annotated[
+        str,
+        typer.Option(
+            "--metric-repo",
+            "-m",
+            help="The repository storing metrics for --repo.",
+        ),
+    ] = "librelane/librelane-metrics",
+    branch: Annotated[
+        str, typer.Option("--branch", "-b", help="The branch to compare to.")
+    ] = "main",
+    commit: Annotated[
+        str | None,
+        typer.Option(
+            "--commit",
+            "-c",
+            help="The commit whose metrics should be fetched.",
+        ),
+    ] = None,
+    token: Annotated[
+        str | None,
+        typer.Option(
+            "--token",
+            "-t",
+            envvar="GITHUB_TOKEN",
+            help="A GitHub API token used to avoid rate limits.",
+        ),
+    ] = None,
+    table_verbosity: TableVerbosityOption = TableVerbosity.ALL,
+    filter_wildcards: FilterOption = None,
+    table_out: TableOutOption = None,
+    significant_figures: SignificantFiguresOption = 4,
+) -> None:
     """
     Creates a small summary/report of the differences between a folder and
     a set of metrics stored in --metric-repo. Requires Internet access and
@@ -379,10 +426,10 @@ def compare_remote(
                             f.write(io.read())
 
             summary, tables = _compare_metric_folders(
-                filter_wildcards,
+                normalize_filters(filter_wildcards),
                 table_verbosity,
                 d,
-                metric_folder,
+                str(metric_folder),
                 significant_figures,
             )
             print(summary)
@@ -405,9 +452,6 @@ def compare_remote(
                     file=sys.stderr,
                 )
         sys.exit(-1)
-
-
-cli.add_command(compare_remote)
 
 
 if __name__ == "__main__":

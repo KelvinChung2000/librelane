@@ -70,10 +70,13 @@ symlinkJoin {
   inherit version;
   paths = [ librelaneEnv ];
   nativeBuildInputs = [ makeWrapper ];
+  # LibreLane hands its own sys.path to the interpreters it shells out to (see
+  # librelane.steps.klayout.base), so "python3" has to resolve to the one in
+  # this environment rather than whichever happens to be on the user's PATH.
   postBuild = ''
     for program in "$out"/bin/librelane "$out"/bin/librelane.*; do
       if [ -e "$program" ]; then
-        wrapProgram "$program" --prefix PATH : ${computed_PATH}
+        wrapProgram "$program" --prefix PATH : "$out/bin:${computed_PATH}"
       fi
     done
   '';

@@ -16,10 +16,9 @@ from __future__ import annotations
 from loguru import logger
 
 import sys
-import time
 import psutil
 import datetime
-from threading import Thread
+from threading import Event, Thread
 from typing import (
     TypeVar,
 )
@@ -41,6 +40,7 @@ class ProcessStatsThread(Thread):
         self.process = process
         self.result = None
         self.interval = interval
+        self._stopping = Event()
         self.time = {
             "cpu_time_user": 0.0,
             "cpu_time_system": 0.0,
@@ -98,7 +98,8 @@ class ProcessStatsThread(Thread):
                         ) / (count + 1)
 
                     count += 1
-                    time.sleep(self.interval)
+                    if self._stopping.wait(self.interval):
+                        return
                     status = self.process.status()
         except psutil.Error as e:
             message = e.msg  # type: ignore[attr-defined]
@@ -106,6 +107,16 @@ class ProcessStatsThread(Thread):
                 if normal in message:
                     return
             logger.warning(f"Process resource tracker encountered an error: {e}")
+
+    def stop(self) -> None:
+        """
+        Asks the monitor to return at its next tick.
+
+        The loop otherwise runs until the process it watches dies, so a caller
+        abandoning the process -- because reading its output failed, say --
+        would leave the monitor polling forever.
+        """
+        self._stopping.set()
 
     def stats_as_dict(self):
         return {

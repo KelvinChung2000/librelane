@@ -16,12 +16,12 @@
 # See the License for the specific language governing permissions and
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 from decimal import Decimal
 from typing import Literal, Optional
 
 from ...common import Path
-from ...config import Variable
+from ...config import variable
 from ...state import State
 
 from ..step import (
@@ -43,28 +43,26 @@ class ApplyDEFTemplate(OdbpyStep):
     id = "Odb.ApplyDEFTemplate"
     name = "Apply DEF Template"
 
-    config_vars = [
-        Variable(
-            "FP_DEF_TEMPLATE",
-            Optional[Path],
-            "Points to the DEF file to be used as a template.",
-        ),
-        Variable(
-            "FP_TEMPLATE_MATCH_MODE",
-            Literal["strict", "permissive"],
-            "Whether to require that the pin set of the DEF template and the design should be identical. In permissive mode, pins that are in the design and not in the template will be excluded, and vice versa.",
-            default="strict",
-        ),
-        Variable(
-            "FP_TEMPLATE_COPY_POWER_PINS",
-            bool,
-            "Whether to *always* copy all power pins from the DEF template to the design.",
-            default=False,
-        ),
-    ]
+    class Config(Step.Config):
+        FP_DEF_TEMPLATE: Optional[Path] = variable(
+            None,
+            description="Points to the DEF file to be used as a template.",
+        )
+
+        FP_TEMPLATE_MATCH_MODE: Literal["strict", "permissive"] = variable(
+            "strict",
+            description="Whether to require that the pin set of the DEF template and the design should be identical. In permissive mode, pins that are in the design and not in the template will be excluded, and vice versa.",
+        )
+
+        FP_TEMPLATE_COPY_POWER_PINS: bool = variable(
+            False,
+            description="Whether to *always* copy all power pins from the DEF template to the design.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath(
+        return files("librelane").joinpath(
             "scripts",
             "odbpy",
             "apply_def_template.py",
@@ -73,15 +71,15 @@ class ApplyDEFTemplate(OdbpyStep):
     def get_command(self) -> list[str]:
         args = [
             "--def-template",
-            self.config["FP_DEF_TEMPLATE"],
-            f"--{self.config['FP_TEMPLATE_MATCH_MODE']}",
+            self.config.FP_DEF_TEMPLATE,
+            f"--{self.config.FP_TEMPLATE_MATCH_MODE}",
         ]
-        if self.config["FP_TEMPLATE_COPY_POWER_PINS"]:
+        if self.config.FP_TEMPLATE_COPY_POWER_PINS:
             args.append("--copy-def-power")
         return super().get_command() + args
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["FP_DEF_TEMPLATE"] is None:
+        if self.config.FP_DEF_TEMPLATE is None:
             logger.info(f"No DEF template provided, skipping '{self.id}'…")
             return {}, {}
 

@@ -17,7 +17,7 @@
 # limitations under the License.
 from loguru import logger
 
-from ..resources import package_path
+from importlib.resources import files
 import os
 import re
 import shutil
@@ -40,7 +40,7 @@ from .step import (
 from .tclstep import TclStep
 from ..state import DesignFormat, State
 
-from ..config import Variable
+from ..config import variable
 from ..common import DRC as DRCObject, Path, mkdirp, count_occurences
 
 
@@ -96,79 +96,70 @@ class MagicStep(TclStep):
 
     output_processors = [MagicOutputProcessor, DefaultOutputProcessor]
 
-    config_vars = [
-        Variable(
-            "MAGIC_DEF_LABELS",
-            bool,
-            "A flag to choose whether labels are read with DEF files or not. From magic docs: \"The '-labels' option to the 'def read' command causes each net in the NETS and SPECIALNETS sections of the DEF file to be annotated with a label having the net name as the label text.\" If LVS fails, try disabling this option.",
-            default=False,
-        ),
-        Variable(
-            "MAGIC_GDS_POLYGON_SUBCELLS",
-            bool,
-            'A flag to enable polygon subcells in magic for gds read potentially speeding up magic. From magic docs: "Put non-Manhattan polygons. This prevents interations with other polygons on the same plane and so reduces tile splitting."',
-            default=False,
-        ),
-        Variable(
-            "MAGIC_GDS_MERGE",
-            bool,
-            'A flag to enable merging of connected tiles into polygons during gds write. From magic docs: "Depending on the tile geometry, this may make the output file up to four times smaller, at the cost of speed in generating the output file."',
-            default=True,
-        ),
-        Variable(
-            "MAGIC_DEF_NO_BLOCKAGES",
-            bool,
-            "If set to true, blockages in DEF files are ignored. Otherwise, they are read as sheets of metal by Magic.",
-            default=True,
-        ),
-        Variable(
-            "MAGIC_INCLUDE_GDS_POINTERS",
-            bool,
-            "A flag to choose whether to include GDS pointers in the generated mag files or not.",
-            default=False,
-        ),
-        Variable(
-            "MAGICRC",
-            Path,
-            "A path to the `.magicrc` file which is sourced before running magic in the flow.",
+    class Config(Step.Config):
+        MAGIC_DEF_LABELS: bool = variable(
+            False,
+            description="A flag to choose whether labels are read with DEF files or not. From magic docs: \"The '-labels' option to the 'def read' command causes each net in the NETS and SPECIALNETS sections of the DEF file to be annotated with a label having the net name as the label text.\" If LVS fails, try disabling this option.",
+        )
+
+        MAGIC_GDS_POLYGON_SUBCELLS: bool = variable(
+            False,
+            description='A flag to enable polygon subcells in magic for gds read potentially speeding up magic. From magic docs: "Put non-Manhattan polygons. This prevents interations with other polygons on the same plane and so reduces tile splitting."',
+        )
+
+        MAGIC_GDS_MERGE: bool = variable(
+            True,
+            description='A flag to enable merging of connected tiles into polygons during gds write. From magic docs: "Depending on the tile geometry, this may make the output file up to four times smaller, at the cost of speed in generating the output file."',
+        )
+
+        MAGIC_DEF_NO_BLOCKAGES: bool = variable(
+            True,
+            description="If set to true, blockages in DEF files are ignored. Otherwise, they are read as sheets of metal by Magic.",
+        )
+
+        MAGIC_INCLUDE_GDS_POINTERS: bool = variable(
+            False,
+            description="A flag to choose whether to include GDS pointers in the generated mag files or not.",
+        )
+
+        MAGICRC: Path = variable(
+            description="A path to the `.magicrc` file which is sourced before running magic in the flow.",
             deprecated_names=["MAGIC_MAGICRC"],
             pdk=True,
-        ),
-        Variable(
-            "MAGIC_TECH",
-            Path,
-            "A path to a Magic tech file which, mainly, has DRC rules.",
+        )
+
+        MAGIC_TECH: Path = variable(
+            description="A path to a Magic tech file which, mainly, has DRC rules.",
             deprecated_names=["MAGIC_TECH_FILE"],
             pdk=True,
-        ),
-        Variable(
-            "MAGIC_PDK_SETUP",
-            Path,
-            "A path to a PDK-specific setup file sourced by `.magicrc`.",
+        )
+
+        MAGIC_PDK_SETUP: Path = variable(
+            description="A path to a PDK-specific setup file sourced by `.magicrc`.",
             pdk=True,
-        ),
-        Variable(
-            "CELL_MAGS",
-            Optional[list[Path]],
-            "A list of pre-processed concrete views for cells. Read as a fallback for undefined cells.",
+        )
+
+        CELL_MAGS: Optional[list[Path]] = variable(
+            None,
+            description="A list of pre-processed concrete views for cells. Read as a fallback for undefined cells.",
             pdk=True,
-        ),
-        Variable(
-            "CELL_MAGLEFS",
-            Optional[list[Path]],
-            "A list of pre-processed abstract LEF views for cells. Read as a fallback for undefined cells in scripts where cells are black-boxed.",
+        )
+
+        CELL_MAGLEFS: Optional[list[Path]] = variable(
+            None,
+            description="A list of pre-processed abstract LEF views for cells. Read as a fallback for undefined cells in scripts where cells are black-boxed.",
             pdk=True,
-        ),
-        Variable(
-            "MAGIC_CAPTURE_ERRORS",
-            bool,
-            "Capture errors print by Magic and quit when a fatal error is encountered."
+        )
+
+        MAGIC_CAPTURE_ERRORS: bool = variable(
+            True,
+            description="Capture errors print by Magic and quit when a fatal error is encountered."
             + " Fatal errors are determined heuristically. It is not guaranteed that they are fatal errors."
             + " Hence this is function is gated by a variable."
             + " This function is needed because Magic does not throw errors.",
-            default=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     @abstractmethod
     def get_script_path(self) -> str:
@@ -180,8 +171,8 @@ class MagicStep(TclStep):
             "-dnull",
             "-noconsole",
             "-rcfile",
-            self.config["MAGICRC"],
-            package_path().joinpath("scripts", "magic", "wrapper.tcl"),
+            self.config.MAGICRC,
+            files("librelane").joinpath("scripts", "magic", "wrapper.tcl"),
         ]
 
     def prepare_env(self, env: dict, state: State) -> dict:
@@ -212,7 +203,7 @@ class MagicStep(TclStep):
         )
 
         if (
-            self.config["MAGIC_CAPTURE_ERRORS"]
+            self.config.MAGIC_CAPTURE_ERRORS
             and subprocess_result["magic_output"]["fatal_error_count"]
         ):
             raise StepError("Encountered one or more fatal errors while running Magic.")
@@ -244,29 +235,26 @@ class WriteLEF(MagicStep):
     inputs = [DesignFormat.GDS, DesignFormat.DEF]
     outputs = [DesignFormat.LEF]
 
-    config_vars = MagicStep.config_vars + [
-        Variable(
-            "MAGIC_LEF_WRITE_USE_GDS",
-            bool,
-            "A flag to choose whether to use GDS for LEF writing. If not, then the extraction will be done using abstract LEF views.",
-            default=False,
-        ),
-        Variable(
-            "MAGIC_WRITE_FULL_LEF",
-            bool,
-            "A flag to specify whether or not the output LEF should include all shapes inside the macro or an abstracted view of the macro LEF view via magic.",
-            default=False,
-        ),
-        Variable(
-            "MAGIC_WRITE_LEF_PINONLY",
-            bool,
-            "If true, the LEF write will mark only areas that are port labels as pins, while marking the rest of each related net as an obstruction. Otherwise, the labeled port and the any connected metal on the same layer are marked as a pin.",
-            default=False,
-        ),
-    ]
+    class Config(MagicStep.Config):
+        MAGIC_LEF_WRITE_USE_GDS: bool = variable(
+            False,
+            description="A flag to choose whether to use GDS for LEF writing. If not, then the extraction will be done using abstract LEF views.",
+        )
+
+        MAGIC_WRITE_FULL_LEF: bool = variable(
+            False,
+            description="A flag to specify whether or not the output LEF should include all shapes inside the macro or an abstracted view of the macro LEF view via magic.",
+        )
+
+        MAGIC_WRITE_LEF_PINONLY: bool = variable(
+            False,
+            description="If true, the LEF write will mark only areas that are port labels as pins, while marking the rest of each related net as an obstruction. Otherwise, the labeled port and the any connected metal on the same layer are marked as a pin.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "magic", "lef.tcl")
+        return files("librelane").joinpath("scripts", "magic", "lef.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -290,39 +278,36 @@ class StreamOut(MagicStep):
     inputs = [DesignFormat.DEF]
     outputs = [DesignFormat.GDS, DesignFormat.MAG_GDS, DesignFormat.MAG]
 
-    config_vars = MagicStep.config_vars + [
-        Variable(
-            "DIE_AREA",
-            Optional[tuple[Decimal, Decimal, Decimal, Decimal]],
-            'Specific die area to be used in floorplanning when `FP_SIZING` is set to `absolute`. Specified as a 4-corner rectangle "x0 y0 x1 y1".',
+    class Config(MagicStep.Config):
+        DIE_AREA: Optional[tuple[Decimal, Decimal, Decimal, Decimal]] = variable(
+            None,
+            description='Specific die area to be used in floorplanning when `FP_SIZING` is set to `absolute`. Specified as a 4-corner rectangle "x0 y0 x1 y1".',
             units="µm",
-        ),
-        Variable(
-            "MAGIC_ZEROIZE_ORIGIN",
-            bool,
-            "A flag to move the layout such that it's origin in the lef generated by magic is 0,0.",
-            default=False,
-        ),
-        Variable(
-            "MAGIC_DISABLE_CIF_INFO",
-            bool,
-            "A flag to disable writing Caltech Intermediate Format (CIF) hierarchy and subcell array information to the GDSII file.",
-            default=True,
+        )
+
+        MAGIC_ZEROIZE_ORIGIN: bool = variable(
+            False,
+            description="A flag to move the layout such that it's origin in the lef generated by magic is 0,0.",
+        )
+
+        MAGIC_DISABLE_CIF_INFO: bool = variable(
+            True,
+            description="A flag to disable writing Caltech Intermediate Format (CIF) hierarchy and subcell array information to the GDSII file.",
             deprecated_names=["MAGIC_DISABLE_HIER_GDS"],
-        ),
-        Variable(
-            "MAGIC_MACRO_STD_CELL_SOURCE",
-            Literal["PDK", "macro"],
-            "If set to PDK, magic will use the PDK definition of the STD cells for macros inside the design."
+        )
+
+        MAGIC_MACRO_STD_CELL_SOURCE: Literal["PDK", "macro"] = variable(
+            "macro",
+            description="If set to PDK, magic will use the PDK definition of the STD cells for macros inside the design."
             + " Otherwise, the macro is completely treated as a blackbox and magic will use the existing cell definition inside"
             + " the macro gds."
             + " This mode is only supported for macros specified in MACROS variable",
-            default="macro",
-        ),
-    ]
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "magic", "def", "mag_gds.tcl")
+        return files("librelane").joinpath("scripts", "magic", "def", "mag_gds.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -334,20 +319,20 @@ class StreamOut(MagicStep):
         env["MAGTYPE"] = "mag"
 
         if (
-            self.config["MACROS"] is not None
-            and self.config["MAGIC_MACRO_STD_CELL_SOURCE"] == "macro"
+            self.config.MACROS is not None
+            and self.config.MAGIC_MACRO_STD_CELL_SOURCE == "macro"
         ):
             macro_gds = []
             env_copy = env.copy()
-            for macro in self.config["MACROS"].keys():
-                macro_gdses = [str(path) for path in self.config["MACROS"][macro].gds]
+            for macro in self.config.MACROS.keys():
+                macro_gdses = [str(path) for path in self.config.MACROS[macro].gds]
                 if len(macro_gdses) > 1:
                     raise StepException(
                         "Multiple GDSII files in one Macro currently unsupported when MAGIC_MACRO_STD_CELL_SOURCE is set to 'macro'."
                     )
                 env_copy["_GDS_IN"] = macro_gdses[0]
                 env_copy["_MACRO_NAME_IN"] = macro
-                env_copy["_MAGIC_SCRIPT"] = package_path().joinpath(
+                env_copy["_MAGIC_SCRIPT"] = files("librelane").joinpath(
                     "scripts", "magic", "get_bbox.tcl"
                 )
 
@@ -372,14 +357,14 @@ class StreamOut(MagicStep):
             **kwargs,
         )
 
-        if self.config["PRIMARY_GDSII_STREAMOUT_TOOL"] == "magic":
+        if self.config.PRIMARY_GDSII_STREAMOUT_TOOL == "magic":
             magic_gds_out = str(views_updates[DesignFormat.MAG_GDS])
-            gds_path = os.path.join(self.step_dir, f"{self.config['DESIGN_NAME']}.gds")
+            gds_path = os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.gds")
             shutil.copy(magic_gds_out, gds_path)
             views_updates[DesignFormat.GDS] = Path(gds_path)
 
         views_updates[DesignFormat.MAG] = Path(
-            os.path.join(self.step_dir, f"{self.config['DESIGN_NAME']}.mag")
+            os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.mag")
         )
 
         return views_updates, metrics_updates
@@ -397,28 +382,28 @@ class Filler(Step):
     inputs = [DesignFormat.GDS]
     outputs = [DesignFormat.GDS]
 
-    config_vars = [
-        Variable(
-            "MAGIC_FILLER_SCRIPT",
-            Optional[Path],
-            "Path to the magic filler script.",
+    class Config(Step.Config):
+        MAGIC_FILLER_SCRIPT: Optional[Path] = variable(
+            None,
+            description="Path to the magic filler script.",
             pdk=True,
-        ),
-        Variable(
-            "MAGIC_FILLER_OPTIONS",
-            Optional[list[str]],
-            "Options passed directly to the magic filler script.",
+        )
+
+        MAGIC_FILLER_OPTIONS: Optional[list[str]] = variable(
+            None,
+            description="Options passed directly to the magic filler script.",
             pdk=True,
-        ),
-    ]
+        )
+
+    config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         metrics_updates: MetricsUpdate = {}
         views_updates: ViewsUpdate = {}
 
-        if not self.config["MAGIC_FILLER_SCRIPT"]:
+        if not self.config.MAGIC_FILLER_SCRIPT:
             logger.bind(step=self.id).warning(
-                f"MAGIC_FILLER_SCRIPT is unset. Magic.Filler may not be supported for the {self.config['PDK']} PDK. This step will be skipped."
+                f"MAGIC_FILLER_SCRIPT is unset. Magic.Filler may not be supported for the {self.config.PDK} PDK. This step will be skipped."
             )
             return views_updates, metrics_updates
 
@@ -437,17 +422,17 @@ class Filler(Step):
 
         fill_gds = os.path.join(
             self.step_dir,
-            f"{self.config['DESIGN_NAME']}_fill.{DesignFormat.GDS.extension}",
+            f"{self.config.DESIGN_NAME}_fill.{DesignFormat.GDS.extension}",
         )
         output_gds = os.path.join(
-            self.step_dir, f"{self.config['DESIGN_NAME']}.{DesignFormat.GDS.extension}"
+            self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
 
-        script = abspath(self.config["MAGIC_FILLER_SCRIPT"])
-        opts = self.config["MAGIC_FILLER_OPTIONS"] or []
+        script = abspath(self.config.MAGIC_FILLER_SCRIPT)
+        opts = self.config.MAGIC_FILLER_OPTIONS or []
 
-        env["PDK_ROOT"] = self.config["PDK_ROOT"]
-        env["PDK"] = self.config["PDK"]
+        env["PDK_ROOT"] = self.config.PDK_ROOT
+        env["PDK"] = self.config.PDK
 
         # Run filler generation
         self.run_subprocess(
@@ -468,7 +453,7 @@ class Filler(Step):
                 "-b",
                 "-zz",
                 "-r",
-                package_path().joinpath(
+                files("librelane").joinpath(
                     "scripts",
                     "klayout",
                     "insert_cell.py",
@@ -508,34 +493,33 @@ class DRC(MagicStep):
     inputs = [DesignFormat.DEF.mkOptional(), DesignFormat.GDS]
     outputs = []
 
-    config_vars = MagicStep.config_vars + [
-        Variable(
-            "MAGIC_DRC_USE_GDS",
-            bool,
-            "A flag to choose whether to run the Magic DRC checks on GDS or not. If not, then the checks will be done on the DEF view of the design, which is a bit faster, but may be less accurate as some DEF/LEF elements are abstract.",
-            default=True,
-        ),
-        Variable(
-            "MAGIC_GDS_FLATGLOB",
-            Optional[list[str]],
-            "Flatten cells by name pattern on input. May be used to avoid false positive DRC errors. The strings may use standard shell-type glob patterns, with * for any length string match, ? for any single character match, \\ for special characters, and [] for matching character sets or ranges.",
-        ),
-        Variable(
-            "MAGIC_DRC_MAGLEFS",
-            Optional[list[Path]],
-            "A list of pre-processed abstract LEF views for cells. They are read in before the design and act as blackboxes during DRC.",
-        ),
-    ]
+    class Config(MagicStep.Config):
+        MAGIC_DRC_USE_GDS: bool = variable(
+            True,
+            description="A flag to choose whether to run the Magic DRC checks on GDS or not. If not, then the checks will be done on the DEF view of the design, which is a bit faster, but may be less accurate as some DEF/LEF elements are abstract.",
+        )
+
+        MAGIC_GDS_FLATGLOB: Optional[list[str]] = variable(
+            None,
+            description="Flatten cells by name pattern on input. May be used to avoid false positive DRC errors. The strings may use standard shell-type glob patterns, with * for any length string match, ? for any single character match, \\ for special characters, and [] for matching character sets or ranges.",
+        )
+
+        MAGIC_DRC_MAGLEFS: Optional[list[Path]] = variable(
+            None,
+            description="A list of pre-processed abstract LEF views for cells. They are read in before the design and act as blackboxes during DRC.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "magic", "drc.tcl")
+        return files("librelane").joinpath("scripts", "magic", "drc.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         reports_dir = os.path.join(self.step_dir, "reports")
         mkdirp(reports_dir)
 
         # Check that the DEF exists if needed
-        if not self.config["MAGIC_DRC_USE_GDS"]:
+        if not self.config.MAGIC_DRC_USE_GDS:
             assert state_in.get(DesignFormat.DEF)
 
         views_updates, metrics_updates = super().run(state_in, **kwargs)
@@ -581,61 +565,56 @@ class SpiceExtraction(MagicStep):
     inputs = [DesignFormat.GDS, DesignFormat.DEF]
     outputs = [DesignFormat.SPICE]
 
-    config_vars = MagicStep.config_vars + [
-        Variable(
-            "MAGIC_EXT_USE_GDS",
-            bool,
-            "A flag to choose whether to use GDS for spice extraction or not. If not, then the extraction will be done using the DEF/LEF, which is faster.",
-            default=False,
-        ),
-        Variable(
-            "MAGIC_EXT_ABSTRACT_CELLS",
-            Optional[list[str]],
-            "A list of regular expressions which are matched against the cells of a "
+    class Config(MagicStep.Config):
+        MAGIC_EXT_USE_GDS: bool = variable(
+            False,
+            description="A flag to choose whether to use GDS for spice extraction or not. If not, then the extraction will be done using the DEF/LEF, which is faster.",
+        )
+
+        MAGIC_EXT_ABSTRACT_CELLS: Optional[list[str]] = variable(
+            None,
+            description="A list of regular expressions which are matched against the cells of a "
             + "the design. Matches are abstracted (black-boxed) during SPICE extraction.",
-        ),
-        Variable(
-            "MAGIC_EXT_UNIQUE",
-            Literal["all", "notopports", "noports", "none"],
-            'Runs `extract unique` with the specified option. The default is "all", and "none" disables `extract unique`, allowing connections between separate nets by label in LVS.',
-            default="all",
+        )
+
+        MAGIC_EXT_UNIQUE: Literal["all", "notopports", "noports", "none"] = variable(
+            "all",
+            description='Runs `extract unique` with the specified option. The default is "all", and "none" disables `extract unique`, allowing connections between separate nets by label in LVS.',
             deprecated_names=[
                 ("MAGIC_NO_EXT_UNIQUE", lambda o: "none" if o else "all"),
                 ("LVS_CONNECT_BY_LABEL", lambda o: "none" if o else "all"),
             ],
-        ),
-        Variable(
-            "MAGIC_EXT_SHORT_RESISTOR",
-            bool,
-            "Enables adding resistors to shorts- resolves LVS issues if more than one top-level pin is connected to the same net, but may increase runtime and break some designs. Proceed with caution.",
-            default=False,
-        ),
-        Variable(
-            "MAGIC_EXT_ABSTRACT",
-            bool,
-            "Extracts a SPICE netlist based on black-boxed standard cells and macros (basically, anything with a LEF) rather than transistors. An error will be thrown if both this and `MAGIC_EXT_USE_GDS` is set to ``True``.",
-            default=False,
-        ),
-        Variable(
-            "MAGIC_FEEDBACK_CONVERSION_THRESHOLD",
-            int,
-            "If Magic provides more feedback items than this threshold, conversion to KLayout databases is skipped (as something has gone horribly wrong.)",
-            default=10000,
-        ),
-    ]
+        )
+
+        MAGIC_EXT_SHORT_RESISTOR: bool = variable(
+            False,
+            description="Enables adding resistors to shorts- resolves LVS issues if more than one top-level pin is connected to the same net, but may increase runtime and break some designs. Proceed with caution.",
+        )
+
+        MAGIC_EXT_ABSTRACT: bool = variable(
+            False,
+            description="Extracts a SPICE netlist based on black-boxed standard cells and macros (basically, anything with a LEF) rather than transistors. An error will be thrown if both this and `MAGIC_EXT_USE_GDS` is set to ``True``.",
+        )
+
+        MAGIC_FEEDBACK_CONVERSION_THRESHOLD: int = variable(
+            10000,
+            description="If Magic provides more feedback items than this threshold, conversion to KLayout databases is skipped (as something has gone horribly wrong.)",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "magic", "extract_spice.tcl")
+        return files("librelane").joinpath("scripts", "magic", "extract_spice.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["MAGIC_EXT_USE_GDS"] and self.config["MAGIC_EXT_ABSTRACT"]:
+        if self.config.MAGIC_EXT_USE_GDS and self.config.MAGIC_EXT_ABSTRACT:
             raise StepException(
                 "'MAGIC_EXT_USE_GDS' and 'MAGIC_EXT_ABSTRACT' cannot be both set to 'True'. The step cannot run."
             )
 
         kwargs, env = self.extract_env(kwargs)
 
-        env["MAGTYPE"] = "maglef" if self.config["MAGIC_EXT_ABSTRACT"] else "mag"
+        env["MAGTYPE"] = "maglef" if self.config.MAGIC_EXT_ABSTRACT else "mag"
 
         views_updates, metrics_updates = super().run(state_in, env=env, **kwargs)
 
@@ -644,7 +623,7 @@ class SpiceExtraction(MagicStep):
             illegal_overlap_count = count_occurences(f, "Illegal overlap")
 
         metrics_updates["magic__illegal_overlap__count"] = illegal_overlap_count
-        threshold = self.config["MAGIC_FEEDBACK_CONVERSION_THRESHOLD"]
+        threshold = self.config.MAGIC_FEEDBACK_CONVERSION_THRESHOLD
         if illegal_overlap_count > threshold:
             logger.warning(
                 f"Not converting the feedback to the KLayout database format: {illegal_overlap_count} > MAGIC_FEEDBACK_CONVERSION_THRESHOLD ({threshold}). You may manually increase the threshold, but it might take forever."
@@ -656,7 +635,7 @@ class SpiceExtraction(MagicStep):
             se_feedback, _ = DRCObject.from_magic_feedback(
                 open(feedback_path, encoding="utf8"),
                 cif_scale,
-                self.config["DESIGN_NAME"],
+                self.config.DESIGN_NAME,
             )
             illegal_overlap_count = sum(
                 len(v.bounding_boxes)
@@ -685,17 +664,16 @@ class OpenGUI(MagicStep):
     inputs = [DesignFormat.DEF]
     outputs = []
 
-    config_vars = MagicStep.config_vars + [
-        Variable(
-            "MAGIC_GUI_USE_GDS",
-            bool,
-            "Whether to prioritize GDS (if found) when running this step.",
-            default=True,
-        ),
-    ]
+    class Config(MagicStep.Config):
+        MAGIC_GUI_USE_GDS: bool = variable(
+            True,
+            description="Whether to prioritize GDS (if found) when running this step.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "magic", "open.tcl")
+        return files("librelane").joinpath("scripts", "magic", "open.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -709,7 +687,7 @@ class OpenGUI(MagicStep):
         cmd = [
             "magic",
             "-rcfile",
-            self.config["MAGICRC"],
+            self.config.MAGICRC,
             self.get_script_path(),
         ]
 
@@ -746,43 +724,32 @@ class RCX(MagicStep):
     inputs = [DesignFormat.GDS]
     outputs = [DesignFormat.SPICE_RCX]
 
-    config_vars = MagicStep.config_vars + [
-        Variable(
-            "MAGIC_RCX_CTHRESH",
-            float,
-            "Capacitance threshold value.",
-            default=0.1,
+    class Config(MagicStep.Config):
+        MAGIC_RCX_CTHRESH: float = variable(
+            0.1,
+            description="Capacitance threshold value.",
             units="femtofarads",
-        ),
-        Variable(
-            "MAGIC_RCX_DO_CAPACITANCE",
-            bool,
-            "Whether to extract local capacitance values.",
-            default=True,
-        ),
-        Variable(
-            "MAGIC_RCX_DO_RESISTANCE",
-            bool,
-            "Whether to perform detailed (i.e. non-lumped) resistance extraction.",
-            default=True,
-        ),
-        Variable(
-            "MAGIC_RCX_EXTRACT_STYLE",
-            str,
-            (
-                "Capacitance extraction corner. For open PDKs, the options are generally: 'ngspice(lrlc)', "
-                "low resistance, low capacitance; 'ngspice(hrlc)', high resistance, low capacitance; "
-                "'ngspice(lrhc)', low resistance, high capacitance; 'ngspice(hrhc)', high resistance, low "
-                "capacitance. 'ngspice(hrhc)' is typically the slowest corner, and 'ngspice(lrlc) is "
-                "typically the fastest corner. Defaults to 'ngspice()', which is the default typical "
-                "extraction corner."
-            ),
-            default="ngspice()",
-        ),
-    ]
+        )
+
+        MAGIC_RCX_DO_CAPACITANCE: bool = variable(
+            True,
+            description="Whether to extract local capacitance values.",
+        )
+
+        MAGIC_RCX_DO_RESISTANCE: bool = variable(
+            True,
+            description="Whether to perform detailed (i.e. non-lumped) resistance extraction.",
+        )
+
+        MAGIC_RCX_EXTRACT_STYLE: str = variable(
+            "ngspice()",
+            description="Capacitance extraction corner. For open PDKs, the options are generally: 'ngspice(lrlc)', low resistance, low capacitance; 'ngspice(hrlc)', high resistance, low capacitance; 'ngspice(lrhc)', low resistance, high capacitance; 'ngspice(hrhc)', high resistance, low capacitance. 'ngspice(hrhc)' is typically the slowest corner, and 'ngspice(lrlc) is typically the fastest corner. Defaults to 'ngspice()', which is the default typical extraction corner.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "magic", "spice_rcx.tcl")
+        return files("librelane").joinpath("scripts", "magic", "spice_rcx.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)

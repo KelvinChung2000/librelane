@@ -797,3 +797,51 @@ def test_dis_migration(caplog: pytest.LogCaptureFixture):
         for diagnostic in cfg.diagnostics
     ), "diode insertion strategy did not trigger a warning"
     caplog.clear()
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables()
+def test_deprecated_name_in_design_overrides_pdk_value():
+    """A PDK supplies every PDK variable, so the design's alias must still win."""
+    from librelane.config import Config
+
+    cfg, _ = Config.load(
+        {
+            "DESIGN_NAME": "whatever",
+            "VERILOG_FILES": "dir::src/*.v",
+            "EXAMPLE_PDK_VAR_LEGACY": 30,
+        },
+        config.flow_common_variables,
+        design_dir="/cwd",
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+
+    assert cfg["EXAMPLE_PDK_VAR"] == Decimal(30)
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables()
+def test_deprecated_name_is_reported_while_it_is_honoured():
+    from librelane.config import Config, Severity
+
+    cfg, _ = Config.load(
+        {
+            "DESIGN_NAME": "whatever",
+            "VERILOG_FILES": "dir::src/*.v",
+            "EXAMPLE_PDK_VAR_LEGACY": 30,
+        },
+        config.flow_common_variables,
+        design_dir="/cwd",
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+
+    deprecations = [
+        item.message
+        for item in cfg.diagnostics
+        if item.severity is Severity.DEPRECATION
+    ]
+    assert any("EXAMPLE_PDK_VAR_LEGACY" in message for message in deprecations)

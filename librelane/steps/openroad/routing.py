@@ -17,7 +17,7 @@
 # limitations under the License.
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 import io
 import os
 import re
@@ -35,12 +35,12 @@ from ...common import (
     _get_process_limit,
     mkdirp,
 )
-from ...config import Variable
+from ...config import variable
 from ...logging import console, options
 from ...state import DesignFormat, State
 from ..common_variables import (
-    dpl_variables,
-    grt_variables,
+    DplConfig,
+    GrtConfig,
 )
 from ..step import (
     CompositeStep,
@@ -68,7 +68,7 @@ class CheckAntennas(OpenROADStep):
     outputs = []
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "antenna_check.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "antenna_check.tcl")
 
     def __summarize_antenna_report(self, report_file: str, output_file: str):
         """
@@ -217,10 +217,13 @@ class GlobalRouting(OpenROADStep):
 
     outputs = [DesignFormat.ODB, DesignFormat.DEF]
 
-    config_vars = OpenROADStep.config_vars + grt_variables + dpl_variables
+    class Config(DplConfig, GrtConfig, OpenROADStep.Config):
+        pass
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "grt.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "grt.tcl")
 
 
 class _DiodeInsertion(GlobalRouting):
@@ -228,7 +231,7 @@ class _DiodeInsertion(GlobalRouting):
     name = "Diode Insertion"
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "antenna_repair.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "antenna_repair.tcl")
 
 
 @Step.factory.register()
@@ -248,7 +251,7 @@ class RepairAntennas(CompositeStep):
     Steps = [_DiodeInsertion, CheckAntennas]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["DIODE_CELL"] is None:
+        if self.config.DIODE_CELL is None:
             logger.info(f"'DIODE_CELL' not set. Skipping '{self.id}'…")
             return {}, {}
 
@@ -293,74 +296,64 @@ class DetailedRouting(OpenROADStep):
     id = "OpenROAD.DetailedRouting"
     name = "Detailed Routing"
 
-    config_vars = (
-        OpenROADStep.config_vars
-        + grt_variables
-        + [
-            Variable(
-                "DRT_THREADS",
-                Optional[int],
-                "Specifies the number of threads to be used in OpenROAD Detailed Routing. If unset, this will be equal to your machine's thread count.",
-                deprecated_names=["ROUTING_CORES"],
-            ),
-            Variable(
-                "DRT_OPT_ITERS",
-                int,
-                "Specifies the maximum number of optimization iterations during Detailed Routing in TritonRoute.",
-                default=64,
-            ),
-            Variable(
-                "DRT_SAVE_SNAPSHOTS",
-                bool,
-                "Experimental: saves an odb snapshot of the layout each routing iteration. This increases disk usage considerably but is useful for debugging.",
-                default=False,
-            ),
-            Variable(
-                "DRT_ANTENNA_REPAIR_ITERS",
-                int,
-                "The maximum number of iterations to run antenna repair. Set to a positive integer to attempt to repair antennas and then re-run DRT as appropriate.",
-                default=3,
-            ),
-            Variable(
-                "DRT_ANTENNA_REPAIR_MARGIN",
-                int,
-                "The margin to over fix antenna violations.",
-                default=10,
-                units="%",
-                deprecated_names=["DRT_ANTENNA_MARGIN"],
-            ),
-            Variable(
-                "DRT_ANTENNA_REPAIR_JUMPER_ONLY",
-                bool,
-                "Only use jumpers to fix antenna violations. Cannot be used in conjunction with DRT_ANTENNA_REPAIR_DIODE_ONLY.",
-                default=False,
-            ),
-            Variable(
-                "DRT_ANTENNA_REPAIR_DIODE_ONLY",
-                bool,
-                "Only use antenna diodes to fix antenna violations. Cannot be used in conjunction with DRT_ANTENNA_REPAIR_JUMPER_ONLY.",
-                default=False,
-            ),
-            Variable(
-                "DRT_SAVE_DRC_REPORT_ITERS",
-                Optional[int],
-                "Write a DRC report every N iterations. If DRT_SAVE_SNAPSHOTS is enabled, there is an implicit default value of 1.",
-            ),
-            Variable(
-                "NON_DEFAULT_RULES",
-                Optional[dict[str, NDR]],
-                "Specify non-default rules. Can be used to change the width, spacing and vias of a net.",
-            ),
-            Variable(
-                "DRT_ASSIGN_NDR",
-                Optional[dict[str, str]],
-                "Specify which nets should be assigned to which non-default rule. The net name is a regular expression. Use '^name$' to match an exact name.",
-            ),
-        ]
-    )
+    class Config(GrtConfig, OpenROADStep.Config):
+        DRT_THREADS: Optional[int] = variable(
+            None,
+            description="Specifies the number of threads to be used in OpenROAD Detailed Routing. If unset, this will be equal to your machine's thread count.",
+            deprecated_names=["ROUTING_CORES"],
+        )
+
+        DRT_OPT_ITERS: int = variable(
+            64,
+            description="Specifies the maximum number of optimization iterations during Detailed Routing in TritonRoute.",
+        )
+
+        DRT_SAVE_SNAPSHOTS: bool = variable(
+            False,
+            description="Experimental: saves an odb snapshot of the layout each routing iteration. This increases disk usage considerably but is useful for debugging.",
+        )
+
+        DRT_ANTENNA_REPAIR_ITERS: int = variable(
+            3,
+            description="The maximum number of iterations to run antenna repair. Set to a positive integer to attempt to repair antennas and then re-run DRT as appropriate.",
+        )
+
+        DRT_ANTENNA_REPAIR_MARGIN: int = variable(
+            10,
+            description="The margin to over fix antenna violations.",
+            units="%",
+            deprecated_names=["DRT_ANTENNA_MARGIN"],
+        )
+
+        DRT_ANTENNA_REPAIR_JUMPER_ONLY: bool = variable(
+            False,
+            description="Only use jumpers to fix antenna violations. Cannot be used in conjunction with DRT_ANTENNA_REPAIR_DIODE_ONLY.",
+        )
+
+        DRT_ANTENNA_REPAIR_DIODE_ONLY: bool = variable(
+            False,
+            description="Only use antenna diodes to fix antenna violations. Cannot be used in conjunction with DRT_ANTENNA_REPAIR_JUMPER_ONLY.",
+        )
+
+        DRT_SAVE_DRC_REPORT_ITERS: Optional[int] = variable(
+            None,
+            description="Write a DRC report every N iterations. If DRT_SAVE_SNAPSHOTS is enabled, there is an implicit default value of 1.",
+        )
+
+        NON_DEFAULT_RULES: Optional[dict[str, NDR]] = variable(
+            None,
+            description="Specify non-default rules. Can be used to change the width, spacing and vias of a net.",
+        )
+
+        DRT_ASSIGN_NDR: Optional[dict[str, str]] = variable(
+            None,
+            description="Specify which nets should be assigned to which non-default rule. The net name is a regular expression. Use '^name$' to match an exact name.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "drt.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "drt.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -371,7 +364,7 @@ class DetailedRouting(OpenROADStep):
         drc_paths = list(pathlib.Path(self.step_dir).rglob("*.drc*"))
         for path in drc_paths:
             drc, _ = DRCObject.from_openroad(
-                open(path, encoding="utf8"), self.config["DESIGN_NAME"]
+                open(path, encoding="utf8"), self.config.DESIGN_NAME
             )
 
             drc.to_klayout_xml(open(pathlib.Path(str(path) + ".xml"), "wb"))

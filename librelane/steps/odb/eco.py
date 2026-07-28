@@ -17,15 +17,15 @@
 from loguru import logger
 
 import os
-from ...resources import package_path
+from importlib.resources import files
 from decimal import Decimal
 from dataclasses import dataclass
 from typing import Optional
 
-from ...config import Variable
+from ...config import variable
 from ...state import State
 
-from ..common_variables import dpl_variables, grt_variables
+from ..common_variables import DplConfig, GrtConfig
 from ..step import (
     MetricsUpdate,
     Step,
@@ -71,20 +71,16 @@ class InsertECOBuffers(OdbpyStep):
     id = "Odb.InsertECOBuffers"
     name = "Insert ECO Buffers"
 
-    config_vars = (
-        dpl_variables
-        + grt_variables
-        + [
-            Variable(
-                "INSERT_ECO_BUFFERS",
-                Optional[list[ECOBuffer]],
-                "List of buffers to insert",
-            )
-        ]
-    )
+    class Config(GrtConfig, DplConfig):
+        INSERT_ECO_BUFFERS: Optional[list[ECOBuffer]] = variable(
+            None,
+            description="List of buffers to insert",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "eco_buffer.py")
+        return files("librelane").joinpath("scripts", "odbpy", "eco_buffer.py")
 
     def get_command(self) -> list[str]:
         assert self.config_path is not None, "get_command called before start()"
@@ -94,7 +90,7 @@ class InsertECOBuffers(OdbpyStep):
         ]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        if self.config["INSERT_ECO_BUFFERS"] is None:
+        if self.config.INSERT_ECO_BUFFERS is None:
             logger.info(f"'INSERT_ECO_BUFFERS' not set. Skipping '{self.id}'…")
             return {}, {}
         return super().run(state_in, **kwargs)
@@ -129,20 +125,16 @@ class InsertECODiodes(OdbpyStep):
     id = "Odb.InsertECODiodes"
     name = "Insert ECO Diodes"
 
-    config_vars = (
-        grt_variables
-        + dpl_variables
-        + [
-            Variable(
-                "INSERT_ECO_DIODES",
-                Optional[list[ECODiode]],
-                "List of sinks to insert diodes for.",
-            )
-        ]
-    )
+    class Config(DplConfig, GrtConfig):
+        INSERT_ECO_DIODES: Optional[list[ECODiode]] = variable(
+            None,
+            description="List of sinks to insert diodes for.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "odbpy", "eco_diode.py")
+        return files("librelane").joinpath("scripts", "odbpy", "eco_diode.py")
 
     def get_command(self) -> list[str]:
         assert self.config_path is not None, "get_command called before start()"
@@ -152,10 +144,10 @@ class InsertECODiodes(OdbpyStep):
         ]
 
     def run(self, state_in: State, **kwargs):
-        if self.config["DIODE_CELL"] is None:
+        if self.config.DIODE_CELL is None:
             logger.info(f"'DIODE_CELL' not set. Skipping '{self.id}'…")
             return {}, {}
-        if self.config["INSERT_ECO_DIODES"] is None:
+        if self.config.INSERT_ECO_DIODES is None:
             logger.info(f"'INSERT_ECO_DIODES' not set. Skipping '{self.id}'…")
             return {}, {}
         return super().run(state_in, **kwargs)

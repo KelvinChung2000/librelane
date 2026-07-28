@@ -17,11 +17,11 @@
 # limitations under the License.
 from loguru import logger
 
-from ...resources import package_path
+from importlib.resources import files
 import os
 import json
 import subprocess
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from dataclasses import dataclass
 from decimal import Decimal
 from math import inf
@@ -37,10 +37,11 @@ from ...common import (
     Path,
     TclUtils,
     _get_process_limit,
+    ContextPropagatingThreadPoolExecutor,
     aggregate_metrics,
     mkdirp,
 )
-from ...config import Macro, Variable
+from ...config import Macro, variable
 from ...logging import console, options
 from ...state import DesignFormat, State
 from ..step import (
@@ -70,7 +71,7 @@ class STAMidPNR(OpenROADStep):
     outputs = []
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "sta", "corner.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "sta", "corner.tcl")
 
 
 class OpenSTAStep(OpenROADStep):
@@ -200,16 +201,19 @@ class CheckMacroInstances(OpenSTAStep):
     name = "Check Macro Instances"
     outputs = []
 
-    config_vars = OpenROADStep.config_vars
+    class Config(OpenROADStep.Config):
+        pass
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath(
+        return files("librelane").joinpath(
             "scripts", "openroad", "sta", "check_macro_instances.tcl"
         )
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
-        macros: dict[str, Macro] | None = self.config["MACROS"]
+        macros: dict[str, Macro] | None = self.config.MACROS
         if macros is None:
             logger.info("No macros found, skipping instance check…")
             return {}, {}
@@ -232,32 +236,31 @@ class CheckMacroInstances(OpenSTAStep):
 class MultiCornerSTA(OpenSTAStep):
     outputs = [DesignFormat.SDF, DesignFormat.SDC]
 
-    config_vars = OpenSTAStep.config_vars + [
-        Variable(
-            "STA_MACRO_PRIORITIZE_NL",
-            bool,
-            "Prioritize the use of Netlists + SPEF files over LIB files if available for Macros. Useful if extraction was done using OpenROAD, where SPEF files are far more accurate.",
-            default=True,
-        ),
-        Variable(
-            "STA_MAX_VIOLATOR_COUNT",
-            Optional[int],
-            "Maximum number of violators to list in violator_list.rpt",
-        ),
-        Variable(
-            "EXTRA_SPEFS",
-            Optional[list[str | Path]],
-            "A variable that only exists for backwards compatibility with LibreLane <2.0.0 and should not be used by new designs.",
-        ),
-        Variable(
-            "STA_THREADS",
-            Optional[int],
-            "The maximum number of STA corners to run in parallel. If unset, this will be equal to your machine's thread count.",
-        ),
-    ]
+    class Config(OpenSTAStep.Config):
+        STA_MACRO_PRIORITIZE_NL: bool = variable(
+            True,
+            description="Prioritize the use of Netlists + SPEF files over LIB files if available for Macros. Useful if extraction was done using OpenROAD, where SPEF files are far more accurate.",
+        )
+
+        STA_MAX_VIOLATOR_COUNT: Optional[int] = variable(
+            None,
+            description="Maximum number of violators to list in violator_list.rpt",
+        )
+
+        EXTRA_SPEFS: Optional[list[str | Path]] = variable(
+            None,
+            description="A variable that only exists for backwards compatibility with LibreLane <2.0.0 and should not be used by new designs.",
+        )
+
+        STA_THREADS: Optional[int] = variable(
+            None,
+            description="The maximum number of STA corners to run in parallel. If unset, this will be equal to your machine's thread count.",
+        )
+
+    config: Config
 
     def get_script_path(self):
-        return package_path().joinpath("scripts", "openroad", "sta", "corner.tcl")
+        return files("librelane").joinpath("scripts", "openroad", "sta", "corner.tcl")
 
     def run_corner(
         self,
@@ -294,16 +297,16 @@ class MultiCornerSTA(OpenSTAStep):
         kwargs, env = self.extract_env(kwargs)
         env = self.prepare_env(env, state_in)
 
-        tpe = ThreadPoolExecutor(
-            max_workers=self.config["STA_THREADS"] or _get_process_limit()
+        tpe = ContextPropagatingThreadPoolExecutor(
+            max_workers=self.config.STA_THREADS or _get_process_limit()
         )
 
         futures: dict[str, Future[MetricsUpdate]] = {}
         files_so_far: dict[OpenSTAStep.CornerFileList, str] = {}
         corners_used: set[str] = set()
-        for corner in self.config["STA_CORNERS"]:
+        for corner in self.config.STA_CORNERS:
             _, file_list = self._get_corner_files(
-                corner, prioritize_nl=self.config["STA_MACRO_PRIORITIZE_NL"]
+                corner, prioritize_nl=self.config.STA_MACRO_PRIORITIZE_NL
             )
             if previous := files_so_far.get(file_list):
                 logger.info(
@@ -368,7 +371,7 @@ class MultiCornerSTA(OpenSTAStep):
         table.add_column("of which reg to reg")
         table.add_column("Max Cap Violations")
         table.add_column("Max Slew Violations")
-        for corner in ["Overall"] + self.config["STA_CORNERS"]:
+        for corner in ["Overall"] + self.config.STA_CORNERS:
             modifier = ""
             if corner != "Overall":
                 if corner not in corners_used:
@@ -447,9 +450,9 @@ class STAPrePNR(MultiCornerSTA):
 
         sdf_dict = sdf_dict.copy()
 
-        for corner in self.config["STA_CORNERS"]:
+        for corner in self.config.STA_CORNERS:
             sdf = os.path.join(
-                self.step_dir, corner, f"{self.config['DESIGN_NAME']}__{corner}.sdf"
+                self.step_dir, corner, f"{self.config.DESIGN_NAME}__{corner}.sdf"
             )
             if os.path.isfile(sdf):
                 sdf_dict[corner] = Path(sdf)
@@ -475,13 +478,13 @@ class STAPostPNR(STAPrePNR):
     name = "STA (Post-PnR)"
     long_name = "Static Timing Analysis (Post-PnR)"
 
-    config_vars = STAPrePNR.config_vars + [
-        Variable(
-            "SIGNOFF_SDC_FILE",
-            Optional[Path],
-            "Specifies the SDC file for STA during signoff",
-        ),
-    ]
+    class Config(STAPrePNR.Config):
+        SIGNOFF_SDC_FILE: Optional[Path] = variable(
+            None,
+            description="Specifies the SDC file for STA during signoff",
+        )
+
+    config: Config
 
     inputs = STAPrePNR.inputs + [
         DesignFormat.SPEF,
@@ -491,7 +494,7 @@ class STAPostPNR(STAPrePNR):
 
     def prepare_env(self, env: dict, state: State) -> dict:
         env = super().prepare_env(env, state)
-        if signoff_sdc_file := self.config["SIGNOFF_SDC_FILE"]:
+        if signoff_sdc_file := self.config.SIGNOFF_SDC_FILE:
             env["_SDC_IN"] = signoff_sdc_file
         env["OPENLANE_SDC_IDEAL_CLOCKS"] = "0"
         return env
@@ -504,21 +507,21 @@ class STAPostPNR(STAPrePNR):
         checks_report: str,
         odb_design: str,
     ):
-        tech_lefs = self.toolbox.filter_views(self.config, self.config["TECH_LEFS"])
+        tech_lefs = self.toolbox.filter_views(self.config, self.config.TECH_LEFS)
         if len(tech_lefs) != 1:
             raise StepException(
                 "Misconfigured SCL: 'TECH_LEFS' must return exactly one Tech LEF for its default timing corner."
             )
 
         lefs = ["--input-lef", tech_lefs[0]]
-        for lef in self.config["CELL_LEFS"]:
+        for lef in self.config.CELL_LEFS:
             lefs.append("--input-lef")
             lefs.append(lef)
-        if extra_lefs := self.config["EXTRA_LEFS"]:
+        if extra_lefs := self.config.EXTRA_LEFS:
             for lef in extra_lefs:
                 lefs.append("--input-lef")
                 lefs.append(lef)
-        if pad_lefs := self.config["PAD_LEFS"]:
+        if pad_lefs := self.config.PAD_LEFS:
             for lef in pad_lefs:
                 lefs.append("--input-lef")
                 lefs.append(lef)
@@ -530,7 +533,7 @@ class STAPostPNR(STAPrePNR):
             "-metrics",
             metrics_path,
             "-python",
-            package_path().joinpath("scripts", "odbpy", "filter_unannotated.py"),
+            files("librelane").joinpath("scripts", "odbpy", "filter_unannotated.py"),
             "--corner",
             corner,
             "--checks-report",
@@ -590,9 +593,9 @@ class STAPostPNR(STAPrePNR):
 
         lib_dict.copy()
 
-        for corner in self.config["STA_CORNERS"]:
+        for corner in self.config.STA_CORNERS:
             lib = os.path.join(
-                self.step_dir, corner, f"{self.config['DESIGN_NAME']}__{corner}.lib"
+                self.step_dir, corner, f"{self.config.DESIGN_NAME}__{corner}.lib"
             )
             lib_dict[corner] = Path(lib)
 
