@@ -32,7 +32,7 @@ runs:
       run: |
         echo "EXTRA_SUBSTITUTER_STR=https://${{ inputs.nix_cache_domain }}" >> $GITHUB_ENV
         echo "EXTRA_TRUSTED_KEY_STR=${{ inputs.nix_public_key }}" >> $GITHUB_ENV
-    - uses: DeterminateSystems/nix-installer-action@main
+    - uses: DeterminateSystems/nix-installer-action@33c9ab3ef95cd57c164d9d6eb1f9a46338538d41 # main
       with:
         determinate: false
         extra-conf: |
@@ -41,6 +41,6 @@ runs:
           extra-trusted-public-keys = ${{ env.EXTRA_TRUSTED_KEY_STR }} nix-cache.fossi-foundation.org:3+K59iFwXqKsL7BNu6Guy0v+uTlwsxYQxjspXzqLYQs=
     - name: Inject GitHub Token into Environment
       if: inputs.github_token != ''
-      uses: fossi-foundation/nix-eda/.github/actions/nix_daemon_inject_github_token@5.5.0
+      uses: fossi-foundation/nix-eda/.github/actions/nix_daemon_inject_github_token@396cbc9dba2b9746c43a33c2ff0636b098b1982f # 5.5.0
       with:
         github_token: ${{ inputs.github_token }}

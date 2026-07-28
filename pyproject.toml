@@ -99,6 +99,10 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 pythonpath = "."
+# step_impl_test is deselected by default: those tests shell out to
+# OpenROAD/Magic/Netgen/Yosys, which only exist inside the Nix closure.
+# They run in the build-linux-*/build-darwin jobs. Do not remove this
+# exclusion to "increase coverage" -- it breaks every non-Nix runner.
 addopts = "--strict-markers -m 'not step_impl_test'"
 markers = [
     "all: all tests",
