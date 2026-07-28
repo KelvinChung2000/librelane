@@ -1,6 +1,6 @@
 [project]
 name = "librelane"
-version = "3.0.4"
+version = "3.0.5"
 description = "An infrastructure for implementing chip design flows"
 maintainers = [
     {name = "Mohamed Gaber", email = "donn@fossi-foundation.org"},
@@ -13,12 +13,12 @@ dependencies = [
   "click>=8,<8.3",
   "cloup>=3.0.5,<4",
   "pyyaml>=5,<7",
-  "rich>=12,<15",
+  "rich>=12,<16",
   "ciel>=2.3.1,<3",
-  "lxml>=4.9.0",
+  "lxml>=4.9.0,<7",
   "deprecated>=1.2.10,<2",
   "lln-libparse==0.56.*",
-  "psutil>=5.9.0",
+  "psutil>=5.9.0,<8",
   "httpx>=0.22.0,<0.29",
   "klayout>=0.29.0,<0.32.0",
   "rapidfuzz>=3.9.0,<4",
@@ -35,21 +35,10 @@ documentation = "https://librelane.readthedocs.io"
 [dependency-groups]
 
 lint = [
-    "black",
-    "flake8",
-    "flake8-pytest-style; python_version < '4'",
+    "ruff",
     "mypy>=1.18.2",
     "lxml-stubs",
-    "types-urllib3",
-    "types-typed-ast",
-    "types-six",
-    "types-setuptools",
     "types-PyYAML",
-    "types-docutils",
-    "types-decorator",
-    "types-commonmark",
-    "types-colorama",
-    "types-Pygments",
     "types-Deprecated",
     "types-psutil",
 ]
@@ -59,6 +48,21 @@ test = [
     "pytest-cov",
     "pyfakefs",
     "pillow"
+]
+docs = [
+    "furo>=2024.8.6",
+    "docutils>=0.17,<1",
+    "sphinx>=7.2.2",
+    "sphinx-autobuild>=2021.3.14",
+    "sphinx-autodoc-typehints>=1.24.0",
+    "sphinx-design>=0.5.0,<1",
+    "myst-parser>=2.0.0,<5",
+    "docstring-parser>=0.15,<1",
+    "sphinx-tippy>=0.4.1,<1",
+    "sphinx-copybutton>=0.5.2,<1",
+    "sphinxcontrib-spelling>=8.0.0,<9",
+    "sphinxcontrib-bibtex>=2.6.0,<3",
+    "sphinx-subfigure>=0.2.4,<1",
 ]
 
 [project.scripts]
@@ -70,10 +74,28 @@ librelane = "librelane.__main__:cli"
 "librelane.env_info" = "librelane:env_info_cli"
 
 [tool.ruff]
-# syntax-only check, make sure files are parseable under py310
-# $ ruff check .
 target-version = "py310"
-lint.ignore = ["E", "F"] 
+extend-exclude = ["docs/superpowers"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "PT"]
+ignore = [
+  # Formatting is the formatter's job, and .flake8 waived E5/E1/E2/E3 historically.
+  "E501",  # line-too-long
+  "E731",  # lambda-assignment: 3 deliberate uses
+  "E721",  # type-comparison: 2 deliberate uses
+  "PT001",  # preserve the existing parentheses convention for fixtures
+  "W291", "W293",  # trailing whitespace: formatter's job
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Re-exports. Mirrors .flake8's `*/__init__.py:F401`.
+"**/__init__.py" = ["F401"]
+
+[tool.ruff.format]
+# Match the existing black-formatted style.
+quote-style = "double"
+indent-style = "space"
 
 [tool.pytest.ini_options]
 pythonpath = "."
@@ -84,5 +106,17 @@ markers = [
 ]
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["librelane"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "librelane/",
+  "test/",
+  "Readme.md",
+  "License",
+  "Changelog.md",
+]

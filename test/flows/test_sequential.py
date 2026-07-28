@@ -93,9 +93,9 @@ def test_custom_seqflow(MetricIncrementer):
     )
 
     for step in MyFlow.Steps:
-        assert issubclass(
-            step, MetricIncrementer
-        ), "CustomSequentialFlow could not properly import Steps by id"
+        assert issubclass(step, MetricIncrementer), (
+            "CustomSequentialFlow could not properly import Steps by id"
+        )
 
     flow = MyFlow(
         {
@@ -217,7 +217,9 @@ def test_substitution(MetricIncrementer):
         "Test.MetricIncrementer",
         "Test.MetricIncrementer-1",
         "Test.FinalMetricIncrementer",
-    ], "SequentialFlow did not increment IDs properly for duplicate steps when using tuples"
+    ], (
+        "SequentialFlow did not increment IDs properly for duplicate steps when using tuples"
+    )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")

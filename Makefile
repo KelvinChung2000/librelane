@@ -1,7 +1,7 @@
 all: dist
 .PHONY: dist
-dist: venv/manifest.txt
-	./venv/bin/poetry build
+dist:
+	uv build
 
 .PHONY: mount
 mount:
@@ -24,12 +24,11 @@ docker-image:
 # double-installing is still fast
 .PHONY: docs
 docs:
-	@if [[ -n "$(VIRTUAL_ENV)" ]]; then PYTHONPATH= python3 -m pip install -r ./docs/requirements.txt; fi
-	$(MAKE) -C docs html
+	uv run --group docs $(MAKE) -C docs html
 
 .PHONY: host-docs
 host-docs:
-	python3 -m http.server --directory ./docs/build/html
+	uv run python3 -m http.server --directory ./docs/build/html
 	
 .PHONY: watch-docs
 watch-docs:
@@ -44,44 +43,37 @@ watch-docs:
 
 .PHONY: lint
 lint:
-	black --check .
-	flake8 .
-	mypy --check-untyped-defs .
+	uv run ruff check .
+	uv run ruff format --check .
+	uv run mypy .
 
 .PHONY: coverage-infrastructure
 coverage-infrastructure:
-	python3 -m pytest -n auto\
+	uv run pytest -n auto \
 		--cov=librelane --cov-config=.coveragerc --cov-report html:htmlcov_infra --cov-report term
 
 .PHONY: coverage-steps
 coverage-steps:
-	python3 -m pytest -n auto\
-		--cov=librelane.steps --cov-config=.coveragerc-steps --cov-report html:htmlcov_steps --cov-report term\
+	uv run pytest -n auto \
+		--cov=librelane.steps --cov-config=.coveragerc-steps --cov-report html:htmlcov_steps --cov-report term \
 		-k test_all_steps
 
 .PHONY: check-license
-check-license: venv/manifest.txt
-	./venv/bin/python3 -m pip freeze > ./requirements.frz.txt
+check-license: venv
+	uv pip freeze > ./requirements.frz.txt
 	docker run -v `pwd`:/volume \
 		-it --rm pilosus/pip-license-checker \
 		java -jar app.jar \
 		--requirements '/volume/requirements.frz.txt'
 
-venv: venv/manifest.txt
-venv/manifest.txt: ./pyproject.toml
-	rm -rf venv
-	python3 -m venv ./venv
-	PYTHONPATH= ./venv/bin/python3 -m pip install --upgrade pip
-	PYTHONPATH= ./venv/bin/python3 -m pip install --upgrade wheel poetry poetry-plugin-export
-	PYTHONPATH= ./venv/bin/poetry export --all-groups --without-hashes --format=requirements.txt --output=requirements_tmp.txt
-	PYTHONPATH= ./venv/bin/python3 -m pip install --upgrade -r requirements_tmp.txt
-	PYTHONPATH= ./venv/bin/python3 -m pip freeze > $@
-	@echo ">> Venv prepared."
+.PHONY: venv
+venv:
+	uv sync --all-groups
+	@echo ">> Environment prepared. Use 'uv run <command>'."
 
 .PHONY: veryclean
 veryclean: clean
-veryclean:
-	rm -rf venv/
+	rm -rf .venv/
 
 .PHONY: clean
 clean:

@@ -155,7 +155,6 @@ def librelane_synth(
     keep_hierarchy_instances: List[str],
     keep_hierarchy_modules: List[str],
 ):
-
     d.run_pass("hierarchy", "-check", "-top", top, "-nokeep_prints", "-nokeep_asserts")
     librelane_proc(d, report_dir)
 
@@ -252,7 +251,7 @@ def synthesize(
 
     includes = config.get("VERILOG_INCLUDE_DIRS") or []
     defines = (config.get("VERILOG_DEFINES") or []) + [
-        f"PDK_{config['PDK'].replace('-','_')}",
+        f"PDK_{config['PDK'].replace('-', '_')}",
         f"SCL_{config['STD_CELL_LIBRARY']}",
         "__librelane__",
         "__pnr__",

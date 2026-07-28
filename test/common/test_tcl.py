@@ -31,19 +31,19 @@ def _mock_fs():
 def test_escape():
     from librelane.common import TclUtils
 
-    assert (
-        TclUtils.escape("ringo") == r"ringo"
-    ), ".escape altered a non-dangerous string"
+    assert TclUtils.escape("ringo") == r"ringo", (
+        ".escape altered a non-dangerous string"
+    )
     assert TclUtils.escape("r ingo") == r'"r ingo"', ".escape neglected whitespace"
-    assert (
-        TclUtils.escape("[expr ringo]") == r'"\[expr ringo]"'
-    ), ".escape neglected expression braces"
-    assert (
-        TclUtils.escape("[expr $ringo]") == r'"\[expr \$ringo]"'
-    ), ".escape neglected dollar sign"
-    assert (
-        TclUtils.escape("[expr \\$ringo]") == r'"\[expr \\\$ringo]"'
-    ), ".escape neglected backslash"
+    assert TclUtils.escape("[expr ringo]") == r'"\[expr ringo]"', (
+        ".escape neglected expression braces"
+    )
+    assert TclUtils.escape("[expr $ringo]") == r'"\[expr \$ringo]"', (
+        ".escape neglected dollar sign"
+    )
+    assert TclUtils.escape("[expr \\$ringo]") == r'"\[expr \\\$ringo]"', (
+        ".escape neglected backslash"
+    )
 
 
 @pytest.mark.usefixtures("_mock_fs")
@@ -114,9 +114,9 @@ def test_eval_env():
         """,
     )
 
-    assert (
-        os.getenv("STD_CELL_LIBRARY") == "sky130_fd_sc_hd"
-    ), "env_from_tcl unset a previously set environment variable"
+    assert os.getenv("STD_CELL_LIBRARY") == "sky130_fd_sc_hd", (
+        "env_from_tcl unset a previously set environment variable"
+    )
 
     del os.environ["STD_CELL_LIBRARY"]
 

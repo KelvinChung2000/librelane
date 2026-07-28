@@ -429,9 +429,9 @@ def test_with_increment():
         config.flow_common_variables + step1_variables, {}, True
     )
 
-    assert (
-        step1_cfg == step1_cfg_incr
-    ), "_with_increment not properly working as a filter"
+    assert step1_cfg == step1_cfg_incr, (
+        "_with_increment not properly working as a filter"
+    )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -570,9 +570,9 @@ def test_pdk():
             pdk="dumm",
         )
 
-    assert True in [
-        "similarly-named" in warning for warning in e.value.warnings
-    ], "invalid PDK did not return suggestions in warnings"
+    assert True in ["similarly-named" in warning for warning in e.value.warnings], (
+        "invalid PDK did not return suggestions in warnings"
+    )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -602,11 +602,13 @@ def test_invalid_keys(caplog: pytest.LogCaptureFixture):
     except InvalidConfig as e:
         assert (  # noqa: PT017
             e is None
-        ), "unknown variable triggered an error when loading from a meta.version: 1 JSON file"
+        ), (
+            "unknown variable triggered an error when loading from a meta.version: 1 JSON file"
+        )
 
-    assert (
-        "unknown key" in caplog.text
-    ), "unknown variable did not trigger a warning when loading from a meta.version: 1 JSON file"
+    assert "unknown key" in caplog.text, (
+        "unknown variable did not trigger a warning when loading from a meta.version: 1 JSON file"
+    )
     caplog.clear()
 
     with pytest.raises(InvalidConfig, match="Unknown key") as e:
@@ -623,9 +625,9 @@ def test_invalid_keys(caplog: pytest.LogCaptureFixture):
             pdk_root="/pdk",
         )
 
-    assert (
-        e is not None
-    ), "unknown variable did not trigger an error when loading from dict"
+    assert e is not None, (
+        "unknown variable did not trigger an error when loading from dict"
+    )
 
     Config.load(
         {
@@ -640,9 +642,9 @@ def test_invalid_keys(caplog: pytest.LogCaptureFixture):
         pdk_root="/pdk",
     )
 
-    assert (
-        "has been removed" in caplog.text
-    ), "removed variable did not trigger a warning when loading from a meta.version: 1 JSON file"
+    assert "has been removed" in caplog.text, (
+        "removed variable did not trigger a warning when loading from a meta.version: 1 JSON file"
+    )
     caplog.clear()
 
 
@@ -724,7 +726,7 @@ def test_dis_migration(caplog: pytest.LogCaptureFixture):
     assert cfg["RUN_HEURISTIC_DIODE_INSERTION"], "failed to migrate dis 6 properly"
     assert cfg["DIODE_ON_PORTS"] == "in", "failed to migrate dis 6 properly"
 
-    assert (
-        "See 'Migrating DIODE_INSERTION_STRATEGY'" in caplog.text
-    ), "diode insertion strategy did not trigger a warning"
+    assert "See 'Migrating DIODE_INSERTION_STRATEGY'" in caplog.text, (
+        "diode insertion strategy did not trigger a warning"
+    )
     caplog.clear()

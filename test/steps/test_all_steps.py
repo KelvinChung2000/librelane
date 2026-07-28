@@ -87,7 +87,6 @@ def test_step_folder(
     pdk_root: str,
     caplog: pytest.LogCaptureFixture,
 ):
-
     from librelane.steps import Step
     from librelane.state import State
     from librelane.config import Config

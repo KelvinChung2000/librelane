@@ -167,13 +167,13 @@ def test_factory(DummyFlow: Type[flow.Flow]):
 
     Flow.factory.register("AnotherName")(DummyFlow)
 
-    assert (
-        "AnotherName" in Flow.factory.list()
-    ), "failed to register new dummy flow by another name"
+    assert "AnotherName" in Flow.factory.list(), (
+        "failed to register new dummy flow by another name"
+    )
 
-    assert (
-        Flow.factory.get("Dummy") == DummyFlow
-    ), "failed to retrieve registered dummy flow"
+    assert Flow.factory.get("Dummy") == DummyFlow, (
+        "failed to retrieve registered dummy flow"
+    )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -191,9 +191,9 @@ def test_init_and_config_vars(DummyFlow: Type[flow.Flow], variable: Variable):
         pdk_root="/pdk",
     )
 
-    assert flow.get_all_config_variables() == pytest.COMMON_FLOW_VARS + [
-        variable
-    ], "flow config variables did not match"
+    assert flow.get_all_config_variables() == pytest.COMMON_FLOW_VARS + [variable], (
+        "flow config variables did not match"
+    )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -229,30 +229,30 @@ def test_clashing_variables(DummyFlow: Type[flow.Flow], MockStepTuple):
 @mock_variables([flow])
 def test_progress_bar(DummyFlow: Type[flow.Flow]):
     def run_override(self: DummyFlow, initial_state, **kwargs):
-        assert (
-            self.progress_bar.started
-        ), ".start() did not start the progress bar rendering"
+        assert self.progress_bar.started, (
+            ".start() did not start the progress bar rendering"
+        )
 
-        assert (
-            self.progress_bar._FlowProgressBar__progress.start_called_count == 1
-        ), "start called more than once"
+        assert self.progress_bar._FlowProgressBar__progress.start_called_count == 1, (
+            "start called more than once"
+        )
 
         self.progress_bar.set_max_stage_count(2)
-        assert (
-            self.progress_bar._FlowProgressBar__progress.total == 2
-        ), ".set_max_stage_count() failed to set progress bar total"
+        assert self.progress_bar._FlowProgressBar__progress.total == 2, (
+            ".set_max_stage_count() failed to set progress bar total"
+        )
 
         self.progress_bar.start_stage("literally whatever")
 
         self.progress_bar.end_stage()
 
-        assert (
-            self.progress_bar._FlowProgressBar__progress.update_called_count == 3
-        ), "unexpected progress bar update count"
+        assert self.progress_bar._FlowProgressBar__progress.update_called_count == 3, (
+            "unexpected progress bar update count"
+        )
 
-        assert (
-            self.progress_bar._FlowProgressBar__progress.completed == 1
-        ), "task complete count out of sync"
+        assert self.progress_bar._FlowProgressBar__progress.completed == 1, (
+            "task complete count out of sync"
+        )
 
         self.progress_bar.get_ordinal_prefix() == "2-", "incorrect ordinal returned"
 
@@ -314,27 +314,27 @@ def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple):
 
     create_dir("/cwd/runs/MY_TAG")
     flow.start(tag="MY_TAG")
-    assert (
-        "Starting a new run of the" in caplog.text
-    ), ".start() with an empty folder did not print a message about a new run"
+    assert "Starting a new run of the" in caplog.text, (
+        ".start() with an empty folder did not print a message about a new run"
+    )
     caplog.clear()
 
     flow.start(tag="MY_TAG2")
     caplog.clear()
 
     state = flow.start(tag="MY_TAG2")
-    assert (
-        "Using existing run at" in caplog.text
-    ), ".start() with a non-empty folder did not print a message about an existing run"
-    assert (
-        state.metrics["step"] == 3
-    ), ".start() using existing run failed to return latest state"
+    assert "Using existing run at" in caplog.text, (
+        ".start() with a non-empty folder did not print a message about an existing run"
+    )
+    assert state.metrics["step"] == 3, (
+        ".start() using existing run failed to return latest state"
+    )
     caplog.clear()
 
     flow.start(last_run=True)
-    assert flow.run_dir.endswith(
-        "MY_TAG2"
-    ), ".start() with last_run failed to return latest run"
+    assert flow.run_dir.endswith("MY_TAG2"), (
+        ".start() with last_run failed to return latest run"
+    )
 
     create_file("/cwd/runs/MY_TAG3", contents="")
     with pytest.raises(

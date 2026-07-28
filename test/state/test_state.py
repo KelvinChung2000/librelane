@@ -209,9 +209,9 @@ def test_save():
     assert os.path.exists(save_nl_path), "save_snapshot failed to create netlist"
     assert os.path.exists(save_spef_path), "save_snapshot failed to create spef"
 
-    assert (
-        json.load(open(save_metrics_path, encoding="utf8")) == test_metrics
-    ), "serialized metrics does not match previous object"
+    assert json.load(open(save_metrics_path, encoding="utf8")) == test_metrics, (
+        "serialized metrics does not match previous object"
+    )
 
     f = open(save_nl_path, encoding="utf8")
     save_nl_contents = f.read()

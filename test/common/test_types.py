@@ -33,6 +33,6 @@ def test_is_real_number():
 
     assert is_real_number(10) is True, "integer was not real number"
     assert is_real_number(inf) is False, "infinity was real number"
-    assert (
-        is_real_number(Decimal("-Infinity")) is False
-    ), "decimal infinity was real number"
+    assert is_real_number(Decimal("-Infinity")) is False, (
+        "decimal infinity was real number"
+    )

@@ -64,9 +64,9 @@ def test_metric_check_pass(
             metrics={"design__burnt_potato__count": 0},
         )
     )
-    assert (
-        "Check for Burnt Potato Count clear" in caplog.text
-    ), "Metric check did not pass"
+    assert "Check for Burnt Potato Count clear" in caplog.text, (
+        "Metric check did not pass"
+    )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -83,9 +83,9 @@ def test_metric_check_not_found(
             metrics={"design__burnt_potatoes__count": 0},
         )
     )
-    assert (
-        "metric was not found" in caplog.text
-    ), "Metric check did not flag appropriate warning"
+    assert "metric was not found" in caplog.text, (
+        "Metric check did not flag appropriate warning"
+    )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")

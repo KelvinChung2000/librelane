@@ -9,10 +9,19 @@
     ciel.url = "github:fossi-foundation/ciel";
     devshell.url = "github:numtide/devshell";
     flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.tar.gz";
+    pyproject-nix.url = "github:pyproject-nix/pyproject.nix";
+    uv2nix.url = "github:pyproject-nix/uv2nix";
+    pyproject-build-systems.url = "github:pyproject-nix/build-system-pkgs";
   };
 
   inputs.ciel.inputs.nix-eda.follows = "nix-eda";
   inputs.devshell.inputs.nixpkgs.follows = "nix-eda/nixpkgs";
+  inputs.pyproject-nix.inputs.nixpkgs.follows = "nix-eda/nixpkgs";
+  inputs.uv2nix.inputs.nixpkgs.follows = "nix-eda/nixpkgs";
+  inputs.uv2nix.inputs.pyproject-nix.follows = "pyproject-nix";
+  inputs.pyproject-build-systems.inputs.nixpkgs.follows = "nix-eda/nixpkgs";
+  inputs.pyproject-build-systems.inputs.pyproject-nix.follows = "pyproject-nix";
+  inputs.pyproject-build-systems.inputs.uv2nix.follows = "uv2nix";
 
   outputs =
     {
@@ -20,6 +29,9 @@
       nix-eda,
       ciel,
       devshell,
+      pyproject-nix,
+      uv2nix,
+      pyproject-build-systems,
       ...
     }:
     let
@@ -59,6 +71,21 @@
             pkgs': pkgs: pypkgs': pypkgs:
             let
               callPythonPackage = lib.callPackageWith (pkgs' // pypkgs');
+              workspace = uv2nix.lib.workspace.loadWorkspace {
+                workspaceRoot = ./.;
+              };
+              pythonBase = pkgs.callPackage pyproject-nix.build.packages {
+                python = pkgs.python3;
+              };
+              pythonSet = pythonBase.overrideScope (
+                lib.composeManyExtensions [
+                  pyproject-build-systems.overlays.wheel
+                  (workspace.mkPyprojectOverlay {
+                    sourcePreference = "wheel";
+                  })
+                ]
+              );
+              librelaneEnv = pythonSet.mkVirtualEnv "librelane-python-env" workspace.deps.default;
             in
             {
               libparse = callPythonPackage ./nix/libparse.nix { };
@@ -80,7 +107,7 @@
 
               # ---
               librelane = callPythonPackage ./default.nix {
-                flake = self;
+                inherit librelaneEnv;
               };
             }
           ))

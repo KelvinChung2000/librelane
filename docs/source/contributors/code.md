@@ -31,36 +31,11 @@ ensure nothing has gone horribly wrong.
 Python code should be written for Python 3.10+, and be **typed**. i.e., we
 require explicit type annotations for all major API functions.
 
-You will need to ensure that your Python code passes linting with our three
-chosen tools (and one optional tool):
+Run `make lint` to check formatting, linting, and types. To auto-fix:
 
-```{list-table}
-:header-rows: 1
-:widths: 10 10 15 75
-
-* - Tool
-  - Kind
-  - Command
-  - Description
-* - [black](https://github.com/psf/black)
-  - [Formatter](https://en.wikipedia.org/wiki/Prettyprint#Programming_code_formatting)
-  - `black .`
-  - Ensures indentation and whitespace follow a strict standard without having you lift a finger.
-* - [flake8](https://github.com/pycqa/flake8)
-  - [Linter](https://en.wikipedia.org/wiki/Lint_(software)>)
-  - `flake8 .`
-  - Finds a number of common programming pitfalls.
-* - [mypy](https://github.com/python/mypy)
-  - [Type-Checker](https://en.wikipedia.org/wiki/Type_system#Type_checking)
-  - `mypy .`
-  - Ensures that you're using compatible types, i.e., you are not passing a `string` to a function that accepts an `int`, or passing `None` to a non-optional variable, and such.
-* - [ruff](https://github.com/astral-sh/ruff) (optional)
-  - [Linter](https://en.wikipedia.org/wiki/Lint_(software)>)
-  - `ruff check .`
-  - Our `pyproject.toml` uses ruff as a simple parsing checker, i.e., makes sure
-    your code can still parse under Python 3.8 as it is entirely too easy to
-    write code that by accident only works on later versions of Python. We
-    presently do not use other features of ruff.
+```console
+$ uv run ruff check --fix .
+$ uv run ruff format .
 ```
 
 Do all arithmetic either in integers or using the Python

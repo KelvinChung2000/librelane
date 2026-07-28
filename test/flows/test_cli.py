@@ -46,9 +46,9 @@ def test_only_flag():
     )
     assert result["frm"] == "this-step", "only flag not translated to frm correctly"
     assert result["to"] == "this-step", "only flag not translated to to correctly"
-    assert (
-        "only" not in result
-    ), "only flag not disposed of after translating to from and to"
+    assert "only" not in result, (
+        "only flag not disposed of after translating to from and to"
+    )
 
 
 @pytest.mark.usefixtures("_chdir_tmp")
@@ -164,7 +164,7 @@ def test_initial_state(fs: FakeFilesystem, caplog: pytest.LogCaptureFixture):
         ["--with-initial-state", "/cwd/non_dict.json"],
         standalone_mode=False,
     )
-    assert (
-        "is not a dictionary" in caplog.text
-    ), "Non-dictionary JSON file did not report an error"
+    assert "is not a dictionary" in caplog.text, (
+        "Non-dictionary JSON file did not report an error"
+    )
     caplog.clear()

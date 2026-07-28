@@ -69,9 +69,9 @@ def test_tcl_step_value_to_tcl():
 
     numerical_list_value = [1.0, 2.1000, 3, 4.01]
     numerical_list_value_string = "1.0 2.1 3 4.01"
-    assert (
-        TclStep.value_to_tcl(numerical_list_value) == numerical_list_value_string
-    ), "Wrong numerical list to tcl list conversion"
+    assert TclStep.value_to_tcl(numerical_list_value) == numerical_list_value_string, (
+        "Wrong numerical list to tcl list conversion"
+    )
 
     alphanumerical_list_value = [
         1.0,
@@ -109,9 +109,9 @@ def test_tcl_step_value_to_tcl():
 
     dict_value = {"abc": 1}
     dict_value_string = "abc 1"
-    assert (
-        TclStep.value_to_tcl(dict_value) == dict_value_string
-    ), "Wrong dict to tcl conversion"
+    assert TclStep.value_to_tcl(dict_value) == dict_value_string, (
+        "Wrong dict to tcl conversion"
+    )
     dict_value = {
         "abc": 1,
         "cde": "123",
@@ -178,14 +178,14 @@ def test_env(mock_config):  # noqa: F811
 
     step = TclStepTest(config=mock_config, state_in=state_in)
     env = step.prepare_env({}, state_in)
-    assert (
-        env["STEP_DIR"] == TclStepTest.step_dir
-    ), "Wrong prepared env. Bad STEP_DIR value"
+    assert env["STEP_DIR"] == TclStepTest.step_dir, (
+        "Wrong prepared env. Bad STEP_DIR value"
+    )
     assert env["CURRENT_NL"] == "abc", "Wrong prepared env. Bad CURRENT_ input"
     assert "SAVE_NL" in env, "Wrong prepared env. SAVE_NL missing"
     for var in mock_config:
         if mock_config[var] is not None:
             assert var in env, "Wrong prepared env. Missing config variable"
-            assert env[var] == TclStep.value_to_tcl(
-                mock_config[var]
-            ), "Wrong prepared env. Mismatching configuration variable"
+            assert env[var] == TclStep.value_to_tcl(mock_config[var]), (
+                "Wrong prepared env. Mismatching configuration variable"
+            )

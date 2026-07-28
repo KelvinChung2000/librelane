@@ -14,7 +14,6 @@
 import logging
 import os
 import tempfile
-from shutil import rmtree
 from unittest import mock
 from decimal import Decimal
 from typing import Any, Literal, Optional, Iterable, Callable, List, Dict

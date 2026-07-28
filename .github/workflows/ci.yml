@@ -44,11 +44,12 @@ jobs:
       ihp-sg13g2_hash: ${{ steps.set-rev.outputs.ihp-sg13g2_hash }}
     steps:
       - uses: actions/checkout@v6
-      - name: Python Dependencies
-        run: |
-          pip3 install poetry poetry-plugin-export
-          poetry export --all-groups --without-hashes --format=requirements.txt --output=requirements_tmp.txt
-          pip3 install -r requirements_tmp.txt
+      - name: Set Up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Dependencies
+        run: uv sync --all-groups --locked
       - name: Determine If Running Extended Test Set
         run: |
           export EVENT_NAME=${{ github.event_name }};
@@ -108,11 +109,14 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.10"
-      - name: Install Linters
-        run: make venv
+      - name: Set Up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Dependencies
+        run: uv sync --all-groups --locked
       - name: Lint
-        run: |
-          PATH=$PWD/venv/bin:$PATH make lint
+        run: make lint
   build-py:
     runs-on: ubuntu-22.04
     needs: [lint, prepare-test-matrices]
@@ -128,13 +132,17 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Set Up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Dependencies
+        run: uv sync --all-groups --locked
       - name: Run Unit Tests
         run: |
-          make venv
-
-          ./venv/bin/coverage run -m pytest -n auto --pdk-root="./.ciel-sky130"
-          ./venv/bin/coverage report
-          ./venv/bin/coverage html
+          uv run --no-sync coverage run -m pytest -n auto --pdk-root="./.ciel-sky130"
+          uv run --no-sync coverage report
+          uv run --no-sync coverage html
   build-linux-x86_64:
     needs: lint
     runs-on: ubuntu-22.04
@@ -407,6 +415,10 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.10"
+      - name: Set Up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
       - if: ${{ matrix.engine == 'docker' }}
         name: Set up Docker (If applicable)
         run: |
@@ -434,11 +446,11 @@ jobs:
       # Do not cache the PDK. We would like to test the typical Docker flow here.
       - name: Smoke-Test Container Image
         run: |
-          make venv
+          uv sync --all-groups --locked
           mkdir -p $HOME/.ciel
           chmod -R 755 $HOME/.ciel
           export LIBRELANE_IMAGE_OVERRIDE=librelane:tmp-x86_64-linux
-          ./venv/bin/python3 -m librelane\
+          uv run --no-sync python3 -m librelane\
             $lln_no_tty\
             $lln_containerized\
             --pdk-root ./.ciel-sky130\
@@ -462,6 +474,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
+      - name: Set Up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Dependencies
+        run: uv sync --locked
       - name: Check if Git
         run: |
           git status || true
@@ -492,8 +510,7 @@ jobs:
       - name: Enable PDKs
         if: steps.cache-pdk.outputs.cache-hit != 'true'
         run: |
-          pipx run ciel==$(perl -ne 'print /version\s*=\s*"([\d\.]+)"/ if $c; $c = /name\s*=\s*"ciel"/' ./poetry.lock )\
-            -- enable --pdk ${{ matrix.design.pdk_family }} \
+          uv run --no-sync ciel enable --pdk ${{ matrix.design.pdk_family }} \
             --pdk-root ./.ciel-${{ matrix.design.pdk_family }} \
             ${{ env.PDK_HASH }}
 
@@ -621,10 +638,15 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Set Up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
       - name: Setup
         run: |
           sudo apt-get install -y python3-tk
-          python3 -m pip install -e .
+          uv sync --locked
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
           echo "BRANCH_NAME=${GITHUB_REF##*/}" >> $GITHUB_ENV
       - name: Download Metrics
         uses: actions/download-artifact@v8
@@ -750,6 +772,11 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.10"
+      - name: Set Up uv
+        if: ${{ env.PUBLISH == '1' }}
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
       - name: Build Distribution
         if: ${{ env.PUBLISH == '1' }}
         run: |

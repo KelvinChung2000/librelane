@@ -52,7 +52,7 @@ def _generate_read_deps(
     commands = ""
 
     synth_defines = [
-        f"PDK_{config['PDK'].replace('-','_')}",
+        f"PDK_{config['PDK'].replace('-', '_')}",
         f"SCL_{config['STD_CELL_LIBRARY']}",
         "__librelane__",
         "__pnr__",
@@ -194,18 +194,6 @@ class YosysStep(TclStep):
             Optional[Path],
             "A path to a file containing the full adder mapping for Yosys.",
             deprecated_names=["FULL_ADDER_MAP"],
-            pdk=True,
-        ),
-        Variable(
-            "SYNTH_MUX_MAP",
-            Optional[Path],
-            "A path to a file containing the mux mapping for Yosys.",
-            pdk=True,
-        ),
-        Variable(
-            "SYNTH_MUX4_MAP",
-            Optional[Path],
-            "A path to a file containing the mux4 mapping for Yosys.",
             pdk=True,
         ),
         Variable(

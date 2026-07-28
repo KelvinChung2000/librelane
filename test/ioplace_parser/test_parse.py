@@ -31,23 +31,23 @@ def test_parse():
 
     example_parsed = parse(example_str)
 
-    assert example_parsed["N"].min_distance == Decimal(
-        "0.42"
-    ), "min distance not set for north"
+    assert example_parsed["N"].min_distance == Decimal("0.42"), (
+        "min distance not set for north"
+    )
 
     for side in ["E", "W", "S"]:
-        assert (
-            example_parsed[side].min_distance is None
-        ), "min distance set for unset side"
+        assert example_parsed[side].min_distance is None, (
+            "min distance set for unset side"
+        )
 
     for side in ["N", "E", "W"]:
-        assert (
-            example_parsed[side].sort_mode is Order.bitMajor
-        ), f"global @bit_major annotation did not affect side {side}"
+        assert example_parsed[side].sort_mode is Order.bitMajor, (
+            f"global @bit_major annotation did not affect side {side}"
+        )
 
-    assert (
-        example_parsed["S"].sort_mode == Order.busMajor
-    ), "per-direction @bus_major annotation did not affect S"
+    assert example_parsed["S"].sort_mode == Order.busMajor, (
+        "per-direction @bus_major annotation did not affect S"
+    )
 
 
 def test_global_min():
@@ -58,9 +58,9 @@ def test_global_min():
 
     example_parsed = parse(example_str)
     for side in ["N", "E", "W", "S"]:
-        assert example_parsed[side].min_distance == Decimal(
-            "0"
-        ), f"min distance unset for {side} with global option"
+        assert example_parsed[side].min_distance == Decimal("0"), (
+            f"min distance unset for {side} with global option"
+        )
 
 
 @pytest.mark.xfail(

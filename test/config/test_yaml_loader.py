@@ -40,16 +40,16 @@ def test_yaml_decimals():
     nan_found = False
     inf_found = False
     for i, number in enumerate(result.values()):
-        assert isinstance(
-            number, Decimal
-        ), f"YAML float load did not return a decimal at index {i}"
+        assert isinstance(number, Decimal), (
+            f"YAML float load did not return a decimal at index {i}"
+        )
         if isnan(number):
             nan_found = True
         elif isinf(number):
             inf_found = True
         else:
-            assert number == Decimal(
-                "1230.15"
-            ), f"YAML float load returned incorrect number at index {i}"
+            assert number == Decimal("1230.15"), (
+                f"YAML float load returned incorrect number at index {i}"
+            )
     assert nan_found, "Failed to parse nan"
     assert inf_found, "Failed to parse inf"
