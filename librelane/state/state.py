@@ -13,12 +13,15 @@
 # limitations under the License.
 from __future__ import annotations
 
+from loguru import logger
+
 import io
 import os
 import csv
 import sys
 import json
 import shutil
+import pathlib
 from decimal import Decimal
 from typing import Union, Any
 from collections.abc import Callable, Mapping
@@ -30,10 +33,8 @@ from .design_format import (
 from ..common import (
     Path,
     GenericImmutableDict,
-    mkdirp,
     copy_recursive,
 )
-from ..logging import info
 
 
 class InvalidState(RuntimeError):
@@ -154,7 +155,9 @@ class State(GenericImmutableDict[str, StateElement]):
         self,
         views: dict | "State",
         save_directory: str | os.PathLike,
-        visit: Callable[[str, StateElement, str, str, int], StateElement],
+        visit: Callable[
+            [str, StateElement, str, str | os.PathLike[str], int], StateElement
+        ],
         key_path: str = "",
         depth: int = 0,
         top_key: str | None = None,
@@ -167,7 +170,7 @@ class State(GenericImmutableDict[str, StateElement]):
             if df := DesignFormat.factory.get(key):
                 current_folder = df.folder
 
-            target_dir = os.path.join(save_directory, current_folder)
+            target_dir = pathlib.Path(save_directory) / current_folder
 
             current_key_path = f"{key_path}.{key}"
             visit(current_key_path, value, current_top_key, target_dir, depth)
@@ -202,20 +205,19 @@ class State(GenericImmutableDict[str, StateElement]):
         def visitor(key, value, top_key, save_directory, depth):
             if not isinstance(value, Path):
                 return
-            mkdirp(save_directory)
-            target_path = os.path.join(save_directory, os.path.basename(value))
+            save_directory.mkdir(parents=True, exist_ok=True)
+            target_path = save_directory / pathlib.Path(value).name
             shutil.copyfile(value, target_path, follow_symlinks=True)
 
         self.validate()
-        info(f"Saving views to '{os.path.abspath(path)}'…")
-        mkdirp(path)
-        self._walk(self, path, visitor)
-        metrics_csv_path = os.path.join(path, "metrics.csv")
-        with open(metrics_csv_path, "w", encoding="utf8") as f:
+        snapshot_path = pathlib.Path(path).resolve()
+        logger.info(f"Saving views to '{snapshot_path}'…")
+        snapshot_path.mkdir(parents=True, exist_ok=True)
+        self._walk(self, snapshot_path, visitor)
+        with (snapshot_path / "metrics.csv").open("w", encoding="utf8") as f:
             self.metrics_to_csv(f)
 
-        metrics_json_path = os.path.join(path, "metrics.json")
-        with open(metrics_json_path, "w", encoding="utf8") as f:
+        with (snapshot_path / "metrics.json").open("w", encoding="utf8") as f:
             f.write(self.metrics.dumps())
 
     def metrics_to_csv(
@@ -276,13 +278,13 @@ class State(GenericImmutableDict[str, StateElement]):
             elif isinstance(value, list):
                 target[key] = []
                 for entry in value:
-                    if validate_path and not os.path.exists(entry):
+                    if validate_path and not pathlib.Path(entry).exists():
                         raise ValueError(
                             f"Provided path '{entry}' to design format '{current_key_path}' does not exist."
                         )
                     target[key].append(Path(entry))
             else:
-                if validate_path and not os.path.exists(value):
+                if validate_path and not pathlib.Path(value).exists():
                     raise ValueError(
                         f"Provided path '{value}' to design format '{current_key_path}' does not exist."
                     )

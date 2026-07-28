@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import shlex
 import inspect
 from enum import Enum
 from decimal import Decimal, InvalidOperation
@@ -25,6 +24,7 @@ from dataclasses import (
 )
 import types
 import textwrap
+from itertools import chain, repeat
 from typing import (
     ClassVar,
     Literal,
@@ -36,7 +36,7 @@ from typing import (
 )
 from collections.abc import Iterable, Mapping, Callable
 from ..state import DesignFormat, State
-from ..common import GenericDict, Path, is_string, zip_first, Number, slugify
+from ..common import GenericDict, Path, TclUtils, is_string, Number, slugify
 
 # Scalar = Union[Type[str], Type[Decimal], Type[Path], Type[bool]]
 # VType = Union[Scalar, List[Scalar]]
@@ -577,7 +577,7 @@ class Variable:
                 elif ";" in raw:
                     raw = raw.split(";")
                 else:
-                    raw = raw.split()
+                    raw = TclUtils.split(raw)
                 if len(raw) and raw[-1] == "":
                     raw.pop()  # Trailing commas
             else:
@@ -592,7 +592,7 @@ class Variable:
                     )
 
             for i, (item, value_type) in enumerate(
-                zip_first(raw, type_args, fillvalue=type_args[0])
+                zip(raw, chain(type_args, repeat(type_args[0])))
             ):
                 return_value.append(
                     self.__process(
@@ -620,7 +620,7 @@ class Variable:
                     )
                 components = raw
                 if is_string(raw):
-                    components = shlex.split(raw)
+                    components = TclUtils.split(raw)
                 assert isinstance(components, list)
                 # Assuming Tcl format:
                 if len(components) % 2 != 0:

@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
 import os
 import re
 import uuid
@@ -36,7 +38,6 @@ from .metrics import aggregate_metrics
 from .generic_dict import GenericImmutableDict, is_string
 from ..state import DesignFormat
 from ..common import Filter
-from ..logging import debug, warn, err
 
 
 class Toolbox(object):
@@ -225,7 +226,7 @@ class Toolbox(object):
 
         all_libs: list[Path] = self.filter_views(config, config["LIB"], timing_corner)
         if len(all_libs) == 0:
-            warn(f"No SCL lib files found for {timing_corner}.")
+            logger.warning(f"No SCL lib files found for {timing_corner}.")
 
         all_netlists: list[Path] = []
         all_spefs: list[tuple[str, Path]] = []
@@ -250,15 +251,15 @@ class Toolbox(object):
                     timing_corner,
                 )
                 if len(netlists) and not len(spefs):
-                    warn(
+                    logger.warning(
                         f"Netlists found for macro {module}, but no parasitics extraction found at corner {timing_corner}. The netlist cannot be used for timing on this module."
                     )
                 elif len(spefs) and not len(netlists):
-                    warn(
+                    logger.warning(
                         f"Parasitics extraction(s) found for macro {module} at corner {timing_corner}, but no netlist found. The parasitics cannot be used for timing on this module."
                     )
                 elif len(spefs) and len(netlists):
-                    debug(f"Adding {[netlists + spefs]} to timing info…")
+                    logger.debug(f"Adding {[netlists + spefs]} to timing info…")
                     all_netlists += netlists
                     for spef in spefs:
                         for instance in macro.instances:
@@ -271,11 +272,11 @@ class Toolbox(object):
                 timing_corner,
             )
             if not len(libs):
-                warn(
+                logger.warning(
                     f"No libs found for macro {module} at corner {timing_corner}. The module will be black-boxed."
                 )
                 continue
-            debug(f"Adding {libs} to timing info…")
+            logger.debug(f"Adding {libs} to timing info…")
             all_libs += libs
 
         return (timing_corner, all_libs, all_netlists, all_spefs)
@@ -346,10 +347,12 @@ class Toolbox(object):
                     os.path.join(d, f"{config['DESIGN_NAME']}.png"), "rb"
                 ).read()
         except InvalidConfig:
-            warn("PDK is incompatible with KLayout. Unable to generate preview.")
+            logger.warning(
+                "PDK is incompatible with KLayout. Unable to generate preview."
+            )
             return None
         except StepError as e:
-            warn(f"Failed to generate preview: {e}.")
+            logger.warning(f"Failed to generate preview: {e}.")
             return None
 
     def remove_cells_from_lib(
@@ -427,7 +430,7 @@ class Toolbox(object):
     ) -> str:
         mkdirp(self.tmp_dir)
         out_path = os.path.join(self.tmp_dir, f"{uuid.uuid4().hex}.bb.v")
-        debug(f"Creating cell models for {input_models} at '{out_path}'…")
+        logger.debug(f"Creating cell models for {input_models} at '{out_path}'…")
         bad_yosys_line = re.compile(r"^\s+(\w+|(\\\S+?))\s*\(.*\).*;")
 
         stack: list[Literal["specify", "primitive"]] = []
@@ -459,12 +462,12 @@ class Toolbox(object):
                                 print("/* removed primitive */", file=out)
                     print("", file=out)
                 except ValueError as e:
-                    err(f"Failed to pre-process input models for linting: {e}")
+                    logger.error(f"Failed to pre-process input models for linting: {e}")
 
         yosys = shutil.which("yosys") or shutil.which("yowasp-yosys")
 
         if yosys is None:
-            warn(
+            logger.warning(
                 "yosys and yowasp-yosys not found in PATH. This may trigger issues with blackboxing."
             )
             return out_path
@@ -492,9 +495,11 @@ class Toolbox(object):
             )
         except subprocess.CalledProcessError as e:
             output_log.close()
-            err(f"Failed to pre-process input models for linting with Yosys: {e}")
-            err(open(output_log_path, "r", encoding="utf8").read())
-            err("Will attempt to load models into linter as-is.")
+            logger.error(
+                f"Failed to pre-process input models for linting with Yosys: {e}"
+            )
+            logger.error(open(output_log_path, "r", encoding="utf8").read())
+            logger.error("Will attempt to load models into linter as-is.")
 
         return out_path
 
@@ -525,13 +530,15 @@ class Toolbox(object):
 
         if default_operating_conditions_id is None:
             if len(operating_conditions_raw) > 1:
-                warn(
+                logger.warning(
                     f"No default operating condition defined in lib file '{input_lib}', and the lib file has multiple operating conditions."
                 )
                 return None
 
             elif len(operating_conditions_raw) < 1:
-                warn(f"Lib file '{input_lib}' has no operating conditions set.")
+                logger.warning(
+                    f"Lib file '{input_lib}' has no operating conditions set."
+                )
                 return None
             default_operating_conditions_id = list(operating_conditions_raw.keys())[0]
 

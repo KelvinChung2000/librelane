@@ -14,16 +14,14 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import threading
-from enum import Enum
-from decimal import Decimal
 from abc import abstractmethod
-from dataclasses import is_dataclass, asdict
 from typing import (
     Any,
     ClassVar,
 )
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Sequence
 
 from .step import ViewsUpdate, MetricsUpdate, Step, StepException
 
@@ -31,9 +29,21 @@ from ..state import State, DesignFormat
 from ..common import (
     Path,
     TclUtils,
-    get_script_dir,
     protected,
-    is_string,
+)
+from ..resources import package_path
+
+_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "PYTHONPATH",
+        "SCRIPTS_DIR",
+        "DESIGN_DIR",
+        "STEP_DIR",
+        "PDK_ROOT",
+        "PDK",
+        "_TCL_ENV_IN",
+    }
 )
 
 
@@ -53,40 +63,9 @@ class TclStep(Step):
     @staticmethod
     def value_to_tcl(value: Any) -> str:
         """
-        Converts an arbitrary Python value to Tcl as follows:
-
-        * If the value is an instance of a dataclass, it is serialized as a JSON object.
-        * If the value is a list, it is joined using :meth:`TclUtils.join`.
-        * If the value is a dict, the keys and values are escaped recursively using:
-            joined using :meth:`TclUtils.join`.
-        * If the value is an Enum, its name is returned.
-        * If the value is Boolean, "1" is returned for True and "0" for False.
-        * If the value is numeric, it is converted to a string.
-        * Otherwise, the value is passed to ``str()``.
+        Converts an arbitrary Python value to its Tcl representation.
         """
-        if not isinstance(value, type) and is_dataclass(value):
-            return TclStep.value_to_tcl(asdict(value))  # type: ignore[arg-type]
-        elif isinstance(value, Mapping):
-            result = []
-            for v_key, v_value in value.items():
-                result.append(TclStep.value_to_tcl(v_key))
-                result.append(TclStep.value_to_tcl(v_value))
-            return TclUtils.join(result)
-        elif isinstance(value, Iterable) and not is_string(value):
-            result = []
-            for item in value:
-                result.append(TclStep.value_to_tcl(item))
-            return TclUtils.join(result)
-        elif isinstance(value, Enum):
-            return value.name
-        elif isinstance(value, bool):
-            return "1" if value else "0"
-        elif isinstance(value, Decimal):
-            return str(value)  # f"{value:e}"
-        elif isinstance(value, int):
-            return str(value)
-        else:
-            return str(value)
+        return TclUtils.to_tcl(value)
 
     @protected
     @abstractmethod
@@ -132,7 +111,7 @@ class TclStep(Step):
         env = env.copy()
 
         env["STEP_ID"] = self.get_implementation_id()
-        env["SCRIPTS_DIR"] = os.path.abspath(get_script_dir())
+        env["SCRIPTS_DIR"] = str(package_path().joinpath("scripts"))
         env["STEP_DIR"] = os.path.abspath(self.step_dir)
 
         tech_lefs = self.toolbox.filter_views(self.config, self.config["TECH_LEFS"])
@@ -220,47 +199,38 @@ class TclStep(Step):
         self,
         env: dict[str, str],
         report_dir: str | os.PathLike | None = None,
-    ):
-        thread_postfix = f"_{threading.current_thread().name}"
-        if threading.current_thread() is threading.main_thread():
-            thread_postfix = ""
+    ) -> dict[str, str]:
+        current_thread = threading.current_thread()
+        thread_postfix = (
+            ""
+            if current_thread is threading.main_thread()
+            else f"_{current_thread.name}"
+        )
 
-        env_in_dir = report_dir or self.step_dir
-        env_in_file = os.path.join(env_in_dir, f"_env{thread_postfix}.tcl")
-
-        ENV_ALLOWLIST = [
-            "PATH",
-            "PYTHONPATH",
-            "SCRIPTS_DIR",
-            "DESIGN_DIR",
-            "STEP_DIR",
-            "PDK_ROOT",
-            "PDK",
-            "_TCL_ENV_IN",
-        ]
-        env_in: list[tuple[str, str]] = list(env.items())
+        env_in_dir = pathlib.Path(self.step_dir if report_dir is None else report_dir)
+        env_in_file = env_in_dir / f"_env{thread_postfix}.tcl"
 
         # Create new "blank" env dict
         #
         # For all values:
         # If a value is unchanged: keep as is
-        # If a value is changed and is in ENV_ALLOWLIST: emplace in dict
+        # If a value is changed and is in _ENV_ALLOWLIST: emplace in dict
         # If a value is changed and is not in ENV_ALLOWLIST: write to file
         #
         # Emplace file to be sourced in dict with key ``_TCL_ENV_IN``
-        env = os.environ.copy()
-        with open(env_in_file, "w") as f:
-            for key, value in env_in:
-                if key in env and env[key] == value:
+        env_out = os.environ.copy()
+        with env_in_file.open("w", encoding="utf8") as f:
+            for key, value in env.items():
+                if key in env_out and env_out[key] == value:
                     continue
-                if key in ENV_ALLOWLIST or key.startswith("_"):
-                    env[key] = value
+                if key in _ENV_ALLOWLIST or key.startswith("_"):
+                    env_out[key] = value
                 else:
-                    f.write(
-                        f"set ::env({key}) {TclUtils.escape(TclStep.value_to_tcl(value))}\n"
-                    )
-        env["_TCL_ENV_IN"] = env_in_file
-        return env
+                    tcl_key = TclUtils.escape(f"::env({key})")
+                    tcl_value = TclUtils.escape(value)
+                    f.write(f"set {tcl_key} {tcl_value}\n")
+        env_out["_TCL_ENV_IN"] = os.fspath(env_in_file)
+        return env_out
 
     @protected
     def run_subprocess(

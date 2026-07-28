@@ -15,6 +15,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
 import os
 import textwrap
 import subprocess
@@ -33,7 +35,6 @@ from .pyosys import (
 
 from ..config import Variable, Config
 from ..state import State, DesignFormat
-from ..logging import info
 from ..common import Path, Toolbox, TclUtils, process_list_file
 
 # Re-export for back-compat
@@ -302,7 +303,7 @@ class EQY(Step):
                 + [str(model) for model in self.config["CELL_VERILOG_MODELS"]]
             )
         else:
-            info(
+            logger.info(
                 f"PDK {self.config['PDK']} is not supported by the EQY step. Skipping '{self.id}'…"
             )
             return {}, {}

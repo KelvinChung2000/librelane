@@ -15,6 +15,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
+from ..resources import package_path
 import os
 import re
 import io
@@ -30,8 +33,7 @@ from .step import ViewsUpdate, MetricsUpdate, Step
 
 from ..config import Variable
 from ..state import State, DesignFormat
-from ..logging import debug, verbose
-from ..common import Path, get_script_dir, process_list_file
+from ..common import Path, process_list_file
 
 starts_with_whitespace = re.compile(r"^\s+.+$")
 
@@ -56,7 +58,7 @@ def _parse_yosys_check(
     tristate_okay: bool = False,
     elaborate_only: bool = False,
 ) -> int:
-    verbose("Parsing synthesis checks…")
+    logger.log("VERBOSE", "Parsing synthesis checks…")
     errors_encountered: int = 0
     last_warning = None
     current_warning = None
@@ -73,17 +75,17 @@ def _parse_yosys_check(
             cells = re.findall(yosys_cell_rx, last_warning)
 
             if elaborate_only and "but has no driver" in last_warning:
-                debug("Ignoring undriven cell in elaborate-only mode:")
-                debug(last_warning)
+                logger.debug("Ignoring undriven cell in elaborate-only mode:")
+                logger.debug(last_warning)
             elif tristate_okay and (
                 ("tribuf" in last_warning)
                 or _check_any_tristate(cells, tristate_patterns)
             ):
-                debug("Ignoring tristate-related error:")
-                debug(last_warning)
+                logger.debug("Ignoring tristate-related error:")
+                logger.debug(last_warning)
             else:
-                debug("Encountered check error:")
-                debug(last_warning)
+                logger.debug("Encountered check error:")
+                logger.debug(last_warning)
                 errors_encountered += 1
         elif (
             starts_with_whitespace.match(line) is not None
@@ -264,7 +266,10 @@ class PyosysStep(Step):
         if "google.colab" in sys.modules:
             env.pop("PATH", "")
         env["PYTHONPATH"] = ":".join(
-            (env.get("PYTHONPATH", ""), os.path.join(get_script_dir(), "pyosys"))
+            (
+                env.get("PYTHONPATH", ""),
+                str(package_path().joinpath("scripts", "pyosys")),
+            )
         )
         subprocess_result = super().run_subprocess(cmd, env=env, **kwargs)
         return {}, subprocess_result["generated_metrics"]
@@ -368,7 +373,7 @@ class JsonHeader(VerilogStep):
     power_defines = True
 
     def get_script_path(self) -> str:
-        return os.path.join(get_script_dir(), "pyosys", "json_header.py")
+        return str(package_path().joinpath("scripts", "pyosys", "json_header.py"))
 
     def get_command(self, state_in: State) -> list[str]:
         out_file = os.path.join(
@@ -560,7 +565,7 @@ class SynthesisCommon(VerilogStep):
     ]
 
     def get_script_path(self) -> str:
-        return os.path.join(get_script_dir(), "pyosys", "synthesize.py")
+        return str(package_path().joinpath("scripts", "pyosys", "synthesize.py"))
 
     def get_command(self, state_in: State) -> list[str]:
         out_file = os.path.join(

@@ -13,6 +13,8 @@
 # limitations under the License.
 from __future__ import annotations
 
+from loguru import logger
+
 import os
 import fnmatch
 from typing import (
@@ -26,7 +28,6 @@ from rapidfuzz import process, fuzz, utils
 from .flow import Flow, FlowException, FlowError
 from ..common import Filter
 from ..state import State
-from ..logging import info, success, debug
 from ..steps import (
     Step,
     StepError,
@@ -273,7 +274,7 @@ class SequentialFlow(Flow):
         reproducible: str | None = None,
         **kwargs,
     ) -> tuple[State, list[Step]]:
-        debug(f"Starting run ▶ '{self.run_dir}'")
+        logger.debug(f"Starting run ▶ '{self.run_dir}'")
         step_ids = {cls.id.lower(): cls.id for cls in reversed(self.Steps)}
         skipped_ids: list[str] = []
 
@@ -330,7 +331,7 @@ class SequentialFlow(Flow):
 
         step_list = []
 
-        info("Starting…")
+        logger.info("Starting…")
 
         executing = frm is None
         deferred_errors = []
@@ -353,7 +354,7 @@ class SequentialFlow(Flow):
             if gating_cvars := gating_cvars_expanded.get(step.id):
                 for variable in gating_cvars:
                     if not self.config[variable]:
-                        info(
+                        logger.info(
                             f"Gating variable for step '{step.id}' set to 'False'- the step will be skipped."
                         )
                         gated = True
@@ -361,15 +362,10 @@ class SequentialFlow(Flow):
             self.progress_bar.start_stage(step.name)
             increment_ordinal = True
             if not executing or cls.id in skipped_ids or gated:
-                info(f"Skipping step '{step.name}'…")
+                logger.info(f"Skipping step '{step.name}'…")
                 increment_ordinal = False
             elif cls.id == reproducible_resolved:
-                step.create_reproducible(
-                    os.path.join(
-                        self.dir_for_step(step),
-                        "reproducible",
-                    )
-                )
+                step.create_reproducible(self.dir_for_step(step) / "reproducible")
                 break
             else:
                 step_list.append(step)
@@ -391,8 +387,8 @@ class SequentialFlow(Flow):
                 executing = False
 
         assert self.run_dir is not None
-        debug(f"Run concluded ▶ '{self.run_dir}'")
-        final_views_path = os.path.join(self.run_dir, "final")
+        logger.debug(f"Run concluded ▶ '{self.run_dir}'")
+        final_views_path = self.run_dir / "final"
         try:
             current_state.save_snapshot(final_views_path)
         except Exception as e:
@@ -404,5 +400,5 @@ class SequentialFlow(Flow):
                 + "\n".join(deferred_errors)
             )
 
-        success("Flow complete.")
+        logger.success("Flow complete.")
         return (current_state, step_list)

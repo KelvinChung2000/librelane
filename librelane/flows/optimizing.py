@@ -13,13 +13,15 @@
 # limitations under the License.
 from __future__ import annotations
 
+from loguru import logger
+
 from concurrent.futures import Future
 
 from .flow import Flow
 from ..state import State
 from ..config import Config
 from ..steps import Step, Yosys, OpenROAD, StepError
-from ..logging import get_log_level, set_log_level, LogLevels, success, info
+from ..logging import LogLevels, temporary_log_level
 
 
 #   "Optimizing" is a custom demo flow to show what's possible with non-sequential Flows in LibreLan
@@ -51,48 +53,45 @@ class Optimizing(Flow):
         synthesis_futures: list[tuple[Config, Future[State]]] = []
         self.start_stage("Synthesis Exploration")
 
-        log_level_bk = get_log_level()
-        set_log_level(LogLevels.ERROR)
+        with temporary_log_level(LogLevels.ERROR):
+            for strategy in ["AREA 0", "AREA 2", "DELAY 1"]:
+                config = self.config.copy(SYNTH_STRATEGY=strategy)
 
-        for strategy in ["AREA 0", "AREA 2", "DELAY 1"]:
-            config = self.config.copy(SYNTH_STRATEGY=strategy)
+                synth_step = Yosys.Synthesis(
+                    config,
+                    id=f"synthesis-{strategy}",
+                    state_in=initial_state,
+                    flow=self,
+                )
+                synth_future = self.start_step_async(synth_step)
+                step_list.append(synth_step)
 
-            synth_step = Yosys.Synthesis(
-                config,
-                id=f"synthesis-{strategy}",
-                state_in=initial_state,
-                flow=self,
-            )
-            synth_future = self.start_step_async(synth_step)
-            step_list.append(synth_step)
+                sdc_step = OpenROAD.CheckSDCFiles(
+                    config,
+                    id=f"sdc-{strategy}",
+                    state_in=synth_future,
+                    flow=self,
+                )
+                sdc_future = self.start_step_async(sdc_step)
+                step_list.append(sdc_step)
 
-            sdc_step = OpenROAD.CheckSDCFiles(
-                config,
-                id=f"sdc-{strategy}",
-                state_in=synth_future,
-                flow=self,
-            )
-            sdc_future = self.start_step_async(sdc_step)
-            step_list.append(sdc_step)
+                sta_step = OpenROAD.STAPrePNR(
+                    config,
+                    state_in=sdc_future,
+                    id=f"sta-{strategy}",
+                    flow=self,
+                )
 
-            sta_step = OpenROAD.STAPrePNR(
-                config,
-                state_in=sdc_future,
-                id=f"sta-{strategy}",
-                flow=self,
-            )
+                step_list.append(sta_step)
+                sta_future = self.start_step_async(sta_step)
 
-            step_list.append(sta_step)
-            sta_future = self.start_step_async(sta_step)
+                synthesis_futures.append((config, sta_future))
 
-            synthesis_futures.append((config, sta_future))
-
-        synthesis_states: list[tuple[Config, State]] = [
-            (config, future.result()) for config, future in synthesis_futures
-        ]
+            synthesis_states: list[tuple[Config, State]] = [
+                (config, future.result()) for config, future in synthesis_futures
+            ]
 
         self.end_stage()
-        set_log_level(log_level_bk)
 
         min_strat = synthesis_states[0][0]["SYNTH_STRATEGY"]
         min_config = synthesis_states[0][0]
@@ -107,7 +106,7 @@ class Optimizing(Flow):
                 min_strat = strategy
                 min_config = config
 
-        info(f"Using result from '{min_strat}…")
+        logger.info(f"Using result from '{min_strat}…")
 
         self.start_stage("Floorplanning and Placement")
 
@@ -141,7 +140,7 @@ class Optimizing(Flow):
             self.start_step(gpl)
             step_list.append(gpl)
         except StepError:
-            info("High utilization failed- attempting low utilization…")
+            logger.info("High utilization failed- attempting low utilization…")
             fp_config = min_config.copy(FP_CORE_UTIL=40)
             fp = OpenROAD.Floorplan(
                 fp_config,
@@ -173,6 +172,6 @@ class Optimizing(Flow):
 
         self.end_stage()
 
-        success("Flow complete.")
+        logger.success("Flow complete.")
         assert gpl.state_out is not None  # We should be done with the execution by now
         return (gpl.state_out, step_list)

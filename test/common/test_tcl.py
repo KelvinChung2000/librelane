@@ -28,22 +28,31 @@ def _mock_fs():
         yield
 
 
+def _tcl_scalar(tcl_value: str) -> str:
+    from librelane.common import TclUtils
+
+    result = TclUtils.split(tcl_value)
+    assert len(result) == 1
+    return result[0]
+
+
 def test_escape():
     from librelane.common import TclUtils
 
-    assert TclUtils.escape("ringo") == r"ringo", (
-        ".escape altered a non-dangerous string"
-    )
-    assert TclUtils.escape("r ingo") == r'"r ingo"', ".escape neglected whitespace"
-    assert TclUtils.escape("[expr ringo]") == r'"\[expr ringo]"', (
-        ".escape neglected expression braces"
-    )
-    assert TclUtils.escape("[expr $ringo]") == r'"\[expr \$ringo]"', (
-        ".escape neglected dollar sign"
-    )
-    assert TclUtils.escape("[expr \\$ringo]") == r'"\[expr \\\$ringo]"', (
-        ".escape neglected backslash"
-    )
+    values = [
+        "ringo",
+        "r ingo",
+        "[expr ringo]",
+        "[expr $ringo]",
+        "[expr \\$ringo]",
+        "semi; [expr 1]",
+        "line one\nline two",
+        "unmatched {",
+        "",
+        " ",
+    ]
+    for value in values:
+        assert _tcl_scalar(TclUtils.escape(value)) == value
 
 
 @pytest.mark.usefixtures("_mock_fs")
@@ -59,6 +68,8 @@ def test_join():
     ]
 
     very_wild_list_escaped = TclUtils.join(very_wild_list)
+    assert TclUtils.split(very_wild_list_escaped) == very_wild_list
+
     interpreter = tkinter.Tcl()
     interpreter.eval(
         f"""
@@ -72,6 +83,26 @@ def test_join():
 
     assert os.listdir("/cwd") == [], "Arbitrary code execution"
     assert interpreter.getvar("length") == 5, "Tcl list not escaped properly"
+
+
+@pytest.mark.usefixtures("_mock_fs")
+def test_split():
+    from librelane.common import TclUtils
+
+    result = TclUtils.split(
+        r"key1 {value with spaces} key2 {[exec {touch should_not_exist}]}"
+    )
+
+    assert result == [
+        "key1",
+        "value with spaces",
+        "key2",
+        "[exec {touch should_not_exist}]",
+    ]
+    assert os.listdir("/cwd") == [], "Tcl list splitting evaluated commands"
+
+    with pytest.raises(ValueError, match="Invalid Tcl list"):
+        TclUtils.split("{unmatched")
 
 
 def test_eval_env():
@@ -121,3 +152,26 @@ def test_eval_env():
     del os.environ["STD_CELL_LIBRARY"]
 
     assert result == expected
+
+
+def test_eval_env_preserves_structured_inputs_and_captures_nested_dicts():
+    from librelane.common import TclUtils
+
+    existing_lib = {"nom_*": ["a.lib", "b with spaces.lib"]}
+    result = TclUtils._eval_env(
+        {"LIB": existing_lib},
+        """
+        set ::env(LAYERS_RC) [dict create]
+        dict set ::env(LAYERS_RC) nom_* met1 res 0.1
+        dict set ::env(LAYERS_RC) nom_* met1 cap 0.2
+        """,
+    )
+
+    assert result["LIB"] == existing_lib
+
+    corners = TclUtils.split(result["LAYERS_RC"])
+    assert corners[0] == "nom_*"
+    layers = TclUtils.split(corners[1])
+    assert layers[0] == "met1"
+    values = TclUtils.split(layers[1])
+    assert dict(zip(values[::2], values[1::2])) == {"res": "0.1", "cap": "0.2"}

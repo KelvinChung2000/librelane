@@ -15,6 +15,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
+from ..resources import package_path
 import os
 import re
 import shutil
@@ -38,8 +41,7 @@ from .tclstep import TclStep
 from ..state import DesignFormat, State
 
 from ..config import Variable
-from ..common import get_script_dir, DRC as DRCObject, Path, mkdirp, count_occurences
-from ..logging import warn
+from ..common import DRC as DRCObject, Path, mkdirp, count_occurences
 
 
 DesignFormat(
@@ -80,7 +82,7 @@ class MagicOutputProcessor(OutputProcessor):
         for pattern in self._error_patterns:
             if pattern.match(line):
                 self.fatal_error_count += 1
-                self.step.err(line)
+                logger.bind(step=self.step.id).error(line)
                 return True
         return False
 
@@ -179,7 +181,7 @@ class MagicStep(TclStep):
             "-noconsole",
             "-rcfile",
             self.config["MAGICRC"],
-            os.path.join(get_script_dir(), "magic", "wrapper.tcl"),
+            package_path().joinpath("scripts", "magic", "wrapper.tcl"),
         ]
 
     def prepare_env(self, env: dict, state: State) -> dict:
@@ -264,7 +266,7 @@ class WriteLEF(MagicStep):
     ]
 
     def get_script_path(self):
-        return os.path.join(get_script_dir(), "magic", "lef.tcl")
+        return package_path().joinpath("scripts", "magic", "lef.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -320,7 +322,7 @@ class StreamOut(MagicStep):
     ]
 
     def get_script_path(self):
-        return os.path.join(get_script_dir(), "magic", "def", "mag_gds.tcl")
+        return package_path().joinpath("scripts", "magic", "def", "mag_gds.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -345,8 +347,8 @@ class StreamOut(MagicStep):
                     )
                 env_copy["_GDS_IN"] = macro_gdses[0]
                 env_copy["_MACRO_NAME_IN"] = macro
-                env_copy["_MAGIC_SCRIPT"] = os.path.join(
-                    get_script_dir(), "magic", "get_bbox.tcl"
+                env_copy["_MAGIC_SCRIPT"] = package_path().joinpath(
+                    "scripts", "magic", "get_bbox.tcl"
                 )
 
                 subprocess_result = super().run_subprocess(
@@ -415,7 +417,7 @@ class Filler(Step):
         views_updates: ViewsUpdate = {}
 
         if not self.config["MAGIC_FILLER_SCRIPT"]:
-            self.warn(
+            logger.bind(step=self.id).warning(
                 f"MAGIC_FILLER_SCRIPT is unset. Magic.Filler may not be supported for the {self.config['PDK']} PDK. This step will be skipped."
             )
             return views_updates, metrics_updates
@@ -466,8 +468,8 @@ class Filler(Step):
                 "-b",
                 "-zz",
                 "-r",
-                os.path.join(
-                    get_script_dir(),
+                package_path().joinpath(
+                    "scripts",
                     "klayout",
                     "insert_cell.py",
                 ),
@@ -526,7 +528,7 @@ class DRC(MagicStep):
     ]
 
     def get_script_path(self):
-        return os.path.join(get_script_dir(), "magic", "drc.tcl")
+        return package_path().joinpath("scripts", "magic", "drc.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         reports_dir = os.path.join(self.step_dir, "reports")
@@ -623,7 +625,7 @@ class SpiceExtraction(MagicStep):
     ]
 
     def get_script_path(self):
-        return os.path.join(get_script_dir(), "magic", "extract_spice.tcl")
+        return package_path().joinpath("scripts", "magic", "extract_spice.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config["MAGIC_EXT_USE_GDS"] and self.config["MAGIC_EXT_ABSTRACT"]:
@@ -644,7 +646,7 @@ class SpiceExtraction(MagicStep):
         metrics_updates["magic__illegal_overlap__count"] = illegal_overlap_count
         threshold = self.config["MAGIC_FEEDBACK_CONVERSION_THRESHOLD"]
         if illegal_overlap_count > threshold:
-            warn(
+            logger.warning(
                 f"Not converting the feedback to the KLayout database format: {illegal_overlap_count} > MAGIC_FEEDBACK_CONVERSION_THRESHOLD ({threshold}). You may manually increase the threshold, but it might take forever."
             )
             return views_updates, metrics_updates
@@ -665,7 +667,7 @@ class SpiceExtraction(MagicStep):
                 se_feedback.to_klayout_xml(f)
             metrics_updates["magic__illegal_overlap__count"] = illegal_overlap_count
         except ValueError as e:
-            self.warn(
+            logger.bind(step=self.id).warning(
                 f"Failed to convert SPICE extraction feedback to KLayout database format: {e}"
             )
         return views_updates, metrics_updates
@@ -693,7 +695,7 @@ class OpenGUI(MagicStep):
     ]
 
     def get_script_path(self):
-        return os.path.join(get_script_dir(), "magic", "open.tcl")
+        return package_path().joinpath("scripts", "magic", "open.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -780,7 +782,7 @@ class RCX(MagicStep):
     ]
 
     def get_script_path(self):
-        return os.path.join(get_script_dir(), "magic", "spice_rcx.tcl")
+        return package_path().joinpath("scripts", "magic", "spice_rcx.tcl")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)

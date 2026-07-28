@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from __future__ import annotations
+
+from loguru import logger
 from decimal import Decimal
-import os
 
 import rich
 import rich.table
@@ -22,7 +23,6 @@ from concurrent.futures import Future
 from .flow import Flow
 from ..state import State
 from ..config import Config
-from ..logging import success
 from ..logging import options, console
 from ..steps import Step, Yosys, OpenROAD, StepError
 
@@ -171,10 +171,10 @@ class SynthesisExploration(Flow):
         console.print(table)
         assert self.run_dir is not None
         file_console = rich.console.Console(
-            file=open(os.path.join(self.run_dir, "summary.rpt"), "w", encoding="utf8"),
+            file=(self.run_dir / "summary.rpt").open("w", encoding="utf8"),
             width=160,
         )
         file_console.print(table)
 
-        success("Flow complete.")
+        logger.success("Flow complete.")
         return (initial_state, step_list)

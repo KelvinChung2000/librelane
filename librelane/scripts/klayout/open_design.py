@@ -14,10 +14,10 @@
 # limitations under the License.
 import os
 import sys
-import shlex
-import argparse
 
+import click
 import pya  # Must be run inside KLayout-- the library version of pya does not include "Application"
+from click.shell_completion import split_arg_string
 
 
 def open_design(input_lefs: tuple[str, ...], lyt: str, lyp: str, lym: str, input: str):
@@ -49,21 +49,35 @@ def open_design(input_lefs: tuple[str, ...], lyt: str, lyp: str, lym: str, input
         pya.Application.instance().exit(1)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Open design in KLayout")
-    parser.add_argument(
-        "-l",
-        "--input-lef",
-        action="append",
-        dest="input_lefs",
-        help="KLayout .lef files",
-    )
-    parser.add_argument("-T", "--lyt", required=True, help="KLayout .lyt file")
-    parser.add_argument("-P", "--lyp", required=True, help="KLayout .lyp file")
-    parser.add_argument(
-        "-M", "--lym", required=True, help="KLayout .map (LEF/DEF layer map) file"
-    )
-    parser.add_argument("input", help="KLayout cell name")
+@click.command()
+@click.option(
+    "-l",
+    "--input-lef",
+    "input_lefs",
+    multiple=True,
+    help="KLayout .lef files",
+)
+@click.option("-T", "--lyt", required=True, help="KLayout .lyt file")
+@click.option("-P", "--lyp", required=True, help="KLayout .lyp file")
+@click.option(
+    "-M",
+    "--lym",
+    required=True,
+    help="KLayout .map (LEF/DEF layer map) file",
+)
+@click.argument("input")
+def cli(input_lefs: tuple[str, ...], lyt: str, lyp: str, lym: str, input: str):
+    """Open a layout in the KLayout GUI."""
+    open_design(input_lefs, lyt, lyp, lym, input)
 
-    args = parser.parse_args(shlex.split(os.environ["KLAYOUT_ARGV"]))
-    open_design(args.input_lefs, args.lyt, args.lyp, args.lym, args.input)
+
+if __name__ == "__main__":
+    try:
+        cli.main(
+            args=split_arg_string(os.environ["KLAYOUT_ARGV"]),
+            prog_name="open_design.py",
+            standalone_mode=False,
+        )
+    except click.ClickException as e:
+        e.show()
+        raise SystemExit(e.exit_code) from None

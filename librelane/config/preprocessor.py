@@ -15,11 +15,13 @@ import re
 import os
 import glob
 import fnmatch
-from enum import Enum
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any, Union
+from typing import Any, Union, cast
 from collections.abc import Mapping, Sequence
+
+from lark import Lark, Token, Transformer
+from lark.exceptions import UnexpectedCharacters, UnexpectedToken, VisitError
 
 from ..common import is_string
 
@@ -44,169 +46,108 @@ Scalar = Union[str, int, Decimal, float, bool, None]
 Valid = Union[Scalar, dict, list]
 
 
+_EXPRESSION_GRAMMAR = r"""
+    ?start: sum
+    ?sum: sum "+" product       -> add
+        | sum "-" product       -> subtract
+        | product
+    ?product: product "*" power -> multiply
+            | product "/" power -> divide
+            | power
+    ?power: atom "**" power     -> power
+          | atom
+    ?atom: NUMBER               -> number
+         | VARIABLE             -> variable
+         | "(" sum ")"
+
+    NUMBER: /-?\d+\.?\d*/
+    VARIABLE: /\$[A-Za-z_][A-Za-z0-9_.\[\]]*/
+    %ignore /\s+/
+"""
+
+_expression_parser = Lark(_EXPRESSION_GRAMMAR, parser="lalr")
+
+
+class _ExpressionEvaluator(Transformer):
+    def __init__(self, symbols: Mapping[str, Any]) -> None:
+        super().__init__()
+        self.symbols = symbols
+
+    def number(self, children: list[Token]) -> Decimal:
+        return Decimal(children[0].value)
+
+    def variable(self, children: list[Token]) -> Decimal:
+        name = children[0].value[1:]
+        try:
+            value = self.symbols[name]
+        except KeyError:
+            raise TypeError(f"Configuration variable '{name}' not found.") from None
+        if not isinstance(value, (int, float, Decimal)):
+            raise TypeError(
+                f"Referenced variable {name} is not of a valid numeric type: f{type(value)}"
+            )
+        return Decimal(value)
+
+    def add(self, children: list[Decimal]) -> Decimal:
+        return children[0] + children[1]
+
+    def subtract(self, children: list[Decimal]) -> Decimal:
+        return children[0] - children[1]
+
+    def multiply(self, children: list[Decimal]) -> Decimal:
+        return children[0] * children[1]
+
+    def divide(self, children: list[Decimal]) -> Decimal:
+        return children[0] / children[1]
+
+    def power(self, children: list[Decimal]) -> Decimal:
+        return children[0] ** children[1]
+
+
 class Expr(object):
-    class Token(object):
-        class Type(Enum):
-            VAR = 0
-            NUMBER = 1
-            OP = 2
-            LPAREN = 3
-            RPAREN = 4
-
-        def __init__(self, type: "Expr.Token.Type", value: str) -> None:
-            self.type: Expr.Token.Type = type
-            self.value: str = value
-
-        def __repr__(self):
-            return f"<Token:{self.type} '{self.value}'>"
-
-        def prec_assoc(self) -> tuple[int, bool]:
-            """
-            Returns (precedence, is_left_assoc)
-            """
-
-            if self.value in ["**"]:
-                return (20, False)
-            elif self.value in ["*", "/"]:
-                return (10, True)
-            elif self.value in ["+", "-"]:
-                return (0, True)
-            else:
-                raise TypeError(
-                    f"pre-assoc not supported for non-token operators: '{self.value}'"
-                )
-
-    @staticmethod
-    def tokenize(expr: str) -> list["Expr.Token"]:
-        rx_list = [
-            (re.compile(r"^\$([A-Za-z_][A-Za-z0-9_\.\[\]]*)"), Expr.Token.Type.VAR),
-            (re.compile(r"^(-?\d+\.?\d*)"), Expr.Token.Type.NUMBER),
-            (re.compile(r"^(\*\*)"), Expr.Token.Type.OP),
-            (re.compile(r"^(\+|\-|\*|\/)"), Expr.Token.Type.OP),
-            (re.compile(r"^(\()"), Expr.Token.Type.LPAREN),
-            (re.compile(r"^(\))"), Expr.Token.Type.RPAREN),
-            (re.compile(r"^\s+"), None),
-        ]
-        tokens = []
-        str_so_far = expr
-        while not str_so_far.strip() == "":
-            found = False
-
-            for element in rx_list:
-                rx, type = element
-                m = rx.match(str_so_far)
-                if m is None:
-                    continue
-                found = True
-                if type is not None:
-                    tokens.append(Expr.Token(type, m[1]))
-                str_so_far = str_so_far[len(m[0]) :]
-                break
-
-            if not found:
-                raise SyntaxError(
-                    f"Unexpected token at the start of the following string '{str_so_far}'."
-                )
-        return tokens
-
     @staticmethod
     def evaluate(expression: str, symbols: Mapping[str, Any]) -> Decimal:
-        tokens: list["Expr.Token"] = Expr.tokenize(expression)
-        ETT = Expr.Token.Type
-
-        # Infix to Postfix
-        postfix: list["Expr.Token"] = []
-        opstack: list["Expr.Token"] = []
-        for token in tokens:
-            if token.type == ETT.OP:
-                prec, assoc = token.prec_assoc()
-
-                top_prec = None
-                try:
-                    top_prec, _ = opstack[-1].prec_assoc()
-                except TypeError:
-                    pass
-                except IndexError:
-                    pass
-
-                while top_prec is not None and (
-                    (assoc and prec <= top_prec) or (not assoc and prec < top_prec)
-                ):
-                    postfix.append(opstack.pop())
-                    top_prec = None
-                    try:
-                        top_prec, _ = opstack[-1].prec_assoc()
-                    except IndexError:
-                        pass
-                opstack.append(token)
-            elif token.type == ETT.LPAREN:
-                opstack.append(token)
-            elif token.type == ETT.RPAREN:
-                top = opstack[-1]
-                while top.type != ETT.LPAREN:
-                    postfix.append(top)
-                    opstack.pop()
-                    top = opstack[-1]
-                opstack.pop()  # drop the LPAREN
-            else:
-                postfix.append(token)
-
-        while len(opstack):
-            postfix.append(opstack[-1])
-            opstack.pop()
-
-        # Evaluate
-        eval_stack = []
-        for token in postfix:
-            if token.type == ETT.NUMBER:
-                eval_stack.append(Decimal(token.value))
-            elif token.type == ETT.VAR:
-                try:
-                    value = symbols[token.value]
-                    if not (
-                        isinstance(value, int)
-                        or isinstance(value, float)
-                        or isinstance(value, Decimal)
-                    ):
-                        raise TypeError(
-                            f"Referenced variable {token.value} is not of a valid numeric type: f{type(value)}"
-                        )
-                    eval_stack.append(Decimal(value))
-                except KeyError:
-                    raise TypeError(
-                        f"Configuration variable '{token.value}' not found."
-                    )
-            elif token.type == ETT.OP:
-                try:
-                    number1 = eval_stack[-2]
-                    number2 = eval_stack[-1]
-                    eval_stack.pop()
-                    eval_stack.pop()
-
-                    result = Decimal("0")
-                    if token.value == "**":
-                        result = number1**number2
-                    elif token.value == "*":
-                        result = number1 * number2
-                    elif token.value == "/":
-                        result = number1 / number2
-                    elif token.value == "+":
-                        result = number1 + number2
-                    elif token.value == "-":
-                        result = number1 - number2
-
-                    eval_stack.append(result)
-                except IndexError:
-                    raise SyntaxError(
-                        f"not enough operands for operator '{token.value}'"
-                    )
-
-        if len(eval_stack) > 1:
-            raise ValueError("expression reduces to multiple values")
-        elif len(eval_stack) == 0:
+        if expression.strip() == "":
             raise ValueError("expression is empty")
 
-        return eval_stack[0]
+        balance = 0
+        for character in expression:
+            if character == "(":
+                balance += 1
+            elif character == ")":
+                if balance == 0:
+                    raise IndexError("list index out of range")
+                balance -= 1
+
+        parseable = expression + ")" * balance
+        try:
+            tree = _expression_parser.parse(parseable)
+            return cast(Decimal, _ExpressionEvaluator(symbols).transform(tree))
+        except VisitError as e:
+            raise e.orig_exc from None
+        except UnexpectedCharacters as e:
+            remainder = expression[e.pos_in_stream :]
+            raise SyntaxError(
+                f"Unexpected token at the start of the following string '{remainder}'."
+            ) from None
+        except UnexpectedToken as e:
+            stripped = expression.rstrip()
+            if e.token.type == "$END" and stripped.endswith(("+", "-", "*", "/")):
+                operator = "**" if stripped.endswith("**") else stripped[-1]
+                raise SyntaxError(
+                    f"not enough operands for operator '{operator}'"
+                ) from None
+            if e.pos_in_stream == 0 and stripped[0] in "+-*/":
+                operator = "**" if stripped.startswith("**") else stripped[0]
+                raise SyntaxError(
+                    f"not enough operands for operator '{operator}'"
+                ) from None
+            if e.token.type in {"NUMBER", "VARIABLE", "LPAR"}:
+                raise ValueError("expression reduces to multiple values") from None
+            remainder = expression[e.pos_in_stream :]
+            raise SyntaxError(
+                f"Unexpected token at the start of the following string '{remainder}'."
+            ) from None
 
 
 ref_rx = re.compile(r"^\$([A-Za-z_][A-Za-z0-9_\.\[\]]*)")

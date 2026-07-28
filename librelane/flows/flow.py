@@ -12,13 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from __future__ import annotations
+
+from loguru import logger
 import os
 import glob
 import shutil
 import fnmatch
-import logging
 import datetime
 import textwrap
+import pathlib
+from contextlib import ExitStack
 from dataclasses import dataclass
 from abc import abstractmethod, ABC
 from concurrent.futures import Future
@@ -45,12 +48,8 @@ from ..state import State, DesignFormat
 from ..steps import Step, StepNotFound
 from ..logging import (
     LevelFilter,
+    additional_sink,
     console,
-    info,
-    warn,
-    verbose,
-    register_additional_handler,
-    deregister_additional_handler,
     options,
 )
 from ..common import (
@@ -282,7 +281,7 @@ class Flow(ABC):
         If :meth:`start` is called again, the reference is destroyed.
     """
 
-    class _StepWarningHandler(logging.Handler):
+    class _StepWarningSink:
         @dataclass
         class Record:
             message: str
@@ -301,32 +300,31 @@ class Flow(ABC):
                     postfix = f" ({postfix})"
                 return f"{prefix}{self.message}{postfix}"
 
-        def __init__(self, *args, **kwargs) -> None:
-            super().__init__(*args, **kwargs)
-            self.warnings: dict[str, Flow._StepWarningHandler.Record] = {}
+        def __init__(self) -> None:
+            self.warnings: dict[str, Flow._StepWarningSink.Record] = {}
 
-        def emit(self, record: logging.LogRecord) -> None:
-            step = None
-            if hasattr(record, "step"):
-                step = record.step
-
-            key = record.key if hasattr(record, "key") else record.msg
+        def __call__(self, message) -> None:
+            record = message.record
+            extra = record["extra"]
+            step = extra.get("step")
+            text = str(record["message"])
+            key = extra.get("key", text)
             if key in self.warnings:
                 existing = self.warnings[key]
-                if record.msg == existing.message:
+                if text == existing.message:
                     existing.repeats += 1
                 else:
                     existing.similar += 1
             else:
-                self.warnings[key] = Flow._StepWarningHandler.Record(record.msg, step)
+                self.warnings[key] = Flow._StepWarningSink.Record(text, step)
 
     name: str = NotImplemented
     Steps: list[type[Step]] = NotImplemented  # Override
     config_vars: list[Variable] = []
     step_objects: list[Step] | None = None
-    run_dir: str | None = None
+    run_dir: pathlib.Path | None = None
     toolbox: Toolbox | None = None
-    config_resolved_path: str | None = None
+    config_resolved_path: pathlib.Path | None = None
 
     def __init__(
         self,
@@ -368,7 +366,7 @@ class Flow(ABC):
             )
 
         self.config: Config = config
-        self.design_dir: str = str(self.config["DESIGN_DIR"])
+        self.design_dir = pathlib.Path(self.config["DESIGN_DIR"])
         self.progress_bar = FlowProgressBar(self.name)
 
     @classmethod
@@ -516,7 +514,7 @@ class Flow(ABC):
         with_initial_state: State | None = None,
         tag: str | None = None,
         last_run: bool = False,
-        _force_run_dir: str | None = None,
+        _force_run_dir: str | os.PathLike[str] | None = None,
         _no_load_previous_steps: bool = False,
         *,
         overwrite: bool = False,
@@ -549,13 +547,6 @@ class Flow(ABC):
         :returns: ``(success, state_list)``
         """
 
-        handlers: list[logging.Handler] = []
-
-        warning_handler = Flow._StepWarningHandler()
-        warning_handler.addFilter(LevelFilter("WARNING"))
-        handlers.append(warning_handler)
-        register_additional_handler(warning_handler)
-
         if last_run and tag is not None:
             raise FlowException("tag and last_run cannot be used simultaneously.")
 
@@ -563,39 +554,37 @@ class Flow(ABC):
             "RUN_%Y-%m-%d_%H-%M-%S"
         )
         if last_run:
-            runs = sorted(glob.glob(os.path.join(self.design_dir, "runs", "*")))
-
-            latest_time: float = 0
-            latest_run: str | None = None
-            for run in runs:
-                time = os.path.getmtime(run)
-                if time > latest_time:
-                    latest_time = time
-                    latest_run = run
+            runs_dir = self.design_dir / "runs"
+            runs = list(runs_dir.iterdir()) if runs_dir.is_dir() else []
+            latest_run = max(
+                runs,
+                key=lambda run: run.stat().st_mtime,
+                default=None,
+            )
 
             if latest_run is not None:
-                tag = os.path.basename(latest_run)
+                tag = latest_run.name
             else:
                 raise FlowException("last_run used without any existing runs")
 
         # Stored until next start()
-        self.run_dir = os.path.abspath(
-            _force_run_dir or os.path.join(self.design_dir, "runs", tag)
-        )
+        self.run_dir = pathlib.Path(
+            _force_run_dir or self.design_dir / "runs" / tag
+        ).resolve()
         initial_state = with_initial_state or State()
 
         self.step_objects = []
         starting_ordinal = 1
         try:
-            entries = os.listdir(self.run_dir)
+            entries = [entry.name for entry in self.run_dir.iterdir()]
             if len(entries) == 0:
                 raise FileNotFoundError(self.run_dir)  # Treat as non-existent directory
             elif overwrite:
-                verbose(f"Removing '{self.run_dir}'…")
+                logger.log("VERBOSE", f"Removing '{self.run_dir}'…")
                 shutil.rmtree(self.run_dir)
                 raise FileNotFoundError(self.run_dir)  # Treat as non-existent directory
 
-            info(f"Using existing run at '{tag}' with the '{self.name}' flow.")
+            logger.info(f"Using existing run at '{tag}' with the '{self.name}' flow.")
 
             # Extract maximum step ordinal + load finished steps
             entries_sorted = sorted(
@@ -617,7 +606,7 @@ class Flow(ABC):
                     try:
                         self.step_objects.append(
                             Step.load_finished(
-                                os.path.join(self.run_dir, entry),
+                                self.run_dir / entry,
                                 self.config["PDK_ROOT"],
                                 self.Steps,
                             )
@@ -634,7 +623,7 @@ class Flow(ABC):
             # Extract Maximum State
             if with_initial_state is None:
                 if latest_json := get_latest_file(self.run_dir, "state_out.json"):
-                    verbose(f"Using state at '{latest_json}'.")
+                    logger.log("VERBOSE", f"Using state at '{latest_json}'.")
 
                     initial_state = State.loads(
                         open(latest_json, encoding="utf8").read()
@@ -645,54 +634,65 @@ class Flow(ABC):
                 f"Run directory for '{tag}' already exists as a file and not a directory."
             )
         except FileNotFoundError:
-            info(f"Starting a new run of the '{self.name}' flow with the tag '{tag}'.")
-            mkdirp(self.run_dir)
+            logger.info(
+                f"Starting a new run of the '{self.name}' flow with the tag '{tag}'."
+            )
+            self.run_dir.mkdir(parents=True, exist_ok=True)
 
         # Stored until next start()
-        self.toolbox = Toolbox(os.path.join(self.run_dir, "tmp"))
+        self.toolbox = Toolbox(os.fspath(self.run_dir / "tmp"))
 
-        for level in ["WARNING", "ERROR"]:
-            path = os.path.join(self.run_dir, f"{level.lower()}.log")
-            handler = logging.FileHandler(path, mode="a+")
-            handler.setLevel(level)
-            handler.addFilter(LevelFilter([level]))
-            handlers.append(handler)
-            register_additional_handler(handler)
-
-        path = os.path.join(self.run_dir, "flow.log")
-        handler = logging.FileHandler(path, mode="a+")
-        handler.setLevel("VERBOSE")
-        handlers.append(handler)
-        register_additional_handler(handler)
-
+        warning_handler = Flow._StepWarningSink()
         try:
-            self.config_resolved_path = os.path.join(self.run_dir, "resolved.json")
-            with open(self.config_resolved_path, "w") as f:
-                f.write(self.config.dumps())
+            with ExitStack() as sink_stack:
+                sink_stack.enter_context(
+                    additional_sink(
+                        warning_handler,
+                        filter=LevelFilter(["WARNING"]),
+                    )
+                )
+                for level in ["WARNING", "ERROR"]:
+                    sink_stack.enter_context(
+                        additional_sink(
+                            self.run_dir / f"{level.lower()}.log",
+                            mode="a+",
+                            filter=LevelFilter([level]),
+                        )
+                    )
+                sink_stack.enter_context(
+                    additional_sink(
+                        self.run_dir / "flow.log",
+                        mode="a+",
+                        level="VERBOSE",
+                    )
+                )
 
-            self.progress_bar = FlowProgressBar(
-                self.name, starting_ordinal=starting_ordinal
-            )
-            self.progress_bar.start()
-            final_state, step_objects = self.run(
-                initial_state=initial_state,
-                starting_ordinal=starting_ordinal,
-                **kwargs,
-            )
-            self.progress_bar.end()
+                self.config_resolved_path = self.run_dir / "resolved.json"
+                self.config_resolved_path.write_text(self.config.dumps())
 
-            # Stored until next start()
-            self.step_objects += step_objects
+                self.progress_bar = FlowProgressBar(
+                    self.name, starting_ordinal=starting_ordinal
+                )
+                self.progress_bar.start()
+                try:
+                    final_state, step_objects = self.run(
+                        initial_state=initial_state,
+                        starting_ordinal=starting_ordinal,
+                        **kwargs,
+                    )
+                finally:
+                    self.progress_bar.end()
 
-            return final_state
+                # Stored until next start()
+                self.step_objects += step_objects
+
         finally:
-            self.progress_bar.end()
-            for registered_handlers in handlers:
-                deregister_additional_handler(registered_handlers)
             if len(warning_handler.warnings):
-                warn("The following warnings were generated by the flow:")
+                logger.warning("The following warnings were generated by the flow:")
                 for record in warning_handler.warnings.values():
-                    warn(f"{record}")
+                    logger.warning(f"{record}")
+
+        return final_state
 
     @protected
     @abstractmethod
@@ -711,7 +711,7 @@ class Flow(ABC):
         pass
 
     @protected
-    def dir_for_step(self, step: Step) -> str:
+    def dir_for_step(self, step: Step) -> pathlib.Path:
         """
         May only be called while :attr:`run_dir` is not None, i.e., the flow
         has started. Otherwise, a :class:`FlowException` is raised.
@@ -723,9 +723,8 @@ class Flow(ABC):
             raise FlowException(
                 "Attempted to call dir_for_step on a flow that has not been started."
             )
-        return os.path.join(
-            self.run_dir,
-            f"{self.progress_bar.get_ordinal_prefix()}{slugify(step.id)}",
+        return self.run_dir / (
+            f"{self.progress_bar.get_ordinal_prefix()}{slugify(step.id)}"
         )
 
     @protected
@@ -807,7 +806,7 @@ class Flow(ABC):
 
         # 1. Copy Files
         last_state.validate()
-        info(
+        logger.info(
             f"Saving views in the Efabless/Caravel User Project format to '{os.path.abspath(path)}'…"
         )
         mkdirp(path)

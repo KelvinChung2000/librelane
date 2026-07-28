@@ -15,8 +15,8 @@
 The Logging Module
 ------------------
 
-As the name implies, this handles LibreLane's logging using the ``logging``
-module and the ``rich`` library.
+This module initializes Loguru and owns LibreLane's logging settings and sinks.
+Application code logs through :data:`loguru.logger` directly.
 """
 
 from .logger import (
@@ -27,14 +27,9 @@ from .logger import (
     set_log_level,
     reset_log_level,
     get_log_level,
-    register_additional_handler,
-    deregister_additional_handler,
-    verbose,
-    debug,
-    info,
-    rule,
-    success,
-    warn,
-    err,
-    subprocess,
+    initialize_logger,
+    register_additional_sink,
+    deregister_additional_sink,
+    additional_sink,
+    temporary_log_level,
 )

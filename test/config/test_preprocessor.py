@@ -12,13 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import json
+import builtins
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from pyfakefs.fake_filesystem_unittest import Patcher
 
 
 pytestmark = pytest.mark.all
+EXPRESSION_CASES = Path(__file__).with_name("expression_cases.json")
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +58,65 @@ def test_expr():
 
     with pytest.raises(ValueError, match="multiple values"):
         Expr.evaluate("(5 + 4) (8 + 10)", {})
+
+
+@pytest.mark.parametrize(
+    ("expression", "symbols", "expected"),
+    [
+        ("2 ** 3 ** 2", {}, Decimal("512")),
+        (" -2 + 3 ", {}, Decimal("1")),
+        ("2*-3", {}, Decimal("-6")),
+        ("-2**2", {}, Decimal("4")),
+        ("2**-2", {}, Decimal("0.25")),
+        ("$A[0].B * 2", {"A[0].B": 3}, Decimal("6")),
+        ("(1 + 2", {}, Decimal("3")),
+    ],
+)
+def test_expr_characterization(expression, symbols, expected):
+    from librelane.config.preprocessor import Expr
+
+    assert Expr.evaluate(expression, symbols) == expected
+
+
+@pytest.mark.parametrize(
+    ("expression", "symbols", "exception", "message"),
+    [
+        ("1 + @", {}, SyntaxError, "Unexpected token"),
+        ("1 +", {}, SyntaxError, "not enough operands"),
+        ("1 + 2)", {}, IndexError, "list index out of range"),
+        ("1 2", {}, ValueError, "multiple values"),
+        ("", {}, ValueError, "is empty"),
+        ("--2", {}, SyntaxError, "not enough operands"),
+        ("$MISSING", {}, TypeError, "not found"),
+        ("$TEXT", {"TEXT": "2"}, TypeError, "valid numeric"),
+    ],
+)
+def test_expr_error_characterization(expression, symbols, exception, message):
+    from librelane.config.preprocessor import Expr
+
+    with pytest.raises(exception, match=message):
+        Expr.evaluate(expression, symbols)
+
+
+@pytest.mark.parametrize("case", json.loads(EXPRESSION_CASES.read_text()))
+def test_expr_golden_cases(case):
+    from librelane.config.preprocessor import Expr, process_string
+
+    expression = case["expression"]
+    symbols = case["symbols"]
+    if expected := case.get("result"):
+        assert Expr.evaluate(expression, symbols) == Decimal(expected)
+        assert process_string(f"expr::{expression}", symbols) == Decimal(expected)
+        return
+
+    exception = getattr(builtins, case["exception"])
+    with pytest.raises(exception) as evaluate_error:
+        Expr.evaluate(expression, symbols)
+    assert str(evaluate_error.value) == case["message"]
+
+    with pytest.raises(exception) as process_error:
+        process_string(f"expr::{expression}", symbols)
+    assert str(process_error.value) == case.get("process_message", case["message"])
 
 
 def test_process_string():

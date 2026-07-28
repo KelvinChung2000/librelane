@@ -15,14 +15,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
+from ..resources import package_path
 
 from decimal import Decimal
 from typing import Optional, Union
 from collections.abc import Sequence
 
 from .variable import Variable, Macro
-from ..common import Path, get_script_dir
+from ..common import Path
 
 
 def _prefix_to_wildcard(prefixes_raw: str | Sequence[str]):
@@ -422,7 +422,7 @@ option_variables = [
         Path,
         "A fallback SDC file for when a step-specific SDC file is not defined.",
         deprecated_names=["FALLBACK_SDC_FILE", "BASE_SDC_FILE", "SDC_FILE"],
-        default=Path(os.path.join(get_script_dir(), "base.sdc")),
+        default=Path(str(package_path().joinpath("scripts", "base.sdc"))),
     ),
 ]
 

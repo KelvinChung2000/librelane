@@ -13,12 +13,15 @@
 # limitations under the License.
 
 ## This file is internal to LibreLane and is not part of the API.
+from loguru import logger
+
 import os
 import re
 import uuid
 import shlex
 import pathlib
 import subprocess
+from .resources import package_path
 from typing import NoReturn, Optional, Union
 from collections.abc import Sequence
 
@@ -26,10 +29,7 @@ import httpx
 import semver
 
 from .common import mkdirp
-from .logging import err, info, warn
 from .env_info import ContainerInfo, OSInfo
-
-__file_dir__ = os.path.dirname(os.path.abspath(__file__))
 
 
 def permission_args(osinfo: OSInfo) -> list[str]:
@@ -51,7 +51,7 @@ def gui_args(osinfo: OSInfo) -> list[str]:
     args = []
     if osinfo.kernel == "Linux":
         if os.environ.get("DISPLAY") is None:
-            warn(
+            logger.warning(
                 "DISPLAY environment variable not set. GUI features will not be available."
             )
         else:
@@ -59,11 +59,11 @@ def gui_args(osinfo: OSInfo) -> list[str]:
                 "-e",
                 f"DISPLAY={os.environ.get('DISPLAY')}",
             ]
-            if os.path.isdir("/tmp/.X11-unix"):
+            if pathlib.Path("/tmp/.X11-unix").is_dir():
                 args += ["-v", "/tmp/.X11-unix:/tmp/.X11-unix"]
-            homedir = os.path.expanduser("~")
-            if os.path.isfile(f"{homedir}/.Xauthority"):
-                args += ["-v", f"{homedir}/.Xauthority:/.Xauthority"]
+            xauthority = pathlib.Path.home() / ".Xauthority"
+            if xauthority.is_file():
+                args += ["-v", f"{xauthority}:/.Xauthority"]
             args += [
                 "--network",
                 "host",
@@ -101,7 +101,7 @@ def remote_manifest_exists(image: str) -> bool:
     elif registry == "ghcr.io":
         url = f"https://ghcr.io/v2/{repo}/manifests/{tag}"
     else:
-        err(f"Unknown registry '{registry}'.")
+        logger.error(f"Unknown registry '{registry}'.")
         return False
 
     try:
@@ -109,10 +109,10 @@ def remote_manifest_exists(image: str) -> bool:
             url, headers={"Accept": "application/json"}
         )
     except httpx.NetworkError:
-        err("Couldn't connect to the internet to pull container images.")
+        logger.error("Couldn't connect to the internet to pull container images.")
         return False
     except httpx.HTTPStatusError as e:
-        err(
+        logger.error(
             f"The image {image} was not found. This may be because the CI for this image is running- in which case, please try again later. (error: {e})"
         )
         return False
@@ -126,7 +126,7 @@ def ensure_image(ce_path: str, image: str) -> bool:
     try:
         subprocess.check_call([ce_path, "pull", image])
     except subprocess.CalledProcessError:
-        err(f"Failed to pull image '{image}' from the container registries.")
+        logger.error(f"Failed to pull image '{image}' from the container registries.")
         return False
 
     return True
@@ -145,8 +145,7 @@ def sanitize_path(path: Union[str, os.PathLike]) -> tuple[str, str]:
           - Backslashes are converted into forward slashes
           - The drive letter (e.g. C:) is converted to a root directory (e.g. /c)
     """
-    path_str = str(path)
-    abspath = os.path.abspath(path_str)
+    abspath = os.fspath(pathlib.Path(path).resolve())
     mountable_path = abspath
     if os.path.sep == "\\":
         mountable_path = f"/{abspath[0]}" + dos_path_sep.sub("/", abspath)[2:]
@@ -184,7 +183,7 @@ def run_in_container(
 
     osinfo = OSInfo.get()
     if not osinfo.supported:
-        warn(
+        logger.warning(
             f"Unsupported host operating system '{osinfo.kernel}'. You may encounter unexpected issues."
         )
 
@@ -197,18 +196,18 @@ def run_in_container(
     engine_name = osinfo.container_info.engine.lower()
     if engine_name == "docker":
         if error := container_version_error(osinfo.container_info.version, "25.0.5"):
-            warn(error % engine_name)
+            logger.warning(error % engine_name)
     elif engine_name == "podman":
         if osinfo.distro.lower() == "ubuntu" and not ubuntu_version_at_least(
             osinfo.distro_version, "24.04"
         ):
-            warn(
+            logger.warning(
                 "Versions of Podman for Ubuntu before Ubuntu 24.04 are generally pretty buggy. We recommend using Docker instead if possible."
             )
         elif error := container_version_error(osinfo.container_info.version, "4.1.0"):
-            warn(error % engine_name)
+            logger.warning(error % engine_name)
     else:
-        warn(
+        logger.warning(
             f"Unsupported container engine referenced by '{osinfo.container_info.path}'. You may encounter unexpected issues."
         )
 
@@ -247,14 +246,14 @@ def run_in_container(
             f"STD_CELL_LIBRARY={scl}",
         ]
 
-    from_cwd, to_cwd = sanitize_path(os.getcwd())
+    from_cwd, to_cwd = sanitize_path(pathlib.Path.cwd())
     if not from_cwd.startswith(from_home):
         mount_args += ["-v", f"{from_cwd}:{to_cwd}"]
     mount_args += ["-w", to_cwd]
 
     if other_mounts is not None:
         for mount in other_mounts:
-            if os.path.isdir(mount):
+            if pathlib.Path(mount).is_dir():
                 mount_from, mount_to = sanitize_path(mount)
                 mount_args += ["-v", f"{mount_from}:{mount_to}"]
                 mkdirp(mount_from)
@@ -264,7 +263,7 @@ def run_in_container(
     container_id = str(uuid.uuid4())
 
     if os.getenv("_MOUNT_HOST_LIBRELANE") == "1":
-        host_librelane_pythonpath = os.path.dirname(__file_dir__)
+        host_librelane_pythonpath = package_path().parent
         mount_args += ["-v", f"{host_librelane_pythonpath}:/host_librelane"]
 
     cmd = (
@@ -283,7 +282,7 @@ def run_in_container(
         + list(args)
     )
 
-    info("Running containerized command:")
+    logger.info("Running containerized command:")
     print(shlex.join(cmd))
 
     os.execlp(ce_path, *cmd)

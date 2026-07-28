@@ -34,6 +34,7 @@ using their module name as follows:
         the module version as a version.
 """
 
+from . import logging as _logging
 from .plugins import discovered_plugins
 from .__version__ import __version__
 from .env_info import env_info_cli

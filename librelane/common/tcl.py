@@ -15,13 +15,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import re
+import tkinter
+from dataclasses import asdict, is_dataclass
+from enum import Enum
 from typing import Any
-from collections.abc import Mapping, Iterable
-
-_env_rx = re.compile(r"(?:\:\:)?env\((\w+)\)")
-_find_unsafe = re.compile(r"[^\w@%+=:,./-]", re.ASCII).search
-_escapes_in_quotes = re.compile(r"([\\\$\"\[])")
+from collections import UserString
+from collections.abc import Iterable, Mapping
 
 
 class TclUtils(object):
@@ -35,89 +34,74 @@ class TclUtils(object):
     @staticmethod
     def escape(s: str) -> str:
         """
-        :returns: If the string can be parsed by Tcl as a single token, the string
-            is returned verbatim.
-
-            Otherwise, the string is returned in double quotes, with any unsafe
-            characters escaped with a backslash.
+        :returns: The input string serialized as one Tcl list element.
         """
-        if s == "":
-            return '""'
-        if not _find_unsafe(s):
-            return s
-        return '"' + _escapes_in_quotes.sub(r"\\\1", s).replace("\n", r"\n") + '"'
+        return TclUtils.join([s])
 
     @staticmethod
     def join(ss: Iterable[str]) -> str:
         """
         :param ss: Input list
         :returns: The input list converted to a Tcl-compatible list where each
-            element is either a single token or double-quoted (i.e. interpreted
-            by Tcl as a single element.)
+            element is interpreted by Tcl as a single element.
         """
-        return " ".join(TclUtils.escape(arg) for arg in ss)
+        interpreter = tkinter.Tcl()
+        interpreter.tk.wantobjects(False)
+        return str(interpreter.call("list", *ss))
+
+    @staticmethod
+    def split(s: str) -> list[str]:
+        """
+        :returns: The input Tcl-compatible list string split into its elements.
+        """
+        interpreter = tkinter.Tcl()
+        try:
+            return list(interpreter.splitlist(s))
+        except tkinter.TclError as e:
+            raise ValueError(f"Invalid Tcl list: {s}") from e
+
+    @staticmethod
+    def to_tcl(value: Any) -> str:
+        """
+        :returns: A Python value serialized as a Tcl scalar, list, or dictionary.
+        """
+        if not isinstance(value, type) and is_dataclass(value):
+            return TclUtils.to_tcl(asdict(value))  # type: ignore[arg-type]
+        if isinstance(value, Mapping):
+            elements: list[str] = []
+            for key, item in value.items():
+                elements.extend((TclUtils.to_tcl(key), TclUtils.to_tcl(item)))
+            return TclUtils.join(elements)
+        if isinstance(value, Iterable) and not isinstance(value, (str, UserString)):
+            return TclUtils.join(TclUtils.to_tcl(item) for item in value)
+        if isinstance(value, Enum):
+            return value.name
+        if isinstance(value, bool):
+            return "1" if value else "0"
+        return str(value)
 
     @staticmethod
     def _eval_env(env_in: Mapping[str, Any], tcl_in: str) -> dict[str, Any]:
-        import tkinter
-
         interpreter = tkinter.Tcl()
 
         interpreter.eval("array unset ::env")
+        serialized_in = {}
+        original_in = {}
         for key, value in env_in.items():
-            interpreter.setvar(f"env({key})", str(value))
-
-        env_out = dict(env_in)
-
-        def py_set(key, value=None):
-            if match := _env_rx.fullmatch(key):
-                if value is not None:
-                    env_out[match.group(1)] = value
-
-        def py_dict(command, target=None, *args):
-            if command == "set":
-                if match := _env_rx.fullmatch(target):
-                    if len(args) > 1:
-                        value = args[-1]
-                        keys = args[:-1]
-
-                        # Create new dict if it does not exist
-                        if match.group(1) not in env_out:
-                            env_out[match.group(1)] = {}
-
-                        # set ::env(...) [dict create]
-                        # will create an empty string ""
-                        # convert into an empty dictionary
-                        if env_out[match.group(1)] == "":
-                            env_out[match.group(1)] = {}
-
-                        # Set key value pair
-                        cur_dict = env_out[match.group(1)]
-
-                        # Create all nested dicts
-                        for key in keys[:-1]:
-                            if key in cur_dict:
-                                cur_dict = cur_dict[key]
-                            else:
-                                cur_dict[key] = {}
-                                cur_dict = cur_dict[key]
-
-                        # Finally set the value
-                        cur_dict[keys[-1]] = value
-
-        py_set_name = interpreter.register(py_set)
-        py_dict_name = interpreter.register(py_dict)
-        interpreter.call("rename", py_set_name, "_py_set")
-        interpreter.call("rename", "set", "_orig_set")
-        interpreter.call("rename", py_dict_name, "_py_dict")
-        interpreter.call("rename", "dict", "_orig_dict")
-        interpreter.eval(
-            "proc set args { _py_set {*}$args; tailcall _orig_set {*}$args; }"
-        )
-        interpreter.eval(
-            "proc dict args { _py_dict {*}$args; tailcall _orig_dict {*}$args; }"
-        )
+            if value is None:
+                continue
+            key = str(key)
+            serialized_in[key] = TclUtils.to_tcl(value)
+            original_in[key] = value
+            interpreter.setvar(f"env({key})", serialized_in[key])
 
         interpreter.eval(tcl_in)
+
+        env_items = TclUtils.split(interpreter.eval("array get ::env"))
+        env_out = {env_items[i]: env_items[i + 1] for i in range(0, len(env_items), 2)}
+
+        for key, original in original_in.items():
+            if env_out.get(key) == serialized_in[key]:
+                env_out[key] = original
 
         return env_out

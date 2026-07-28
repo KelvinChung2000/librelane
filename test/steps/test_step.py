@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import json
+import sys
 import textwrap
+import pathlib
 
 import pytest
 
@@ -21,6 +24,67 @@ from librelane.steps import step
 pytestmark = pytest.mark.all
 
 mock_variables = pytest.mock_variables
+
+
+def test_create_reproducible_uses_portable_paths(tmp_path, monkeypatch):
+    from concurrent.futures import Future
+
+    from librelane.common import Path
+    from librelane.state import State
+    from librelane.steps.step.reporting import ReportingMixin
+
+    monkeypatch.chdir(tmp_path)
+
+    design_file = tmp_path / "design.v"
+    design_file.write_text("module design; endmodule\n")
+    relative_file = tmp_path / "relative.v"
+    relative_file.write_text("module relative; endmodule\n")
+    pdk_root = tmp_path / "pdks"
+    pdk_file = pdk_root / "dummy" / "tech.lef"
+    pdk_file.parent.mkdir(parents=True)
+    pdk_file.write_text("VERSION 5.8 ;\n")
+
+    class ReproducibleStep(ReportingMixin):
+        inputs = []
+
+        @classmethod
+        def get_implementation_id(cls):
+            return "Test.Reproducible"
+
+    state_in: Future[State] = Future()
+    state_in.set_result(State({}))
+    target = ReproducibleStep()
+    target.state_in = state_in
+    target.config = {
+        "DESIGN_DIR": Path(tmp_path),
+        "DESIGN_NAME": "design",
+        "PDK": "dummy",
+        "PDK_ROOT": Path(pdk_root),
+        "DESIGN_FILE": Path(design_file),
+        "RELATIVE_FILE": Path("relative.v"),
+        "TECH_FILE": Path(pdk_file),
+    }
+
+    output = tmp_path / "reproducible"
+    target.create_reproducible(output)
+
+    config = json.loads((output / "config.json").read_text())
+    assert config["DESIGN_FILE"].startswith("./files/")
+    assert config["RELATIVE_FILE"] == "./files/relative.v"
+    assert config["TECH_FILE"].startswith("./files/")
+    assert (output / config["DESIGN_FILE"]).read_text() == design_file.read_text()
+    assert (output / config["RELATIVE_FILE"]).read_text() == relative_file.read_text()
+    assert (output / config["TECH_FILE"]).read_text() == pdk_file.read_text()
+    assert (output / "run_ol.sh").stat().st_mode & 0o111
+
+    flat_output = tmp_path / "flat-reproducible"
+    target.create_reproducible(flat_output, include_pdk=False, flatten=True)
+
+    flat_config = json.loads((flat_output / "config.json").read_text())
+    assert flat_config["DESIGN_FILE"] == "./design.v"
+    assert flat_config["TECH_FILE"] == "pdk_dir::tech.lef"
+    assert (flat_output / "design.v").read_text() == design_file.read_text()
+    assert not (flat_output / "pdk").exists()
 
 
 @pytest.fixture
@@ -340,7 +404,7 @@ def test_step_factory(mock_run):
 # The Configuration should NOT be re-validated.
 @pytest.mark.usefixtures("_chdir_tmp")
 @mock_variables([step])
-def test_run_subprocess(mock_run):
+def test_run_subprocess(mock_run, caplog, monkeypatch):
     import subprocess
     from librelane.config import Config
     from librelane.steps import Step, StepException
@@ -418,6 +482,46 @@ def test_run_subprocess(mock_run):
     assert actual_result == subprocess_result, (
         ".run_subprocess() generated invalid metrics"
     )
+
+    monkeypatch.setenv("LIBRELANE_EMPTY_ENV_TEST", "parent value")
+    empty_env_log = "empty-env.log"
+    step.run_subprocess(
+        [
+            sys.executable,
+            "-c",
+            "import os; print(os.getenv('LIBRELANE_EMPTY_ENV_TEST', 'missing'))",
+        ],
+        env={},
+        log_to=empty_env_log,
+        silent=True,
+    )
+    with open(empty_env_log) as f:
+        assert f.read() == "missing\n"
+
+    owned_files = {}
+    original_path_open = pathlib.Path.open
+
+    def track_log_file(path, *args, **kwargs):
+        file = original_path_open(path, *args, **kwargs)
+        if path.name == "failed-process.log":
+            owned_files["log"] = file
+        return file
+
+    def fail_to_start(*args, **kwargs):
+        owned_files["stdin"] = kwargs["stdin"]
+        raise RuntimeError("failed to start")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pathlib.Path, "open", track_log_file)
+        with pytest.raises(RuntimeError, match="failed to start"):
+            step.run_subprocess(
+                ["unused"],
+                log_to="failed-process.log",
+                _popen_callable=fail_to_start,
+            )
+
+    assert owned_files["log"].closed
+    assert owned_files["stdin"].closed
     assert actual_report_data.strip() == report_data, (
         ".run_subprocess() generated invalid report"
     )
@@ -427,6 +531,19 @@ def test_run_subprocess(mock_run):
 
     with pytest.raises(subprocess.CalledProcessError):
         step.run_subprocess(["false"])
+
+    with pytest.raises(subprocess.CalledProcessError):
+        step.run_subprocess(
+            [
+                "python3",
+                "-c",
+                "import sys; print('\\n'.join(f'tail-{i}' for i in range(15))); sys.exit(1)",
+            ],
+            silent=True,
+        )
+    assert "tail-5" in caplog.text
+    assert "tail-14" in caplog.text
+    assert "tail-4\n" not in caplog.text
 
     class BadStep(Step):
         id = "Test.BadStep"

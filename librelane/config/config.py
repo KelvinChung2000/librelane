@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
 import os
 import json
 import yaml
@@ -35,7 +37,6 @@ from .removals import removed_variables
 from .flow import pdk_variables, scl_variables, pad_variables, flow_common_variables
 from .pdk_compat import migrate_old_config
 from .preprocessor import preprocess_dict, Keys as SpecialKeys
-from ..logging import info, warn
 from ..__version__ import __version__
 from ..common import (
     GenericDict,
@@ -323,11 +324,11 @@ class Config(GenericImmutableDict[str, Any]):
 
         if not config_quiet:
             if len(design_warnings) > 0:
-                info(
+                logger.info(
                     "Loading the incremental configuration has generated the following warnings:"
                 )
             for warning in design_warnings:
-                warn(warning)
+                logger.warning(warning)
 
         return Config(
             processed,
@@ -437,11 +438,11 @@ class Config(GenericImmutableDict[str, Any]):
             raise InvalidConfig("default configuration", design_warnings, design_errors)
 
         if len(design_warnings) > 0:
-            info(
+            logger.info(
                 "Loading the default configuration has generated the following warnings:"
             )
         for warning in design_warnings:
-            warn(warning)
+            logger.warning(warning)
 
         Config.current_interactive = Config(processed)
 
@@ -723,11 +724,11 @@ class Config(GenericImmutableDict[str, Any]):
             )
 
         if len(design_warnings) > 0:
-            info(
+            logger.info(
                 "Loading the design configuration file has generated the following warnings:"
             )
         for warning in design_warnings:
-            warn(warning)
+            logger.warning(warning)
 
         return Config(processed, meta=meta)
 
@@ -744,7 +745,7 @@ class Config(GenericImmutableDict[str, Any]):
     ) -> Mapping[str, Any]:
         config_str = open(config, encoding="utf8").read()
 
-        warn(
+        logger.warning(
             "Support for .tcl configuration files is deprecated. Please migrate to a .json file at your earliest convenience."
         )
 
@@ -942,11 +943,11 @@ class Config(GenericImmutableDict[str, Any]):
 
         if len(pdk_warnings) > 0:
             if full_pdk_warnings:
-                info(
+                logger.info(
                     "Loading the PDK configuration files has generated the following warnings:"
                 )
                 for warning in pdk_warnings:
-                    warn(warning)
+                    logger.warning(warning)
 
         processed["PDK_ROOT"] = pdk_root
         processed["PDK"] = pdk

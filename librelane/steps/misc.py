@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
 import os
 
 from .step import ViewsUpdate, MetricsUpdate, Step
@@ -80,7 +82,9 @@ class ReportManufacturability(Step):
                 report.append(f"Unmatched Nets: {unmatched_nets}")
                 report.append(f"Check the report directory of {lvs_step}.")
         except KeyError as key:
-            self.warn(f"{key} not reported. {lvs_step} may have been skipped.")
+            logger.bind(step=self.id).warning(
+                f"{key} not reported. {lvs_step} may have been skipped."
+            )
             report.append("N/A")
 
         report.append("")
@@ -98,7 +102,7 @@ class ReportManufacturability(Step):
 
         klayout = state_in.metrics.get("klayout__drc_error__count", "N/A")
         if klayout == "N/A":
-            self.warn(
+            logger.bind(step=self.id).warning(
                 f"klayout__drc_error__count not reported. {klayout_step} may have been skipped."
             )
         elif klayout > 0:
@@ -106,7 +110,7 @@ class ReportManufacturability(Step):
 
         magic = state_in.metrics.get("magic__drc_error__count", "N/A")
         if magic == "N/A":
-            self.warn(
+            logger.bind(step=self.id).warning(
                 f"magic__drc_error__count not reported. {magic_step} may have been skipped."
             )
         elif magic > 0:
@@ -144,7 +148,9 @@ class ReportManufacturability(Step):
                 report.append(f"Net violations: {nets}")
                 report.append(f"Check the report directory of {antenna_step}.")
         except KeyError as key:
-            self.warn(f"{key} not reported. {antenna_step} may have been skipped.")
+            logger.bind(step=self.id).warning(
+                f"{key} not reported. {antenna_step} may have been skipped."
+            )
             report.append("N/A")
 
         report.append("")

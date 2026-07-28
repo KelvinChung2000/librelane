@@ -15,18 +15,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
 import io
 import os
 import re
-import glob
 import gzip
 import yaml
-import shutil
 import typing
 import pathlib
 import fnmatch
 import unicodedata
-from math import inf
+from importlib.resources import files
+from importlib.resources.abc import Traversable
 from typing import (
     IO,
     Any,
@@ -39,7 +40,6 @@ import httpx
 
 from ..__version__ import __version__
 from .types import AnyPath, Path
-from ..logging import err
 
 T = TypeVar("T")
 
@@ -51,38 +51,19 @@ def idem(obj: T, *args, **kwargs) -> T:
     return obj
 
 
-def get_librelane_root() -> str:
-    """
-    Returns the root LibreLane folder, i.e., the folder containing the
-    ``__init__.py``.
-    """
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def get_script_dir() -> str:
-    """
-    Gets the LibreLane tool `scripts` directory.
-
-    :meta private:
-    """
-    return os.path.join(
-        get_librelane_root(),
-        "scripts",
-    )
-
-
 def get_pdk_hash(pdk_variant) -> str:
     """
     Gets the PDK version hash confirmed compatible with this version of LibreLane.
     """
 
-    with open(os.path.join(get_librelane_root(), "pdk_hashes.yaml"), "r") as file:
-        pdk_hashes = yaml.safe_load(file)
-        for pdk_family in pdk_hashes:
-            if pdk_family in pdk_variant:
-                return pdk_hashes[pdk_family]
+    pdk_hashes = yaml.safe_load(
+        files("librelane").joinpath("pdk_hashes.yaml").read_text(encoding="utf8")
+    )
+    for pdk_family in pdk_hashes:
+        if pdk_family in pdk_variant:
+            return pdk_hashes[pdk_family]
 
-    err(
+    logger.error(
         f"Could not find a PDK family for '{pdk_variant}'. Please specify a PDK manually with '--manual-pdk'."
     )
     exit(1)
@@ -195,31 +176,6 @@ def mkdirp(path: str | os.PathLike):
     return pathlib.Path(path).mkdir(parents=True, exist_ok=True)
 
 
-class zip_first(object):
-    """
-    Works like ``zip_longest`` if ｜a｜ > ｜b｜ and ``zip`` if ｜a｜ <= ｜b｜.
-    """
-
-    def __init__(self, a: Iterable, b: Iterable, fillvalue: Any) -> None:
-        self.a = a
-        self.b = b
-        self.fillvalue = fillvalue
-
-    def __iter__(self):
-        self.iter_a = iter(self.a)
-        self.iter_b = iter(self.b)
-        return self
-
-    def __next__(self):
-        a = next(self.iter_a)
-        b = self.fillvalue
-        try:
-            b = next(self.iter_b)
-        except StopIteration:
-            pass
-        return (a, b)
-
-
 def format_size(byte_count: int) -> str:
     units = [
         "B",
@@ -328,7 +284,7 @@ class Filter(object):
 
 
 def recreate_tree(
-    source: AnyPath,
+    source: AnyPath | Traversable,
     target: AnyPath,
 ):
     """
@@ -345,17 +301,27 @@ def recreate_tree(
     :param source: The source file tree to replicate
     :param target: The target path to recreate the file tree within
     """
-    source = os.path.abspath(source)
-    target = os.path.abspath(target)
-    if os.path.exists(target) and os.path.samefile(source, target):
+    target_path = pathlib.Path(target).resolve()
+    if isinstance(source, Traversable) and not isinstance(source, os.PathLike):
+        target_path.mkdir(parents=True, exist_ok=True)
+        for child in source.iterdir():
+            child_target = target_path / child.name
+            if child.is_dir():
+                recreate_tree(child, child_target)
+            elif child.is_file():
+                child_target.parent.mkdir(parents=True, exist_ok=True)
+                child_target.write_bytes(child.read_bytes())
         return
-    for dirname, _, files in os.walk(source):
-        for file in files:
-            resolved = os.path.join(dirname, file)
-            resolved_target = os.path.join(target, os.path.relpath(resolved, source))
-            os.makedirs(os.path.dirname(resolved_target), exist_ok=True)
-            with open(resolved, "rb") as fi, open(resolved_target, "wb") as fo:
-                shutil.copyfileobj(fi, fo)
+
+    source_path = pathlib.Path(source).resolve()
+    if target_path.exists() and source_path.samefile(target_path):
+        return
+    for resolved in source_path.rglob("*"):
+        if not resolved.is_file():
+            continue
+        resolved_target = target_path / resolved.relative_to(source_path)
+        resolved_target.parent.mkdir(parents=True, exist_ok=True)
+        resolved_target.write_bytes(resolved.read_bytes())
 
 
 def get_latest_file(in_path: str | os.PathLike, filename: str) -> Path | None:
@@ -364,16 +330,11 @@ def get_latest_file(in_path: str | os.PathLike, filename: str) -> Path | None:
     :param filename: The final filename
     :returns: The latest file matching the parameters, by modification time
     """
-    glob_results = glob.glob(os.path.join(in_path, "**", filename), recursive=True)
-    latest_time = -inf
-    latest_json = None
-    for result in glob_results:
-        time = os.path.getmtime(result)
-        if time > latest_time:
-            latest_time = time
-            latest_json = Path(result)
-
-    return latest_json
+    candidates = pathlib.Path(in_path).rglob(filename)
+    latest = max(
+        candidates, key=lambda candidate: candidate.stat().st_mtime, default=None
+    )
+    return Path(latest) if latest is not None else None
 
 
 def get_httpx_session(token: str | None = None) -> httpx.Client:

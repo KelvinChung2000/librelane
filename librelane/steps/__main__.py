@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
 import os
 import shlex
 import shutil
@@ -29,11 +31,11 @@ from cloup import (
 )
 
 from .step import Step, StepError, StepException
-from ..logging import info, err, warn
 from ..flows import cloup_flow_opts
 from ..__version__ import __version__
 from ..common.cli import formatter_settings
-from ..common import mkdirp, Toolbox, get_librelane_root
+from ..common import mkdirp, recreate_tree, Toolbox
+from ..resources import package_path
 
 
 def load_step_from_inputs(
@@ -48,8 +50,8 @@ def load_step_from_inputs(
         if Found := Step.factory.get(id):
             Target = Found
         else:
-            err(f"No step registered with id '{id}'.")
-            info(
+            logger.error(f"No step registered with id '{id}'.")
+            logger.info(
                 f"If the step '{id}' is part of a plugin, make sure the plugin's parent directory is in the PYTHONPATH environment variable."
             )
             ctx.exit(-1)
@@ -137,7 +139,7 @@ def run(ctx, output, state_in, config, id, pdk_root):
     step = load_step_from_inputs(ctx, id, config, state_in, pdk_root)
 
     if step.config.meta.librelane_version != __version__:
-        warn(
+        logger.warning(
             "LibreLane version being used is different from the version this step was originally run with. Procceed with caution."
         )
 
@@ -149,12 +151,12 @@ def run(ctx, output, state_in, config, id, pdk_root):
             step_dir=output,
         )
     except StepException as e:
-        err("An unexpected error occurred while executing your step:")
-        err(e)
+        logger.error("An unexpected error occurred while executing your step:")
+        logger.error(e)
         ctx.exit(-1)
     except StepError as e:
-        err("An error occurred while executing your step:")
-        err(e)
+        logger.error("An error occurred while executing your step:")
+        logger.error(e)
         ctx.exit(-1)
 
 
@@ -214,7 +216,7 @@ def eject(ctx, output, state_in, config, id):
     step = load_step_from_inputs(ctx, id, config, state_in)
 
     if step.config.meta.librelane_version != __version__:
-        warn(
+        logger.warning(
             "LibreLane version being used is different from the version this step was originally run with. Procceed with caution."
         )
 
@@ -254,17 +256,18 @@ def eject(ctx, output, state_in, config, id):
     except Stop:
         pass
     except Exception as e:
-        info("An error occurred while attempting to execute the step:")
-        err(e)
-        info("This may affect the ejection process.")
+        logger.info("An error occurred while attempting to execute the step:")
+        logger.error(e)
+        logger.info("This may affect the ejection process.")
 
     if found_cmd is None:
-        err(
+        logger.error(
             "Could not eject: The step did not successfully invoke a subprocess using run_subprocess."
         )
         exit(-1)
 
-    canon_scripts_dir = os.path.join(get_librelane_root(), "scripts")
+    canon_scripts_dir = package_path().joinpath("scripts")
+    canon_scripts_dir_string = str(canon_scripts_dir)
     target_scripts_dir = os.path.join(".", "scripts")
 
     try:
@@ -272,7 +275,7 @@ def eject(ctx, output, state_in, config, id):
     except FileNotFoundError:
         pass
 
-    shutil.copytree(canon_scripts_dir, target_scripts_dir)
+    recreate_tree(canon_scripts_dir, target_scripts_dir)
     if chmod := shutil.which("chmod"):
         # Nix's Files aren't writeable
         subprocess.check_call([chmod, "-R", "755", target_scripts_dir])
@@ -291,8 +294,8 @@ def eject(ctx, output, state_in, config, id):
             ):
                 continue
             if os.path.isabs(value) and os.path.exists(value):
-                if value.startswith(canon_scripts_dir):
-                    value = value.replace(canon_scripts_dir, target_scripts_dir)
+                if value.startswith(canon_scripts_dir_string):
+                    value = value.replace(canon_scripts_dir_string, target_scripts_dir)
             filtered_env[key] = value
 
     cat_in = ""
@@ -306,7 +309,7 @@ def eject(ctx, output, state_in, config, id):
 
     found_cmd_filtered = []
     for cmd in found_cmd:
-        cmd = str(cmd).replace(canon_scripts_dir, target_scripts_dir)
+        cmd = str(cmd).replace(canon_scripts_dir_string, target_scripts_dir)
         found_cmd_filtered.append(cmd)
 
     with open(output, "w", encoding="utf8") as f:
@@ -321,7 +324,7 @@ def eject(ctx, output, state_in, config, id):
     if hasattr(os, "chmod"):
         os.chmod(output, 0o755)
 
-    info("Ejected successfully.")
+    logger.info("Ejected successfully.")
 
 
 @command(formatter_settings=formatter_settings)
@@ -431,10 +434,12 @@ def create_reproducible(
 
     if step_dir is None:
         if config is None or state_in is None:
-            err("Either --step-dir or both --config and --state-in must be provided.")
+            logger.error(
+                "Either --step-dir or both --config and --state-in must be provided."
+            )
             ctx.exit(-1)
         elif None in [config, state_in]:
-            err(
+            logger.error(
                 "Both --config and --state-in must be provided if the --step-dir is not provided."
             )
             ctx.exit(-1)

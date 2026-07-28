@@ -12,18 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from loguru import logger
+
 import os
 import re
 from typing import ClassVar
 from decimal import Decimal
 from typing import Optional
 
-from .step import ViewsUpdate, MetricsUpdate, Step, StepError, DeferredStepError, State
+from .step import ViewsUpdate, MetricsUpdate, Step, StepError, DeferredStepError
 
-from ..logging import info, debug, verbose
 from ..config import Variable
 from ..common import Filter, parse_metric_modifiers
-from ..state import DesignFormat
+from ..state import DesignFormat, State
 
 
 @Step.factory.register()
@@ -58,7 +59,8 @@ class NetlistAssignStatements(Step):
             for i, line in enumerate(f, start=1):
                 if assign_rx.search(line) is not None:
                     found = True
-                    (self.err if emit_error else self.warn)(
+                    step_logger = logger.bind(step=self.id)
+                    (step_logger.error if emit_error else step_logger.warning)(
                         f"{os.path.relpath(netlist_in)}:{i}: assign statement found in netlist"
                     )
         if found and self.config["ERROR_ON_NL_ASSIGN_STATEMENTS"]:
@@ -105,7 +107,7 @@ class MetricChecker(Step):
         threshold = self.get_threshold()
 
         if threshold is None:
-            self.warn(
+            logger.bind(step=self.id).warning(
                 f"Threshold for {self.metric_description} is not set. The checker will be skipped."
             )
         else:
@@ -118,19 +120,19 @@ class MetricChecker(Step):
                         and self.error_on_var
                         and not self.config.get(self.error_on_var.name)
                     ):
-                        debug(self.config.get(self.error_on_var.name))
-                        self.warn(f"{error_msg}")
+                        logger.debug(self.config.get(self.error_on_var.name))
+                        logger.bind(step=self.id).warning(f"{error_msg}")
                     elif self.deferred:
-                        self.err(f"{error_msg} - deferred")
+                        logger.bind(step=self.id).error(f"{error_msg} - deferred")
                         raise DeferredStepError(error_msg)
                     else:
-                        self.err(f"{error_msg}")
+                        logger.bind(step=self.id).error(f"{error_msg}")
                         raise StepError(error_msg)
 
                 else:
-                    info(f"Check for {self.metric_description} clear.")
+                    logger.info(f"Check for {self.metric_description} clear.")
             else:
-                self.warn(
+                logger.bind(step=self.id).warning(
                     f"The {self.metric_description} metric was not found. Are you sure the relevant step was run?"
                 )
 
@@ -406,12 +408,12 @@ class LintTimingConstructs(MetricChecker):
         if metric_value is not None:
             if metric_value > 0:
                 error_msg = "Timing constructs found in the RTL. Please remove them or wrap them around an ifdef. It heavily unrecommended to rely on timing constructs for synthesis."
-                self.err(f"{error_msg}")
+                logger.bind(step=self.id).error(f"{error_msg}")
                 raise StepError(error_msg)
             else:
-                info(f"Check for {self.metric_description} clear.")
+                logger.info(f"Check for {self.metric_description} clear.")
         else:
-            self.warn(
+            logger.bind(step=self.id).warning(
                 f"The {self.metric_description} metric was not found. Are you sure the relevant step was run?"
             )
 
@@ -554,10 +556,12 @@ class TimingViolations(MetricChecker):
             for key, value in state_in.metrics.items()
             if metric_basename in key
         }
-        debug("Metrics ▶")
-        debug(metrics)
+        logger.debug("Metrics ▶")
+        logger.debug(metrics)
         if not metrics:
-            self.warn(f"No metrics found for {metric_basename}.")
+            logger.bind(step=self.id).warning(
+                f"No metrics found for {metric_basename}."
+            )
         else:
             metric_corners = set(
                 [parse_metric_modifiers(key)[1]["corner"] for key in metrics.keys()]
@@ -590,14 +594,14 @@ class TimingViolations(MetricChecker):
             err_violating_corner = matched_violating_corners
             warn_violating_corner = all_violating_corners - matched_violating_corners
 
-            debug("All corners ▶")
-            debug(metric_corners)
-            debug("Corners unmatched by config ▶")
-            debug(unmatched_corners)
-            debug("Violations at corners causing errors ▶")
-            debug(err_violating_corner)
-            debug("Violations at corners causing warnings ▶")
-            debug(warn_violating_corner)
+            logger.debug("All corners ▶")
+            logger.debug(metric_corners)
+            logger.debug("Corners unmatched by config ▶")
+            logger.debug(unmatched_corners)
+            logger.debug("Violations at corners causing errors ▶")
+            logger.debug(err_violating_corner)
+            logger.debug("Violations at corners causing warnings ▶")
+            logger.debug(warn_violating_corner)
 
             err_msg = []
             warn_msg = []
@@ -623,9 +627,9 @@ class TimingViolations(MetricChecker):
                     err_msg.append(f"* {corner}")
 
             if warn_msg:
-                self.warn("\n".join(warn_msg))
+                logger.bind(step=self.id).warning("\n".join(warn_msg))
             if not err_violating_corner:
-                verbose(f"No {violation_type} violations found")
+                logger.log("VERBOSE", f"No {violation_type} violations found")
             if err_msg:
                 raise DeferredStepError("\n".join(err_msg))
 

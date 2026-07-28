@@ -391,6 +391,16 @@ def variable_set(variable, test_enum):
             description="x",
         ),
         Variable(
+            "TCL_DICT_VAR",
+            dict[str, str],
+            description="x",
+        ),
+        Variable(
+            "NESTED_DICT_VAR",
+            dict[str, dict[str, dict[str, Decimal]]],
+            description="x",
+        ),
+        Variable(
             "UNION_VAR",
             Union[int, dict[str, str]],
             description="x",
@@ -441,6 +451,8 @@ def test_compile_invalid(variable_set: list):
             "DICT_VAR": ["1"],
             "OTHER_DICT_VAR": "bad tcl dictionary",
             "ANOTHER_DICT_VAR": ["1", "2", "3"],
+            "TCL_DICT_VAR": "key1 'shell quoted'",
+            "NESTED_DICT_VAR": "nom_* {met1 {res}}",
             "UNION_VAR": "lol",
             "UNION_VAR_2": "lol",
             "LITERAL_VAR": "no",
@@ -476,8 +488,10 @@ def test_compile_permissive(variable_set: list, test_enum: type):
             "TUPLE_3_VAR": "1;2;3",
             "TUPLE_4_VAR": "asd;2;3",
             "DICT_VAR": "key1 value1 key2 value2",
-            "OTHER_DICT_VAR": "key1 value1 key2 value2",
+            "OTHER_DICT_VAR": "key1 {value with spaces} key2 {[exec {touch ignored}]}",
             "ANOTHER_DICT_VAR": ["key1", "value1", "key2", "value2"],
+            "TCL_DICT_VAR": "key1 value1 key2 value2",
+            "NESTED_DICT_VAR": "nom_* {met1 {res 0.1 cap 0.2}}",
             "UNION_VAR": "4",
             "UNION_VAR_2": "4",
             "BOOL_VAR": "0",
@@ -503,8 +517,20 @@ def test_compile_permissive(variable_set: list, test_enum: type):
         "TUPLE_3_VAR": (1, 2, 3),
         "TUPLE_4_VAR": ("asd", 2, 3),
         "DICT_VAR": {"key1": "value1", "key2": "value2"},
-        "OTHER_DICT_VAR": {"key1": "value1", "key2": "value2"},
+        "OTHER_DICT_VAR": {
+            "key1": "value with spaces",
+            "key2": "[exec {touch ignored}]",
+        },
         "ANOTHER_DICT_VAR": {"key1": "value1", "key2": "value2"},
+        "TCL_DICT_VAR": {"key1": "value1", "key2": "value2"},
+        "NESTED_DICT_VAR": {
+            "nom_*": {
+                "met1": {
+                    "res": Decimal("0.1"),
+                    "cap": Decimal("0.2"),
+                }
+            }
+        },
         "UNION_VAR": 4,
         "UNION_VAR_2": 4,
         "BOOL_VAR": False,

@@ -15,6 +15,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
+from ..resources import package_path
 import os
 import re
 import json
@@ -26,7 +29,7 @@ from typing import Optional
 from .step import ViewsUpdate, MetricsUpdate, Step
 from .tclstep import TclStep
 
-from ..common import Path, mkdirp, get_script_dir, TclUtils
+from ..common import Path, mkdirp, TclUtils
 from ..config import Variable
 from ..state import DesignFormat, State
 
@@ -170,7 +173,7 @@ class LVS(NetgenStep):
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         spice_files = []
         if self.config["CELL_SPICE_MODELS"] is None:
-            self.warn(
+            logger.bind(step=self.id).warning(
                 "This PDK does not appear to define any cell SPICE models. LVS will still run, but all cells will be black-boxed and the result may be inaccurate."
             )
         else:
@@ -201,7 +204,7 @@ class LVS(NetgenStep):
                     f"readnet spice {lib} 1",
                     file=f,
                 )
-        netgen_setup_script = os.path.join(get_script_dir(), "netgen", "setup.tcl")
+        netgen_setup_script = package_path().joinpath("scripts", "netgen", "setup.tcl")
         mkdirp(reports_dir)
 
         spice_files_commands = []

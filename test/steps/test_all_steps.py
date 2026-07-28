@@ -90,7 +90,8 @@ def test_step_folder(
     from librelane.steps import Step
     from librelane.state import State
     from librelane.config import Config
-    from librelane.common import Toolbox, get_script_dir
+    from librelane.common import Toolbox
+    from importlib.resources import files
     from librelane.steps.openroad_alerts import SupportsOpenROADAlerts
     from decimal import Decimal
     import json
@@ -118,8 +119,8 @@ def test_step_folder(
         os.path.join(os.getcwd(), "handler.py"), "handle"
     ) or (lambda: None)
 
-    base_sdc = os.path.join(get_script_dir(), "base.sdc")
-    shutil.copy(base_sdc, ".")
+    base_sdc = files("librelane").joinpath("scripts", "base.sdc")
+    shutil.copy(str(base_sdc), ".")
 
     # 1. Preprocess State and Config (if needed)
     state_in = os.path.join(".", "state_in.json")

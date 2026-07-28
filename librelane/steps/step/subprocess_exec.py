@@ -1,0 +1,250 @@
+# Copyright 2023 Efabless Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from __future__ import annotations
+
+from loguru import logger
+
+import os
+import json
+import psutil
+import subprocess
+import pathlib
+from collections import deque
+from contextlib import ExitStack
+from typing import (
+    Any,
+    ClassVar,
+    TYPE_CHECKING,
+    TypeVar,
+    cast,
+)
+from collections.abc import Callable, Sequence
+
+from rich.markup import escape
+
+from ...common import slugify, protected
+from ...logging import options
+
+from .exceptions import StepException
+from .output_processor import OutputProcessor
+from .process_stats import ProcessStatsThread
+
+if TYPE_CHECKING:
+    from .core import Step
+
+VT = TypeVar("VT")
+
+
+class SubprocessMixin:
+    id: str
+    step_dir: pathlib.Path
+    output_processors: ClassVar[list[type[OutputProcessor]]]
+    err: Callable[..., None]
+
+    @protected
+    def get_log_path(self) -> str:
+        """
+        :returns: the default value for :meth:`run_subprocess`'s "log_to"
+            parameter.
+
+            Override it to change the default log path.
+        """
+        return os.fspath(pathlib.Path(self.step_dir) / f"{slugify(self.id)}.log")
+
+    @protected
+    def run_subprocess(
+        self,
+        cmd: Sequence[str | os.PathLike],
+        log_to: str | os.PathLike | None = None,
+        silent: bool = False,
+        report_dir: str | os.PathLike | None = None,
+        env: dict[str, Any] | None = None,
+        *,
+        check: bool = True,
+        output_processing: Sequence[type[OutputProcessor]] | None = None,
+        _popen_callable: Callable[..., psutil.Popen] = psutil.Popen,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """
+        A helper function for :class:`Step` objects to run subprocesses.
+
+        The output from the subprocess is processed line-by-line by instances
+        of output processor classes.
+
+        :param cmd: A list of variables, representing a program and its arguments,
+            similar to how you would use it in a shell.
+        :param log_to: An optional override for the log path from
+            :meth:`get_log_path`\\. Useful for if you run multiple subprocesses
+            within one step.
+        :param silent: If specified, the subprocess does not print anything to
+            the terminal. Useful when running multiple processes simultaneously.
+        :param report_dir: An optional override for where reports by output
+            processors
+
+        :param check: Whether to raise ``subprocess.CalledProcessError`` in
+            the event of a non-zero exit code. Set to ``False`` if you'd like
+            to do further processing on the output(s).
+        :param output_processing: An override for the class's list of
+            :class:`librelane.steps.OutputProcessor` classes.
+        :param \\*\\*kwargs: Passed on to subprocess execution: useful if you want to
+            redirect stdin, stdout, etc.
+        :returns: A dictionary of output processor results.
+
+            These key/value pairs are included in all cases:
+            * ``returncode``: Exit code for the subprocess
+            * ``log_path``: The resolved log path for the subprocess
+
+            The other key value pairs depend on the ``key`` class variables
+            and :meth:`librelane.steps.OutputProcessor.result` methods of the
+            output processors.
+        :raises subprocess.CalledProcessError: If the process has a non-zero
+            exit, and ``check`` is True, this exception will be raised.
+        """
+        if report_dir is None:
+            report_dir = self.step_dir
+        report_dir = pathlib.Path(report_dir)
+        report_dir.mkdir(parents=True, exist_ok=True)
+
+        log_path_value = log_to or self.get_log_path()
+        log_path = pathlib.Path(log_path_value)
+        cmd_str = [str(arg) for arg in cmd]
+
+        with (pathlib.Path(self.step_dir) / "COMMANDS").open(
+            "a+", encoding="utf8"
+        ) as f:
+            f.write(" ".join(cmd_str))
+            f.write("\n")
+
+        kwargs = kwargs.copy()
+        if "stdout" not in kwargs:
+            kwargs["stdout"] = subprocess.PIPE
+        if "stderr" not in kwargs:
+            kwargs["stderr"] = subprocess.STDOUT
+
+        if env is None:
+            env = os.environ.copy()
+        for key, value in env.items():
+            if not (
+                isinstance(value, str)
+                or isinstance(value, bytes)
+                or isinstance(value, os.PathLike)
+            ):
+                raise StepException(
+                    f"Environment variable for key '{key}' is of invalid type {type(value)}: {value}"
+                )
+
+        if output_processing is None:
+            output_processing = self.output_processors
+        output_processors = []
+        for cls in output_processing:
+            output_processors.append(cls(cast("Step", self), report_dir, silent))
+
+        hyperlinks = (
+            os.getenv(
+                "_i_want_librelane_to_hyperlink_things_for_some_reason",
+                None,
+            )
+            == "1"
+        )
+        link_start = ""
+        link_end = ""
+        if hyperlinks:
+            link_start = f"[link=file://{log_path.resolve()}]"
+            link_end = "[/link]"
+
+        msg = f"Logging subprocess to [repr.filename]{link_start}'{os.path.relpath(log_path)}'{link_end}[/repr.filename]…"
+        if options.get_condensed_mode():
+            logger.info(msg)
+        else:
+            logger.log("VERBOSE", msg)
+
+        with ExitStack() as owned_files:
+            log_file = owned_files.enter_context(log_path.open("w", encoding="utf8"))
+            if "stdin" not in kwargs:
+                kwargs["stdin"] = owned_files.enter_context(
+                    open(os.devnull, "r", encoding="utf8")
+                )
+
+            process = _popen_callable(
+                cmd_str,
+                encoding="utf8",
+                env=env,
+                **kwargs,
+            )
+
+            process_stats_thread = ProcessStatsThread(process)
+            process_stats_thread.start()
+
+            line_buffer: deque[str] = deque(maxlen=10)
+            if process_stdout := process.stdout:
+                try:
+                    for line in process_stdout:
+                        log_file.write(line)
+                        line_buffer.append(line)
+                        for processor in output_processors:
+                            if processor.process_line(line):
+                                break
+                except UnicodeDecodeError as e:
+                    raise StepException(f"Subprocess emitted non-UTF-8 output: {e}")
+            process_stats_thread.join()
+            returncode = process.wait()
+
+        json_stats = log_path.with_suffix(".process_stats.json")
+        with json_stats.open("w", encoding="utf8") as f:
+            json.dump(process_stats_thread.stats_as_dict(), f, indent=4)
+
+        result: dict[str, Any] = {}
+        result["returncode"] = returncode
+        result["log_path"] = log_path_value
+
+        for processor in output_processors:
+            result[processor.key] = processor.result()
+
+        if check and returncode != 0:
+            if returncode > 0:
+                logger.bind(step=self.id).error("Subprocess had a non-zero exit.")
+                concatenated = ""
+                for line in line_buffer:
+                    concatenated += line
+                if concatenated.strip() != "":
+                    logger.bind(step=self.id).error(
+                        f"Last {len(line_buffer)} line(s):\n" + escape(concatenated)
+                    )
+                logger.bind(step=self.id).error(
+                    f"Full log file: {link_start}'{os.path.relpath(log_path)}'{link_end}"
+                )
+            raise subprocess.CalledProcessError(returncode, process.args)
+
+        return result
+
+    @protected
+    def extract_env(self, kwargs) -> tuple[dict, dict[str, str]]:
+        """
+        An assisting function: Given a ``kwargs`` object, it does the following:
+
+            * If the kwargs object has an "env" variable, it separates it into
+                its own variable.
+            * If the kwargs object has no "env" variable, a new "env" dictionary
+                is created based on the current environment.
+
+        :param kwargs: A Python keyword arguments object.
+        :returns (kwargs, env): A kwargs without an ``env`` object, and an isolated ``env`` object.
+        """
+        env = kwargs.get("env")
+        if env is None:
+            env = os.environ.copy()
+        else:
+            kwargs = kwargs.copy()
+            del kwargs["env"]
+        return (kwargs, env)

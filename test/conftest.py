@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 import os
 import tempfile
 from unittest import mock
@@ -20,11 +19,42 @@ from typing import Any, Literal, Optional
 from collections.abc import Iterable, Callable
 
 import pytest
+from loguru import logger
 from pyfakefs.fake_filesystem_unittest import Patcher
 from _pytest.fixtures import SubRequest
 
 from librelane.config import Variable, Macro
 from librelane.common import Path, GenericDict
+
+
+class LoguruCapture:
+    def __init__(self):
+        self.records = []
+
+    def __call__(self, message):
+        self.records.append(message.record.copy())
+
+    @property
+    def text(self) -> str:
+        return "\n".join(str(record["message"]) for record in self.records)
+
+    def clear(self) -> None:
+        self.records.clear()
+
+
+@pytest.fixture
+def caplog():
+    from librelane.logging import (
+        deregister_additional_sink,
+        register_additional_sink,
+    )
+
+    capture = LoguruCapture()
+    sink_id = register_additional_sink(capture)
+    try:
+        yield capture
+    finally:
+        deregister_additional_sink(sink_id)
 
 
 def pytest_assertrepr_compare(op, left, right):
@@ -111,9 +141,9 @@ def _chdir_tmp(request: SubRequest):
     else:
         dir = tempfile.mkdtemp(prefix="librelane_test_")
         with chdir(dir):
-            logging.info(f"\nTMP: {dir}")
+            logger.info(f"\nTMP: {dir}")
             yield
-            logging.info(f"\nTMP: {dir}")
+            logger.info(f"\nTMP: {dir}")
 
 
 MOCK_PDK_VARS = [

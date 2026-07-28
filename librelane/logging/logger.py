@@ -11,17 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import click
 import atexit
-import logging
+from contextlib import contextmanager
 from enum import IntEnum
-from typing import ClassVar
-from collections.abc import Iterable
+from typing import Any, ClassVar
+from collections.abc import Iterable, Iterator, Mapping
 
 import rich.console
-import rich.logging
-from rich.text import Text
-from rich.style import Style, StyleType
+from loguru import logger as _logger
 
 
 class LogLevels(IntEnum):
@@ -30,14 +27,16 @@ class LogLevels(IntEnum):
     SUBPROCESS = 12
     VERBOSE = 15
     INFO = 20
+    SUCCESS = 25
     WARNING = 30
     ERROR = 40
     CRITICAL = 50
 
 
 console = rich.console.Console()
-atexit.register(lambda: rich.console.Console().show_cursor())
-__event_logger: logging.Logger = logging.getLogger("__librelane__")
+atexit.register(console.show_cursor)
+_log_level = int(LogLevels.SUBPROCESS)
+_terminal_sink_id: int | None = None
 
 
 class options:
@@ -61,264 +60,171 @@ class options:
         Self._show_progress_bar = show
 
 
-class NullFormatter(logging.Formatter):
-    def format(self, record):
-        return record.getMessage()
+class LevelFilter:
+    """Filters native Loguru records by level name."""
 
-
-class LevelFormatter(logging.Formatter):
-    def format(self, record):
-        message = record.getMessage()
-        if record.levelname == "WARNING":
-            message = f"[yellow]{message}"
-        elif record.levelname == "ERROR":
-            message = f"[red]{message}"
-        elif record.levelname == "CRITICAL":
-            message = f"[red][bold]{message}"
-        else:
-            message = f"{message}"
-        return message
-
-
-class RichHandler(rich.logging.RichHandler):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(**kwargs)
-
-    def get_level_text(self, record: logging.LogRecord) -> Text:
-        if not options.get_condensed_mode():
-            return super().get_level_text(record)
-        level_name = record.levelname
-        style: StyleType
-        if level_name == "WARNING":
-            style = Style(color="yellow", bold=True)
-        else:
-            style = f"logging.level.{level_name.lower()}"
-        level_text = Text.styled(
-            f"[{level_name[0]}]",
-            style,
-        )
-        return level_text
-
-
-class KeywordFilter(logging.Filter):
-    def __init__(self, matching_values: dict) -> None:
-        super().__init__()
-        self.matching_values = matching_values.copy()
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        for key, value in self.matching_values.items():
-            if value is None:
-                if hasattr(record, key) and getattr(record, key) is not None:
-                    return False
-            else:
-                if not hasattr(record, key) or getattr(record, key) != value:
-                    return False
-        return True
-
-
-class LevelFilter(logging.Filter):
     def __init__(self, levels: Iterable[str], invert: bool = False) -> None:
-        self.levels = levels
+        if isinstance(levels, str):
+            levels = [levels]
+        self.levels = set(levels)
         self.invert = invert
 
-    def filter(self, record: logging.LogRecord) -> bool:
-        if options.get_condensed_mode():
-            if record.levelname == "SUBPROCESS":
-                return False
-        if self.invert:
-            return record.levelname not in self.levels
-        else:
-            return record.levelname in self.levels
+    def __call__(self, record: Mapping[str, Any]) -> bool:
+        level = record["level"]
+        level_name = getattr(level, "name", str(level))
+        if options.get_condensed_mode() and level_name == "SUBPROCESS":
+            return False
+        matched = level_name in self.levels
+        return not matched if self.invert else matched
 
 
-def initialize_logger():
-    global __event_logger, console
+def _passes_threshold(record: Mapping[str, Any]) -> bool:
+    return int(record["level"].no) >= _log_level
 
-    for level in LogLevels:
-        logging.addLevelName(level.value, level.name)
 
-    subprocess_handler = RichHandler(
-        console=console,
-        show_time=False,
-        omit_repeated_times=False,
-        show_level=False,
-        show_path=False,
-        enable_link_path=False,
-        tracebacks_word_wrap=False,
-        keywords=[],
-        markup=False,
+def _terminal_sink(message) -> None:
+    record = message.record
+    level_name = record["level"].name
+    if options.get_condensed_mode() and level_name == "SUBPROCESS":
+        return
+
+    text = str(record["message"])
+    if level_name == "SUBPROCESS":
+        console.print(text, markup=False)
+        return
+
+    if options.get_condensed_mode():
+        prefix = f"[{level_name[0]}]"
+    else:
+        prefix = f"[{record['time']:%X}] {level_name:<8}"
+
+    style = None
+    if level_name == "WARNING":
+        style = "yellow"
+    elif level_name == "SUCCESS":
+        style = "green"
+    elif level_name in {"ERROR", "CRITICAL"}:
+        style = "bold red" if level_name == "CRITICAL" else "red"
+    console.print(f"{prefix} {text}", style=style, markup=True)
+
+
+def initialize_logger() -> None:
+    global _terminal_sink_id
+
+    for name, number in [
+        ("SUBPROCESS", LogLevels.SUBPROCESS),
+        ("VERBOSE", LogLevels.VERBOSE),
+    ]:
+        try:
+            _logger.level(name)
+        except ValueError:
+            _logger.level(name, no=int(number))
+
+    if _terminal_sink_id is None:
+        _logger.remove()
+    else:
+        try:
+            _logger.remove(_terminal_sink_id)
+        except ValueError:
+            pass
+
+    _terminal_sink_id = _logger.add(
+        _terminal_sink,
+        level=0,
+        filter=_passes_threshold,
+        format="{message}",
+        backtrace=False,
+        diagnose=False,
     )
-    subprocess_handler.addFilter(LevelFilter(["SUBPROCESS"]))
-
-    rich_handler = RichHandler(
-        console=console,
-        rich_tracebacks=True,
-        omit_repeated_times=False,
-        markup=True,
-        tracebacks_suppress=[
-            click,
-        ],
-        show_level=True,
-        keywords=[],
-    )
-    rich_handler.setFormatter(LevelFormatter("%(message)s", datefmt="[%X]"))
-    rich_handler.addFilter(LevelFilter(["SUBPROCESS"], invert=True))
-
-    logger = logging.getLogger("__librelane__")
-    logger.setLevel(LogLevels.SUBPROCESS)
-
-    logger.handlers.clear()
-
-    logger.addHandler(subprocess_handler)
-    logger.addHandler(rich_handler)
 
 
 initialize_logger()
 
 
-def register_additional_handler(handler: logging.Handler):
-    """
-    Adds a new handler to the default LibreLane logger.
+def register_additional_sink(
+    sink,
+    *,
+    level: str | int = 0,
+    filter=None,
+    format: str = "{message}",
+    **kwargs,
+) -> int:
+    """Registers a native Loguru sink governed by LibreLane's threshold."""
 
-    :param handler: The new handler. Must be of type ``logging.Handler``
-        or its subclasses.
-    """
-    __event_logger.addHandler(handler)
+    def combined_filter(record):
+        if not _passes_threshold(record):
+            return False
+        if filter is None:
+            return True
+        return filter(record)
 
-
-def deregister_additional_handler(handler: logging.Handler):
-    """
-    Removes a registered handler from the default LibreLane logger.
-
-    :param handler: The handler. If not registered, the behavior
-        of this function is undefined.
-    """
-    __event_logger.removeHandler(handler)
-
-
-def set_log_level(lv: str | int):
-    """
-    Sets the log level of the default LibreLane logger.
-
-    :param lv: Either the name or number of the desired log level.
-    """
-    __event_logger.setLevel(lv)
-
-
-def reset_log_level():
-    """
-    Sets the log level of the default LibreLane logger back to the
-    default log level.
-    """
-    set_log_level("SUBPROCESS")
-
-
-def get_log_level() -> int:
-    """
-    Obtains the numeric log level of the LibreLane logger.
-    """
-    return __event_logger.getEffectiveLevel()
-
-
-def debug(*args, **kwargs):
-    """
-    Logs to the LibreLane logger with the log level DEBUG.
-
-    :param msg: The message to log
-    """
-    if kwargs.get("stacklevel") is None:
-        kwargs["stacklevel"] = 2
-    __event_logger.debug(*args, **kwargs)
-
-
-def verbose(*args, **kwargs):
-    """
-    Logs to the LibreLane logger with the log level VERBOSE.
-    """
-    if kwargs.get("stacklevel") is None:
-        kwargs["stacklevel"] = 2
-    __event_logger.log(
-        LogLevels.VERBOSE,
-        *args,
+    return _logger.add(
+        sink,
+        level=level,
+        filter=combined_filter,
+        format=format,
+        backtrace=False,
+        diagnose=False,
         **kwargs,
     )
 
 
-def info(msg: object, /, **kwargs):
-    """
-    Logs to the LibreLane logger with the log level INFO.
-
-    :param msg: The message to log
-    """
-    if kwargs.get("stacklevel") is None:
-        kwargs["stacklevel"] = 2
-    __event_logger.info(msg, **kwargs)
+def deregister_additional_sink(sink_id: int) -> None:
+    """Removes a native Loguru sink by its registration ID."""
+    _logger.remove(sink_id)
 
 
-def subprocess(msg: object, /, **kwargs):
-    """
-    Logs to the LibreLane logger with the log level SUBPROCESS.
-
-    :param msg: The message to log
-    """
-    if kwargs.get("stacklevel") is None:
-        kwargs["stacklevel"] = 2
-    __event_logger.log(LogLevels.SUBPROCESS, msg, **kwargs)
-
-
-def rule(title: str = "", /, **kwargs):  # pragma: no cover
-    """
-    Prints a horizontal line on the terminal enclosing the first argument
-    if the log level is <= INFO.
-
-    Kwargs are passed to https://rich.readthedocs.io/en/stable/reference/console.html#rich.console.Console.rule
-
-    :param title: A title string to enclose in the console rule
-    """
-    console.rule(title)
+@contextmanager
+def additional_sink(*args, **kwargs) -> Iterator[int]:
+    """Registers a sink and guarantees its removal when the context exits."""
+    sink_id = register_additional_sink(*args, **kwargs)
+    try:
+        yield sink_id
+    finally:
+        deregister_additional_sink(sink_id)
 
 
-def success(msg: object, /, **kwargs):
-    """
-    Logs to the LibreLane logger with the log level INFO.
+def set_log_level(lv: str | int) -> None:
+    """Sets the minimum severity emitted by LibreLane sinks."""
+    global _log_level
 
-    :param msg: The message to log
-    """
-    if kwargs.get("stacklevel") is None:
-        kwargs["stacklevel"] = 2
-    __event_logger.info(f"{msg}", **kwargs)
-
-
-def warn(msg: object, /, **kwargs):
-    """
-    Logs to the LibreLane logger with the log level WARNING.
-
-    :param msg: The message to log
-    """
-    if kwargs.get("stacklevel") is None:
-        kwargs["stacklevel"] = 2
-    __event_logger.warning(f"{msg}", **kwargs)
+    if isinstance(lv, str):
+        try:
+            _log_level = int(LogLevels[lv.upper()])
+        except KeyError:
+            raise ValueError(f"Unknown level: {lv}") from None
+    else:
+        _log_level = int(lv)
 
 
-def err(msg: object, /, **kwargs):
-    """
-    Logs to the LibreLane logger with the log level ERROR.
+def reset_log_level() -> None:
+    """Restores the default ``SUBPROCESS`` threshold."""
+    set_log_level(LogLevels.SUBPROCESS)
 
-    :param msg: The message to log
-    """
-    if kwargs.get("stacklevel") is None:
-        kwargs["stacklevel"] = 2
-    __event_logger.error(f"{msg}", **kwargs)
+
+def get_log_level() -> int:
+    """Returns LibreLane's numeric minimum severity."""
+    return _log_level
+
+
+@contextmanager
+def temporary_log_level(level: str | int) -> Iterator[None]:
+    """Temporarily changes the LibreLane threshold."""
+    previous = get_log_level()
+    set_log_level(level)
+    try:
+        yield
+    finally:
+        set_log_level(previous)
 
 
 if __name__ == "__main__":
-    initialize_logger()
-    debug("Debug")
-    verbose("Verbose")
-    subprocess("Subprocess")
-    rule("Rule")
-    info("Info")
-    success("Success")
-    warn("Warn")
-    err("Err")
-    print("\n")
+    set_log_level("ALL")
+    _logger.debug("Debug")
+    _logger.log("VERBOSE", "Verbose")
+    _logger.log("SUBPROCESS", "Subprocess")
+    console.rule("Rule")
+    _logger.info("Info")
+    _logger.success("Success")
+    _logger.warning("Warn")
+    _logger.error("Err")

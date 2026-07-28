@@ -15,6 +15,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import tkinter
 
 import pytest
@@ -83,13 +84,17 @@ def test_tcl_step_value_to_tcl():
         "[abc]",
         "\\abc",
     ]
-    alphanumerical_list_value_string = (
-        '1.0 2.1 3 abc "abc f" "{abc}" "\\[abc]" "\\\\abc"'
-    )
-    assert (
-        TclStep.value_to_tcl(alphanumerical_list_value)
-        == alphanumerical_list_value_string
-    ), "Wrong alpahnumerical list to tcl list conversion"
+    alphanumerical_list_value_string = TclStep.value_to_tcl(alphanumerical_list_value)
+    assert TclUtils.split(alphanumerical_list_value_string) == [
+        "1.0",
+        "2.1",
+        "3",
+        "abc",
+        "abc f",
+        "{abc}",
+        "[abc]",
+        "\\abc",
+    ], "Wrong alpahnumerical list to tcl list conversion"
 
     assert TclStep.value_to_tcl(True) == "1", "Wrong bool to tcl conversion"
     assert TclStep.value_to_tcl(1) == "1", "Wrong integer to tcl conversion"
@@ -189,3 +194,38 @@ def test_env(mock_config):  # noqa: F811
             assert env[var] == TclStep.value_to_tcl(mock_config[var]), (
                 "Wrong prepared env. Mismatching configuration variable"
             )
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_reroute_env_quotes_tcl_names_and_values(mock_config):  # noqa: F811
+    from librelane.steps import TclStep
+    from librelane.state import State
+
+    class TclStepTest(TclStep):
+        inputs = []
+        outputs = []
+        id = "Test.TclStep"
+        step_dir = "/cwd"
+
+        def get_script_path(self):
+            return "/dummy_path"
+
+    step = TclStepTest(config=mock_config, state_in=State({}))
+    rerouted = step._reroute_env(
+        {
+            "PATH": os.environ["PATH"],
+            "WEIRD) [exec {touch should_not_exist}]": "[exec {touch ignored}]",
+        },
+        report_dir="/cwd",
+    )
+
+    interpreter = tkinter.Tcl()
+    interpreter.eval("array unset ::env")
+    with open(rerouted["_TCL_ENV_IN"], encoding="utf8") as f:
+        interpreter.eval(f.read())
+
+    assert interpreter.getvar("env(WEIRD) [exec {touch should_not_exist}])") == (
+        "[exec {touch ignored}]"
+    )
+    assert not os.path.exists("/cwd/should_not_exist")

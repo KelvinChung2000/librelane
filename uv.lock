@@ -547,6 +547,15 @@ wheels = [
 ]
 
 [[package]]
+name = "lark"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/34/28fff3ab31ccff1fd4f6c7c7b0ceb2b6968d8ea4950663eadcb5720591a0/lark-1.3.1.tar.gz", hash = "sha256:b426a7a6d6d53189d318f2b6236ab5d6429eaf09259f1ca33eb716eed10d2905", size = 382732, upload-time = "2025-10-27T18:25:56.653Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/3d/14ce75ef66813643812f3093ab17e46d3a206942ce7376d31ec2d36229e7/lark-1.3.1-py3-none-any.whl", hash = "sha256:c629b661023a014c37da873b4ff58a817398d12635d3bbb2c5a03be7fe5d1e12", size = 113151, upload-time = "2025-10-27T18:25:54.882Z" },
+]
+
+[[package]]
 name = "latexcodec"
 version = "3.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -566,7 +575,9 @@ dependencies = [
     { name = "deprecated" },
     { name = "httpx" },
     { name = "klayout" },
+    { name = "lark" },
     { name = "lln-libparse" },
+    { name = "loguru" },
     { name = "lxml" },
     { name = "psutil" },
     { name = "pyyaml" },
@@ -618,7 +629,9 @@ requires-dist = [
     { name = "deprecated", specifier = ">=1.2.10,<2" },
     { name = "httpx", specifier = ">=0.22.0,<0.29" },
     { name = "klayout", specifier = ">=0.29.0,<0.32.0" },
+    { name = "lark", specifier = ">=1.3,<2" },
     { name = "lln-libparse", specifier = "==0.56.*" },
+    { name = "loguru", specifier = ">=0.7,<1" },
     { name = "lxml", specifier = ">=4.9.0,<7" },
     { name = "psutil", specifier = ">=5.9.0,<8" },
     { name = "pyyaml", specifier = ">=5,<7" },
@@ -780,6 +793,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/2d/ca4b848485c4004f06f42c2e4b0b360dc170b242b457702b1503feeb820c/lln_libparse-0.56.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:bdebab25a1a99d1529bcd6f24bf3cbde2afb2b360344224ed1e2d8fdeb2bcf09", size = 134837, upload-time = "2025-08-30T03:56:13.506Z" },
     { url = "https://files.pythonhosted.org/packages/9d/3b/2ead80f9a1c5ccaa4dd4487d2eca83319b884426c8dd6e36d99cb914c354/lln_libparse-0.56.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:9476e423b45fea999528f0836e411dc9e7dc9a7fee28260a412e2b909ecd709e", size = 1075333, upload-time = "2025-08-30T03:56:15.353Z" },
     { url = "https://files.pythonhosted.org/packages/b2/d3/96b587b5ebd694aba92077776a5aad8ba622576d35554b41876b8837fb43/lln_libparse-0.56.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:3c53bc255023587c4b11be5ada97d3678fdd2f649ab7b39f4bfa85401ed9d96c", size = 1121356, upload-time = "2025-08-30T03:56:17.236Z" },
+]
+
+[[package]]
+name = "loguru"
+version = "0.7.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "win32-setctime", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/05/a1dae3dffd1116099471c643b8924f5aa6524411dc6c63fdae648c4f1aca/loguru-0.7.3.tar.gz", hash = "sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6", size = 63559, upload-time = "2024-12-06T11:20:56.608Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl", hash = "sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c", size = 61595, upload-time = "2024-12-06T11:20:54.538Z" },
 ]
 
 [[package]]
@@ -2220,6 +2246,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/39/62/75f18a0f03b4219c456652c7780e4d749b929eb605c098ce3a5b6b6bc081/wheel-0.47.0.tar.gz", hash = "sha256:cc72bd1009ba0cf63922e28f94d9d83b920aa2bb28f798a31d0691b02fa3c9b3", size = 63854, upload-time = "2026-04-22T15:51:27.727Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/87/1b/9e33c09813d65e248f7f773119148a612516a4bea93e9c6f545f78455b7c/wheel-0.47.0-py3-none-any.whl", hash = "sha256:212281cab4dff978f6cedd499cd893e1f620791ca6ff7107cf270781e587eced", size = 32218, upload-time = "2026-04-22T15:51:26.296Z" },
+]
+
+[[package]]
+name = "win32-setctime"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/8f/705086c9d734d3b663af0e9bb3d4de6578d08f46b1b101c2442fd9aecaa2/win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0", size = 4867, upload-time = "2024-12-07T15:28:28.314Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390", size = 4083, upload-time = "2024-12-07T15:28:26.465Z" },
 ]
 
 [[package]]

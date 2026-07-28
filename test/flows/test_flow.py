@@ -276,7 +276,9 @@ def test_progress_bar(DummyFlow: type[flow.Flow]):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple):
+def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple, monkeypatch):
+    import importlib
+
     from librelane.flows import FlowException, SequentialFlow
 
     StepA, StepB, _ = MockStepTuple
@@ -304,13 +306,24 @@ def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple):
         pdk_root="/pdk",
     )
 
-    with pytest.raises(
-        FlowException, match="tag and last_run cannot be used simultaneously"
-    ):
-        flow.start(tag="NotNone", last_run=True)
+    flow_module = importlib.import_module("librelane.flows.flow")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            flow_module,
+            "additional_sink",
+            lambda *args, **kwargs: pytest.fail(
+                "sink registered before flow arguments were validated"
+            ),
+        )
+        with pytest.raises(
+            FlowException, match="tag and last_run cannot be used simultaneously"
+        ):
+            flow.start(tag="NotNone", last_run=True)
 
-    with pytest.raises(FlowException, match="last_run used without any existing runs"):
-        flow.start(last_run=True)
+        with pytest.raises(
+            FlowException, match="last_run used without any existing runs"
+        ):
+            flow.start(last_run=True)
 
     create_dir("/cwd/runs/MY_TAG")
     flow.start(tag="MY_TAG")
@@ -332,7 +345,8 @@ def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple):
     caplog.clear()
 
     flow.start(last_run=True)
-    assert flow.run_dir.endswith("MY_TAG2"), (
+    assert flow.run_dir is not None
+    assert flow.run_dir.name == "MY_TAG2", (
         ".start() with last_run failed to return latest run"
     )
 
@@ -341,3 +355,52 @@ def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple):
         FlowException, match="already exists as a file and not a directory"
     ):
         flow.start(tag="MY_TAG3")
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow, step])
+def test_flow_log_artifacts():
+    from loguru import logger
+
+    from librelane.flows import SequentialFlow
+    from librelane.steps import Step
+
+    class LoggingStep(Step):
+        id = "Test.LoggingStep"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            step_logger = logger.bind(step=self.id)
+            step_logger.info("info artifact marker")
+            step_logger.warning("warning artifact marker")
+            step_logger.error("error artifact marker")
+            return {}, {}
+
+    class LoggingFlow(SequentialFlow):
+        Steps = [LoggingStep]
+
+    logging_flow = LoggingFlow(
+        {
+            "DESIGN_NAME": "WHATEVER",
+            "VERILOG_FILES": ["/cwd/src/a.v"],
+        },
+        design_dir="/cwd",
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+    logging_flow.start(tag="LOGGING")
+
+    run_dir = pathlib.Path("/cwd/runs/LOGGING")
+    flow_log = (run_dir / "flow.log").read_text()
+    warning_log = (run_dir / "warning.log").read_text()
+    error_log = (run_dir / "error.log").read_text()
+
+    assert "info artifact marker" in flow_log
+    assert "warning artifact marker" in flow_log
+    assert "error artifact marker" in flow_log
+    assert "warning artifact marker" in warning_log
+    assert "info artifact marker" not in warning_log
+    assert "error artifact marker" in error_log
+    assert "warning artifact marker" not in error_log

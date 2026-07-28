@@ -15,6 +15,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
 import os
 import sys
 import json
@@ -43,7 +45,7 @@ from cloup.typing import Decorator
 
 from .flow import Flow
 from ..common import set_tpe, cli, get_pdk_hash, _get_process_limit
-from ..logging import set_log_level, verbose, err, options, LogLevels
+from ..logging import set_log_level, options, LogLevels
 from ..state import State, InvalidState
 
 
@@ -127,7 +129,7 @@ def set_log_level_cb(
             pass
         set_log_level(level)
     except ValueError as e:
-        err(f"Invalid logging level {value}: {e}.")
+        logger.error(f"Invalid logging level {value}: {e}.")
         echo(ctx.get_help())
         ctx.exit(-1)
 
@@ -160,15 +162,15 @@ def initial_state_cb(
                     raise ValueError(f"JSON data {value} is not a dictionary")
                 raw.update(state_dict)
         except json.JSONDecodeError as e:
-            err(f"Invalid JSON file: {e}")
+            logger.error(f"Invalid JSON file: {e}")
             ctx.exit(-1)
         except Exception as e:
-            err(f"Failed to read initial state: {e}")
+            logger.error(f"Failed to read initial state: {e}")
             ctx.exit(-1)
     try:
         initial_state = State.load(raw, validate_path=True)
     except InvalidState as e:
-        err(e)
+        logger.error(e)
         ctx.exit(-1)
 
     return initial_state
@@ -510,7 +512,9 @@ def cloup_flow_opts(
             ) -> str:
                 if not use_ciel:
                     if pdk_root is None:
-                        err("Argument --pdk-root must be present with --manual-pdk.")
+                        logger.error(
+                            "Argument --pdk-root must be present with --manual-pdk."
+                        )
                         exit(1)
                 else:
                     import ciel
@@ -530,7 +534,9 @@ def cloup_flow_opts(
                     if family := ciel.Family.by_name.get(pdk):
                         pdk = family.default_variant
                         pdk_family = family.name
-                        verbose(f"Resolved PDK variant {family.default_variant}.")
+                        logger.log(
+                            "VERBOSE", f"Resolved PDK variant {family.default_variant}."
+                        )
                     else:
                         for family in ciel.Family.by_name.values():
                             if pdk in family.variants:
@@ -538,7 +544,7 @@ def cloup_flow_opts(
                                 break
 
                     if pdk_family is None:
-                        err(f"Could not resolve the PDK '{pdk}'.")
+                        logger.error(f"Could not resolve the PDK '{pdk}'.")
                         exit(1)
 
                     try:
@@ -553,7 +559,7 @@ def cloup_flow_opts(
                         )
                         pdk_root = version.get_dir(ciel_home)
                     except ValueError as e:
-                        err(f"Failed to download PDK: {e}")
+                        logger.error(f"Failed to download PDK: {e}")
                         exit(1)
 
                 return f(*args, pdk_root=pdk_root, pdk=pdk, scl=scl, pad=pad, **kwargs)

@@ -15,6 +15,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from loguru import logger
+
 import os
 import sys
 import glob
@@ -22,6 +24,7 @@ import shutil
 import marshal
 import tempfile
 import traceback
+from importlib.resources import files
 from textwrap import dedent
 from functools import partial
 from typing import Any, Optional
@@ -40,12 +43,6 @@ from cloup.constraints import (
 
 from .__version__ import __version__
 from .state import State, DesignFormat
-from .logging import (
-    debug,
-    err,
-    warn,
-    info,
-)
 from . import common
 from .container import run_in_container
 from .plugins import discovered_plugins
@@ -79,7 +76,7 @@ def run(
 ):
     try:
         if len(config_files) == 0:
-            err("No config file(s) have been provided.")
+            logger.error("No config file(s) have been provided.")
             ctx.exit(1)
 
         TargetFlow: Optional[type[Flow]] = Flow.factory.get("Classic")
@@ -90,7 +87,7 @@ def run(
                     if found := Flow.factory.get(meta.flow):
                         TargetFlow = found
                     else:
-                        err(
+                        logger.error(
                             f"Unknown flow '{meta.flow}' specified in configuration file's 'meta' object."
                         )
                         ctx.exit(1)
@@ -98,7 +95,9 @@ def run(
                     TargetFlow = SequentialFlow.make(meta.flow)
                 if meta.substituting_steps is not None:
                     if meta.flow is None:
-                        err("config_file has substituting_steps set with no flow.")
+                        logger.error(
+                            "config_file has substituting_steps set with no flow."
+                        )
                         ctx.exit(1)
                     assert TargetFlow is not None, (
                         "run() failed to properly deduce TargetFlow -- please file an issue"
@@ -110,7 +109,9 @@ def run(
             if found := Flow.factory.get(flow_name):
                 TargetFlow = found
             else:
-                err(f"Unknown flow '{flow_name}' passed to initialization function.")
+                logger.error(
+                    f"Unknown flow '{flow_name}' passed to initialization function."
+                )
                 ctx.exit(1)
 
         if len(initial_state_element_override):
@@ -120,12 +121,14 @@ def run(
             for element in initial_state_element_override:
                 element_split = element.split("=", maxsplit=1)
                 if len(element_split) < 2:
-                    err(f"Invalid initial state element override: '{element}'.")
+                    logger.error(
+                        f"Invalid initial state element override: '{element}'."
+                    )
                     ctx.exit(1)
                 df_id, path = element_split
                 design_format = DesignFormat.factory.get(df_id)
                 if design_format is None:
-                    err(f"Invalid design format ID: '{df_id}'.")
+                    logger.error(f"Invalid design format ID: '{df_id}'.")
                     ctx.exit(1)
                 overrides[design_format] = common.Path(path)
 
@@ -148,26 +151,26 @@ def run(
         }
         flow = TargetFlow(config_files, **kwargs)
     except PassedDirectoryError as e:
-        err(e)
-        info(
+        logger.error(e)
+        logger.info(
             f"If you meant to pass this as a design directory alongside valid configuration files, pass it as '--design-dir {e.config}'."
         )
         ctx.exit(1)
     except InvalidConfig as e:
         if len(e.warnings) > 0:
-            warn("The following warnings have been generated:")
+            logger.warning("The following warnings have been generated:")
             for warning in e.warnings:
-                warn(warning)
-        err(f"Errors have occurred while loading the {e.config}.")
+                logger.warning(warning)
+        logger.error(f"Errors have occurred while loading the {e.config}.")
         for error in e.errors:
-            err(error)
+            logger.error(error)
 
-        err("LibreLane will now quit. Please check your configuration.")
+        logger.error("LibreLane will now quit. Please check your configuration.")
         ctx.exit(1)
     except ValueError as e:
-        err(e)
-        debug(traceback.format_exc())
-        err("LibreLane will now quit.")
+        logger.error(e)
+        logger.debug(traceback.format_exc())
+        logger.error("LibreLane will now quit.")
         ctx.exit(1)
 
     try:
@@ -183,12 +186,14 @@ def run(
             overwrite=overwrite,
         )
     except FlowException as e:
-        err(f"The flow has encountered an unexpected error:\n{e}")
-        err("LibreLane will now quit.")
+        logger.error(f"The flow has encountered an unexpected error:\n{e}")
+        logger.error("LibreLane will now quit.")
         ctx.exit(1)
     except FlowError as e:
-        err(f"The following error was encountered while running the flow:\n{e}")
-        err("LibreLane will now quit.")
+        logger.error(
+            f"The following error was encountered while running the flow:\n{e}"
+        )
+        logger.error("LibreLane will now quit.")
         ctx.exit(2)
 
     if vsp := view_save_path:
@@ -252,8 +257,8 @@ def run_included_example(
     if not smoke_test and example is not None:
         value = example
 
-    example_path = os.path.join(common.get_librelane_root(), "examples", value)
-    if not os.path.isdir(example_path):
+    example_resource = files("librelane").joinpath("examples", value)
+    if not example_resource.is_dir():
         print(f"Unknown example '{value}'.", file=sys.stderr)
         ctx.exit(1)
 
@@ -285,7 +290,7 @@ def run_included_example(
             ctx.exit(1)
 
         # 1. Copy the files
-        common.recreate_tree(example_path, final_path)
+        common.recreate_tree(example_resource, final_path)
         config_file = glob.glob(os.path.join(final_path, "config.*"))[0]
 
         # 2. Run
@@ -295,10 +300,10 @@ def run_included_example(
             **kwargs,
         )
         if smoke_test:
-            info("Smoke test passed.")
+            logger.info("Smoke test passed.")
     except KeyboardInterrupt:
         if smoke_test:
-            info("Smoke test aborted.")
+            logger.info("Smoke test aborted.")
         status = -1
     finally:
         try:
@@ -346,11 +351,11 @@ def cli_in_container(
             tty=tty,
         )
     except ValueError as e:
-        err(e)
+        logger.error(e)
         ctx.exit(1)
     except Exception as e:
         traceback.print_exc(file=sys.stderr)
-        err(e)
+        logger.error(e)
         ctx.exit(1)
 
     ctx.exit(0)

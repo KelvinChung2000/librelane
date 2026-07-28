@@ -1,0 +1,75 @@
+[
+  {"expression": "0", "symbols": {}, "result": "0"},
+  {"expression": "1.", "symbols": {}, "result": "1"},
+  {"expression": "-0", "symbols": {}, "result": "-0"},
+  {"expression": "  12.50  ", "symbols": {}, "result": "12.50"},
+  {"expression": "1 + 2 * 3", "symbols": {}, "result": "7"},
+  {"expression": "(1 + 2) * 3", "symbols": {}, "result": "9"},
+  {"expression": "8 / 4 / 2", "symbols": {}, "result": "1"},
+  {"expression": "8 - 4 - 2", "symbols": {}, "result": "2"},
+  {"expression": "2 ** 3 ** 2", "symbols": {}, "result": "512"},
+  {"expression": "2*-3", "symbols": {}, "result": "-6"},
+  {"expression": "-2**2", "symbols": {}, "result": "4"},
+  {"expression": "2**-2", "symbols": {}, "result": "0.25"},
+  {"expression": "($A + $B) / $C", "symbols": {"A": 2, "B": 4, "C": 3}, "result": "2"},
+  {"expression": "$A[0].B * 2", "symbols": {"A[0].B": 3}, "result": "6"},
+  {"expression": "(1 + 2", "symbols": {}, "result": "3"},
+  {
+    "expression": "",
+    "symbols": {},
+    "exception": "ValueError",
+    "message": "expression is empty"
+  },
+  {
+    "expression": "1 2",
+    "symbols": {},
+    "exception": "ValueError",
+    "message": "expression reduces to multiple values"
+  },
+  {
+    "expression": "1 +",
+    "symbols": {},
+    "exception": "SyntaxError",
+    "message": "not enough operands for operator '+'",
+    "process_message": "Invalid expression 'expr::1 +': not enough operands for operator '+'"
+  },
+  {
+    "expression": "--2",
+    "symbols": {},
+    "exception": "SyntaxError",
+    "message": "not enough operands for operator '-'",
+    "process_message": "Invalid expression 'expr::--2': not enough operands for operator '-'"
+  },
+  {
+    "expression": "1 + @",
+    "symbols": {},
+    "exception": "SyntaxError",
+    "message": "Unexpected token at the start of the following string '@'.",
+    "process_message": "Invalid expression 'expr::1 + @': Unexpected token at the start of the following string '@'."
+  },
+  {
+    "expression": ".5",
+    "symbols": {},
+    "exception": "SyntaxError",
+    "message": "Unexpected token at the start of the following string '.5'.",
+    "process_message": "Invalid expression 'expr::.5': Unexpected token at the start of the following string '.5'."
+  },
+  {
+    "expression": "1 + 2)",
+    "symbols": {},
+    "exception": "IndexError",
+    "message": "list index out of range"
+  },
+  {
+    "expression": "$MISSING",
+    "symbols": {},
+    "exception": "TypeError",
+    "message": "Configuration variable 'MISSING' not found."
+  },
+  {
+    "expression": "$TEXT",
+    "symbols": {"TEXT": "2"},
+    "exception": "TypeError",
+    "message": "Referenced variable TEXT is not of a valid numeric type: f<class 'str'>"
+  }
+]
