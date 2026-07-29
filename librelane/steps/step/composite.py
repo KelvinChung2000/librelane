@@ -89,7 +89,12 @@ class CompositeStep(Step):
         step_count = len(self.Steps)
         ordinal_length = len(str(step_count - 1))
         for i, StepClass in enumerate(self.Steps):
-            step = StepClass(self.config, state)
+            # The composite's own model is the union of every constituent's
+            # config_vars, so each child's variables are already present and
+            # already validated. Revalidating would re-read the PDK, which a
+            # reproducible cannot do: its PDK_ROOT points at the copied
+            # ./files tree, which holds only the files the config referenced.
+            step = StepClass(self.config, state, _no_revalidate_conf=True)
             step_dir = self.step_dir / (
                 f"{str(i + 1).zfill(ordinal_length)}-{slugify(step.id)}"
             )

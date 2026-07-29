@@ -22,11 +22,12 @@ pytestmark = pytest.mark.all
 mock_variables = pytest.mock_variables
 
 
-def _lint_command(mock_config, mocker, **overrides):
+def _lint_command(mock_config, mocker, models=None, **overrides):
     """Run Verilator.Lint with the tool stubbed out; return the argv it built."""
     from librelane.state import State
     from librelane.steps.verilator import Lint
 
+    models = models or {}
     instance = Lint(config=mock_config, state_in=State(), **overrides)
 
     # These two are flow-wide PDK variables, which the mocked variable set
@@ -34,6 +35,7 @@ def _lint_command(mock_config, mocker, **overrides):
     raw = instance.config.to_raw_dict()
     for name in ("CELL_VERILOG_MODELS", "PAD_VERILOG_MODELS", "EXTRA_VERILOG_MODELS"):
         raw.setdefault(name, None)
+    raw.update(models)
     instance.config = type(instance.config).model_construct(**raw)
 
     instance.step_dir = "/cwd/step"
@@ -41,6 +43,9 @@ def _lint_command(mock_config, mocker, **overrides):
 
     mocker.patch.object(instance, "toolbox", mocker.MagicMock())
     instance.toolbox.get_macro_views_by_priority.return_value = []
+    instance.toolbox.get_macro_views.return_value = []
+    instance.toolbox.create_blackbox_model.return_value = "/cwd/pdk.bb.v"
+    instance.toolbox.create_blackbox_model_from_libs.return_value = "/cwd/libs.bb.v"
 
     log_path = os.path.join(instance.step_dir, "verilator-lint.log")
     with open(log_path, "w") as f:
@@ -88,3 +93,29 @@ def test_no_linter_arguments_by_default(mock_config, mocker):
 
     assert "--no-timing" not in argv
     assert "None" not in argv
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_pdk_models_are_included_by_default(mock_config, mocker):
+    """LINTER_INCLUDE_PDK_MODELS was declared but never read."""
+    argv = _lint_command(
+        mock_config,
+        mocker,
+        models={"CELL_VERILOG_MODELS": ["/pdk/cells.v"]},
+    )
+
+    assert any(arg.endswith(".bb.v") for arg in argv)
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_pdk_models_can_be_excluded(mock_config, mocker):
+    argv = _lint_command(
+        mock_config,
+        mocker,
+        models={"CELL_VERILOG_MODELS": ["/pdk/cells.v"]},
+        LINTER_INCLUDE_PDK_MODELS=False,
+    )
+
+    assert not any(arg.endswith(".bb.v") for arg in argv)

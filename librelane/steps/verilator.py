@@ -57,8 +57,8 @@ class Lint(Step):
         )
 
         LINTER_INCLUDE_PDK_MODELS: bool = variable(
-            False,
-            description="Include Verilog models of the PDK",
+            True,
+            description="Include the PDK's Verilog models -- the standard cell models from `CELL_VERILOG_MODELS` and the pad models from `PAD_VERILOG_MODELS` -- as blackboxes for the linter. Required if the design instantiates PDK cells directly.",
         )
 
         LINTER_RELATIVE_INCLUDES: bool = variable(
@@ -121,21 +121,22 @@ class Lint(Step):
         model_list: list[str] = []
         model_set: set[str] = set()
 
-        if cell_verilog_models := self.config.CELL_VERILOG_MODELS:
-            blackboxes.append(
-                self.toolbox.create_blackbox_model(
-                    frozenset(cell_verilog_models),
-                    frozenset(["USE_POWER_PINS"]),
+        if self.config.LINTER_INCLUDE_PDK_MODELS:
+            if cell_verilog_models := self.config.CELL_VERILOG_MODELS:
+                blackboxes.append(
+                    self.toolbox.create_blackbox_model(
+                        frozenset(cell_verilog_models),
+                        frozenset(["USE_POWER_PINS"]),
+                    )
                 )
-            )
 
-        if pad_verilog_models := self.config.PAD_VERILOG_MODELS:
-            blackboxes.append(
-                self.toolbox.create_blackbox_model(
-                    frozenset(pad_verilog_models),
-                    frozenset(["USE_POWER_PINS"]),
+            if pad_verilog_models := self.config.PAD_VERILOG_MODELS:
+                blackboxes.append(
+                    self.toolbox.create_blackbox_model(
+                        frozenset(pad_verilog_models),
+                        frozenset(["USE_POWER_PINS"]),
+                    )
                 )
-            )
 
         macro_views = self.toolbox.get_macro_views_by_priority(
             self.config,
@@ -153,6 +154,26 @@ class Lint(Step):
                 if str_view not in model_set:
                     model_set.add(str_view)
                     model_list.append(str_view)
+
+        # A macro that declares only lib views has no Verilog for the linter to
+        # read, so the instantiation resolves to nothing and Verilator reports
+        # the module as missing. Yosys does not have this problem: it reads
+        # liberty directly. Generate port-only modules for those macros.
+        lib_only_views = self.toolbox.get_macro_views(
+            self.config,
+            DesignFormat.LIB,
+            unless_exist=[
+                DesignFormat.VERILOG_HEADER,
+                DesignFormat.POWERED_NETLIST,
+                DesignFormat.NETLIST,
+            ],
+        )
+        if lib_only_views:
+            blackboxes.append(
+                self.toolbox.create_blackbox_model_from_libs(
+                    tuple(str(view) for view in lib_only_views)
+                )
+            )
 
         if extra_verilog_models := self.config.EXTRA_VERILOG_MODELS:
             for model in extra_verilog_models:

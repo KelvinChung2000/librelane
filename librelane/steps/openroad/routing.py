@@ -32,7 +32,6 @@ import rich.table
 
 from ...common import (
     DRC as DRCObject,
-    _get_process_limit,
     mkdirp,
 )
 from ...config import variable
@@ -226,7 +225,17 @@ class GlobalRouting(OpenROADStep):
         return files("librelane").joinpath("scripts", "openroad", "grt.tcl")
 
 
+@Step.factory.register()
 class _DiodeInsertion(GlobalRouting):
+    """
+    Inserts antenna diodes using global-routing information.
+
+    Intended to run as part of :class:`RepairAntennas` rather than on its own,
+    but registered nonetheless: it writes its own ``config.json`` naming this
+    ID, and a reproducible made from that directory cannot be loaded unless
+    the factory can resolve it.
+    """
+
     id = "OpenROAD.DiodeInsertion"
     name = "Diode Insertion"
 
@@ -297,12 +306,6 @@ class DetailedRouting(OpenROADStep):
     name = "Detailed Routing"
 
     class Config(GrtConfig, OpenROADStep.Config):
-        DRT_THREADS: Optional[int] = variable(
-            None,
-            description="Specifies the number of threads to be used in OpenROAD Detailed Routing. If unset, this will be equal to your machine's thread count.",
-            deprecated_names=["ROUTING_CORES"],
-        )
-
         DRT_OPT_ITERS: int = variable(
             64,
             description="Specifies the maximum number of optimization iterations during Detailed Routing in TritonRoute.",
@@ -357,8 +360,6 @@ class DetailedRouting(OpenROADStep):
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
-        env["DRT_THREADS"] = env.get("DRT_THREADS", str(_get_process_limit()))
-        logger.info(f"Running TritonRoute with {env['DRT_THREADS']} threads…")
         views_updates, metrics_updates = super().run(state_in, env=env, **kwargs)
 
         drc_paths = list(pathlib.Path(self.step_dir).rglob("*.drc*"))

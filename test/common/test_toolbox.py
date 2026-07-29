@@ -850,3 +850,154 @@ def test_voltage_lib_get(sample_lib_files, caplog: pytest.LogCaptureFixture):
     )
     with pytest.raises(RuntimeError):
         toolbox.get_lib_voltage("bad_lib.lib")
+
+
+# ---
+
+
+@pytest.mark.parametrize(
+    ("views_by_corner", "expected"),
+    [
+        # A single wildcard resolves to the same file everywhere: the case the
+        # issue is about.
+        ({"*": ["/macro/any.lib"]}, ["resolves to the same view"]),
+        # Genuinely per-corner: nothing to say.
+        (
+            {
+                "nom_tt_025C_1v80": ["/macro/tt.lib"],
+                "nom_ss_n40C_1v80": ["/macro/ss.lib"],
+            },
+            [],
+        ),
+        # One corner covered, the other not.
+        ({"nom_tt_*": ["/macro/tt.lib"]}, ["has no view for 1 of 2"]),
+        # Nothing declared at all is a separate, already-reported condition.
+        ({}, []),
+    ],
+)
+def test_check_corner_granularity(
+    views_by_corner, expected, mock_macros_config, mocker
+):
+    from librelane.common import Path, Toolbox
+
+    warning = mocker.patch("librelane.common.toolbox.logger").warning
+    toolbox = Toolbox(".")
+
+    toolbox.check_corner_granularity(
+        mock_macros_config,
+        {k: [Path(p) for p in v] for k, v in views_by_corner.items()},
+        corners=["nom_tt_025C_1v80", "nom_ss_n40C_1v80"],
+        label="Macro 'a' LIB",
+    )
+
+    messages = [str(call.args[0]) for call in warning.call_args_list]
+    assert len(messages) == len(expected)
+    for message, fragment in zip(messages, expected):
+        assert fragment in message
+        assert "Macro 'a' LIB" in message
+
+
+def test_check_corner_granularity_stays_quiet_for_one_corner(
+    mock_macros_config, mocker
+):
+    """With a single corner there is no granularity to be missing."""
+    from librelane.common import Path, Toolbox
+
+    warning = mocker.patch("librelane.common.toolbox.logger").warning
+    Toolbox(".").check_corner_granularity(
+        mock_macros_config,
+        {"*": [Path("/macro/any.lib")]},
+        corners=["nom_tt_025C_1v80"],
+        label="Macro 'a' LIB",
+    )
+
+    warning.assert_not_called()
+
+
+# ---
+
+
+_LIB_FIXTURE = """
+library (fixture) {
+  type (addr_range) {
+    base_type : array;
+    bit_from : 7;
+    bit_to : 0;
+  }
+  cell ("scalar_cell") {
+    pg_pin ("VPWR") { pg_type : "primary_power"; }
+    pg_pin ("VGND") { pg_type : "primary_ground"; }
+    pin ("A") { direction : "input"; }
+    pin ("Y") { direction : "output"; }
+    pin ("IO") { direction : "inout"; }
+    pin ("HIDDEN") { direction : "internal"; }
+  }
+  cell ("bussed_cell") {
+    bus ("ADDR") {
+      bus_type : "addr_range";
+      direction : "input";
+    }
+    pin ("CLK") { direction : "input"; }
+  }
+  cell ("broken_cell") {
+    pin ("NODIR") { capacitance : 1.0; }
+  }
+}
+"""
+
+
+def test_create_blackbox_model_from_libs(tmp_path):
+    from librelane.common import Toolbox
+
+    lib = tmp_path / "fixture.lib"
+    lib.write_text(_LIB_FIXTURE)
+    toolbox = Toolbox(str(tmp_path / "tmp"))
+
+    generated = open(toolbox.create_blackbox_model_from_libs((str(lib),))).read()
+
+    assert "module scalar_cell (" in generated
+    assert "    input A" in generated
+    assert "    output Y" in generated
+    assert "    inout IO" in generated
+    assert "    inout VPWR" in generated
+    # Internal pins are not ports.
+    assert "HIDDEN" not in generated
+    # Buses resolve their width through the library-level type group.
+    assert "    input [7:0] ADDR" in generated
+    assert "module bussed_cell (" in generated
+    # A cell whose ports cannot be determined is skipped, not emitted wrong.
+    assert "broken_cell" not in generated
+    assert generated.count("endmodule") == 2
+
+
+def test_create_blackbox_model_from_libs_is_lintable(tmp_path):
+    """The whole point is that Verilator can resolve the instantiation."""
+    import shutil
+    import subprocess
+
+    verilator = shutil.which("verilator")
+    if verilator is None:
+        pytest.skip("verilator not in PATH")
+
+    lib = tmp_path / "fixture.lib"
+    lib.write_text(_LIB_FIXTURE)
+    from librelane.common import Toolbox
+
+    blackboxes = Toolbox(str(tmp_path / "tmp")).create_blackbox_model_from_libs(
+        (str(lib),)
+    )
+
+    top = tmp_path / "top.v"
+    top.write_text(
+        "module top(input clk, input [7:0] addr);\n"
+        "  bussed_cell u(.CLK(clk), .ADDR(addr));\n"
+        "endmodule\n"
+    )
+    result = subprocess.run(
+        [verilator, "--lint-only", "--top-module", "top", blackboxes, str(top)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Cannot find file containing module" not in result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr

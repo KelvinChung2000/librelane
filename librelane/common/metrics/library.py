@@ -31,6 +31,15 @@ Metric(
     "design__instance__count",
     higher_is_better=False,
 )
+# Whitespace-separated coordinates, not numbers, so they carry no
+# higher_is_better -- Metric.compare raises on a non-numeric value when one is
+# set.
+Metric(
+    "design__die__bbox",
+)
+Metric(
+    "design__core__bbox",
+)
 
 # Power
 Metric(
@@ -270,6 +279,18 @@ Metric(
     critical=True,
 )
 Metric(
+    "design__critical_disconnected_pin__count",
+    aggregator=sum_aggregator,
+    higher_is_better=False,
+    critical=True,
+)
+Metric(
+    "design__power_grid_violation__count",
+    aggregator=sum_aggregator,
+    higher_is_better=False,
+    critical=True,
+)
+Metric(
     "design__inferred_latch__count",
     aggregator=sum_aggregator,
     higher_is_better=False,
@@ -303,6 +324,24 @@ Metric(
     aggregator=sum_aggregator,
     higher_is_better=False,
     critical=True,
+)
+Metric(
+    "klayout__drc_error__count",
+    aggregator=sum_aggregator,
+    higher_is_better=False,
+    critical=True,
+)
+Metric(
+    "klayout__density_error__count",
+    aggregator=sum_aggregator,
+    higher_is_better=False,
+    critical=True,
+)
+# Antenna violations are not fatal, matching route__antenna_violation__count.
+Metric(
+    "klayout__antenna_error__count",
+    aggregator=sum_aggregator,
+    higher_is_better=False,
 )
 Metric(
     "synthesis__check_error__count",

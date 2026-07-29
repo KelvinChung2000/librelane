@@ -33,6 +33,7 @@ from ...common import (
     Path,
     Filter,
     TclUtils,
+    _get_process_limit,
     aggregate_metrics,
     process_list_file,
 )
@@ -256,9 +257,10 @@ class OpenROADStep(TclStep):
             description="Cull duplicate IPVT corners during PNR, i.e. corners that share the same set of lib files and values for LAYERS_RC and VIAS_R as another corner are not considered outside of STA.",
         )
 
-        OPENROAD_THREADS: str = variable(
-            "1",
-            description="How many threads OpenROAD may use, passed as its `-threads` argument. `max` uses every available core. Multithreaded runs of routing, antenna checking and repair, and parasitics extraction are substantially faster, but the results are not guaranteed to be identical to a single-threaded run, which is why this defaults to `1`.",
+        OPENROAD_THREADS: Optional[int] = variable(
+            None,
+            description="The number of threads OpenROAD may use. If unset, this will be equal to the machine's thread count by default.",
+            deprecated_names=["DRT_THREADS", "ROUTING_CORES"],
         )
 
     config: Config
@@ -278,6 +280,7 @@ class OpenROADStep(TclStep):
                 "ORD-0039",  # .openroad ignored with -python
                 "ODB-0220",  # lef parsing/NOWIREEXTENSIONATPIN statement is obsolete in version 5.6 or later.
                 "STA-1256",  # table template \w+ not found
+                "DRT-0349",  # LEF58_ENCLOSURE with no CUTCLASS is not supported. Skipping for layer \w+
             ]
         ):
             return alert
@@ -479,12 +482,14 @@ class OpenROADStep(TclStep):
 
     def get_command(self) -> list[str]:
         metrics_path = os.path.join(self.step_dir, "or_metrics_out.json")
+        threads = str(self.config.OPENROAD_THREADS or _get_process_limit())
+        logger.log("VERBOSE", f"OpenROAD will use {threads} threads")
         return [
             self.get_openroad_path(),
             ("-gui" if os.getenv("_OPENROAD_GUI", "0") == "1" else "-exit"),
-            "-no_splash",
             "-threads",
-            self.config.OPENROAD_THREADS,
+            threads,
+            "-no_splash",
             "-metrics",
             metrics_path,
             self.get_script_path(),

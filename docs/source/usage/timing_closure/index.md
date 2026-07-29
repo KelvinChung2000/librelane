@@ -265,7 +265,7 @@ early, hold constraint is violated and if it arrives late setup constraint is
 violated. The STA tool calculates the AAT (Actual Arrival Time) of data to U14 for 
 setup constraint check as follows:
 
-(1) $ AAT_{latest} = t_{ck} + t_{CQ} + t_{and} + t_{inv} + t_{xor} $
+(1) $ AAT_{latest} = t_{CQ} + t_{and} + t_{inv} + t_{xor} $
 
 The RAT (Required Arrival Time) is calculated using the following:
 
@@ -274,11 +274,11 @@ The RAT (Required Arrival Time) is calculated using the following:
 To satisfy the setup constraint, the latest AAT should be less than $ RAT_{setup} $. In
 another words:
 
-(3) $ SLACK_{setup} = RAT_{setup} - ATT_{latest} > 0 $
+(3) $ SLACK_{setup} = RAT_{setup} - AAT_{latest} > 0 $
 
 For hold constraint check, we use the earliest arrival time
 
-(4) $ AAT_{earliest} = t_{ck} + t_{CQ} + t_{xor} $
+(4) $ AAT_{earliest} = t_{CQ} + t_{xor} $
 
 and the required time can be calculated
 

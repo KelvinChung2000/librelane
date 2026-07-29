@@ -407,6 +407,7 @@ proc read_lefs {{tlef_key "TECH_LEF"}} {
 
 proc set_dont_use_cells {} {
     set_dont_use $::env(_PNR_EXCLUDED_CELLS)
+    log_cmd report_dont_use
 }
 
 proc read_current_odb {args} {

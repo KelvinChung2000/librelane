@@ -340,14 +340,14 @@ class CutRows(OpenROADStep):
     class Config(OpenROADStep.Config):
         FP_MACRO_HORIZONTAL_HALO: Decimal = variable(
             10,
-            description="Specify the horizontal halo size around macros.",
+            description="Specify the horizontal halo size around macros, within which standard cell rows are cut away.",
             units="µm",
             deprecated_names=["FP_TAP_HORIZONTAL_HALO"],
         )
 
         FP_MACRO_VERTICAL_HALO: Decimal = variable(
             10,
-            description="Specify the vertical halo size around macros.",
+            description="Specify the vertical halo size around macros, within which standard cell rows are cut away.",
             units="µm",
             deprecated_names=["FP_TAP_VERTICAL_HALO"],
         )

@@ -69,6 +69,7 @@
   "OpenROAD.DEFtoODB",
   "OpenROAD.DetailedPlacement",
   "OpenROAD.DetailedRouting",
+  "OpenROAD.DiodeInsertion",
   "OpenROAD.DumpRCValues",
   "OpenROAD.FillInsertion",
   "OpenROAD.Floorplan",

@@ -101,14 +101,14 @@ class PdnConfig(BaseConfigModel):
 
     PDN_HORIZONTAL_HALO: Decimal = variable(
         10,
-        description="Sets the horizontal halo around the macros during power grid insertion.",
+        description="Sets the horizontal halo around the macros during power grid insertion. Should not exceed `FP_MACRO_HORIZONTAL_HALO`, otherwise cells may be placed in the band between the two where the macro power grid is suppressed.",
         units="µm",
         deprecated_names=["FP_PDN_HORIZONTAL_HALO"],
     )
 
     PDN_VERTICAL_HALO: Decimal = variable(
         10,
-        description="Sets the vertical halo around the macros during power grid insertion.",
+        description="Sets the vertical halo around the macros during power grid insertion. Should not exceed `FP_MACRO_VERTICAL_HALO`, otherwise cells may be placed in the band between the two where the macro power grid is suppressed.",
         units="µm",
         deprecated_names=["FP_PDN_VERTICAL_HALO"],
     )

@@ -99,6 +99,54 @@ class Toolbox(object):
 
         return result
 
+    def check_corner_granularity(
+        self,
+        config: Mapping[str, Any],
+        views_by_corner: Mapping[str, Path | Iterable[Path]],
+        *,
+        corners: Sequence[str],
+        label: str,
+    ) -> None:
+        """
+        Warns when a corner-keyed view mapping is not actually per-corner.
+
+        Corner keys are wildcards, so ``{"*": [...]}`` resolves to the same
+        files at every corner without complaint. That is silently wrong for
+        timing: the resizer and STA then see one set of numbers where they
+        should see several.
+
+        :param config: The configuration, used to resolve the default corner.
+        :param views_by_corner: The mapping from corner wildcards to views.
+        :param corners: The corners the mapping is expected to cover.
+        :param label: How to name the mapping in the warning.
+        """
+        if not views_by_corner or len(corners) < 2:
+            return
+
+        resolved = {
+            corner: tuple(
+                sorted(
+                    str(view)
+                    for view in self.filter_views(config, views_by_corner, corner)
+                )
+            )
+            for corner in corners
+        }
+
+        uncovered = [corner for corner, views in resolved.items() if not views]
+        if uncovered and len(uncovered) != len(corners):
+            logger.warning(
+                f"{label} has no view for {len(uncovered)} of {len(corners)} timing corners: "
+                f"{', '.join(sorted(uncovered))}."
+            )
+
+        covered = {views for views in resolved.values() if views}
+        if len(covered) == 1 and not uncovered:
+            logger.warning(
+                f"{label} resolves to the same view at all {len(corners)} timing corners. "
+                "Corner-specific timing will not be seen by the resizer or by STA."
+            )
+
     def get_macro_views(
         self,
         config: Mapping[str, Any],
@@ -506,6 +554,103 @@ class Toolbox(object):
             )
             logger.error(open(output_log_path, "r", encoding="utf8").read())
             logger.error("Will attempt to load models into linter as-is.")
+
+        return out_path
+
+    def create_blackbox_model_from_libs(
+        self,
+        input_libs: frozenset[str] | tuple[str, ...],
+    ) -> str:
+        """
+        Generates port-only Verilog modules for every cell in a set of liberty
+        files.
+
+        Tools that need a Verilog view of a macro -- the linter, principally --
+        have nothing to read when the macro declares only ``lib``. Yosys does
+        not have this problem because it reads liberty directly. The modules
+        produced here have no body: they are enough to resolve an
+        instantiation, not to simulate one.
+
+        :param input_libs: The liberty files to read.
+        :returns: A path to the generated Verilog file.
+        """
+        mkdirp(self.tmp_dir)
+        out_path = os.path.join(self.tmp_dir, f"{uuid.uuid4().hex}.lib.bb.v")
+        logger.debug(f"Creating cell models from {input_libs} at '{out_path}'…")
+
+        def unquote(value: Any) -> str:
+            return str(value).strip('"')
+
+        with open(out_path, "w", encoding="utf8") as out:
+            for lib in input_libs:
+                ast = libparse.LibertyParser(open(lib, encoding="utf8")).ast
+
+                bus_ranges: dict[str, tuple[str, str]] = {}
+                for child in ast.children:
+                    if child.id != "type":
+                        continue
+                    bounds = {member.id: member.value for member in child.children}
+                    if "bit_from" in bounds and "bit_to" in bounds:
+                        bus_ranges[unquote(child.args[0])] = (
+                            unquote(bounds["bit_from"]),
+                            unquote(bounds["bit_to"]),
+                        )
+
+                for cell in ast.children:
+                    if cell.id != "cell":
+                        continue
+                    cell_name = unquote(cell.args[0])
+                    ports: list[str] = []
+                    incomplete = None
+
+                    for member in cell.children:
+                        if member.id == "pg_pin":
+                            # Reached only when the instantiation is compiled
+                            # with VERILOG_POWER_DEFINE defined, but harmless
+                            # otherwise.
+                            ports.append(f"    inout {unquote(member.args[0])}")
+                            continue
+                        if member.id not in ("pin", "bus"):
+                            continue
+
+                        port_name = unquote(member.args[0])
+                        attributes = {
+                            item.id: item.value
+                            for item in member.children
+                            if item.id in ("direction", "bus_type")
+                        }
+                        direction = unquote(attributes.get("direction", ""))
+                        if direction == "internal":
+                            continue
+                        if direction not in ("input", "output", "inout"):
+                            incomplete = f"pin '{port_name}' has no usable direction"
+                            break
+
+                        if member.id == "pin":
+                            ports.append(f"    {direction} {port_name}")
+                            continue
+
+                        bus_type = unquote(attributes.get("bus_type", ""))
+                        if bus_type not in bus_ranges:
+                            incomplete = (
+                                f"bus '{port_name}' references undeclared"
+                                f" bus_type '{bus_type}'"
+                            )
+                            break
+                        msb, lsb = bus_ranges[bus_type]
+                        ports.append(f"    {direction} [{msb}:{lsb}] {port_name}")
+
+                    if incomplete is not None:
+                        # A module with the wrong ports is worse than no module:
+                        # it silently mis-resolves the instantiation.
+                        logger.error(
+                            f"Skipping cell '{cell_name}' of '{lib}': {incomplete}."
+                        )
+                        continue
+
+                    print(f"(* blackbox *)\nmodule {cell_name} (", file=out)
+                    print(",\n".join(ports), file=out)
+                    print(");\nendmodule\n", file=out)
 
         return out_path
 

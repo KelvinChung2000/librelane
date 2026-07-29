@@ -36,6 +36,8 @@ proc set_dont_touch_objects {args} {
     if { [info exists ::env(RSZ_DONT_TOUCH_LIST)] } {
         set_dont_touch $::env(RSZ_DONT_TOUCH_LIST)
     }
+
+    log_cmd report_dont_touch
 }
 
 proc unset_dont_touch_objects {args} {

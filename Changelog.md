@@ -57,15 +57,70 @@ Style Notes
   * Fixed the step reading `ROUTING_OBSTRUCTIONS`, inherited from
     `Odb.RemoveRoutingObstructions`, instead of `PDN_OBSTRUCTIONS`.
 
+* `OpenROAD.DiodeInsertion`
+
+  * Registered the step. It was reachable only through
+    `OpenROAD.RepairAntennas`, but wrote its own `config.json` naming this ID,
+    so a reproducible made from its directory could not be loaded (#920).
+
+* `OpenROAD.GeneratePDN`
+
+  * `PDN_CFG` is now a PDK variable, so a PDK can ship its own PDN script
+    instead of expressing its grid through the `PDN_*` variables (#997).
+  * Warns when `PDN_HORIZONTAL_HALO`/`PDN_VERTICAL_HALO` exceeds the
+    corresponding `FP_MACRO_*_HALO`, which leaves standard cell rows in a band
+    the macro power grid is suppressed in (#947).
+
+* `OpenROAD.CheckMacroInstances`
+
+  * Warns when a macro's `lib` or `spef` covers only some timing corners, or
+    resolves to the same view at all of them -- neither of which was reported
+    before (#605).
+
+* `Magic.DRC`
+
+  * Reads GDS with `gds maskhints true`, so DRC rules that check magic's
+    generated implant layers run against layers reconciled with the input
+    stream (#928, cherry-picked from upstream #930).
+
+* `Magic.WriteLEF`
+
+  * `MAGIC_WRITE_LEF_PINONLY` now defaults to `True`. Metal on a pin's layer
+    that is not under a port label becomes an obstruction instead of part of
+    the PIN, so the written LEF pin matches the DEF pin. The previous default
+    produced oversized pins, which downstream pin-size prechecks reject
+    (#948).
+
 * `OpenROAD.*`
 
-  * Added `OPENROAD_THREADS`, passed as OpenROAD's `-threads` argument. Every
-    OpenROAD step was running single-threaded, so the multithreaded
-    `check_antennas`/`repair_antennas` (and routing, and extraction) were never
-    used. Defaults to `1`, preserving current behaviour and results (#521).
+  * Suppressed the `DRT-0349` alert (`LEF58_ENCLOSURE with no CUTCLASS is not
+    supported`). It reports an OpenROAD limitation, not a design or PDK
+    problem, and fired on every sky130 run (#550).
+  * Added `report_dont_touch` and `report_dont_use` calls after the
+    corresponding `set_` commands, and switched `filler_placement` to
+    `-verbose`, so the don't-touch, don't-use and filler sets appear in the
+    step logs (#630).
+  * Added `OPENROAD_THREADS`, passed as OpenROAD's `-threads` argument, so
+    every OpenROAD step can use multiple threads rather than only detailed
+    routing. Defaults to the machine's thread count (#521, ported from
+    upstream #937).
+  * Deprecated `DRT_THREADS` in favour of `OPENROAD_THREADS`. The old name is
+    still accepted.
+
+* `Yosys.JsonHeader`, `Yosys.Synthesis`
+
+  * Macro `.lib` views and `EXTRA_LIBS` now reach the liberty set given to
+    `dfflibmap` and ABC, not just the blackbox model list, so synthesis sees
+    macro area and timing (#940).
 
 * `Verilator.Lint`
 
+  * Fixed `LINTER_INCLUDE_PDK_MODELS` having no effect. It now gates
+    `CELL_VERILOG_MODELS` and `PAD_VERILOG_MODELS`, and defaults to `True`,
+    which is what the step already did unconditionally (#802).
+  * Generates port-only Verilog modules from a macro's `lib` views when it has
+    no Verilog view at all, instead of failing with "Cannot find file
+    containing module" (#579).
   * Added `LINTER_ARGUMENTS`, passed verbatim to Verilator after every
     argument LibreLane builds, for options with no variable of their own --
     `--no-timing` being the motivating case (#492).
@@ -87,6 +142,12 @@ Style Notes
   are active.
 * Added forward references and cycle diagnostics to the configuration string
   language.
+* Registered seven metrics that steps emit but `library.py` never declared, so
+  they were dropped from both aggregation and CI metric comparison. Four of
+  them gate the flow through a `Checker` step (#567).
+* Fixed reproducibles created from composite steps failing to run: the
+  constituent steps re-read the PDK configuration, which a reproducible's
+  copied file tree does not contain (#621).
 * Fixed later configuration sources not being able to select
   `STD_CELL_LIBRARY` (#827).
 * Fixed lax union coercion choosing a less-specific scalar type (#993).
@@ -160,6 +221,8 @@ Style Notes
 
 ## Documentation
 
+* Removed the clock period from the arrival-time equations in the timing
+  closure guide; arrival time is measured from the launch edge (#974).
 * Finished the LVS mismatch guide and added it to the usage toctree; it was
   previously cut off mid-sentence and unreachable from any page (#326).
 * Fixed the Sphinx build aborting on any module whose docstring is a single

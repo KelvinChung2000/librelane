@@ -223,6 +223,13 @@ class CheckMacroInstances(OpenSTAStep):
             for instance_name in data.instances:
                 macro_instance_pairs.append(instance_name)
                 macro_instance_pairs.append(macro_name)
+            for views, view_label in ((data.lib, "LIB"), (data.spef, "SPEF")):
+                self.toolbox.check_corner_granularity(
+                    self.config,
+                    views,
+                    corners=self.config.STA_CORNERS,
+                    label=f"Macro '{macro_name}' {view_label}",
+                )
 
         env["_check_macro_instances"] = TclUtils.join(macro_instance_pairs)
 

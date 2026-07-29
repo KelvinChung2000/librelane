@@ -247,8 +247,8 @@ class WriteLEF(MagicStep):
         )
 
         MAGIC_WRITE_LEF_PINONLY: bool = variable(
-            False,
-            description="If true, the LEF write will mark only areas that are port labels as pins, while marking the rest of each related net as an obstruction. Otherwise, the labeled port and the any connected metal on the same layer are marked as a pin.",
+            True,
+            description="If true, the LEF write will mark only areas that are port labels as pins, while marking the rest of each related net as an obstruction. Otherwise, the labeled port and the any connected metal on the same layer are marked as a pin, which makes the LEF pin larger than the pin declared in the DEF.",
         )
 
     config: Config

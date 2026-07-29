@@ -1,4 +1,4 @@
-# Copyright 2020-2022 Efabless Corporation
+# Copyright 2026 LibreLane Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,19 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-source $::env(SCRIPTS_DIR)/openroad/common/io.tcl
-read_current_odb
+import pytest
 
-set fill_list [list]
-foreach {pattern} $::env(DECAP_CELLS) {
-    set stripped [string map {' {}} $pattern]
-    lappend fill_list $stripped
-}
-foreach {pattern} $::env(FILL_CELLS) {
-    set stripped [string map {' {}} $pattern]
-    lappend fill_list $stripped
-}
-filler_placement -verbose $fill_list
+pytestmark = pytest.mark.all
 
-write_views
 
+def test_write_lef_is_pinonly_by_default():
+    """A LEF pin larger than the DEF pin fails downstream pin-size prechecks."""
+    from librelane.steps.magic import WriteLEF
+
+    assert WriteLEF.Config.model_fields["MAGIC_WRITE_LEF_PINONLY"].default is True

@@ -327,10 +327,13 @@ class VerilogStep(PyosysStep):
                 DesignFormat.LIB,
             ]
         )
-        for view, _ in self.toolbox.get_macro_views_by_priority(
+        macro_lib_views = []
+        for view, format in self.toolbox.get_macro_views_by_priority(
             self.config, format_list
         ):
             blackbox_models.append(str(view))
+            if format == DesignFormat.LIB:
+                macro_lib_views.append(str(view))
 
         if libs := self.config.get("EXTRA_LIBS"):
             blackbox_models.extend(str(f) for f in libs)
@@ -341,10 +344,22 @@ class VerilogStep(PyosysStep):
         excluded_cells.update(process_list_file(self.config.SYNTH_EXCLUDED_CELL_FILE))
         excluded_cells.update(process_list_file(self.config.PNR_EXCLUDED_CELL_FILE))
 
-        libs_synth = self.toolbox.remove_cells_from_lib(
-            frozenset([str(lib) for lib in scl_lib_list]),
-            excluded_cells=frozenset(excluded_cells),
+        # Copied, not aliased: remove_cells_from_lib is memoized, so extending
+        # its return value in place would corrupt the entry every later call
+        # with the same arguments receives.
+        libs_synth = list(
+            self.toolbox.remove_cells_from_lib(
+                frozenset([str(lib) for lib in scl_lib_list]),
+                excluded_cells=frozenset(excluded_cells),
+            )
         )
+        # ABC and dfflibmap only ever saw the standard cell library, so a macro
+        # had no area and no timing during synthesis.
+        if extra_libs := self.config.get("EXTRA_LIBS"):
+            libs_synth.extend(str(f) for f in extra_libs)
+        libs_synth.extend(macro_lib_views)
+        libs_synth = list(dict.fromkeys(libs_synth))
+
         extra_path = os.path.join(self.step_dir, "extra.json")
         with open(extra_path, "w") as f:
             json.dump({"blackbox_models": blackbox_models, "libs_synth": libs_synth}, f)

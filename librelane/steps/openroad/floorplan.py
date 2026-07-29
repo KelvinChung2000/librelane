@@ -349,14 +349,14 @@ class TapEndcapInsertion(OpenROADStep):
 
         FP_MACRO_HORIZONTAL_HALO: Decimal = variable(
             10,
-            description="Specify the horizontal halo size around macros.",
+            description="Specify the horizontal halo size around macros, within which standard cell rows are cut away.",
             units="µm",
             deprecated_names=["FP_TAP_HORIZONTAL_HALO"],
         )
 
         FP_MACRO_VERTICAL_HALO: Decimal = variable(
             10,
-            description="Specify the vertical halo size around macros.",
+            description="Specify the vertical halo size around macros, within which standard cell rows are cut away.",
             units="µm",
             deprecated_names=["FP_TAP_VERTICAL_HALO"],
         )
@@ -420,8 +420,25 @@ class GeneratePDN(OpenROADStep):
     class Config(PdnConfig, OpenROADStep.Config):
         PDN_CFG: Optional[Path] = variable(
             None,
-            description="A custom PDN configuration file. If not provided, the default PDN config will be used.",
+            description="A custom PDN configuration file. If not provided, the default PDN config will be used. May be supplied by the PDK, for PDKs whose power grid is better expressed as a script than as the `PDN_*` variables.",
             deprecated_names=["FP_PDN_CFG"],
+            pdk=True,
+        )
+
+        # Declared here, though the step does not pass them to pdngen, so the
+        # relationship with PDN_{HORIZONTAL,VERTICAL}_HALO can be checked.
+        FP_MACRO_HORIZONTAL_HALO: Decimal = variable(
+            10,
+            description="Specify the horizontal halo size around macros, within which standard cell rows are cut away.",
+            units="µm",
+            deprecated_names=["FP_TAP_HORIZONTAL_HALO"],
+        )
+
+        FP_MACRO_VERTICAL_HALO: Decimal = variable(
+            10,
+            description="Specify the vertical halo size around macros, within which standard cell rows are cut away.",
+            units="µm",
+            deprecated_names=["FP_TAP_VERTICAL_HALO"],
         )
 
     config: Config
@@ -429,8 +446,41 @@ class GeneratePDN(OpenROADStep):
     def get_script_path(self):
         return files("librelane").joinpath("scripts", "openroad", "pdn.tcl")
 
+    def __check_halos(self):
+        """
+        FP_MACRO_*_HALO is where standard cell rows are cut away around a
+        macro; PDN_*_HALO is where the macro's power grid is held off. If the
+        PDN halo is the larger of the two, rows -- and therefore placed cells
+        -- exist in the gap between them, in a region the grid was told to
+        avoid, which shows up later as missing connections and LVS mismatches.
+        """
+        for axis, pdn_halo, row_halo, pdn_name, row_name in (
+            (
+                "horizontal",
+                self.config.PDN_HORIZONTAL_HALO,
+                self.config.FP_MACRO_HORIZONTAL_HALO,
+                "PDN_HORIZONTAL_HALO",
+                "FP_MACRO_HORIZONTAL_HALO",
+            ),
+            (
+                "vertical",
+                self.config.PDN_VERTICAL_HALO,
+                self.config.FP_MACRO_VERTICAL_HALO,
+                "PDN_VERTICAL_HALO",
+                "FP_MACRO_VERTICAL_HALO",
+            ),
+        ):
+            if pdn_halo > row_halo:
+                logger.warning(
+                    f"{pdn_name} ({pdn_halo}) is larger than {row_name} ({row_halo}):"
+                    f" cells may be placed in the {axis} band between the two,"
+                    f" where the macro power grid is suppressed. Lower {pdn_name}"
+                    f" or raise {row_name}."
+                )
+
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
+        self.__check_halos()
         if self.config.PDN_CFG is None:
             env["PDN_CFG"] = files("librelane").joinpath(
                 "scripts", "openroad", "common", "pdn_cfg.tcl"
