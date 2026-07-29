@@ -13,18 +13,18 @@
 # limitations under the License.
 """A sequential flow whose step list is expanded from a list of stages."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from collections.abc import Mapping, Sequence
 from typing import Optional, Union
 
 from loguru import logger
 
-from ..common import Filter
+from ..common import Filter, parse_metric_modifiers
 from ..config import Config as ResolvedConfig, variable
 from ..stages.resolution import Resolution, StageEntry, ToolSelection, resolve
-from ..stages.stage import Stage
+from ..stages.stage import Stage, StageContractError
 from ..stages.tools import extract_tools
-from ..state import DesignFormat
+from ..state import DesignFormat, State
 from ..steps import Step
 
 from .sequential import SequentialFlow
@@ -80,6 +80,12 @@ class StagedFlow(SequentialFlow):
     #: otherwise leave an inherited entry matching nothing.
     _explicit_gating_config_vars: dict[str, list[str]] = {}
 
+    #: The resolution ``Steps`` was expanded from. Its spans carry the
+    #: ``provides`` and ``metrics`` of the providers actually selected, which
+    #: the taxonomy alone does not know. Empty for a subclass that declares
+    #: ``Steps`` directly and so has no stages.
+    _resolution: Resolution = Resolution([], [], ())
+
     class Config(SequentialFlow.Config):
         TOOLS: Optional[dict[str, Union[str, list[str]]]] = variable(
             None,
@@ -97,6 +103,7 @@ class StagedFlow(SequentialFlow):
             Self.Stages = list(Self.Stages)
             resolution = resolve(Self.Stages, {})
             Self.Steps = resolution.steps
+            Self._resolution = resolution
             Self.__report_unselected(resolution)
         elif "Steps" not in Self.__dict__ and not Self.Stages:
             # Steps defaults to [] rather than NotImplemented so that defining
@@ -138,12 +145,80 @@ class StagedFlow(SequentialFlow):
             self._normalize_step_ids(self)
             self._apply_stage_gating(self)
             self.__prune_deselected_gates(self)
-            self.resolution = resolution
+            self._resolution = resolution
 
         super().__init__(
             config,
             config_override_strings=config_override_strings,
             **kwargs,
+        )
+
+        self.__executed_step_ids: set[str] = set()
+        self.__boundary_by_last_step = {
+            boundary.last_step_id: boundary for boundary in self.__boundaries()
+        }
+
+    def __boundaries(self) -> list[Boundary]:
+        """
+        The boundary map for the resolved step list, with each boundary's
+        contract taken from the span that produced it.
+
+        ``stage_boundaries`` recovers step membership from the tags on the step
+        classes, but falls back to the taxonomy for the contract. Only the
+        resolution knows which providers were selected, and a
+        :class:`librelane.stages.Registration` may declare ``provides`` and
+        ``metrics`` beyond its stage's, so the span is the authority here.
+        """
+        spans = {span.stage_ids: span for span in self._resolution.spans}
+        result = []
+        for boundary in self.stage_boundaries(self.Steps):
+            span = spans.get(boundary.stage_ids)
+            if span is not None:
+                boundary = replace(
+                    boundary, provides=span.provides, metrics=span.metrics
+                )
+            result.append(boundary)
+        return result
+
+    def _after_step(self, step: Step, state: State, executed: bool) -> None:
+        if executed:
+            self.__executed_step_ids.add(step.id)
+        boundary = self.__boundary_by_last_step.get(step.id)
+        if boundary is None:
+            return
+        if not all(
+            step_id in self.__executed_step_ids for step_id in boundary.step_ids
+        ):
+            # A stage that did not run every step cannot be held to its
+            # contract: the views and metrics were never attempted.
+            logger.debug(
+                f"stage {list(boundary.stage_ids)}: not every step ran, "
+                f"contract not checked"
+            )
+            return
+        self.__check_contract(boundary, state)
+
+    @staticmethod
+    def __check_contract(boundary: Boundary, state: State) -> None:
+        missing_views = [
+            view.id for view in boundary.provides if state.get(view.id) is None
+        ]
+        # Compared on base names, so a provider emitting only modified variants
+        # of a contracted metric, as GeneratePDN does per net, still satisfies it.
+        produced = {parse_metric_modifiers(name)[0] for name in state.metrics}
+        missing_metrics = [name for name in boundary.metrics if name not in produced]
+        if not missing_views and not missing_metrics:
+            return
+        parts = []
+        if missing_views:
+            parts.append(f"views {missing_views}")
+        if missing_metrics:
+            parts.append(f"metrics {missing_metrics}")
+        raise StageContractError(
+            f"stage {list(boundary.stage_ids)} completed without producing "
+            f"{' and '.join(parts)}. Every provider of these stages is "
+            f"contracted to produce them; a stage whose contract is not met "
+            f"cannot be handed to the next stage."
         )
 
     @classmethod

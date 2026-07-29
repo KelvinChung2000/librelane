@@ -249,3 +249,91 @@ def test_unknown_stage_key_is_rejected_with_a_suggestion():
     Classic = Flow.factory.get("Classic")
     with pytest.raises(StageResolutionError, match="Did you mean: 'synthesis'"):
         Classic({**_MINIMAL_DESIGN, "TOOLS": {"synthesys": "yosys"}}, **_MOCK_PDK)
+
+
+@pytest.fixture(scope="module")
+def ContractTestStage():
+    """
+    A stage whose only provider fails to emit a metric it contracted.
+
+    Module-scoped because Stage.factory and StageRegistry are process-wide
+    singletons: a function-scoped fixture would fail on the second use with
+    "already registered". The step ID uses the Test. prefix the repository
+    reserves for ephemeral test steps, which test_registry_snapshot.py excludes.
+    """
+    from librelane.stages import Stage, StageRegistry
+    from librelane.steps import Step
+
+    @Step.factory.register()
+    class Silent(Step):
+        id = "Test.SilentContract"
+        name = "Silent Contract"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    Stage(
+        id="contract_test",
+        full_name="Contract Test",
+        default_provider="silent",
+        requires=(),
+        provides=(),
+        metrics=("test__required",),
+    ).register()
+
+    StageRegistry.register(
+        stages=["contract_test"],
+        provider="silent",
+        steps=[Silent],
+        namespaces=["TEST_"],
+    )
+    return Stage.factory.get("contract_test")
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_missing_contracted_metric_raises(ContractTestStage):
+    from librelane.flows import StagedFlow
+    from librelane.stages import StageContractError
+
+    class Broken(StagedFlow):
+        Stages = [ContractTestStage]
+
+    flow = Broken(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+    with pytest.raises(StageContractError, match="test__required"):
+        flow.start()
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_skipped_stage_is_not_contract_checked(ContractTestStage):
+    """
+    A stage that did not run every step cannot be held to its contract: the
+    views and metrics were never attempted.
+    """
+    from librelane.flows import StagedFlow
+
+    class Broken(StagedFlow):
+        Stages = [ContractTestStage]
+
+    flow = Broken(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+    flow.start(skip=["Test.SilentContract"])
+
+
+def test_metric_modifiers_satisfy_the_contract():
+    """
+    GeneratePDN emits design__power_grid_violation__count__net:VPWR alongside
+    the aggregate. The contract compares base names, so a provider emitting only
+    modified variants of a contracted metric still satisfies it.
+    """
+    from librelane.common import parse_metric_modifiers
+
+    base, modifiers = parse_metric_modifiers(
+        "design__power_grid_violation__count__net:VPWR"
+    )
+    assert base == "design__power_grid_violation__count"
+    assert modifiers == {"net": "VPWR"}

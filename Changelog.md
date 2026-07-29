@@ -189,6 +189,16 @@ Style Notes
   * Selecting one tool of a multi-tool stage drops the other's hand-written
     gates, since the steps they name are no longer in the flow. A dead gate is
     still an error when a flow class declares one, which is where a typo is.
+* Stage contracts are enforced at run time. When the last step of a stage
+  completes, every view in the stage's `provides` must be in the state and every
+  metric in its `metrics` must have been emitted, or the run fails. There is no
+  warn-and-continue: a backend that does not report `route__drc_errors` must not
+  be able to let `Checker.TrDRC` pass on an unexamined design. Metrics are
+  compared on base names, so a provider emitting only per-net or per-corner
+  variants of a contracted metric still satisfies it.
+  * A stage that did not run every one of its steps, because it was gated,
+    skipped, or excluded by `--from`/`--to`, is not checked. Its views and
+    metrics were never attempted.
 * A gating key matching no step in a flow is now an error rather than being
   ignored. Such a key silently fails to gate anything, which becomes a
   correctness problem once a stage can be implemented by a tool whose step IDs

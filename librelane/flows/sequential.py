@@ -159,6 +159,18 @@ class SequentialFlow(Flow):
                         f"Gating variable '{var_name}' in Flow '{name}' is not a Boolean"
                     )
 
+    def _after_step(self, step: Step, state: State, executed: bool) -> None:
+        """
+        Called once for every step in :attr:`Steps`, after it has run or been
+        skipped. ``executed`` is False when the step was gated, skipped, or
+        excluded by ``--from``/``--to``.
+
+        Does nothing here. :class:`librelane.flows.StagedFlow` uses it to check
+        the stage contract at each stage boundary. Note that
+        ``create_reproducible`` breaks out of the run loop before this is
+        reached, which is correct: a reproducible does not execute the flow.
+        """
+
     @classmethod
     def Make(Self, step_ids: list[str]) -> type[SequentialFlow]:
         Step_list = []
@@ -410,6 +422,11 @@ class SequentialFlow(Flow):
                     raise FlowError(str(e)) from None
 
             self.progress_bar.end_stage(increment_ordinal=increment_ordinal)
+
+            # increment_ordinal is already False on every non-executing path
+            # and True only when the step actually ran, so it is exactly the
+            # executed signal with no new bookkeeping.
+            self._after_step(step, current_state, increment_ordinal)
 
             if to_resolved and to_resolved == step.id:
                 executing = False
