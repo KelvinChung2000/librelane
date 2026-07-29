@@ -16,10 +16,8 @@ from loguru import logger
 import os
 import json
 import yaml
-from yamlcore import CCoreLoader
 import dataclasses
 from glob import glob
-from decimal import Decimal
 from textwrap import dedent
 from functools import lru_cache
 from dataclasses import dataclass
@@ -34,7 +32,7 @@ from collections.abc import Mapping, Sequence
 
 from .legacy import Variable, MissingRequiredVariable
 from .diagnostics import Diagnostic, DiagnosticSet, Severity
-from .loading import ConfigSource, layer_mappings, read_source
+from .loading import ConfigSource, OpenLaneYAMLLoader, layer_mappings, read_source
 from .removals import removed_variables
 from .flow import pdk_variables, scl_variables, pad_variables, flow_common_variables
 from .pdk_compat import migrate_old_config
@@ -53,30 +51,10 @@ AnyConfig = Union[AnyPath, Mapping[str, Any]]
 AnyConfigs = Union[AnyConfig, Sequence[AnyConfig]]
 
 
-class _OpenLaneYAMLLoader(CCoreLoader):
-    def construct_yaml_float(self, node: yaml.ScalarNode) -> Decimal:  # type: ignore
-        value = str(self.construct_scalar(node))
-        value = value.replace("_", "").lower()
-        sign = +1
-        if value[0] == "-":
-            sign = -1
-        if value[0] in "+-":
-            value = value[1:]
-        if value == ".inf":
-            return sign * Decimal("Infinity")
-        elif value == ".nan":
-            return Decimal("nan")
-        else:
-            return sign * Decimal(value)
-
-    def __init__(self, stream) -> None:
-        super().__init__(stream)
-        self.add_constructor(
-            "tag:yaml.org,2002:float",
-            constructor=_OpenLaneYAMLLoader.construct_yaml_float,
-        )
-        # print(list(self.yaml_implicit_resolvers.keys()))
-        # del self.yaml_implicit_resolvers["tag:yaml.org,2002:float"]
+# Moved to config.loading.sources, which is where read_source needs it and
+# which this module already imports. Aliased because it is referenced by name
+# throughout this file.
+_OpenLaneYAMLLoader = OpenLaneYAMLLoader
 
 
 class UnknownExtensionError(ValueError):

@@ -174,6 +174,21 @@ Style Notes
     * `RUN_LVS` also skips `Magic.SpiceExtraction` and `Checker.IllegalOverlap`.
       The extraction exists to feed LVS, and disabling LVS used to still pay
       for it and still fail the run on a check nobody asked for.
+* Added `TOOLS`, a mapping from stage id to the provider implementing it, so a
+  phase's tool can be chosen from configuration instead of by subclassing the
+  flow. `{"streamout": "klayout"}` drops Magic's streamout;
+  `{"streamout": ["magic", "klayout"]}` runs both. Unknown stages and providers
+  are rejected by name, with a suggestion for a near miss.
+  * `TOOLS` must be a literal mapping. It is read by a pre-pass ahead of full
+    configuration resolution, because a flow's step set has to be known before
+    the configuration those steps declare can be validated, so `expr::`,
+    `ref::` and PDK-supplied values cannot appear in it.
+  * `TOOLS` is not read from Tcl configuration files, which need process
+    information that is not resolved that early. Such a file is reported as
+    unconsulted rather than silently treated as empty.
+  * Selecting one tool of a multi-tool stage drops the other's hand-written
+    gates, since the steps they name are no longer in the flow. A dead gate is
+    still an error when a flow class declares one, which is where a typo is.
 * A gating key matching no step in a flow is now an error rather than being
   ignored. Such a key silently fails to gate anything, which becomes a
   correctness problem once a stage can be implemented by a tool whose step IDs

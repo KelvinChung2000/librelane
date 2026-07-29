@@ -14,11 +14,16 @@
 """A sequential flow whose step list is expanded from a list of stages."""
 
 from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from typing import Optional, Union
 
 from loguru import logger
 
-from ..stages.resolution import Resolution, StageEntry, resolve
+from ..common import Filter
+from ..config import Config as ResolvedConfig, variable
+from ..stages.resolution import Resolution, StageEntry, ToolSelection, resolve
 from ..stages.stage import Stage
+from ..stages.tools import extract_tools
 from ..state import DesignFormat
 from ..steps import Step
 
@@ -75,6 +80,18 @@ class StagedFlow(SequentialFlow):
     #: otherwise leave an inherited entry matching nothing.
     _explicit_gating_config_vars: dict[str, list[str]] = {}
 
+    class Config(SequentialFlow.Config):
+        TOOLS: Optional[dict[str, Union[str, list[str]]]] = variable(
+            None,
+            description=(
+                "A mapping from stage id to the provider (tool) implementing "
+                "it, for example {'synthesis': 'genus'}. Only overrides need "
+                "listing; an unnamed stage uses its default provider. Must be a "
+                "literal mapping, as it is read before the configuration "
+                "preprocessor runs, and so cannot come from the PDK."
+            ),
+        )
+
     def __init_subclass__(Self, scm_type=None, name=None, **kwargs):
         if "Stages" in Self.__dict__:
             Self.Stages = list(Self.Stages)
@@ -100,22 +117,97 @@ class StagedFlow(SequentialFlow):
         # Step IDs are only final once the base class has normalized duplicates
         # and applied Substitutions, so gates cannot be generated until after.
         super().__init_subclass__(scm_type=scm_type, name=name, **kwargs)
-        Self.__apply_stage_gating()
-        Self._validate_gating_config_vars()
+        Self._apply_stage_gating(Self)
+        Self._validate_gating_config_vars(Self)
+
+    def __init__(
+        self,
+        config,
+        *,
+        config_override_strings: Sequence[str] | None = None,
+        **kwargs,
+    ):
+        tools = self.__selected_tools(config, config_override_strings)
+        if tools:
+            # Re-expansion happens before super().__init__, because that is
+            # where get_all_config_variables() reads self.Steps to build the
+            # model configuration is validated against. The whole reason the
+            # TOOLS pre-pass exists is that the step set has to be known first.
+            resolution = resolve(self.Stages, tools)
+            self.Steps = resolution.steps
+            self._normalize_step_ids(self)
+            self._apply_stage_gating(self)
+            self.__prune_deselected_gates(self)
+            self.resolution = resolution
+
+        super().__init__(
+            config,
+            config_override_strings=config_override_strings,
+            **kwargs,
+        )
 
     @classmethod
-    def __apply_stage_gating(Self) -> None:
+    def __selected_tools(
+        Self,
+        config,
+        config_override_strings: Sequence[str] | None,
+    ) -> Mapping[str, ToolSelection]:
+        """
+        :returns: The ``TOOLS`` mapping, read from raw sources by the pre-pass
+            or taken directly from an already-resolved configuration.
+        """
+        if isinstance(config, ResolvedConfig):
+            # Already validated, so TOOLS is present and typed. Checked before
+            # Mapping, which a resolved Config also satisfies.
+            return dict(config.get("TOOLS") or {})
+        sources = list(config) if isinstance(config, (list, tuple)) else [config]
+        return extract_tools(
+            sources,
+            config_override_strings=config_override_strings,
+        )
+
+    @staticmethod
+    def __prune_deselected_gates(target) -> None:
+        """
+        Drops gating entries naming a step the resolved provider did not
+        produce.
+
+        Correct only at instance time. A flow's hand-written gating keys are
+        validated against the default expansion when the class is defined, so a
+        key matching nothing *here* names a step that a provider selection
+        removed, for example ``Magic.StreamOut`` once ``TOOLS`` picks klayout
+        alone for ``streamout``. Such a gate is moot rather than wrong, and
+        erroring on it would make provider selection unusable for precisely the
+        multi-tool stages it exists to serve.
+        """
+        step_ids = [step.id for step in target.Steps]
+        kept: dict[str, list[str]] = {}
+        for key, value in target.gating_config_vars.items():
+            if key in step_ids or list(Filter([key]).filter(step_ids)):
+                kept[key] = value
+                continue
+            logger.debug(
+                f"gating key '{key}' names no selected step; the gate is moot "
+                f"under this TOOLS selection and was dropped"
+            )
+        target.gating_config_vars = kept
+
+    @staticmethod
+    def _apply_stage_gating(target) -> None:
         """
         Turns each stage's ``gating_config_var`` into step-level gating entries
-        covering every step the resolved provider produced.
+        covering every step of the provider resolved for ``target``.
 
         Reusing the existing step-level mechanism rather than adding a parallel
         one means gating behaves identically whichever provider is selected,
         which is the whole point: ``RUN_CTS`` gates the ``cts`` stage no matter
         what implements it.
+
+        Takes a target rather than binding to a class because instance-level
+        ``TOOLS`` rebuilds ``Steps`` on the instance.
         """
         generated: dict[str, list[str]] = {}
-        for boundary in Self.stage_boundaries(Self.Steps):
+        for boundary in StagedFlow.stage_boundaries(target.Steps):
             for stage_id in boundary.stage_ids:
                 stage = Stage.factory.get(stage_id)
                 if stage.gating_config_var is None:
@@ -124,11 +216,11 @@ class StagedFlow(SequentialFlow):
                     generated.setdefault(step_id, []).append(stage.gating_config_var)
 
         merged = generated
-        for key, value in Self._explicit_gating_config_vars.items():
+        for key, value in target._explicit_gating_config_vars.items():
             # dict.fromkeys deduplicates while preserving order, so a variable
             # that is both a stage gate and an explicit entry appears once.
             merged[key] = list(dict.fromkeys(merged.get(key, []) + list(value)))
-        Self.gating_config_vars = merged
+        target.gating_config_vars = merged
 
     @staticmethod
     def __report_unselected(resolution: Resolution) -> None:

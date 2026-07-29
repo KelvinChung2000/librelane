@@ -113,48 +113,50 @@ class SequentialFlow(Flow):
         Self.Steps = Self.Steps.copy()  # Break global reference
         Self.config_vars = Self.config_vars.copy()
         Self.gating_config_vars = Self.gating_config_vars.copy()
-        Self.__normalize_step_ids(Self)
+        Self._normalize_step_ids(Self)
         if Self.Substitutions:
             Self.__substitute_in_place(Self, Self.Substitutions)
             Self.Substitutions = None
 
-        Self._validate_gating_config_vars()
+        Self._validate_gating_config_vars(Self)
 
-    @classmethod
-    def _validate_gating_config_vars(Self):
+    @staticmethod
+    def _validate_gating_config_vars(target: SequentialFlow | type[SequentialFlow]):
         """
-        Checks that every gating key names at least one step in the flow and
+        Checks that every gating key names at least one step in ``target`` and
         that every gating variable is a declared Boolean.
 
         Separate from ``__init_subclass__`` so that :class:`StagedFlow` can
-        re-run it after generating gating entries from stage gates, which it
-        can only do once step IDs have been normalized and substitutions
-        applied.
+        re-run it after generating gating entries from stage gates, which it can
+        only do once step IDs have been normalized and substitutions applied.
+        Takes a target, like ``_normalize_step_ids``, because instance-level
+        ``TOOLS`` rebuilds ``Steps`` on the instance rather than the class.
         """
+        name = getattr(target, "__qualname__", type(target).__qualname__)
         variables_by_name = {}
-        for variable in Self.config_vars:
+        for variable in target.config_vars:
             variables_by_name[variable.name] = variable
 
         step_id_set = set()
-        for step in Self.Steps:
+        for step in target.Steps:
             step_id_set.add(step.id)
 
-        for id, variable_names in Self.gating_config_vars.items():
+        for id, variable_names in target.gating_config_vars.items():
             matching_steps = list(Filter([id]).filter(step_id_set))
             if id not in step_id_set and len(matching_steps) < 1:
                 raise TypeError(
-                    f"Gating key '{id}' in Flow '{Self.__qualname__}' matches "
-                    f"no step in the flow. A gating key that matches nothing "
-                    f"silently fails to gate anything."
+                    f"Gating key '{id}' in Flow '{name}' matches no step in "
+                    f"the flow. A gating key that matches nothing silently "
+                    f"fails to gate anything."
                 )
             for var_name in variable_names:
                 if var_name not in variables_by_name:
                     raise TypeError(
-                        f"Gating variable '{var_name}' for Step '{id}' does not match any declared config_vars in Flow '{Self.__qualname__}'"
+                        f"Gating variable '{var_name}' for Step '{id}' does not match any declared config_vars in Flow '{name}'"
                     )
                 if variables_by_name[var_name].type != bool:
                     raise TypeError(
-                        f"Gating variable '{var_name}' in Flow '{Self.__qualname__}' is not a Boolean"
+                        f"Gating variable '{var_name}' in Flow '{name}' is not a Boolean"
                     )
 
     @classmethod
@@ -261,10 +263,10 @@ class SequentialFlow(Flow):
                     target.Steps.insert(i + 1, with_step)
                 elif mode == "prepend":
                     target.Steps.insert(i, with_step)
-        target.__normalize_step_ids(target)
+        target._normalize_step_ids(target)
 
     @staticmethod
-    def __normalize_step_ids(target: SequentialFlow | type[SequentialFlow]):
+    def _normalize_step_ids(target: SequentialFlow | type[SequentialFlow]):
         ids_used: set[str] = set()
 
         for i, step in enumerate(target.Steps):
