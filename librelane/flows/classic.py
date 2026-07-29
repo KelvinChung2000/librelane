@@ -16,12 +16,10 @@ from .staged import StagedFlow
 from ..config import variable
 from ..stages import Stage
 
-# Netgen and Verilator no longer appear here: their steps are named by the
-# provider registrations in librelane/stages/providers.py, which is what makes
-# them substitutable from configuration. Yosys remains only for VHDLClassic's
-# substitution map, which Task 12 replaces with a TOOLS selection.
+# Netgen, Verilator and Yosys no longer appear here: their steps are named by
+# the provider registrations in librelane/stages/providers.py, which is what
+# makes them substitutable from configuration.
 from ..steps import (
-    Yosys,
     OpenROAD,
     Magic,
     KLayout,
@@ -89,8 +87,6 @@ class Classic(StagedFlow):
         KLayout.XOR,
         Checker.XOR,
         Stage.drc,
-        Checker.MagicDRC,
-        Checker.KLayoutDRC,
         Stage.lvs,
         Stage.formal_equivalence,
         Checker.SetupViolations,
@@ -213,12 +209,12 @@ class Classic(StagedFlow):
 
         RUN_EQY: bool = variable(
             False,
-            description="Enables the Yosys.EQY step. Not valid for VHDLClassic.",
+            description="Enables the formal equivalence stage, i.e. the Yosys.EQY step. Has no effect in VHDLClassic, which does not run that stage.",
         )
 
         RUN_LINTER: bool = variable(
             True,
-            description="Enables the Verilator.Lint step and associated checker steps. Not valid for VHDLClassic.",
+            description="Enables the lint stage, i.e. the Verilator.Lint step and associated checker steps. Has no effect in VHDLClassic, which does not run that stage.",
             deprecated_names=["RUN_VERILATOR"],
         )
 
@@ -253,15 +249,68 @@ class Classic(StagedFlow):
 class VHDLClassic(Classic):
     """
     A variant of Classic that accepts VHDL files for Synthesis instead of
-    Verilog files (and removes Verilog linting/equivalence steps.)
+    Verilog files (and removes the Verilog linting, equivalence-checking and
+    power-header steps, none of which can run without Verilog sources.)
+
+    It subclasses :class:`Classic` for the configuration variables, which are
+    genuinely shared, but declares its own ``Stages``: it is a different flow,
+    not a differently configured one.
     """
 
-    Substitutions = {
-        "Verilator.Lint": None,
-        "Checker.Lint*": None,
-        "Yosys.JsonHeader": None,
-        "Yosys.Synthesis": Yosys.VHDLSynthesis,
-        "Odb.SetPowerConnections": None,
-        "Odb.WriteVerilogHeader": None,
-        "Yosys.EQY": None,
-    }
+    #: Written out in full rather than derived from ``Classic.Stages`` by
+    #: filtering, deliberately. A flow is a self-contained declaration of what
+    #: it runs; a filter expression over another flow's list is a substitution
+    #: map wearing a different hat, and reintroduces exactly the coupling this
+    #: list exists to remove. The differences from ``Classic`` are the pinned
+    #: synthesis provider and the four omitted entries: ``Stage.lint``,
+    #: ``Odb.SetPowerConnections``, ``Odb.WriteVerilogHeader`` and
+    #: ``Stage.formal_equivalence``.
+    Stages = [
+        Stage.synthesis.using("yosys_vhdl"),
+        Stage.pre_pnr_sta,
+        Stage.floorplan,
+        Stage.macro_placement,
+        OpenROAD.CutRows,
+        Stage.tapcell_insertion,
+        Stage.power_grid,
+        Odb.AddRoutingObstructions,
+        Stage.io_placement,
+        Stage.global_placement,
+        Checker.PowerGridViolations,
+        OpenROAD.STAMidPNR,
+        Stage.post_gpl_repair,
+        Odb.ManualGlobalPlacement,
+        Stage.detailed_placement,
+        Stage.cts,
+        OpenROAD.STAMidPNR,
+        Stage.post_cts_opt,
+        OpenROAD.STAMidPNR,
+        Stage.global_routing,
+        Stage.post_grt_repair,
+        Stage.antenna_repair,
+        Stage.post_grt_opt,
+        OpenROAD.STAMidPNR,
+        Stage.detailed_routing,
+        Odb.ReportDisconnectedPins,
+        Checker.DisconnectedPins,
+        Odb.ReportWireLength,
+        Checker.WireLength,
+        Stage.post_route_opt,
+        Stage.fill_insertion,
+        Odb.CellFrequencyTables,
+        Stage.extraction,
+        Stage.signoff_sta,
+        Stage.ir_drop,
+        Stage.streamout,
+        Magic.WriteLEF,
+        Odb.CheckDesignAntennaProperties,
+        KLayout.XOR,
+        Checker.XOR,
+        Stage.drc,
+        Stage.lvs,
+        Checker.SetupViolations,
+        Checker.HoldViolations,
+        Checker.MaxSlewViolations,
+        Checker.MaxCapViolations,
+        Misc.ReportManufacturability,
+    ]

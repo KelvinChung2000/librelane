@@ -21,8 +21,9 @@ from loguru import logger
 
 from ..common import Filter, parse_metric_modifiers
 from ..config import Config as ResolvedConfig, variable
+from ..stages.registry import StageRegistry
 from ..stages.resolution import Resolution, StageEntry, ToolSelection, resolve
-from ..stages.stage import Stage, StageContractError
+from ..stages.stage import Stage, StageContractError, StageResolutionError
 from ..stages.tools import extract_tools
 from ..state import DesignFormat, State
 from ..steps import Step
@@ -157,6 +158,92 @@ class StagedFlow(SequentialFlow):
         self.__boundary_by_last_step = {
             boundary.last_step_id: boundary for boundary in self.__boundaries()
         }
+        self._preflight_views()
+
+    def _preflight_views(self) -> None:
+        """
+        Walks the resolved step list checking that every non-optional input a
+        step consumes is produced by some earlier step.
+
+        Steps whose gating variables are false in the resolved configuration are
+        excluded, because they will not run. Gating is evaluated here rather
+        than at run time so that a configuration which removes a producer, such
+        as selecting a synthesis provider that emits no Verilog header, fails
+        before any tool is invoked.
+        """
+        available: set[str] = set()
+        last_stage = "<start of flow>"
+        gates_by_step_id = self.__gates_by_step_id()
+
+        for step in self.Steps:
+            gates = gates_by_step_id.get(step.id, [])
+            if any(not self.config[gate] for gate in gates):
+                continue
+            for view in step.inputs:
+                # An optional input is satisfiable by absence.
+                # DesignFormat.mkOptional() returns a copy with a flag set,
+                # which compares unequal to the base view, so the flag has to
+                # be tested before the membership check.
+                if view.optional or view.id in available:
+                    continue
+                raise StageResolutionError(
+                    f"step '{step.id}' consumes view '{view.id}', which no "
+                    f"earlier step in this configuration produces. The last "
+                    f"stage before it is {last_stage}. "
+                    f"{self.__how_to_produce(view)}"
+                )
+            for view in step.outputs:
+                available.add(view.id)
+            span = getattr(step, "_stage_span", None)
+            if span is not None:
+                last_stage = (
+                    f"'{span[-1]}' (provider '{getattr(step, '_stage_provider', '?')}')"
+                )
+
+    @staticmethod
+    def __how_to_produce(view: DesignFormat) -> str:
+        """
+        :returns: The remedial half of a preflight error: which registered
+            provider declares this view, so the reader is not left working out
+            for themselves which tool they dropped.
+        """
+        producers = sorted(
+            {
+                f"provider '{registration.provider}' of stage '{stage_id}'"
+                for registration in StageRegistry.list()
+                for stage_id in registration.stages
+                if view in registration.provides
+            }
+        )
+        if producers:
+            return (
+                f"View '{view.id}' is declared by {' and '.join(producers)}, "
+                f"which this configuration did not select. Select it in TOOLS, "
+                f"or use a flow whose stages do not include this step."
+            )
+        return (
+            f"No provider registration declares view '{view.id}', so the step "
+            f"that would have produced it was removed by a gating variable or "
+            f"by a provider selection."
+        )
+
+    def __gates_by_step_id(self) -> dict[str, list[str]]:
+        """
+        :returns: The gating variables in force for each step ID, with wildcard
+            gating keys expanded exactly as :meth:`SequentialFlow.start` expands
+            them.
+
+        Expanding them here too is what keeps the preflight from rejecting a
+        configuration that would in fact run: a step excluded by a wildcard gate
+        must be excluded from the view walk as well.
+        """
+        step_ids = [step.id for step in self.Steps]
+        expanded: dict[str, list[str]] = {}
+        for key, variables in self.gating_config_vars.items():
+            matched = [key] if key in step_ids else list(Filter([key]).filter(step_ids))
+            for step_id in matched:
+                expanded.setdefault(step_id, []).extend(variables)
+        return expanded
 
     def __boundaries(self) -> list[Boundary]:
         """

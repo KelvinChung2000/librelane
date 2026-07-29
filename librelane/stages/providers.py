@@ -331,18 +331,21 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": ("KLAYOUT_",),
         "provides": [DesignFormat.klayout_gds],
     },
+    # Each DRC provider owns the checker that reads its metric. A checker
+    # declares no inputs, so the view preflight cannot catch it being orphaned;
+    # ownership is the only thing that removes it along with the tool it checks.
     {
         "stages": ["drc"],
         "provider": "magic",
-        "steps": [Magic.DRC],
-        "namespaces": _MAGIC_NAMESPACES,
+        "steps": [Magic.DRC, Checker.MagicDRC],
+        "namespaces": _MAGIC_NAMESPACES + ("ERROR_ON_MAGIC_DRC",),
         "metrics": ["magic__drc_error__count"],
     },
     {
         "stages": ["drc"],
         "provider": "klayout",
-        "steps": [KLayout.DRC],
-        "namespaces": ("KLAYOUT_",),
+        "steps": [KLayout.DRC, Checker.KLayoutDRC],
+        "namespaces": ("KLAYOUT_", "ERROR_ON_KLAYOUT_DRC"),
         "metrics": ["klayout__drc_error__count"],
     },
     {

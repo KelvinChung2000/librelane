@@ -114,5 +114,74 @@ def test_multi_provider_stage_accepts_a_single_provider():
 
     resolution = resolve([Stage.factory.get("drc")], {"drc": "klayout"})
 
-    assert [step.id for step in resolution.steps] == ["KLayout.DRC"]
+    # The provider owns the checker that reads its metric, so selecting one tool
+    # of the stage brings its checker and leaves the other tool's behind.
+    assert [step.id for step in resolution.steps] == [
+        "KLayout.DRC",
+        "Checker.KLayoutDRC",
+    ]
     assert resolution.spans[0].metrics == ("klayout__drc_error__count",)
+
+
+def test_using_pins_a_provider_without_registering_a_new_stage():
+    from librelane.stages import Stage
+    from librelane.stages.resolution import resolve
+
+    pinned = Stage.factory.get("synthesis").using("yosys_vhdl")
+
+    assert pinned.id == "synthesis"
+    assert pinned.default_providers == ("yosys_vhdl",)
+    assert [step.id for step in resolve([pinned], {}).steps] == [
+        "Yosys.VHDLSynthesis",
+        "Checker.YosysUnmappedCells",
+        "Checker.YosysSynthChecks",
+        "Checker.NetlistAssignStatements",
+    ]
+    # The registered stage is untouched: 'using' returns a copy, so pinning a
+    # provider in one flow's Stages list cannot leak into another's.
+    assert Stage.factory.get("synthesis").default_providers == ("yosys",)
+
+
+def test_tools_overrides_a_pinned_provider():
+    """
+    Resolution consults TOOLS before default_provider, so a pin is a default
+    rather than a lock and needs no override logic of its own.
+    """
+    from librelane.stages import Stage
+    from librelane.stages.resolution import resolve
+
+    pinned = Stage.factory.get("synthesis").using("yosys_vhdl")
+    resolution = resolve([pinned], {"synthesis": "yosys"})
+
+    assert [step.id for step in resolution.steps][0] == "Yosys.JsonHeader"
+
+
+def test_using_a_list_on_a_multi_provider_stage_pins_both():
+    from librelane.stages import Stage
+    from librelane.stages.resolution import resolve
+
+    pinned = Stage.factory.get("streamout").using(["klayout", "magic"])
+
+    assert [step.id for step in resolve([pinned], {}).steps] == [
+        "KLayout.StreamOut",
+        "KLayout.Render",
+        "Magic.StreamOut",
+    ]
+
+
+def test_using_a_list_on_a_single_provider_stage_is_rejected():
+    from librelane.stages import Stage, StageError
+
+    with pytest.raises(StageError, match="does not accept a list of providers"):
+        Stage.factory.get("cts").using(["openroad", "openroad"])
+
+
+def test_using_an_empty_list_is_rejected():
+    """
+    An empty pin would resolve to no providers, which for a non-optional stage
+    silently drops it from the flow.
+    """
+    from librelane.stages import Stage, StageError
+
+    with pytest.raises(StageError, match="empty provider list"):
+        Stage.factory.get("streamout").using([])

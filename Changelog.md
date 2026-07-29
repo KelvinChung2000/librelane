@@ -199,6 +199,37 @@ Style Notes
   * A stage that did not run every one of its steps, because it was gated,
     skipped, or excluded by `--from`/`--to`, is not checked. Its views and
     metrics were never attempted.
+* View availability is checked before any tool runs. Every non-optional view a
+  step consumes must be produced by an earlier step that the resolved
+  configuration actually runs, or the flow fails at startup naming the view, the
+  step consuming it, and the last stage before it. An optional input is
+  satisfiable by absence and is not a failure. This is what makes a mixed-tool
+  `TOOLS` selection safe to attempt: picking a synthesis frontend that emits no
+  Verilog header now says so immediately instead of crashing once floorplanning
+  reaches for it.
+  * Two configurations that were already broken now fail at startup rather than
+    part-way through a run. `{"synthesis": "yosys_vhdl"}` on `Classic` is
+    rejected, because `Classic` runs steps that hard-require the Verilog header
+    only Verilog synthesis emits; use the `VHDLClassic` flow, which does not.
+    `{"streamout": "klayout"}` is rejected unless `RUN_KLAYOUT_XOR` is false,
+    because the XOR compares Magic's GDSII against KLayout's and there is no
+    longer a Magic GDSII to compare.
+* Added `Stage.using`, which pins the tool a stage runs from inside a flow's
+  `Stages` list, for example `Stage.synthesis.using("yosys_vhdl")`. A pin is the
+  flow's default rather than a lock: a `TOOLS` entry still overrides it.
+* `VHDLClassic` declares its own `Stages` list instead of a `Substitutions` map
+  over `Classic`'s steps. It still subclasses `Classic` for the configuration
+  variables, which are genuinely shared, but what it runs is now written down in
+  one place rather than expressed as edits to another flow's list. The step list
+  is unchanged.
+  * `Odb.SetPowerConnections` moved out of the `floorplan` stage's `openroad`
+    provider and into `Classic`'s own `Stages` list. It hard-requires the
+    Verilog header, so as a mandatory member of a tool-neutral stage it made
+    floorplanning impossible for any flow without Verilog sources. As a plain
+    step, a flow that cannot run it simply omits it. The step list is unchanged.
+  * `RUN_LINTER` and `RUN_EQY` are still declared on `VHDLClassic`, inherited
+    from `Classic`, but have no effect there, since it runs neither stage. Their
+    descriptions say so.
 * A gating key matching no step in a flow is now an error rather than being
   ignored. Such a key silently fails to gate anything, which becomes a
   correctness problem once a stage can be implemented by a tool whose step IDs

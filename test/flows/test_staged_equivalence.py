@@ -46,6 +46,29 @@ def test_vhdl_classic_steps_match_golden():
     assert _snapshot(VHDLClassic) == _load_golden("vhdl_classic_steps.json")
 
 
+def test_vhdl_classic_declares_its_own_stages_rather_than_substitutions():
+    """
+    The strongest available validation that the abstraction does its job: a real
+    tool swap between two real tools, expressed as a flow declaring the stages
+    it runs and pinning a provider for one of them, reproducing byte-for-byte a
+    step list that until now took a Substitutions map to produce.
+    """
+    from librelane.stages import Stage
+
+    VHDLClassic = Flow.factory.get("VHDLClassic")
+
+    assert "Stages" in VHDLClassic.__dict__, (
+        "VHDLClassic must declare its own Stages list, not inherit Classic's"
+    )
+    synthesis = [
+        entry
+        for entry in VHDLClassic.Stages
+        if isinstance(entry, Stage) and entry.id == "synthesis"
+    ]
+    assert [entry.default_providers for entry in synthesis] == [("yosys_vhdl",)]
+    assert _snapshot(VHDLClassic) == _load_golden("vhdl_classic_steps.json")
+
+
 GATING_VARIABLES = [
     "RUN_TAP_ENDCAP_INSERTION",
     "RUN_POST_GPL_DESIGN_REPAIR",

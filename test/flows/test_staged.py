@@ -159,17 +159,34 @@ def test_subclass_may_declare_steps_directly():
     assert Bypassed.stage_boundaries(Bypassed.Steps) == []
 
 
-def _classic_with_tools(mock_config, tools):
+def _classic_with_tools(mock_config, tools, **overrides):
     """
     Instantiates Classic from an already-resolved configuration, which skips
     Config.load. The mock variable set the fixtures install collides with real
     step variables (DIODE_ON_PORTS), so the real flow cannot be validated under
     them; the pre-pass that reads TOOLS out of raw sources is covered by
     test/stages/test_tools_extraction.py instead.
+
+    Skipping Config.load also means nothing put Classic's own variables into the
+    configuration, so the flow's declared defaults are supplied here, with
+    ``overrides`` applied on top. The view preflight reads the gating variables,
+    and a flow is entitled to assume its own variables are present.
     """
     from librelane.flows import Flow
 
-    return Flow.factory.get("Classic")(mock_config.copy(TOOLS=tools))
+    Classic = Flow.factory.get("Classic")
+    values = {variable.name: variable.default for variable in Classic.config_vars}
+    values.update(overrides)
+    values["TOOLS"] = tools
+    return Classic(mock_config.copy(**values))
+
+
+#: Selecting klayout alone for the streamout stage removes Magic.StreamOut, and
+#: KLayout.XOR compares the two tools' GDSII against each other, so it hard-
+#: requires a Magic GDS that nothing then produces. The view preflight says so
+#: at startup; see test_klayout_only_streamout_needs_the_xor_disabled. Tests
+#: below that select klayout streamout for unrelated reasons turn the XOR off.
+_NO_XOR = {"RUN_KLAYOUT_XOR": False}
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -177,7 +194,7 @@ def _classic_with_tools(mock_config, tools):
 def test_tools_reexpands_at_instance_time(mock_config):
     from librelane.flows import Flow
 
-    flow = _classic_with_tools(mock_config, {"streamout": "klayout"})
+    flow = _classic_with_tools(mock_config, {"streamout": "klayout"}, **_NO_XOR)
 
     ids = [step.id for step in flow.Steps]
     assert "Magic.StreamOut" not in ids
@@ -190,7 +207,7 @@ def test_tools_reexpands_at_instance_time(mock_config):
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
 def test_reexpansion_regenerates_gating_for_the_selected_provider(mock_config):
-    flow = _classic_with_tools(mock_config, {"streamout": "klayout"})
+    flow = _classic_with_tools(mock_config, {"streamout": "klayout"}, **_NO_XOR)
 
     assert "Magic.StreamOut" not in flow.gating_config_vars
     assert flow.gating_config_vars["KLayout.StreamOut"] == ["RUN_KLAYOUT_STREAMOUT"]
@@ -202,7 +219,7 @@ def test_default_run_does_not_reexpand(mock_config):
     from librelane.flows import Flow
 
     Classic = Flow.factory.get("Classic")
-    flow = Classic(mock_config)
+    flow = _classic_with_tools(mock_config, {})
 
     assert [step.id for step in flow.Steps] == [step.id for step in Classic.Steps]
 
@@ -215,18 +232,20 @@ def test_gates_for_a_deselected_tool_are_dropped_not_rejected(mock_config):
     leaving Classic's hand-written per-tool gates with nothing to name. That
     makes them moot, not wrong: rejecting them would make TOOLS unusable for
     exactly the stages it exists to serve.
+
+    The tool's checker goes with it. Checker.MagicDRC belongs to the drc stage's
+    magic provider, so deselecting magic removes the step and its gate together,
+    rather than leaving a checker demanding a metric no selected tool emitted.
     """
     flow = _classic_with_tools(mock_config, {"drc": "klayout"})
 
+    step_ids = [step.id for step in flow.Steps]
+    assert "Magic.DRC" not in step_ids
+    assert "Checker.MagicDRC" not in step_ids
     assert "Magic.DRC" not in flow.gating_config_vars
-    assert "Magic.DRC" not in [step.id for step in flow.Steps]
+    assert "Checker.MagicDRC" not in flow.gating_config_vars
     assert flow.gating_config_vars["KLayout.DRC"] == ["RUN_KLAYOUT_DRC"]
-
-    # Checker.MagicDRC is a plain step in Classic.Stages rather than part of the
-    # drc stage, so deselecting magic leaves it running against a metric Magic
-    # never emitted. Asserted so the gap is visible: closing it means moving the
-    # per-tool checkers into their provider registrations, which reorders steps.
-    assert "Checker.MagicDRC" in flow.gating_config_vars
+    assert flow.gating_config_vars["Checker.KLayoutDRC"] == ["RUN_KLAYOUT_DRC"]
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -322,6 +341,252 @@ def test_skipped_stage_is_not_contract_checked(ContractTestStage):
     flow = Broken(_MINIMAL_DESIGN, **_MOCK_PDK)
 
     flow.start(skip=["Test.SilentContract"])
+
+
+@pytest.fixture(scope="module")
+def PreflightSteps():
+    """
+    Two ephemeral steps consuming the same view, one optionally and one not.
+
+    Module-scoped because Step.factory is a process-wide singleton. The IDs use
+    the Test. prefix the repository reserves for ephemeral test steps, which
+    test_registry_snapshot.py excludes.
+    """
+    from librelane.state import DesignFormat
+    from librelane.steps import Step
+
+    @Step.factory.register()
+    class WantsOptionalHeader(Step):
+        id = "Test.WantsOptionalHeader"
+        name = "Wants Optional Header"
+        inputs = [DesignFormat.json_h.mkOptional()]
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    @Step.factory.register()
+    class WantsHeader(Step):
+        id = "Test.WantsHeader"
+        name = "Wants Header"
+        inputs = [DesignFormat.json_h]
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    return WantsOptionalHeader, WantsHeader
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_preflight_rejects_an_input_no_earlier_step_produces(PreflightSteps):
+    from librelane.flows import StagedFlow
+    from librelane.stages import StageResolutionError
+
+    _, WantsHeader = PreflightSteps
+
+    class Broken(StagedFlow):
+        Steps = [WantsHeader]
+
+    with pytest.raises(StageResolutionError, match="json_h"):
+        Broken(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_preflight_accepts_an_optional_input_nothing_produces(PreflightSteps):
+    """
+    An optional input is satisfiable by absence, so its being unproduced is not
+    a preflight failure. DesignFormat.mkOptional() returns a copy that compares
+    unequal to the base view, so the flag has to be tested before membership.
+    """
+    from librelane.flows import StagedFlow
+
+    WantsOptionalHeader, _ = PreflightSteps
+
+    class Fine(StagedFlow):
+        Steps = [WantsOptionalHeader]
+
+    Fine(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_preflight_ignores_a_step_its_gating_excludes(PreflightSteps):
+    """
+    A step gated off in the resolved configuration will not run, so its inputs
+    are not requirements. Gating is evaluated in the preflight rather than left
+    to run time precisely so that this stays true of both halves: a gate that
+    removes a producer must fail here, and a gate that removes a consumer must
+    not.
+    """
+    from librelane.config import variable
+    from librelane.flows import StagedFlow
+
+    _, WantsHeader = PreflightSteps
+
+    class Gated(StagedFlow):
+        Steps = [WantsHeader]
+        gating_config_vars = {"Test.WantsHeader": ["RUN_HEADER_CONSUMER"]}
+
+        class Config(StagedFlow.Config):
+            RUN_HEADER_CONSUMER: bool = variable(False, description="test gate")
+
+    Gated(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_preflight_honours_a_wildcard_gating_key(PreflightSteps):
+    """
+    Gating keys may be wildcards, and every other reader of them expands
+    wildcards. The preflight has to as well, or it rejects a configuration that
+    would in fact run.
+    """
+    from librelane.config import variable
+    from librelane.flows import StagedFlow
+
+    _, WantsHeader = PreflightSteps
+
+    class Gated(StagedFlow):
+        Steps = [WantsHeader]
+        gating_config_vars = {"Test.Wants*": ["RUN_HEADER_CONSUMER"]}
+
+        class Config(StagedFlow.Config):
+            RUN_HEADER_CONSUMER: bool = variable(False, description="test gate")
+
+    Gated(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_default_classic_passes_the_preflight(mock_config):
+    """
+    Nothing in the default expansion consumes a view no earlier step produces.
+    A failure here would be a pre-existing bug in Classic, not a reason to
+    weaken the check.
+    """
+    _classic_with_tools(mock_config, {})
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_klayout_only_streamout_needs_the_xor_disabled(mock_config):
+    """
+    KLayout.XOR compares Magic's GDSII against KLayout's, so selecting klayout
+    alone for the streamout stage leaves it hard-requiring a view nothing
+    produces. Its gate is RUN_KLAYOUT_XOR plus the two per-tool streamout
+    variables, and TOOLS is not one of them, so the gate does not fire and the
+    step really would run. This configuration was already broken before the
+    preflight existed; the difference is that it now fails at startup naming the
+    view instead of crashing once routing is done.
+    """
+    from librelane.stages import StageResolutionError
+
+    with pytest.raises(StageResolutionError) as raised:
+        _classic_with_tools(mock_config, {"streamout": "klayout"})
+
+    message = str(raised.value)
+    assert "KLayout.XOR" in message
+    assert "mag_gds" in message
+    # The error has to name the provider that would have produced the view, or
+    # the reader is left to work out for themselves which tool they dropped.
+    assert "provider 'magic' of stage 'streamout'" in message
+
+
+#: The single-provider selections of `Classic` that legitimately fail the view
+#: preflight, and the step, view and producer their message must name.
+#:
+#: Every other selection must construct cleanly. That is the step-ownership
+#: invariant: a step that only makes sense when a particular tool was selected
+#: belongs inside that tool's provider registration, so deselecting the tool
+#: takes the step with it. A step left behind consuming a view no selected
+#: provider produces is the bug this pins.
+#:
+#: The two entries here are not fixable by moving a step, which is why they are
+#: listed rather than removed:
+#:
+#: * KLayout.XOR compares the two streamout tools' GDSII against each other, so
+#:   it belongs to neither registration and must stay a plain step. The preflight
+#:   reporting it precisely *is* the fix.
+#: * Classic's own Stages list runs steps needing the Verilog header, which VHDL
+#:   synthesis cannot emit. Omitting them is a different flow, which is what
+#:   VHDLClassic is.
+_ORPHANING_SELECTIONS = {
+    ("streamout", "magic"): (
+        "KLayout.XOR",
+        "klayout_gds",
+        "provider 'klayout' of stage 'streamout'",
+    ),
+    ("streamout", "klayout"): (
+        "KLayout.XOR",
+        "mag_gds",
+        "provider 'magic' of stage 'streamout'",
+    ),
+    ("synthesis", "yosys_vhdl"): (
+        "Odb.SetPowerConnections",
+        "json_h",
+        "provider 'yosys' of stage 'synthesis'",
+    ),
+}
+
+
+def _stages_with_several_providers(FlowClass) -> dict[str, list[str]]:
+    from librelane.stages import Stage, StageRegistry
+
+    return {
+        entry.id: StageRegistry.providers(entry.id)
+        for entry in FlowClass.Stages
+        if isinstance(entry, Stage) and len(StageRegistry.providers(entry.id)) > 1
+    }
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_every_single_provider_selection_leaves_no_orphaned_step(mock_config):
+    """
+    Drives the view preflight across `Classic` once per provider of every stage
+    that has more than one, which is what a vendor provider added later gets
+    checked by for free: register it, and this test says whether selecting it
+    leaves somebody else's tool steps behind.
+    """
+    from librelane.flows import Flow
+    from librelane.stages import StageResolutionError
+
+    selections = _stages_with_several_providers(Flow.factory.get("Classic"))
+    assert selections == {
+        "synthesis": ["yosys", "yosys_vhdl"],
+        "streamout": ["magic", "klayout"],
+        "drc": ["magic", "klayout"],
+    }, "a stage gained or lost a provider; extend _ORPHANING_SELECTIONS if so"
+
+    for stage_id, providers in selections.items():
+        for provider in providers:
+            expected = _ORPHANING_SELECTIONS.get((stage_id, provider))
+            if expected is None:
+                _classic_with_tools(mock_config, {stage_id: provider})
+                continue
+            with pytest.raises(StageResolutionError) as raised:
+                _classic_with_tools(mock_config, {stage_id: provider})
+            for fragment in expected:
+                assert fragment in str(raised.value), (stage_id, provider, fragment)
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_vhdl_synthesis_on_classic_fails_the_preflight(mock_config):
+    """
+    Classic's own Stages list contains steps that hard-require the Verilog
+    header only Yosys.JsonHeader produces, and the yosys_vhdl provider does not
+    include that step. Selecting it therefore has to fail at startup naming the
+    view, rather than crash deep in the flow. Dropping those steps is what makes
+    VHDLClassic a different flow rather than a differently configured Classic.
+    """
+    from librelane.stages import StageResolutionError
+
+    with pytest.raises(StageResolutionError, match="json_h"):
+        _classic_with_tools(mock_config, {"synthesis": "yosys_vhdl"})
 
 
 def test_metric_modifiers_satisfy_the_contract():

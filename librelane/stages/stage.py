@@ -14,7 +14,8 @@
 """The :class:`Stage` dataclass, its factory, and the shared contract constants."""
 
 import builtins
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 from typing import ClassVar
 
 from ..common.errors import FlowError
@@ -113,6 +114,43 @@ class Stage(metaclass=StageMetaclass):
         if isinstance(self.default_provider, str):
             return (self.default_provider,)
         return tuple(self.default_provider)
+
+    def using(self, provider: "str | Sequence[str]") -> "Stage":
+        """
+        Pins the tool this stage runs, for use in a flow's ``Stages`` list::
+
+            Stages = [..., Stage.synthesis.using("yosys_vhdl"), ...]
+
+        :param provider: The provider name, or several for a
+            :attr:`multi_provider` stage, whose sequences are concatenated in
+            listed order.
+        :returns: A copy of this stage whose :attr:`default_provider` is
+            ``provider``. The copy is deliberately *not* registered: it keeps
+            this stage's ``id``, so a ``TOOLS`` entry naming that id still
+            overrides the pin, because resolution consults ``TOOLS`` before
+            ``default_provider``. A pin is a flow's default, not a lock.
+        :raises StageError: If several providers are named for a stage that runs
+            exactly one tool, or if no provider is named at all.
+
+        The provider is not checked against the registry here. Registration
+        order follows import order, so a check at flow-definition time would be
+        fragile; resolution rejects an unknown provider naming the registered
+        alternatives instead.
+        """
+        if not isinstance(provider, str):
+            provider = tuple(provider)
+            if not self.multi_provider:
+                raise StageError(
+                    f"Stage '{self.id}' does not accept a list of providers: it "
+                    f"runs exactly one tool. Got {list(provider)}."
+                )
+            if len(provider) == 0:
+                raise StageError(
+                    f"Stage '{self.id}': 'using' was given an empty provider "
+                    f"list. To skip a stage, use its gating variable; there is "
+                    f"no way to select nothing."
+                )
+        return replace(self, default_provider=provider)
 
     def register(self) -> "Stage":
         """

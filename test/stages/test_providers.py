@@ -51,6 +51,64 @@ def test_yosys_vhdl_does_not_provide_the_json_header():
     )
 
 
+def test_each_drc_provider_owns_its_own_checker():
+    """
+    A checker that reads one tool's metric only makes sense when that tool was
+    selected, so it belongs inside that tool's registration. Left as a plain step
+    in the flow, deselecting magic used to leave Checker.MagicDRC demanding
+    magic__drc_error__count that nothing emitted. The view preflight cannot catch
+    that class of orphan, because a checker declares no inputs, so ownership is
+    the only fix.
+    """
+    from librelane.stages import StageRegistry
+    from librelane.steps import Checker, KLayout, Magic
+
+    assert StageRegistry.get("drc", "magic").steps == (Magic.DRC, Checker.MagicDRC)
+    assert StageRegistry.get("drc", "klayout").steps == (
+        KLayout.DRC,
+        Checker.KLayoutDRC,
+    )
+
+
+def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
+    """
+    The mechanical form of the step-ownership invariant, on the metric side.
+
+    A metric a registration declares that its stages do not is by definition
+    tool-specific: only that provider emits it. The step that fails the run on it
+    therefore only makes sense when that provider was selected, so it has to live
+    in the same registration, where deselecting the tool removes them together.
+
+    This is the check that condemned Checker.MagicDRC and Checker.KLayoutDRC as
+    plain steps of the flow, and the one a vendor provider added later is held to
+    for free. Note what it does *not* condemn: a checker for a metric the stage
+    contracts, such as Checker.TrDRC, is tool-neutral and belongs inside a
+    registration for a different reason -- membership is what gives it the
+    stage's gating variable.
+    """
+    from librelane.stages import Stage
+    from librelane.stages.providers import _REGISTRATIONS
+
+    for entry in _REGISTRATIONS:
+        contracted_by_stage = {
+            metric
+            for stage_id in entry["stages"]
+            for metric in Stage.factory.get(stage_id).metrics
+        }
+        tool_specific = set(entry.get("metrics", ())) - contracted_by_stage
+        checked = {
+            metric
+            for step in entry["steps"]
+            if (metric := getattr(step, "metric_name", None)) is not None
+        }
+        assert tool_specific <= checked, (
+            f"{entry['stages']}:{entry['provider']} declares "
+            f"{sorted(tool_specific - checked)}, which nothing in the sequence "
+            f"checks. A checker for it elsewhere in a flow would outlive the "
+            f"tool it checks."
+        )
+
+
 def test_declared_native_views_are_exactly_the_hard_unmet_inputs():
     """
     native_views is an exemption from the registration-time view check, so an
