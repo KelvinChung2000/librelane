@@ -73,16 +73,18 @@ notebook = [
 ]
 
 [project.scripts]
-librelane = "librelane.__main__:cli"
-"librelane.steps" = "librelane.steps.__main__:cli"
-"librelane.config" = "librelane.config.__main__:cli"
-"librelane.state" = "librelane.state.__main__:cli"
-"librelane.help" = "librelane.help.__main__:cli"
-"librelane.env_info" = "librelane:env_info_cli"
+librelane = "librelane.cli.main:cli"
+"librelane.steps" = "librelane.cli.steps:cli"
+"librelane.config" = "librelane.cli.config:cli"
+"librelane.state" = "librelane.cli.state:cli"
+"librelane.help" = "librelane.cli.help:cli"
+"librelane.env_info" = "librelane.cli.env_info:cli"
 
 [tool.ruff]
 target-version = "py310"
-extend-exclude = ["docs/superpowers"]
+# test/steps/all and test/designs are submodules pinned to another repository's
+# commits, so their style is not ours to enforce or fix.
+extend-exclude = ["docs/superpowers", "test/steps/all", "test/designs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "PT"]

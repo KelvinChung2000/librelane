@@ -123,7 +123,7 @@ class CustomIOPlacement(OdbpyStep):
     name = "Custom I/O Placement"
     long_name = "Custom I/O Pin Placement Script"
 
-    class Config(IoLayerConfig):
+    class Config(IoLayerConfig, OdbpyStep.Config):
         IO_PIN_ORDER_CFG: Optional[Path] = variable(
             None,
             description="Path to a custom pin configuration file.",
@@ -144,17 +144,20 @@ class CustomIOPlacement(OdbpyStep):
         return files("librelane").joinpath("scripts", "odbpy", "io_place.py")
 
     def get_command(self) -> list[str]:
-        length_args = []
+        length_args: list[str] = []
         if self.config.IO_PIN_V_LENGTH is not None:
-            length_args += ["--ver-length", self.config.IO_PIN_V_LENGTH]
+            length_args += ["--ver-length", str(self.config.IO_PIN_V_LENGTH)]
         if self.config.IO_PIN_H_LENGTH is not None:
-            length_args += ["--hor-length", self.config.IO_PIN_H_LENGTH]
+            length_args += ["--hor-length", str(self.config.IO_PIN_H_LENGTH)]
 
+        assert self.config.IO_PIN_ORDER_CFG is not None, (
+            "run() skips a design with no pin order file"
+        )
         return (
             super().get_command()
             + [
                 "--config",
-                self.config.IO_PIN_ORDER_CFG,
+                str(self.config.IO_PIN_ORDER_CFG),
                 "--hor-layer",
                 self.config.IO_PIN_H_LAYER,
                 "--ver-layer",

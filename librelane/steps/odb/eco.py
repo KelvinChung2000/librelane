@@ -71,7 +71,7 @@ class InsertECOBuffers(OdbpyStep):
     id = "Odb.InsertECOBuffers"
     name = "Insert ECO Buffers"
 
-    class Config(GrtConfig, DplConfig):
+    class Config(GrtConfig, DplConfig, OdbpyStep.Config):
         INSERT_ECO_BUFFERS: Optional[list[ECOBuffer]] = variable(
             None,
             description="List of buffers to insert",
@@ -125,7 +125,7 @@ class InsertECODiodes(OdbpyStep):
     id = "Odb.InsertECODiodes"
     name = "Insert ECO Diodes"
 
-    class Config(DplConfig, GrtConfig):
+    class Config(DplConfig, GrtConfig, OdbpyStep.Config):
         INSERT_ECO_DIODES: Optional[list[ECODiode]] = variable(
             None,
             description="List of sinks to insert diodes for.",

@@ -12,15 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Keeps ``python3 -m librelane.common.metrics`` working.
+The ``librelane.env_info`` console script.
 
-This frontend has no console script, so module execution is the only way to
-reach it. ``.github/scripts/compare_metrics.js`` invokes it that way and
-quotes the same command back into pull-request comments.
+The implementation stays in :mod:`librelane.env_info` on purpose. That module
+carries no third-party imports so it can survey an environment in which
+LibreLane's dependencies failed to install, which is exactly the situation the
+bug-report template asks users to run it in. This module only gives the
+console script a home inside :mod:`librelane.cli`.
 """
 
-from ...cli.metrics import cli
+from ..env_info import env_info_cli as cli
 
 
-if __name__ == "__main__":
-    cli()
+__all__ = ["cli"]

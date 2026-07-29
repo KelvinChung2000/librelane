@@ -4,6 +4,7 @@ This guide aims to document a number of common {term}`LVS` mismatches, their
 possible causes, and how to resolve them.
 
 This is a living document. We'll add more sections as we encounter more LVS
+mismatch classes.
 
 ## About LVS Mismatches
 
@@ -22,7 +23,9 @@ are captured by LVS:
 The first two are the most common class of LVS error. In LibreLane, the affected
 nets are more often than not power nets.
 
-These mismatches can occur either by user misconfiguration 
+These mismatches can occur either by user misconfiguration, i.e., the design
+declares connections the flow was never told how to make, or by a genuine defect
+in one of the tools or in the {term}`PDK`.
 
 ## Identifying LVS mismatches
 
@@ -57,6 +60,25 @@ extraction with Magic, Magic ensures every net has a unique name, meaning that
 if two nets exist with the same name (i.e. the same net has a break in it,)
 one will be renamed to `_uq`. This may be any number of things, including:
 
+* The macro carrying that net was instantiated inside a submodule rather than at
+  the top level. {step}`Odb.SetPowerConnections` only walks the top-level
+  module: for a hierarchical netlist it prints
+  `Macros inside hierarchical netlists are not currently supported in LibreLane`
+  and skips the submodule, so the macro's power pins are never connected. Search
+  the step's log for that message.
 
+* The macro's power pins are not visible in the netlist at all. The pins are
+  read out of the JSON header, which is elaborated with
+  {var}`Yosys.JsonHeader::VERILOG_POWER_DEFINE` defined; if the macro's Verilog
+  guards its power ports with a different macro name, the ports never appear and
+  no connection is made.
 
- 
+* {var}`OpenROAD.GeneratePDN::PDN_MACRO_CONNECTIONS` names an instance that does not
+  exist. The regular expression is matched against instance names, and a
+  non-matching entry is reported as
+  `No match found for regular expression '...' defined in PDN_MACRO_CONNECTIONS`.
+
+* The power straps simply do not meet. A sub-macro must be large enough for the
+  straps on the layer above it to intersect the straps on its own topmost layer,
+  otherwise the two are never stitched together — see
+  [Macro Integration](../pdn.md).

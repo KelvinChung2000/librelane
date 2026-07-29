@@ -171,8 +171,8 @@ class MagicStep(TclStep):
             "-dnull",
             "-noconsole",
             "-rcfile",
-            self.config.MAGICRC,
-            files("librelane").joinpath("scripts", "magic", "wrapper.tcl"),
+            str(self.config.MAGICRC),
+            str(files("librelane").joinpath("scripts", "magic", "wrapper.tcl")),
         ]
 
     def prepare_env(self, env: dict, state: State) -> dict:
@@ -428,7 +428,12 @@ class Filler(Step):
             self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
 
-        script = abspath(self.config.MAGIC_FILLER_SCRIPT)
+        filler_script = self.config.MAGIC_FILLER_SCRIPT
+        if filler_script is None:
+            raise StepException(
+                "The PDK declares no 'MAGIC_FILLER_SCRIPT' to generate fill with."
+            )
+        script = abspath(filler_script)
         opts = self.config.MAGIC_FILLER_OPTIONS or []
 
         env["PDK_ROOT"] = self.config.PDK_ROOT

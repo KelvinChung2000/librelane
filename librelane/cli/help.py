@@ -13,10 +13,11 @@
 # limitations under the License.
 from typing import Annotated
 
+import rich.console
+import rich.markdown
 import typer
 
 from ..flows import Flow
-from ..logging import console
 from ..steps import Step
 
 
@@ -34,13 +35,19 @@ def main(
     ],
 ) -> None:
     """Display detailed help for a registered step or flow."""
+    # Steps and flows expose their help as Markdown via get_help_md(); rendering
+    # it is this frontend's job, so the terminal presentation lives here rather
+    # than in the library. Step.display_help()/Flow.display_help() remain for
+    # notebook users, who need IPython rendering instead.
     if target_flow := Flow.factory.get(step_or_flow):
-        target_flow.display_help()
+        help_md = target_flow.get_help_md()
     elif target_step := Step.factory.get(step_or_flow):
-        target_step.display_help()
+        help_md = target_step.get_help_md()
     else:
-        console.log(f"Unknown Flow or Step '{step_or_flow}'.")
+        typer.echo(f"Unknown Flow or Step '{step_or_flow}'.", err=True)
         raise typer.Exit(-1)
+
+    rich.console.Console().print(rich.markdown.Markdown(help_md))
 
 
 if __name__ == "__main__":

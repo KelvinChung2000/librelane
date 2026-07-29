@@ -31,6 +31,11 @@ Style Notes
 
 * Migrated the LibreLane, step, configuration, state, help, and metrics command
   interfaces from Cloup decorators to typed Typer applications.
+* Consolidated every command-line frontend into a single `librelane.cli`
+  package, one module per console script. The console scripts themselves are
+  unchanged.
+* Added `python3 -m librelane.cli` as the entry point for the consolidated
+  package.
 * Fixed metrics table verbosity values not being compared as their declared
   enum type.
 * Fixed standalone reproducible creation ignoring an explicitly supplied
@@ -51,6 +56,19 @@ Style Notes
 
   * Fixed the step reading `ROUTING_OBSTRUCTIONS`, inherited from
     `Odb.RemoveRoutingObstructions`, instead of `PDN_OBSTRUCTIONS`.
+
+* `OpenROAD.*`
+
+  * Added `OPENROAD_THREADS`, passed as OpenROAD's `-threads` argument. Every
+    OpenROAD step was running single-threaded, so the multithreaded
+    `check_antennas`/`repair_antennas` (and routing, and extraction) were never
+    used. Defaults to `1`, preserving current behaviour and results (#521).
+
+* `Verilator.Lint`
+
+  * Added `LINTER_ARGUMENTS`, passed verbatim to Verilator after every
+    argument LibreLane builds, for options with no variable of their own --
+    `--no-timing` being the motivating case (#492).
 
 ## Flows
 
@@ -89,27 +107,70 @@ Style Notes
 * Replaced `NIX_PYTHONPATH` with `PYTHONPATH` for Nix plugin injection and for
   the host package mounted by `librelane --dockerized`, since a virtual
   environment's interpreter does not read the former.
+* Fixed the resource monitor started for each subprocess outliving its
+  process. Its loop only ended when the child died, so a caller that abandoned
+  the process left a thread polling for the rest of the session.
+* Fixed `Odb.AddPDNObstructions` and `Odb.RemovePDNObstructions` deriving from
+  the routing-obstruction steps, so each carried a configuration model for a
+  variable it does not read. Both pairs now derive from a shared abstract step.
+* Excluded the `test/steps/all` and `test/designs` submodules from linting;
+  they are pinned to another repository's commits.
 
 ## API Breaks
 
 * Removed the Cloup-specific `librelane.flows.cloup_flow_opts` decorator and
   `librelane.common.cli` helpers. Reusable Typer option annotations and CLI
-  resolution helpers now live in `librelane.flows.cli`.
+  resolution helpers now live in `librelane.cli.flow_opts`.
+* Removed `librelane.flows.cli`, along with the `ResolvedPdkOptions` and
+  `resolve_pdk_options` re-exports from `librelane.flows`. Importing
+  `librelane.flows` no longer pulls in Typer.
+* Removed the `librelane.help` package. Its command is now
+  `librelane.cli.help`.
+* Removed the `librelane.env_info_cli` re-export from the top-level package.
+  The implementation stays in `librelane.env_info`, which remains runnable
+  with no dependencies installed.
+* Removed `python3 -m librelane.config` and `python3 -m librelane.state`; the
+  `librelane.config` and `librelane.state` console scripts are unaffected.
+  `python3 -m librelane`, `python3 -m librelane.steps`, and
+  `python3 -m librelane.common.metrics` continue to work.
+* `MAX_FANOUT_CONSTRAINT` is now optional and no longer defaulted to `10` for
+  sky130 and gf180mcu. When it is unset, `set_max_fanout` is not written to the
+  SDC file and ABC's `buffer` runs without `-N`, so the liberty file's own
+  `max_fanout` applies -- matching how `MAX_TRANSITION_CONSTRAINT` and
+  `MAX_CAPACITANCE_CONSTRAINT` already behave. Designs relying on the injected
+  `10` must now set it explicitly; timing results will otherwise change (#370).
 * References in an earlier configuration source now resolve against values
   from the final merged layer.
 * Configuration validation error wording now comes from structured Pydantic
   diagnostics.
 * Removed the undocumented `librelane.config.variable` module path. The
   documented `librelane.config.Variable` compatibility export remains.
+* Removed `librelane.resources` and its `package_path` accessor. Packaged
+  scripts are reached with `importlib.resources.files("librelane")` at the
+  point of use; the module's other branch materialized the package into a
+  temporary directory, a fallback for a case `importlib.resources` already
+  answers.
+* Removed `librelane.logging.LogLevels`, `librelane.logging.LevelFilter` and
+  `librelane.logging.deregister_additional_sink`. Loguru's own level registry,
+  per-sink `level=` and `logger.remove` cover all three; `ALL` is now a
+  registered Loguru level rather than a LibreLane-only name.
 * Removed the Nix shell arguments `extra-python-packages` and
   `include-librelane`. Plugins are supplied through `librelane-plugins`, and
   the shell's Python environment is selected with `python-env`.
 
 ## Documentation
 
+* Finished the LVS mismatch guide and added it to the usage toctree; it was
+  previously cut off mid-sentence and unreachable from any page (#326).
+* Fixed the Sphinx build aborting on any module whose docstring is a single
+  summary line with no body.
 * Rewrote the Nix section of {doc}`/usage/writing_plugins` around
   `librelane-shell` and `librelane-plugins`, replacing the removed
   `createOpenLaneShell`/`extra-python-packages` interface.
+* Rewrote the configuration sections of {doc}`/usage/writing_custom_steps`
+  around nested `Config` models and attribute access, replacing the flat
+  `config_vars` lists and `self.config[KEY]` reads the typed configuration
+  redesign left behind.
 
 # 3.0.4
 

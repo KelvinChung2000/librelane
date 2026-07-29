@@ -69,9 +69,12 @@ class ApplyDEFTemplate(OdbpyStep):
         )
 
     def get_command(self) -> list[str]:
+        assert self.config.FP_DEF_TEMPLATE is not None, (
+            "run() skips a design with no template"
+        )
         args = [
             "--def-template",
-            self.config.FP_DEF_TEMPLATE,
+            str(self.config.FP_DEF_TEMPLATE),
             f"--{self.config.FP_TEMPLATE_MATCH_MODE}",
         ]
         if self.config.FP_TEMPLATE_COPY_POWER_PINS:

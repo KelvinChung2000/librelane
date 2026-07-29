@@ -274,7 +274,9 @@ class PyosysStep(Step):
 class VerilogStep(PyosysStep):
     power_defines: bool = False
 
-    class Config(VerilogRtlConfig, PyosysStep.Config):
+    # No Verilog RTL variables here: this class is about power defines, not
+    # about reading RTL, and VHDLSynthesis derives from it.
+    class Config(PyosysStep.Config):
         pass
 
     config: Config
@@ -365,7 +367,7 @@ class JsonHeader(VerilogStep):
     inputs = []
     outputs = [DesignFormat.JSON_HEADER]
 
-    class Config(VerilogRtlConfig, PyosysStep.Config):
+    class Config(VerilogRtlConfig, VerilogStep.Config):
         pass
 
     config: Config
@@ -396,7 +398,7 @@ class SynthesisCommon(VerilogStep):
     inputs = []  # The input RTL is part of the configuration
     outputs = [DesignFormat.NETLIST]
 
-    class Config(PyosysStep.Config):
+    class Config(VerilogStep.Config):
         SYNTH_CHECKS_ALLOW_TRISTATE: bool = variable(
             True,
             description="Ignore multiple-driver warnings if they are connected to tri-state buffers on a best-effort basis.",

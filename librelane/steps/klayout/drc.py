@@ -21,7 +21,7 @@ import os
 from os.path import abspath
 from typing import Optional
 
-from ..step import ViewsUpdate, MetricsUpdate, Step
+from ..step import ViewsUpdate, MetricsUpdate, Step, StepException
 
 from ...config import variable
 from ...state import DesignFormat, State
@@ -168,11 +168,16 @@ class DRC(KLayoutStep):
         drc_script_path = self.config.KLAYOUT_DRC_RUNSET
         lyrdb_report = os.path.join(reports_dir, "drc.klayout.lyrdb")
         json_report = os.path.join(reports_dir, "drc.klayout.json")
-        feol = str(self.config.KLAYOUT_DRC_OPTIONS["feol"]).lower()
-        beol = str(self.config.KLAYOUT_DRC_OPTIONS["beol"]).lower()
-        floating_metal = str(self.config.KLAYOUT_DRC_OPTIONS["floating_metal"]).lower()
-        offgrid = str(self.config.KLAYOUT_DRC_OPTIONS["offgrid"]).lower()
-        seal = str(self.config.KLAYOUT_DRC_OPTIONS["seal"]).lower()
+        options = self.config.KLAYOUT_DRC_OPTIONS
+        if options is None:
+            raise StepException(
+                "The sky130 KLayout DRC runset is driven by 'KLAYOUT_DRC_OPTIONS', which the PDK does not declare."
+            )
+        feol = str(options["feol"]).lower()
+        beol = str(options["beol"]).lower()
+        floating_metal = str(options["floating_metal"]).lower()
+        offgrid = str(options["offgrid"]).lower()
+        seal = str(options["seal"]).lower()
         threads = self.config.KLAYOUT_DRC_THREADS or _get_process_limit()
         logger.info(f"Running KLayout DRC with {threads} threads…")
 

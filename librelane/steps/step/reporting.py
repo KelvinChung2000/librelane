@@ -31,9 +31,9 @@ from collections.abc import Callable
 
 
 from ...config import (
-    BaseConfigModel,
     Variable,
 )
+from ...config.flow import OptionConfig
 from ...state import DesignFormat, State
 from ...common import (
     GenericDict,
@@ -54,7 +54,9 @@ class ReportingMixin:
     inputs: ClassVar[list[DesignFormat]]
     outputs: ClassVar[list[DesignFormat]]
     config_vars: ClassVar[list[Variable]]
-    config: BaseConfigModel
+    # Reproducibles are laid out relative to the PDK, so that much of the
+    # configuration this mixin does read is worth naming.
+    config: OptionConfig
     state_in: Future[State]
     state_out: State | None
     start_time: float | None

@@ -65,6 +65,11 @@ class ABCScriptCreator:
             self.map_new_area = "&get -n; &nf -R 1000; &put"
 
         self.max_fanout = config["MAX_FANOUT_CONSTRAINT"]
+        # Omitted entirely when unset, so ABC falls back to the liberty file's
+        # max_fanout rather than being handed a literal "None".
+        self.max_fanout_arg = (
+            "" if self.max_fanout is None else f" -N {self.max_fanout}"
+        )
         self.max_transition = (
             config.get("MAX_TRANSITION_CONSTRAINT") or 0
         ) * 1000  # ns -> ps
@@ -73,7 +78,7 @@ class ABCScriptCreator:
             max_tr_arg = ""
             if self.max_transition != 0:
                 max_tr_arg = f" -S {self.max_transition}"
-            self.fine_tune = f"buffer -N {self.max_fanout}{max_tr_arg};upsize;dnsize"
+            self.fine_tune = f"buffer{self.max_fanout_arg}{max_tr_arg};upsize;dnsize"
         elif config["SYNTH_SIZING"]:
             self.fine_tune = "upsize;dnsize"
 
@@ -89,7 +94,7 @@ class ABCScriptCreator:
             print("map -B 0.9", file=f)
             print("topo", file=f)
             print("stime -c", file=f)
-            print(f"buffer -c -N {self.max_fanout}", file=f)
+            print(f"buffer -c{self.max_fanout_arg}", file=f)
             print("upsize -c", file=f)
             print("dnsize -c", file=f)
         elif strategy == "DELAY 4":
@@ -110,7 +115,7 @@ class ABCScriptCreator:
                 repeated_sequence(f)
 
             print("&put", file=f)
-            print(f"buffer -c -N {self.max_fanout}", file=f)
+            print(f"buffer -c{self.max_fanout_arg}", file=f)
             print("topo", file=f)
             print("stime -c", file=f)
             print("upsize -c", file=f)

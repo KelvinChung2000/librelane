@@ -256,6 +256,11 @@ class OpenROADStep(TclStep):
             description="Cull duplicate IPVT corners during PNR, i.e. corners that share the same set of lib files and values for LAYERS_RC and VIAS_R as another corner are not considered outside of STA.",
         )
 
+        OPENROAD_THREADS: str = variable(
+            "1",
+            description="How many threads OpenROAD may use, passed as its `-threads` argument. `max` uses every available core. Multithreaded runs of routing, antenna checking and repair, and parasitics extraction are substantially faster, but the results are not guaranteed to be identical to a single-threaded run, which is why this defaults to `1`.",
+        )
+
     config: Config
 
     @classmethod
@@ -478,6 +483,8 @@ class OpenROADStep(TclStep):
             self.get_openroad_path(),
             ("-gui" if os.getenv("_OPENROAD_GUI", "0") == "1" else "-exit"),
             "-no_splash",
+            "-threads",
+            self.config.OPENROAD_THREADS,
             "-metrics",
             metrics_path,
             self.get_script_path(),

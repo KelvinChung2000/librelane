@@ -103,6 +103,11 @@ class Lint(Step):
             description="Path to a Verilator Configuration format file (`.vlt`) that is passed to the linter.",
         )
 
+        LINTER_ARGUMENTS: Optional[list[str]] = variable(
+            None,
+            description="Extra arguments passed verbatim to Verilator, for options LibreLane does not expose as variables. For example, `--no-timing` suppresses the errors Verilator raises for the delay controls (`#1`) commonly used to model propagation delay in simulation.",
+        )
+
     config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
@@ -205,6 +210,10 @@ class Lint(Step):
 
         if linter_vlt := self.config.LINTER_VLT:
             extra_args.append(str(linter_vlt))
+
+        # Last, so a user-supplied option can override anything set above.
+        if linter_arguments := self.config.LINTER_ARGUMENTS:
+            extra_args.extend(linter_arguments)
 
         result = self.run_subprocess(
             [

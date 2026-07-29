@@ -18,7 +18,7 @@ from loguru import logger
 
 from importlib.resources import files
 from decimal import Decimal
-from typing import Optional
+from typing import ClassVar, Optional
 
 from ...config import variable
 from ...state import State
@@ -32,35 +32,20 @@ from ..step import (
 from .base import OdbpyStep
 
 
-@Step.factory.register()
-class AddRoutingObstructions(OdbpyStep):
+class ObstructionStep(OdbpyStep):
     """
-    Adds obstructions on metal layers which prevent shapes from being created in
-    the designated areas.
+    Draws or erases obstructions listed by one configuration variable.
+
+    Routing and PDN obstructions are the same operation over different
+    variables, so the variable is named by the subclass rather than declared
+    here: a subclass that declared both would accept a value for the one it
+    does not read.
     """
 
-    id = "Odb.AddRoutingObstructions"
-    name = "Add Obstructions"
-    obstruction_variable = "ROUTING_OBSTRUCTIONS"
-
-    class Config(Step.Config):
-        ROUTING_OBSTRUCTIONS: Optional[
-            list[tuple[str, Decimal, Decimal, Decimal, Decimal]]
-        ] = variable(
-            None,
-            description="Add routing obstructions to the design. If set to `None`, this step is skipped."
-            + " Format of each obstruction item is a tuple of: layer name, llx, lly, urx, ury.",
-            units="µm",
-            deprecated_names=["GRT_OBS"],
-        )
-
-    config: Config
+    obstruction_variable: ClassVar[str] = NotImplemented
 
     def get_script_path(self):
         return files("librelane").joinpath("scripts", "odbpy", "defutil.py")
-
-    def get_subcommand(self) -> list[str]:
-        return ["add_obstructions"]
 
     def get_command(self) -> list[str]:
         command = super().get_command()
@@ -80,6 +65,34 @@ class AddRoutingObstructions(OdbpyStep):
 
 
 @Step.factory.register()
+class AddRoutingObstructions(ObstructionStep):
+    """
+    Adds obstructions on metal layers which prevent shapes from being created in
+    the designated areas.
+    """
+
+    id = "Odb.AddRoutingObstructions"
+    name = "Add Obstructions"
+    obstruction_variable = "ROUTING_OBSTRUCTIONS"
+
+    class Config(ObstructionStep.Config):
+        ROUTING_OBSTRUCTIONS: Optional[
+            list[tuple[str, Decimal, Decimal, Decimal, Decimal]]
+        ] = variable(
+            None,
+            description="Add routing obstructions to the design. If set to `None`, this step is skipped."
+            + " Format of each obstruction item is a tuple of: layer name, llx, lly, urx, ury.",
+            units="µm",
+            deprecated_names=["GRT_OBS"],
+        )
+
+    config: Config
+
+    def get_subcommand(self) -> list[str]:
+        return ["add_obstructions"]
+
+
+@Step.factory.register()
 class RemoveRoutingObstructions(AddRoutingObstructions):
     """
     Removes any routing obstructions previously placed by
@@ -94,7 +107,7 @@ class RemoveRoutingObstructions(AddRoutingObstructions):
 
 
 @Step.factory.register()
-class AddPDNObstructions(AddRoutingObstructions):
+class AddPDNObstructions(ObstructionStep):
     """
     Adds obstructions on metal layers which prevent shapes from being created in
     the designated areas.
@@ -108,7 +121,7 @@ class AddPDNObstructions(AddRoutingObstructions):
     name = "Add PDN obstructions"
     obstruction_variable = "PDN_OBSTRUCTIONS"
 
-    class Config(Step.Config):
+    class Config(ObstructionStep.Config):
         PDN_OBSTRUCTIONS: Optional[
             list[tuple[str, Decimal, Decimal, Decimal, Decimal]]
         ] = variable(
@@ -120,9 +133,12 @@ class AddPDNObstructions(AddRoutingObstructions):
 
     config: Config
 
+    def get_subcommand(self) -> list[str]:
+        return ["add_obstructions"]
+
 
 @Step.factory.register()
-class RemovePDNObstructions(RemoveRoutingObstructions):
+class RemovePDNObstructions(AddPDNObstructions):
     """
     Removes any PDN obstructions previously placed by
     <#Odb.RemovePDNObstructions>`_.
@@ -130,9 +146,6 @@ class RemovePDNObstructions(RemoveRoutingObstructions):
 
     id = "Odb.RemovePDNObstructions"
     name = "Remove PDN obstructions"
-    obstruction_variable = "PDN_OBSTRUCTIONS"
 
-    class Config(AddPDNObstructions.Config):
-        pass
-
-    config: Config
+    def get_subcommand(self) -> list[str]:
+        return ["remove_obstructions"]

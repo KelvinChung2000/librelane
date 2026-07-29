@@ -98,6 +98,41 @@ Flow. Power pin names may vary.
   "ERROR_ON_PDN_VIOLATIONS": false
   ```
 
+### How macros get connected
+
+The step that actually makes the connections is {step}`Odb.SetPowerConnections`,
+which the {flow}`Classic` flow runs before {step}`OpenROAD.GeneratePDN`. It reads
+the JSON netlist header, walks the macro instances at the **top level** of the
+design, and for every power and ground pin the macro's LEF declares, issues an
+`add_global_connection` to whichever net the netlist connects that pin to.
+
+That means the connections are derived from your RTL, and two things have to
+hold for a macro to be picked up:
+
+* The macro's power ports must be visible in the netlist. The JSON header is
+  elaborated with {var}`Yosys.JsonHeader::VERILOG_POWER_DEFINE` (`USE_POWER_PINS`
+  by default) defined, so the ports must sit inside a guard of exactly that
+  name -- see [Working with Macros in your RTL](using_macros.md).
+* The macro must be instantiated at the top level. For a hierarchical netlist
+  the step logs `Macros inside hierarchical netlists are not currently supported
+  in LibreLane` and skips the submodule.
+
+(pdn-macro-connections-fallback)=
+### When to reach for `PDN_MACRO_CONNECTIONS` instead
+
+{var}`OpenROAD.GeneratePDN::PDN_MACRO_CONNECTIONS` is the manual fallback for
+the cases the step above cannot handle. Each entry is
+`<instance_name_rx> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>`, where the first
+field is a regular expression matched against instance names. Use it when:
+
+* the macro's Verilog view has no power-pin guard at all, so the ports never
+  reach the netlist. VHDL designs are always in this position -- see
+  [Using VHDL](using_vhdl.md);
+* the macro is instantiated inside a submodule of a hierarchical netlist.
+
+A pattern that matches no instance is an error, not a warning: OpenROAD reports
+`No match found for regular expression '...' defined in PDN_MACRO_CONNECTIONS`.
+
 The hierarchical method works as follows: the top level integration has access
 to all metal layers; and the deeper you go in the macro hierarchy, you lose the
 top-most metal layer as being available for routing.

@@ -24,7 +24,7 @@ from typing import Annotated
 from loguru import logger
 import typer
 
-from .flow import Flow
+from ..flows.flow import Flow
 from ..common import (
     ContextPropagatingThreadPoolExecutor,
     _get_process_limit,

@@ -136,7 +136,7 @@ def generate_docs_for_module(
     short_desc = docstring.short_description
     long_desc = docstring.long_description
     include_imported_members = True
-    if "no-imported-members" in long_desc:
+    if long_desc is not None and "no-imported-members" in long_desc:
         include_imported_members = False
 
     # Process Current Module

@@ -184,8 +184,9 @@ class SclConfig(BaseConfigModel):
         pdk=True,
     )
 
-    MAX_FANOUT_CONSTRAINT: int = variable(
-        description="The max load that the output ports can drive to be used as a constraint on Synthesis and CTS.",
+    MAX_FANOUT_CONSTRAINT: Optional[int] = variable(
+        None,
+        description="The max load that the output ports can drive to be used as a constraint on Synthesis and CTS. If not provided, the constraint is not set in the SDC file, which will fall back to the value set by the liberty file.",
         units="cells",
         deprecated_names=["SYNTH_MAX_FANOUT"],
         pdk=True,

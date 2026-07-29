@@ -573,10 +573,9 @@ class Flow(ABC):
 
             IPython.display.display(IPython.display.Markdown(Self.get_help_md()))
         except NameError:
-            from ..logging import console
             from rich.markdown import Markdown
 
-            console.log(Markdown(Self.get_help_md()))
+            default_console.log(Markdown(Self.get_help_md()))
 
     def get_all_config_variables(self) -> list[Variable]:
         """
@@ -778,8 +777,9 @@ class Flow(ABC):
                             # warning.log. Loguru's ``level`` is a minimum and
                             # its ``filter`` dict form keys on the module name,
                             # so neither expresses this.
-                            filter=lambda record, level=level: record["level"].name
-                            == level,
+                            filter=lambda record, level=level: (
+                                record["level"].name == level
+                            ),
                         )
                     )
                 sink_stack.enter_context(

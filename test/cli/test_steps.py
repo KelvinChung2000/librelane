@@ -17,9 +17,9 @@ from typing import cast
 import pytest
 import typer
 
-from librelane.common.metrics.__main__ import parse_table_verbosity
+from librelane.cli import steps as steps_cli
+from librelane.cli.metrics import parse_table_verbosity
 from librelane.common.metrics.util import TableVerbosity
-from librelane.steps import __main__ as steps_cli
 
 
 pytestmark = pytest.mark.all

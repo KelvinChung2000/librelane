@@ -226,7 +226,10 @@ that step's `Config`, as shown in this example:
 
 ```python
 class Config(OpenROADStep.Config):
-    ...
+    MY_STEP_EFFORT: int = variable(
+        1,
+        description="How hard to try.",
+    )
 ```
 
 Be sure to read the subclasses' `run` docstrings as they may contain critical information.

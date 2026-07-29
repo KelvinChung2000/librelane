@@ -20,8 +20,8 @@ from typing import Annotated
 
 import typer
 
-from .config import Config
-from ..flows.cli import (
+from ..config import Config
+from .flow_opts import (
     DEFAULT_JOBS,
     CondensedOption,
     JobsOption,

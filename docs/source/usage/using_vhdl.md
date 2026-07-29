@@ -107,7 +107,10 @@ Unlike with Verilog, the LibreLane flow does not support:
 
 * Automatic power connections for macros
 
-  You will need to use the variable {var}`OpenROAD.GeneratePDN::PDN_MACRO_CONNECTIONS`:
+  {step}`Odb.SetPowerConnections` derives its connections from power ports
+  guarded by {var}`Yosys.JsonHeader::VERILOG_POWER_DEFINE`, which a VHDL design
+  has no way to express, so you will need to use the variable
+  {var}`OpenROAD.GeneratePDN::PDN_MACRO_CONNECTIONS`:
   
   ```yaml
   PDN_MACRO_CONNECTIONS:

@@ -287,7 +287,11 @@ macro_name instance_name(
 
 This is used by flows to create a hierarchy of power nets for the design,
 which is later used in constructing the power distribution network and
-connecting macros together.
+connecting macros together. Concretely, {step}`Odb.SetPowerConnections` reads
+these connections out of the JSON netlist header and hands them to OpenROAD
+before the PDN is generated -- see
+[How macros get connected](pdn.md#how-macros-get-connected) for the
+prerequisites and for what to do when they cannot be met.
 
 ### Deciding on Macros *ex post facto*
 
@@ -383,8 +387,9 @@ There are some variables used in the Classic that you may want to configure when
 using macros:
 
 * {var}`OpenROAD.GeneratePDN::PDN_MACRO_CONNECTIONS`: If you don't want to use
-  `USE_POWER_PINS`, you can use this variable to manually hook up instance
-  connections.
+  `USE_POWER_PINS`, or {step}`Odb.SetPowerConnections` cannot reach your macro,
+  you can use this variable to manually hook up instance connections. See
+  {ref}`pdn-macro-connections-fallback`.
 * {var}`OpenROAD.CutRows::FP_MACRO_HORIZONTAL_HALO`,
   {var}`OpenROAD.CutRows::FP_MACRO_VERTICAL_HALO`: Designates "halos" around the
   macro where floorplan rows will be "cut" and will lack sites. If

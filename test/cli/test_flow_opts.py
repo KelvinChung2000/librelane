@@ -18,20 +18,20 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from librelane.__main__ import cli
-from librelane.common import get_tpe, set_tpe
-from librelane.common.metrics.__main__ import cli as metrics_cli
-from librelane.config.__main__ import cli as config_cli
-from librelane.flows.cli import (
+from librelane.cli.config import cli as config_cli
+from librelane.cli.flow_opts import (
     apply_runtime_options,
     load_initial_state,
     normalize_sequential_controls,
     resolve_pdk_options,
 )
-from librelane.help.__main__ import cli as help_cli
+from librelane.cli.help import cli as help_cli
+from librelane.cli.main import cli
+from librelane.cli.metrics import cli as metrics_cli
+from librelane.cli.state import cli as state_cli
+from librelane.cli.steps import cli as steps_cli
+from librelane.common import get_tpe, set_tpe
 from librelane.logging import get_log_level, reset_log_level
-from librelane.state.__main__ import cli as state_cli
-from librelane.steps.__main__ import cli as steps_cli
 
 
 pytestmark = pytest.mark.all
@@ -161,7 +161,7 @@ def test_main_cli_normalizes_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    import librelane.__main__ as main_module
+    import librelane.cli.main as main_module
 
     config = tmp_path / "config.json"
     config.write_text("{}", encoding="utf8")

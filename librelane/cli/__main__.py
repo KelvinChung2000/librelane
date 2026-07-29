@@ -11,15 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-Keeps ``python3 -m librelane.common.metrics`` working.
-
-This frontend has no console script, so module execution is the only way to
-reach it. ``.github/scripts/compare_metrics.js`` invokes it that way and
-quotes the same command back into pull-request comments.
-"""
-
-from ...cli.metrics import cli
+from .main import cli
 
 
 if __name__ == "__main__":

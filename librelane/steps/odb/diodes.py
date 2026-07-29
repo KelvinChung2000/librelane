@@ -70,6 +70,7 @@ class PortDiodePlacement(OdbpyStep):
         return ["place"]
 
     def get_command(self) -> list[str]:
+        assert self.config.DIODE_CELL is not None, "run() skips a PDK with no diode"
         cell, pin = self.config.DIODE_CELL.split("/")
 
         return super().get_command() + [
@@ -127,6 +128,11 @@ class DiodesOnPorts(CompositeStep):
         GlobalRouting,
     ]
 
+    # A composite's model is generated from its constituent steps, so it has no
+    # class of its own to point at. Naming the step whose variables this one
+    # reads is both true -- the generated model is a superset -- and checkable.
+    config: PortDiodePlacement.Config
+
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config.DIODE_ON_PORTS == "none":
             logger.info(f"'DIODE_ON_PORTS' is set to 'none': skipping '{self.id}'…")
@@ -179,6 +185,7 @@ class FuzzyDiodePlacement(OdbpyStep):
         return ["place"]
 
     def get_command(self) -> list[str]:
+        assert self.config.DIODE_CELL is not None, "run() skips a PDK with no diode"
         cell, pin = self.config.DIODE_CELL.split("/")
 
         return super().get_command() + [
@@ -237,6 +244,8 @@ class HeuristicDiodeInsertion(CompositeStep):
         DetailedPlacement,
         GlobalRouting,
     ]
+
+    config: FuzzyDiodePlacement.Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         if self.config.DIODE_CELL is None:

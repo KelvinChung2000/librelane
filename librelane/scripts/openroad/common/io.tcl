@@ -97,7 +97,9 @@ proc read_current_sdc {} {
     # User Files
     set ::env(IO_PCT) [expr $::env(IO_DELAY_CONSTRAINT) / 100]
     set ::env(SYNTH_TIMING_DERATE) [expr $::env(TIME_DERATING_CONSTRAINT) / 100]
-    set ::env(SYNTH_MAX_FANOUT) $::env(MAX_FANOUT_CONSTRAINT)
+    if { [info exists ::env(MAX_FANOUT_CONSTRAINT)] } {
+        set ::env(SYNTH_MAX_FANOUT) $::env(MAX_FANOUT_CONSTRAINT)
+    }
     set ::env(SYNTH_CLOCK_UNCERTAINTY) $::env(CLOCK_UNCERTAINTY_CONSTRAINT)
     set ::env(SYNTH_CLOCK_TRANSITION) $::env(CLOCK_TRANSITION_CONSTRAINT)
     set ::env(SYNTH_CAP_LOAD) $::env(OUTPUT_CAP_LOAD)
@@ -129,7 +131,9 @@ proc read_current_sdc {} {
     # Restore Environment
     unset ::env(IO_PCT)
     unset ::env(SYNTH_TIMING_DERATE)
-    unset ::env(SYNTH_MAX_FANOUT)
+    if { [info exists ::env(SYNTH_MAX_FANOUT)] } {
+        unset ::env(SYNTH_MAX_FANOUT)
+    }
     unset ::env(SYNTH_CLOCK_UNCERTAINTY)
     unset ::env(SYNTH_CLOCK_TRANSITION)
     unset ::env(SYNTH_CAP_LOAD)

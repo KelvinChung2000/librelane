@@ -162,21 +162,31 @@ class StreamOut(KLayoutStep):
         )
         kwargs, env = self.extract_env(kwargs)
 
+        input_def = state_in[DesignFormat.DEF.id]
+        assert isinstance(input_def, Path)
+
+        conflict_resolution = self.config.KLAYOUT_CONFLICT_RESOLUTION
+        assert conflict_resolution is not None, (
+            "'KLAYOUT_CONFLICT_RESOLUTION' has no null behaviour to fall back on"
+        )
+
         self.run_pya_script(
             [
                 sys.executable,
-                files("librelane").joinpath(
-                    "scripts",
-                    "klayout",
-                    "stream_out.py",
+                str(
+                    files("librelane").joinpath(
+                        "scripts",
+                        "klayout",
+                        "stream_out.py",
+                    )
                 ),
-                state_in[DesignFormat.DEF.id],
+                str(input_def),
                 "--output",
                 abspath(klayout_gds_out),
                 "--top",
                 self.config.DESIGN_NAME,
                 "--conflict-resolution",
-                self.config.KLAYOUT_CONFLICT_RESOLUTION,
+                conflict_resolution,
             ]
             + self.get_cli_args(include_lefs=True, include_gds=True),
             env=env,

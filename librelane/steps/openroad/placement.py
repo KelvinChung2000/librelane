@@ -108,7 +108,7 @@ class _GlobalPlacement(OpenROADStep):
                 util = metrics_util * 100
 
             expr = util + (5 * self.config.GPL_CELL_PADDING) + 10
-            expr = min(expr, 100)
+            expr = min(expr, Decimal(100))
             env["PL_TARGET_DENSITY_PCT"] = f"{expr}"
             logger.info(
                 f"'PL_TARGET_DENSITY_PCT' not explicitly set, using dynamically calculated target density: {expr}…"

@@ -319,8 +319,6 @@ def migrate_old_config(config: Mapping[str, Any]) -> dict[str, Any]:
 
     # x4. Constraints (sky130/gf180mcu)
     if new["PDK"].startswith("sky130") or new["PDK"].startswith("gf180mcu"):
-        if "MAX_FANOUT_CONSTRAINT" not in config:
-            new["MAX_FANOUT_CONSTRAINT"] = 10
         if "CLOCK_UNCERTAINTY_CONSTRAINT" not in config:
             new["CLOCK_UNCERTAINTY_CONSTRAINT"] = 0.25
         if "CLOCK_TRANSITION_CONSTRAINT" not in config:
