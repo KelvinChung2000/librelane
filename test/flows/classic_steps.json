@@ -1,0 +1,286 @@
+{
+  "step_ids": [
+    "Verilator.Lint",
+    "Checker.LintTimingConstructs",
+    "Checker.LintErrors",
+    "Checker.LintWarnings",
+    "Yosys.JsonHeader",
+    "Yosys.Synthesis",
+    "Checker.YosysUnmappedCells",
+    "Checker.YosysSynthChecks",
+    "Checker.NetlistAssignStatements",
+    "OpenROAD.CheckSDCFiles",
+    "OpenROAD.CheckMacroInstances",
+    "OpenROAD.STAPrePNR",
+    "OpenROAD.Floorplan",
+    "OpenROAD.DumpRCValues",
+    "Odb.CheckMacroAntennaProperties",
+    "Odb.SetPowerConnections",
+    "Odb.ManualMacroPlacement",
+    "OpenROAD.CutRows",
+    "OpenROAD.TapEndcapInsertion",
+    "Odb.AddPDNObstructions",
+    "OpenROAD.GeneratePDN",
+    "Odb.RemovePDNObstructions",
+    "Odb.AddRoutingObstructions",
+    "OpenROAD.GlobalPlacementSkipIO",
+    "OpenROAD.IOPlacement",
+    "Odb.CustomIOPlacement",
+    "Odb.ApplyDEFTemplate",
+    "OpenROAD.GlobalPlacement",
+    "Odb.WriteVerilogHeader",
+    "Checker.PowerGridViolations",
+    "OpenROAD.STAMidPNR",
+    "OpenROAD.RepairDesignPostGPL",
+    "Odb.ManualGlobalPlacement",
+    "OpenROAD.DetailedPlacement",
+    "OpenROAD.CTS",
+    "OpenROAD.STAMidPNR-1",
+    "OpenROAD.ResizerTimingPostCTS",
+    "OpenROAD.STAMidPNR-2",
+    "OpenROAD.GlobalRouting",
+    "OpenROAD.CheckAntennas",
+    "OpenROAD.RepairDesignPostGRT",
+    "Odb.DiodesOnPorts",
+    "Odb.HeuristicDiodeInsertion",
+    "OpenROAD.RepairAntennas",
+    "OpenROAD.ResizerTimingPostGRT",
+    "OpenROAD.STAMidPNR-3",
+    "OpenROAD.DetailedRouting",
+    "Odb.RemoveRoutingObstructions",
+    "OpenROAD.CheckAntennas-1",
+    "Checker.TrDRC",
+    "Odb.ReportDisconnectedPins",
+    "Checker.DisconnectedPins",
+    "Odb.ReportWireLength",
+    "Checker.WireLength",
+    "OpenROAD.FillInsertion",
+    "Odb.CellFrequencyTables",
+    "OpenROAD.RCX",
+    "OpenROAD.STAPostPNR",
+    "OpenROAD.IRDropReport",
+    "Magic.StreamOut",
+    "KLayout.StreamOut",
+    "KLayout.Render",
+    "Magic.WriteLEF",
+    "Odb.CheckDesignAntennaProperties",
+    "KLayout.XOR",
+    "Checker.XOR",
+    "Magic.DRC",
+    "KLayout.DRC",
+    "Checker.MagicDRC",
+    "Checker.KLayoutDRC",
+    "Magic.SpiceExtraction",
+    "Checker.IllegalOverlap",
+    "Netgen.LVS",
+    "Checker.LVS",
+    "Yosys.EQY",
+    "Checker.SetupViolations",
+    "Checker.HoldViolations",
+    "Checker.MaxSlewViolations",
+    "Checker.MaxCapViolations",
+    "Misc.ReportManufacturability"
+  ],
+  "implementation_ids": [
+    "Verilator.Lint",
+    "Checker.LintTimingConstructs",
+    "Checker.LintErrors",
+    "Checker.LintWarnings",
+    "Yosys.JsonHeader",
+    "Yosys.Synthesis",
+    "Checker.YosysUnmappedCells",
+    "Checker.YosysSynthChecks",
+    "Checker.NetlistAssignStatements",
+    "OpenROAD.CheckSDCFiles",
+    "OpenROAD.CheckMacroInstances",
+    "OpenROAD.STAPrePNR",
+    "OpenROAD.Floorplan",
+    "OpenROAD.DumpRCValues",
+    "Odb.CheckMacroAntennaProperties",
+    "Odb.SetPowerConnections",
+    "Odb.ManualMacroPlacement",
+    "OpenROAD.CutRows",
+    "OpenROAD.TapEndcapInsertion",
+    "Odb.AddPDNObstructions",
+    "OpenROAD.GeneratePDN",
+    "Odb.RemovePDNObstructions",
+    "Odb.AddRoutingObstructions",
+    "OpenROAD.GlobalPlacementSkipIO",
+    "OpenROAD.IOPlacement",
+    "Odb.CustomIOPlacement",
+    "Odb.ApplyDEFTemplate",
+    "OpenROAD.GlobalPlacement",
+    "Odb.WriteVerilogHeader",
+    "Checker.PowerGridViolations",
+    "OpenROAD.STAMidPNR",
+    "OpenROAD.RepairDesignPostGPL",
+    "Odb.ManualGlobalPlacement",
+    "OpenROAD.DetailedPlacement",
+    "OpenROAD.CTS",
+    "OpenROAD.STAMidPNR",
+    "OpenROAD.ResizerTimingPostCTS",
+    "OpenROAD.STAMidPNR",
+    "OpenROAD.GlobalRouting",
+    "OpenROAD.CheckAntennas",
+    "OpenROAD.RepairDesignPostGRT",
+    "Odb.DiodesOnPorts",
+    "Odb.HeuristicDiodeInsertion",
+    "OpenROAD.RepairAntennas",
+    "OpenROAD.ResizerTimingPostGRT",
+    "OpenROAD.STAMidPNR",
+    "OpenROAD.DetailedRouting",
+    "Odb.RemoveRoutingObstructions",
+    "OpenROAD.CheckAntennas",
+    "Checker.TrDRC",
+    "Odb.ReportDisconnectedPins",
+    "Checker.DisconnectedPins",
+    "Odb.ReportWireLength",
+    "Checker.WireLength",
+    "OpenROAD.FillInsertion",
+    "Odb.CellFrequencyTables",
+    "OpenROAD.RCX",
+    "OpenROAD.STAPostPNR",
+    "OpenROAD.IRDropReport",
+    "Magic.StreamOut",
+    "KLayout.StreamOut",
+    "KLayout.Render",
+    "Magic.WriteLEF",
+    "Odb.CheckDesignAntennaProperties",
+    "KLayout.XOR",
+    "Checker.XOR",
+    "Magic.DRC",
+    "KLayout.DRC",
+    "Checker.MagicDRC",
+    "Checker.KLayoutDRC",
+    "Magic.SpiceExtraction",
+    "Checker.IllegalOverlap",
+    "Netgen.LVS",
+    "Checker.LVS",
+    "Yosys.EQY",
+    "Checker.SetupViolations",
+    "Checker.HoldViolations",
+    "Checker.MaxSlewViolations",
+    "Checker.MaxCapViolations",
+    "Misc.ReportManufacturability"
+  ],
+  "gating_config_vars": {
+    "Checker.KLayoutDRC": [
+      "RUN_KLAYOUT_DRC"
+    ],
+    "Checker.LVS": [
+      "RUN_LVS"
+    ],
+    "Checker.LintErrors": [
+      "RUN_LINTER"
+    ],
+    "Checker.LintTimingConstructs": [
+      "RUN_LINTER"
+    ],
+    "Checker.LintWarnings": [
+      "RUN_LINTER"
+    ],
+    "Checker.MagicDRC": [
+      "RUN_MAGIC_DRC"
+    ],
+    "Checker.TrDRC": [
+      "RUN_DRT"
+    ],
+    "Checker.XOR": [
+      "RUN_KLAYOUT_XOR",
+      "RUN_MAGIC_STREAMOUT",
+      "RUN_KLAYOUT_STREAMOUT"
+    ],
+    "KLayout.DRC": [
+      "RUN_KLAYOUT_DRC"
+    ],
+    "KLayout.StreamOut": [
+      "RUN_KLAYOUT_STREAMOUT"
+    ],
+    "KLayout.XOR": [
+      "RUN_KLAYOUT_XOR",
+      "RUN_MAGIC_STREAMOUT",
+      "RUN_KLAYOUT_STREAMOUT"
+    ],
+    "Magic.DRC": [
+      "RUN_MAGIC_DRC"
+    ],
+    "Magic.StreamOut": [
+      "RUN_MAGIC_STREAMOUT"
+    ],
+    "Magic.WriteLEF": [
+      "RUN_MAGIC_WRITE_LEF"
+    ],
+    "Netgen.LVS": [
+      "RUN_LVS"
+    ],
+    "Odb.HeuristicDiodeInsertion": [
+      "RUN_HEURISTIC_DIODE_INSERTION"
+    ],
+    "OpenROAD.CTS": [
+      "RUN_CTS"
+    ],
+    "OpenROAD.DetailedRouting": [
+      "RUN_DRT"
+    ],
+    "OpenROAD.FillInsertion": [
+      "RUN_FILL_INSERTION"
+    ],
+    "OpenROAD.IRDropReport": [
+      "RUN_IRDROP_REPORT"
+    ],
+    "OpenROAD.RCX": [
+      "RUN_SPEF_EXTRACTION"
+    ],
+    "OpenROAD.RepairAntennas": [
+      "RUN_ANTENNA_REPAIR"
+    ],
+    "OpenROAD.RepairDesignPostGPL": [
+      "RUN_POST_GPL_DESIGN_REPAIR"
+    ],
+    "OpenROAD.RepairDesignPostGRT": [
+      "RUN_POST_GRT_DESIGN_REPAIR"
+    ],
+    "OpenROAD.ResizerTimingPostCTS": [
+      "RUN_POST_CTS_RESIZER_TIMING"
+    ],
+    "OpenROAD.ResizerTimingPostGRT": [
+      "RUN_POST_GRT_RESIZER_TIMING"
+    ],
+    "OpenROAD.STAPostPNR": [
+      "RUN_MCSTA"
+    ],
+    "OpenROAD.TapEndcapInsertion": [
+      "RUN_TAP_ENDCAP_INSERTION"
+    ],
+    "Verilator.Lint": [
+      "RUN_LINTER"
+    ],
+    "Yosys.EQY": [
+      "RUN_EQY"
+    ]
+  },
+  "config_var_names": [
+    "RUN_ANTENNA_REPAIR",
+    "RUN_CTS",
+    "RUN_DRT",
+    "RUN_EQY",
+    "RUN_FILL_INSERTION",
+    "RUN_HEURISTIC_DIODE_INSERTION",
+    "RUN_IRDROP_REPORT",
+    "RUN_KLAYOUT_DRC",
+    "RUN_KLAYOUT_STREAMOUT",
+    "RUN_KLAYOUT_XOR",
+    "RUN_LINTER",
+    "RUN_LVS",
+    "RUN_MAGIC_DRC",
+    "RUN_MAGIC_STREAMOUT",
+    "RUN_MAGIC_WRITE_LEF",
+    "RUN_MCSTA",
+    "RUN_POST_CTS_RESIZER_TIMING",
+    "RUN_POST_GPL_DESIGN_REPAIR",
+    "RUN_POST_GRT_DESIGN_REPAIR",
+    "RUN_POST_GRT_RESIZER_TIMING",
+    "RUN_SPEF_EXTRACTION",
+    "RUN_TAP_ENDCAP_INSERTION"
+  ]
+}

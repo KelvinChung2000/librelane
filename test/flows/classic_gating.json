@@ -1,0 +1,80 @@
+{
+  "RUN_TAP_ENDCAP_INSERTION": [
+    "OpenROAD.TapEndcapInsertion"
+  ],
+  "RUN_POST_GPL_DESIGN_REPAIR": [
+    "OpenROAD.RepairDesignPostGPL"
+  ],
+  "RUN_POST_GRT_DESIGN_REPAIR": [
+    "OpenROAD.RepairDesignPostGRT"
+  ],
+  "RUN_CTS": [
+    "OpenROAD.CTS"
+  ],
+  "RUN_POST_CTS_RESIZER_TIMING": [
+    "OpenROAD.ResizerTimingPostCTS"
+  ],
+  "RUN_POST_GRT_RESIZER_TIMING": [
+    "OpenROAD.ResizerTimingPostGRT"
+  ],
+  "RUN_HEURISTIC_DIODE_INSERTION": [
+    "Odb.HeuristicDiodeInsertion"
+  ],
+  "RUN_ANTENNA_REPAIR": [
+    "OpenROAD.RepairAntennas"
+  ],
+  "RUN_DRT": [
+    "Checker.TrDRC",
+    "OpenROAD.DetailedRouting"
+  ],
+  "RUN_FILL_INSERTION": [
+    "OpenROAD.FillInsertion"
+  ],
+  "RUN_MCSTA": [
+    "OpenROAD.STAPostPNR"
+  ],
+  "RUN_SPEF_EXTRACTION": [
+    "OpenROAD.RCX"
+  ],
+  "RUN_IRDROP_REPORT": [
+    "OpenROAD.IRDropReport"
+  ],
+  "RUN_LVS": [
+    "Checker.LVS",
+    "Netgen.LVS"
+  ],
+  "RUN_MAGIC_STREAMOUT": [
+    "Checker.XOR",
+    "KLayout.XOR",
+    "Magic.StreamOut"
+  ],
+  "RUN_KLAYOUT_STREAMOUT": [
+    "Checker.XOR",
+    "KLayout.StreamOut",
+    "KLayout.XOR"
+  ],
+  "RUN_MAGIC_WRITE_LEF": [
+    "Magic.WriteLEF"
+  ],
+  "RUN_KLAYOUT_XOR": [
+    "Checker.XOR",
+    "KLayout.XOR"
+  ],
+  "RUN_MAGIC_DRC": [
+    "Checker.MagicDRC",
+    "Magic.DRC"
+  ],
+  "RUN_KLAYOUT_DRC": [
+    "Checker.KLayoutDRC",
+    "KLayout.DRC"
+  ],
+  "RUN_EQY": [
+    "Yosys.EQY"
+  ],
+  "RUN_LINTER": [
+    "Checker.LintErrors",
+    "Checker.LintTimingConstructs",
+    "Checker.LintWarnings",
+    "Verilator.Lint"
+  ]
+}
