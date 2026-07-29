@@ -27,11 +27,14 @@ from .stage import (
     PNR_IN_PLACE_PROVIDES,
 )
 from .registry import Registration, StageRegistry
+from . import taxonomy as taxonomy  # noqa: F401  (registration side effects)
+from .taxonomy import STAGE_ORDER
 
 __all__ = [
     "Stage",
     "Registration",
     "StageRegistry",
+    "STAGE_ORDER",
     "StageError",
     "StageContractError",
     "StageResolutionError",

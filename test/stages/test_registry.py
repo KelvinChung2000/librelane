@@ -129,7 +129,7 @@ def test_unnamespaced_variable_raises(alpha_stage):
     from librelane.steps import Step
 
     class Rogue(Step):
-        id = "Mock.Rogue"
+        id = "Test.MockRogue"
         inputs = [DesignFormat.def_, DesignFormat.nl, DesignFormat.sdc]
         outputs = [DesignFormat.def_, DesignFormat.nl, DesignFormat.sdc]
         config_vars = [Variable("WIDGET_COUNT", int, "desc", default=3)]
@@ -152,7 +152,7 @@ def test_unmet_input_outside_requires_raises(alpha_stage):
     from librelane.steps import Step
 
     class NeedsGDS(Step):
-        id = "Mock.NeedsGDS"
+        id = "Test.MockNeedsGDS"
         inputs = [DesignFormat.gds]
         outputs = [DesignFormat.def_, DesignFormat.nl, DesignFormat.sdc]
 
@@ -174,7 +174,7 @@ def test_native_view_exempts_an_unmet_input(alpha_stage):
     from librelane.steps import Step
 
     class NeedsODB(Step):
-        id = "Mock.NeedsODB"
+        id = "Test.MockNeedsODB"
         inputs = [DesignFormat.odb]
         outputs = [DesignFormat.def_, DesignFormat.nl, DesignFormat.sdc]
 
@@ -227,5 +227,5 @@ def test_tagged_steps_carry_span_and_provider(alpha_stage, mock_steps):
 
     assert tagged[0]._stage_span == ("registry_alpha",)
     assert tagged[0]._stage_provider == "tagged"
-    assert tagged[0].id == "Mock.Place"
-    assert tagged[0].get_implementation_id() == "Mock.Place"
+    assert tagged[0].id == "Test.MockPlace"
+    assert tagged[0].get_implementation_id() == "Test.MockPlace"

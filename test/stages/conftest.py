@@ -13,7 +13,7 @@ def mock_steps():
 
     @Step.factory.register()
     class MockPlace(Step):
-        id = "Mock.Place"
+        id = "Test.MockPlace"
         inputs = [DesignFormat.def_, DesignFormat.nl, DesignFormat.sdc]
         outputs = [DesignFormat.def_, DesignFormat.nl, DesignFormat.sdc]
 
@@ -22,7 +22,7 @@ def mock_steps():
 
     @Step.factory.register()
     class MockRoute(Step):
-        id = "Mock.Route"
+        id = "Test.MockRoute"
         inputs = [DesignFormat.def_, DesignFormat.nl, DesignFormat.sdc]
         outputs = [DesignFormat.def_, DesignFormat.nl, DesignFormat.sdc]
 
