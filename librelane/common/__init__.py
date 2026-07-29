@@ -55,6 +55,5 @@ from .types import (
     ScopedFile,
 )
 from .toolbox import Toolbox
-from .fingerprint import Fingerprinter
 from .drc import DRC, Violation, BoundingBox
 from .tpe import get_tpe, set_tpe, ContextPropagatingThreadPoolExecutor

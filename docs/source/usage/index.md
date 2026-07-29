@@ -8,7 +8,6 @@ hardening macros and writing custom flows and scripts.
 :maxdepth: 2
 
 about_pdks
-resuming_runs
 pdn
 timing_corners
 timing_closure/index

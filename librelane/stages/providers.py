@@ -160,14 +160,18 @@ _REGISTRATIONS: list[dict] = [
     {
         "stages": ["floorplan"],
         "provider": "openroad",
+        # Odb.SetPowerConnections used to be the last step here, which forced
+        # this registration to declare json_h as a native view. That made a
+        # Verilog-only step a mandatory member of a tool-neutral stage: a VHDL
+        # flow needs floorplanning but has no Verilog header, and had no way to
+        # say "floorplan, but not that step". It is a plain step in Classic's
+        # Stages list now, so a flow that cannot run it simply omits it.
         "steps": [
             OpenROAD.Floorplan,
             OpenROAD.DumpRCValues,
             Odb.CheckMacroAntennaProperties,
-            Odb.SetPowerConnections,
         ],
         "namespaces": _OPENROAD_NAMESPACES,
-        "native_views": (DesignFormat.json_h,),
     },
     {
         "stages": ["macro_placement"],

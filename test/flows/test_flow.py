@@ -339,8 +339,8 @@ def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple, monkeypatch):
     assert "Using existing run at" in caplog.text, (
         ".start() with a non-empty folder did not print a message about an existing run"
     )
-    assert state.metrics["step"] == 1, (
-        ".start() using an existing run re-executed instead of reusing"
+    assert state.metrics["step"] == 3, (
+        ".start() using existing run failed to return latest state"
     )
     caplog.clear()
 

@@ -155,7 +155,7 @@ FromOption = Annotated[
     typer.Option(
         "--from",
         "-F",
-        help="Force re-execution from this step ID onward, ignoring any reusable result for it and the steps after it. Earlier steps are taken from their previous results, and it is an error if one of them has none. Supported by sequential flows.",
+        help="Start from this step ID. Supported by sequential flows.",
         rich_help_panel=SEQUENTIAL_OPTIONS,
     ),
 ]

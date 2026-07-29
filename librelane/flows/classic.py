@@ -46,6 +46,10 @@ class Classic(StagedFlow):
         Stage.synthesis,
         Stage.pre_pnr_sta,
         Stage.floorplan,
+        # A plain step rather than part of the floorplan stage, because it
+        # hard-requires the Verilog header only Verilog synthesis emits. A flow
+        # whose synthesis frontend cannot produce one omits this entry.
+        Odb.SetPowerConnections,
         Stage.macro_placement,
         OpenROAD.CutRows,
         Stage.tapcell_insertion,
