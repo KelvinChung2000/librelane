@@ -604,6 +604,65 @@ def test_metric_modifiers_satisfy_the_contract():
     assert modifiers == {"net": "VPWR"}
 
 
+@pytest.fixture
+def PdkHungryStage():
+    from librelane.stages import Stage, StageRegistry
+    from librelane.steps import Step
+
+    @Step.factory.register()
+    class Hungry(Step):
+        id = "Test.Hungry"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    Stage(
+        id="pdk_hungry",
+        full_name="PDK Hungry",
+        default_provider="hungry",
+        requires=(),
+        provides=(),
+    ).register()
+
+    StageRegistry.register(
+        stages=["pdk_hungry"],
+        provider="hungry",
+        steps=[Hungry],
+        namespaces=["MOCK_"],
+        requires_pdk_vars=["QRC_TECHFILE"],
+    )
+    return Stage.factory.get("pdk_hungry")
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_missing_pdk_variable_names_stage_provider_variable_and_pdk(
+    PdkHungryStage,
+):
+    from librelane.flows import StagedFlow
+    from librelane.stages import StageResolutionError
+
+    class Hungry(StagedFlow):
+        Stages = [PdkHungryStage]
+
+    with pytest.raises(StageResolutionError) as excinfo:
+        Hungry(
+            {"DESIGN_NAME": "WHATEVER", "VERILOG_FILES": ["/cwd/src/a.v"]},
+            design_dir="/cwd",
+            pdk="dummy",
+            scl="dummy_scl",
+            pdk_root="/pdk",
+        )
+
+    message = str(excinfo.value)
+    assert "pdk_hungry" in message
+    assert "hungry" in message
+    assert "QRC_TECHFILE" in message
+    assert "dummy" in message
+
+
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
 def test_preflight_gate_expansion_matches_the_real_run_for_a_colliding_key(

@@ -136,17 +136,29 @@ class StagedFlow(SequentialFlow):
         **kwargs,
     ):
         tools = self.__selected_tools(config, config_override_strings)
-        if tools:
+        # Resolved unconditionally, not only when tools overrides something,
+        # so that _resolution is always populated by the time the preflights
+        # run below: their spans are the only place a selected provider's PDK
+        # requirements and native views live. Compared against the class-level
+        # resolution, not self.Steps, because a bypassed flow (Steps declared
+        # directly, no Stages) or a Substitute()'d one has a self.Steps that
+        # legitimately differs from what resolving its (possibly empty)
+        # Stages produces; _resolution is what __init_subclass__ actually
+        # derived Steps from, and is the correct baseline for "did TOOLS
+        # change anything".
+        resolution = resolve(self.Stages, tools)
+        if [step.id for step in resolution.steps] != [
+            step.id for step in self._resolution.steps
+        ]:
             # Re-expansion happens before super().__init__, because that is
             # where get_all_config_variables() reads self.Steps to build the
             # model configuration is validated against. The whole reason the
             # TOOLS pre-pass exists is that the step set has to be known first.
-            resolution = resolve(self.Stages, tools)
             self.Steps = resolution.steps
             self._normalize_step_ids(self)
             self._apply_stage_gating(self)
             self.__prune_deselected_gates(self)
-            self._resolution = resolution
+        self._resolution = resolution
 
         super().__init__(
             config,
@@ -158,7 +170,33 @@ class StagedFlow(SequentialFlow):
         self.__boundary_by_last_step = {
             boundary.last_step_id: boundary for boundary in self.__boundaries()
         }
+        self._preflight_pdk_vars()
         self._preflight_views()
+
+    def _preflight_pdk_vars(self) -> None:
+        """
+        Checks each selected provider's ``requires_pdk_vars`` against the
+        resolved configuration. A variable that is absent or ``None`` fails
+        the run before any tool is invoked.
+
+        This is the seam a PDK-ingestion feature plugs into: a provider that
+        needs a PDK view the PDK does not define must fail here, naming the
+        stage, the provider, the variable and the PDK, rather than crashing
+        somewhere deep in a Tcl script.
+        """
+        pdk = self.config.get("PDK", "<unknown>")
+        for span in self._resolution.spans:
+            for provider in span.provider.split("+"):
+                registration = StageRegistry.get(span.stage_ids[0], provider)
+                if registration is None:
+                    continue
+                for name in registration.requires_pdk_vars:
+                    if self.config.get(name) is not None:
+                        continue
+                    raise StageResolutionError(
+                        f"{span.stage_ids[0]}: provider '{provider}' requires "
+                        f"{name}, which PDK '{pdk}' does not define"
+                    )
 
     def _preflight_views(self) -> None:
         """
