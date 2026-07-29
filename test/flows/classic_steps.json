@@ -164,6 +164,9 @@
     "Misc.ReportManufacturability"
   ],
   "gating_config_vars": {
+    "Checker.IllegalOverlap": [
+      "RUN_LVS"
+    ],
     "Checker.KLayoutDRC": [
       "RUN_KLAYOUT_DRC"
     ],
@@ -204,6 +207,9 @@
     "Magic.DRC": [
       "RUN_MAGIC_DRC"
     ],
+    "Magic.SpiceExtraction": [
+      "RUN_LVS"
+    ],
     "Magic.StreamOut": [
       "RUN_MAGIC_STREAMOUT"
     ],
@@ -213,11 +219,21 @@
     "Netgen.LVS": [
       "RUN_LVS"
     ],
+    "Odb.DiodesOnPorts": [
+      "RUN_ANTENNA_REPAIR"
+    ],
     "Odb.HeuristicDiodeInsertion": [
+      "RUN_ANTENNA_REPAIR",
       "RUN_HEURISTIC_DIODE_INSERTION"
+    ],
+    "Odb.RemoveRoutingObstructions": [
+      "RUN_DRT"
     ],
     "OpenROAD.CTS": [
       "RUN_CTS"
+    ],
+    "OpenROAD.CheckAntennas-1": [
+      "RUN_DRT"
     ],
     "OpenROAD.DetailedRouting": [
       "RUN_DRT"

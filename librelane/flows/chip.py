@@ -48,3 +48,13 @@ class Chip(Classic):
         "+KLayout.Filler": KLayout.Density,
         "+KLayout.Density": Checker.KLayoutDensity,
     }
+
+    # Magic.WriteLEF is substituted out above, so the gate Classic declares for
+    # it matches no step here and has never done anything. Removing a step means
+    # removing its gate. This restates Classic's hand-written gates rather than
+    # its full set, because the rest are generated per subclass from stage gates.
+    gating_config_vars = {
+        key: value
+        for key, value in Classic._explicit_gating_config_vars.items()
+        if key != "Magic.WriteLEF"
+    }

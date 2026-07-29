@@ -88,9 +88,41 @@ def _gated_step_ids(FlowClass, disabled: str) -> list[str]:
     return sorted(gated)
 
 
-def test_classic_gating_matches_golden():
+#: Gating variables whose reach changed when gating moved to the stage level.
+#: Each entry is the full set of step IDs skipped after the change. Gating a
+#: stage skips every step in it, and these three stages contain steps the old
+#: step-level keys did not reach. See Changelog.md for why each is correct.
+WIDENED_GATES = {
+    "RUN_DRT": [
+        "Checker.TrDRC",
+        "Odb.RemoveRoutingObstructions",
+        "OpenROAD.CheckAntennas-1",
+        "OpenROAD.DetailedRouting",
+    ],
+    "RUN_ANTENNA_REPAIR": [
+        "Odb.DiodesOnPorts",
+        "Odb.HeuristicDiodeInsertion",
+        "OpenROAD.RepairAntennas",
+    ],
+    "RUN_LVS": [
+        "Checker.IllegalOverlap",
+        "Checker.LVS",
+        "Magic.SpiceExtraction",
+        "Netgen.LVS",
+    ],
+}
+
+
+def test_unchanged_gates_still_match_golden():
     Classic = Flow.factory.get("Classic")
-    observed = {
-        variable: _gated_step_ids(Classic, variable) for variable in GATING_VARIABLES
-    }
-    assert observed == _load_golden("classic_gating.json")
+    golden = _load_golden("classic_gating.json")
+    for variable in GATING_VARIABLES:
+        if variable in WIDENED_GATES:
+            continue
+        assert _gated_step_ids(Classic, variable) == golden[variable], variable
+
+
+def test_widened_gates_have_their_documented_reach():
+    Classic = Flow.factory.get("Classic")
+    for variable, expected in WIDENED_GATES.items():
+        assert _gated_step_ids(Classic, variable) == expected, variable

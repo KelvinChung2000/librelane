@@ -218,47 +218,29 @@ class Classic(StagedFlow):
             deprecated_names=["RUN_VERILATOR"],
         )
 
+    # Fifteen entries that used to live here are now generated from the stage
+    # taxonomy's gating_config_var, so they gate whichever provider is selected
+    # rather than only the OpenROAD step that happened to be named. What remains
+    # is the gates that address one tool *inside* a multi_provider stage, or a
+    # plain step that is not part of any stage.
     gating_config_vars = {
-        "OpenROAD.RepairDesignPostGPL": ["RUN_POST_GPL_DESIGN_REPAIR"],
-        "OpenROAD.RepairDesignPostGRT": ["RUN_POST_GRT_DESIGN_REPAIR"],
-        "OpenROAD.ResizerTimingPostCTS": ["RUN_POST_CTS_RESIZER_TIMING"],
-        "OpenROAD.ResizerTimingPostGRT": ["RUN_POST_GRT_RESIZER_TIMING"],
-        "OpenROAD.CTS": ["RUN_CTS"],
-        "OpenROAD.RCX": ["RUN_SPEF_EXTRACTION"],
-        "OpenROAD.TapEndcapInsertion": ["RUN_TAP_ENDCAP_INSERTION"],
         "Odb.HeuristicDiodeInsertion": ["RUN_HEURISTIC_DIODE_INSERTION"],
-        "OpenROAD.RepairAntennas": ["RUN_ANTENNA_REPAIR"],
-        "OpenROAD.DetailedRouting": ["RUN_DRT"],
-        "OpenROAD.FillInsertion": ["RUN_FILL_INSERTION"],
-        "OpenROAD.STAPostPNR": ["RUN_MCSTA"],
-        "OpenROAD.IRDropReport": ["RUN_IRDROP_REPORT"],
         "Magic.StreamOut": ["RUN_MAGIC_STREAMOUT"],
         "KLayout.StreamOut": ["RUN_KLAYOUT_STREAMOUT"],
         "Magic.WriteLEF": ["RUN_MAGIC_WRITE_LEF"],
         "Magic.DRC": ["RUN_MAGIC_DRC"],
         "KLayout.DRC": ["RUN_KLAYOUT_DRC"],
+        "Checker.MagicDRC": ["RUN_MAGIC_DRC"],
+        "Checker.KLayoutDRC": ["RUN_KLAYOUT_DRC"],
         "KLayout.XOR": [
             "RUN_KLAYOUT_XOR",
             "RUN_MAGIC_STREAMOUT",
             "RUN_KLAYOUT_STREAMOUT",
         ],
-        "Netgen.LVS": ["RUN_LVS"],
-        "Checker.TrDRC": ["RUN_DRT"],
-        "Checker.MagicDRC": ["RUN_MAGIC_DRC"],
         "Checker.XOR": [
             "RUN_KLAYOUT_XOR",
             "RUN_MAGIC_STREAMOUT",
             "RUN_KLAYOUT_STREAMOUT",
-        ],
-        "Checker.LVS": ["RUN_LVS"],
-        "Checker.KLayoutDRC": ["RUN_KLAYOUT_DRC"],
-        # Not in VHDLClassic
-        "Yosys.EQY": ["RUN_EQY"],
-        "Verilator.Lint": ["RUN_LINTER"],
-        "Checker.LintErrors": ["RUN_LINTER"],
-        "Checker.LintWarnings": ["RUN_LINTER"],
-        "Checker.LintTimingConstructs": [
-            "RUN_LINTER",
         ],
     }
 

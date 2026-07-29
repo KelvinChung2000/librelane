@@ -155,6 +155,30 @@ Style Notes
 
 * Migrated the `Classic` flow's configuration declarations to a nested typed
   `Config` model.
+* Created `StagedFlow`, a `SequentialFlow` whose step list is expanded from a
+  list of stages drawn from a 27-stage taxonomy, so the tool used for a phase
+  can be selected rather than hardcoded. `Classic`, `VHDLClassic` and `Chip`
+  produce exactly the same step lists as before.
+* Moved gating from individual step IDs to the stage that owns them, so a
+  gating variable applies whichever tool implements the stage. Fifteen of
+  `Classic`'s twenty-five step-level gates are now generated from the
+  taxonomy; the ten that address one tool inside a multi-tool stage, such as
+  `RUN_MAGIC_DRC`, remain declared on the flow.
+  * Three gating variables now reach further, each covering a step that was
+    previously left running with nothing to consume its output:
+    * `RUN_ANTENNA_REPAIR` also skips `Odb.DiodesOnPorts`. Setting it false
+      used to insert diodes and then skip the repair pass they were placed for.
+    * `RUN_DRT` also skips `Odb.RemoveRoutingObstructions` and the second
+      `OpenROAD.CheckAntennas`. Obstructions exist to shape detailed routing,
+      and an antenna check on an unrouted design reports nothing meaningful.
+    * `RUN_LVS` also skips `Magic.SpiceExtraction` and `Checker.IllegalOverlap`.
+      The extraction exists to feed LVS, and disabling LVS used to still pay
+      for it and still fail the run on a check nobody asked for.
+* A gating key matching no step in a flow is now an error rather than being
+  ignored. Such a key silently fails to gate anything, which becomes a
+  correctness problem once a stage can be implemented by a tool whose step IDs
+  differ. This surfaced one long-dead gate: `Chip` substitutes out
+  `Magic.WriteLEF` but inherited `Classic`'s gate for it.
 
 ## Tool Updates
 
@@ -205,6 +229,13 @@ Style Notes
 
 ## API Breaks
 
+* `CompositeStep` subclasses must declare a non-empty `Steps`. An empty one ran
+  nothing and reported success. The class is also no longer marked internal: it
+  is the supported way to bind one stage to a multi-step tool sequence.
+* `FlowError` and `FlowException` moved to `librelane.common.errors` so that
+  `librelane.stages` can derive from them without an import cycle. They are
+  re-exported from `librelane.flows` and `librelane.flows.flow`, which remain
+  their documented import sites.
 * Removed the Cloup-specific `librelane.flows.cloup_flow_opts` decorator and
   `librelane.common.cli` helpers. Reusable Typer option annotations now live in
   `librelane.cli.options` and the CLI resolution helpers in

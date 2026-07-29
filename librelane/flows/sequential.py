@@ -118,7 +118,19 @@ class SequentialFlow(Flow):
             Self.__substitute_in_place(Self, Self.Substitutions)
             Self.Substitutions = None
 
-        # Validate Gating Config Vars
+        Self._validate_gating_config_vars()
+
+    @classmethod
+    def _validate_gating_config_vars(Self):
+        """
+        Checks that every gating key names at least one step in the flow and
+        that every gating variable is a declared Boolean.
+
+        Separate from ``__init_subclass__`` so that :class:`StagedFlow` can
+        re-run it after generating gating entries from stage gates, which it
+        can only do once step IDs have been normalized and substitutions
+        applied.
+        """
         variables_by_name = {}
         for variable in Self.config_vars:
             variables_by_name[variable.name] = variable
@@ -130,7 +142,11 @@ class SequentialFlow(Flow):
         for id, variable_names in Self.gating_config_vars.items():
             matching_steps = list(Filter([id]).filter(step_id_set))
             if id not in step_id_set and len(matching_steps) < 1:
-                continue
+                raise TypeError(
+                    f"Gating key '{id}' in Flow '{Self.__qualname__}' matches "
+                    f"no step in the flow. A gating key that matches nothing "
+                    f"silently fails to gate anything."
+                )
             for var_name in variable_names:
                 if var_name not in variables_by_name:
                     raise TypeError(
@@ -342,7 +358,16 @@ class SequentialFlow(Flow):
             if key in step_ids.values():
                 gating_cvars_expanded[key] = value
                 continue
-            for id in Filter([key]).filter(step_ids.values()):
+            matched = list(Filter([key]).filter(step_ids.values()))
+            if not matched:
+                # Checked per key rather than against gating_cvars_expanded,
+                # whose entries are matched step IDs and so never contain a
+                # wildcard key even when it matched.
+                raise FlowException(
+                    f"Gating key '{key}' matches no step in this run. A gating "
+                    f"key that matches nothing silently fails to gate anything."
+                )
+            for id in matched:
                 gating_cvars_expanded[id] = value
 
         current_state = initial_state

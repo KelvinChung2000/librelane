@@ -68,6 +68,13 @@ class StagedFlow(SequentialFlow):
     #: unconditionally.
     Steps: list[type[Step]] = []
 
+    #: The gating entries a flow author wrote by hand, as opposed to those
+    #: generated from stage gates. Kept apart because generated entries name
+    #: concrete step IDs and so must be rebuilt for every subclass:
+    #: ``Substitutions`` may have removed the very steps they name, which would
+    #: otherwise leave an inherited entry matching nothing.
+    _explicit_gating_config_vars: dict[str, list[str]] = {}
+
     def __init_subclass__(Self, scm_type=None, name=None, **kwargs):
         if "Stages" in Self.__dict__:
             Self.Stages = list(Self.Stages)
@@ -85,7 +92,43 @@ class StagedFlow(SequentialFlow):
                 f"'Stages' nor 'Steps'. Declare 'Stages' to expand a flow from "
                 f"the stage taxonomy, or 'Steps' to bypass it."
             )
+
+        if "gating_config_vars" in Self.__dict__:
+            Self._explicit_gating_config_vars = dict(Self.gating_config_vars)
+        Self.gating_config_vars = dict(Self._explicit_gating_config_vars)
+
+        # Step IDs are only final once the base class has normalized duplicates
+        # and applied Substitutions, so gates cannot be generated until after.
         super().__init_subclass__(scm_type=scm_type, name=name, **kwargs)
+        Self.__apply_stage_gating()
+        Self._validate_gating_config_vars()
+
+    @classmethod
+    def __apply_stage_gating(Self) -> None:
+        """
+        Turns each stage's ``gating_config_var`` into step-level gating entries
+        covering every step the resolved provider produced.
+
+        Reusing the existing step-level mechanism rather than adding a parallel
+        one means gating behaves identically whichever provider is selected,
+        which is the whole point: ``RUN_CTS`` gates the ``cts`` stage no matter
+        what implements it.
+        """
+        generated: dict[str, list[str]] = {}
+        for boundary in Self.stage_boundaries(Self.Steps):
+            for stage_id in boundary.stage_ids:
+                stage = Stage.factory.get(stage_id)
+                if stage.gating_config_var is None:
+                    continue
+                for step_id in boundary.step_ids:
+                    generated.setdefault(step_id, []).append(stage.gating_config_var)
+
+        merged = generated
+        for key, value in Self._explicit_gating_config_vars.items():
+            # dict.fromkeys deduplicates while preserving order, so a variable
+            # that is both a stage gate and an explicit entry appears once.
+            merged[key] = list(dict.fromkeys(merged.get(key, []) + list(value)))
+        Self.gating_config_vars = merged
 
     @staticmethod
     def __report_unselected(resolution: Resolution) -> None:
