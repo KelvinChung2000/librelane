@@ -26,9 +26,12 @@ from .stage import (
     PNR_IN_PLACE_REQUIRES,
     PNR_IN_PLACE_PROVIDES,
 )
+from .registry import Registration, StageRegistry
 
 __all__ = [
     "Stage",
+    "Registration",
+    "StageRegistry",
     "StageError",
     "StageContractError",
     "StageResolutionError",
