@@ -19,7 +19,6 @@ from typing import (
 
 
 from ...config import (
-    Variable,
     variables_to_model,
 )
 from ...state import DesignFormat, State
@@ -27,6 +26,7 @@ from ...common import (
     slugify,
 )
 
+from .composition import compose_step_sequence
 from .core import MetricsUpdate, Step, ViewsUpdate
 
 VT = TypeVar("VT")
@@ -51,31 +51,11 @@ class CompositeStep(Step):
 
     def __init_subclass__(Self):
         super().__init_subclass__()
-        available_inputs = set()
-
-        input_set: set[DesignFormat] = set()
-        output_set: set[DesignFormat] = set()
-        config_var_dict: dict[str, Variable] = {}
-        for step in Self.Steps:
-            for input in step.inputs:
-                if input not in available_inputs:
-                    input_set.add(input)
-                    available_inputs.add(input)
-            for output in step.outputs:
-                available_inputs.add(output)
-                output_set.add(output)
-            for cvar in step.config_vars:
-                if existing := config_var_dict.get(cvar.name):
-                    if existing != cvar:
-                        raise TypeError(
-                            f"Internal error: composite step has mismatching config_vars: {cvar.name} contradicts an earlier declaration"
-                        )
-                else:
-                    config_var_dict[cvar.name] = cvar
-        Self.inputs = list(input_set)
+        union = compose_step_sequence(Self.Steps)
+        Self.inputs = union.unmet_inputs
         if Self.outputs == NotImplemented:  # Allow for setting explicit outputs
-            Self.outputs = list(output_set)
-        Self.config_vars = list(config_var_dict.values())
+            Self.outputs = union.outputs
+        Self.config_vars = union.config_vars
         Self.install_config_model(
             variables_to_model(
                 f"{Self.__name__}Config",
