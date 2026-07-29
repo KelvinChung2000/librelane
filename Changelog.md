@@ -214,6 +214,37 @@ Style Notes
     `{"streamout": "klayout"}` is rejected unless `RUN_KLAYOUT_XOR` is false,
     because the XOR compares Magic's GDSII against KLayout's and there is no
     longer a Magic GDSII to compare.
+  * The error names the provider that declares the missing view, so it says
+    which tool was dropped rather than leaving that to be worked out.
+* Audited step ownership across every provider, against one rule: a step that
+  only makes sense when a particular tool was selected belongs inside that
+  tool's provider registration, so deselecting the tool removes the step with
+  it. A step whose inclusion is the flow's choice, independent of the tool, is a
+  plain step in the flow's `Stages` list.
+  * **Fixed:** `Checker.MagicDRC` and `Checker.KLayoutDRC` now belong to the
+    `drc` stage's `magic` and `klayout` providers. As plain steps of `Classic`,
+    `{"drc": "klayout"}` removed `Magic.DRC` but left `Checker.MagicDRC` running
+    under a default-true `RUN_MAGIC_DRC`, failing the run on
+    `magic__drc_error__count` that Magic never emitted. **This reorders the DRC
+    steps** from `Magic.DRC, KLayout.DRC, Checker.MagicDRC, Checker.KLayoutDRC`
+    to `Magic.DRC, Checker.MagicDRC, KLayout.DRC, Checker.KLayoutDRC`, changing
+    run directory names and step ordinals in that region. Gating is unchanged.
+  * `KLayout.XOR` and `Checker.XOR` compare the two streamout tools' output
+    against each other, so they belong to neither registration and stay plain
+    steps. The view preflight is what guarantees both GDSII views were produced.
+  * `Magic.WriteLEF` stays a plain step: it consumes the neutral `gds` and `def`
+    views rather than Magic's own, so it is Magic-implemented but not
+    Magic-dependent, and whether a flow wants a LEF abstract at all is a
+    flow-level choice. `Chip` deliberately does not.
+  * A checker for a metric its *stage* contracts, such as `Checker.TrDRC`, stays
+    inside its registration for a different reason: membership is what gives it
+    the stage's gating variable.
+  * Fourteen plain steps of `Classic` consume OpenROAD's `odb`, so they depend
+    on OpenROAD implementing the surrounding stages. They cannot move into a
+    registration, because they sit between stages: `OpenROAD.STAMidPNR` appears
+    four times at different points. A flow selecting a non-OpenROAD place-and-
+    route provider must declare its own `Stages` without them, and the view
+    preflight is what says so.
 * Added `Stage.using`, which pins the tool a stage runs from inside a flow's
   `Stages` list, for example `Stage.synthesis.using("yosys_vhdl")`. A pin is the
   flow's default rather than a lock: a `TOOLS` entry still overrides it.
