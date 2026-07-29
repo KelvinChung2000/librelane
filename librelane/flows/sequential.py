@@ -159,6 +159,45 @@ class SequentialFlow(Flow):
                         f"Gating variable '{var_name}' in Flow '{name}' is not a Boolean"
                     )
 
+    @staticmethod
+    def _expand_gating_config_vars(
+        gating_config_vars: dict[str, list[str]],
+        step_ids: Iterable[str],
+    ) -> dict[str, list[str]]:
+        """
+        Expands gating keys, which may be exact step IDs or wildcards, against
+        a concrete step ID list.
+
+        A key matching more than one step, or a wildcard colliding with a
+        later exact key (or vice versa), is resolved by later keys in
+        iteration order overwriting earlier ones for the steps they share -
+        matching plain ``dict`` assignment rather than merging the two lists.
+        Shared between :meth:`run` and
+        :meth:`librelane.flows.StagedFlow._preflight_views`, so that the
+        preflight can never evaluate a different set of gates than the run it
+        is meant to predict.
+
+        :raises FlowException: If a gating key matches no step in ``step_ids``.
+        """
+        step_id_list = list(step_ids)
+        expanded: dict[str, list[str]] = {}
+        for key, value in gating_config_vars.items():
+            if key in step_id_list:
+                expanded[key] = value
+                continue
+            matched = list(Filter([key]).filter(step_id_list))
+            if not matched:
+                # Checked per key rather than against `expanded`, whose
+                # entries are matched step IDs and so never contain a
+                # wildcard key even when it matched.
+                raise FlowException(
+                    f"Gating key '{key}' matches no step in this run. A gating "
+                    f"key that matches nothing silently fails to gate anything."
+                )
+            for id in matched:
+                expanded[id] = value
+        return expanded
+
     def _after_step(self, step: Step, state: State, executed: bool) -> None:
         """
         Called once for every step in :attr:`Steps`, after it has run or been
@@ -367,22 +406,9 @@ class SequentialFlow(Flow):
         executing = frm is None
         deferred_errors = []
 
-        gating_cvars_expanded: dict[str, list[str]] = {}
-        for key, value in self.gating_config_vars.items():
-            if key in step_ids.values():
-                gating_cvars_expanded[key] = value
-                continue
-            matched = list(Filter([key]).filter(step_ids.values()))
-            if not matched:
-                # Checked per key rather than against gating_cvars_expanded,
-                # whose entries are matched step IDs and so never contain a
-                # wildcard key even when it matched.
-                raise FlowException(
-                    f"Gating key '{key}' matches no step in this run. A gating "
-                    f"key that matches nothing silently fails to gate anything."
-                )
-            for id in matched:
-                gating_cvars_expanded[id] = value
+        gating_cvars_expanded = self._expand_gating_config_vars(
+            self.gating_config_vars, step_ids.values()
+        )
 
         current_state = initial_state
         for cls in self.Steps:

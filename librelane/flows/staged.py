@@ -229,21 +229,18 @@ class StagedFlow(SequentialFlow):
 
     def __gates_by_step_id(self) -> dict[str, list[str]]:
         """
-        :returns: The gating variables in force for each step ID, with wildcard
-            gating keys expanded exactly as :meth:`SequentialFlow.start` expands
-            them.
+        :returns: The gating variables in force for each step ID, expanded by
+            the same :meth:`SequentialFlow._expand_gating_config_vars` helper
+            :meth:`SequentialFlow.run` uses.
 
-        Expanding them here too is what keeps the preflight from rejecting a
-        configuration that would in fact run: a step excluded by a wildcard gate
-        must be excluded from the view walk as well.
+        Sharing the helper, rather than re-implementing wildcard expansion
+        here, is what keeps the preflight from disagreeing with the run it is
+        meant to predict: a step excluded by a wildcard gate must be excluded
+        from the view walk as well, and a colliding exact and wildcard key
+        must resolve to the same winner in both places.
         """
         step_ids = [step.id for step in self.Steps]
-        expanded: dict[str, list[str]] = {}
-        for key, variables in self.gating_config_vars.items():
-            matched = [key] if key in step_ids else list(Filter([key]).filter(step_ids))
-            for step_id in matched:
-                expanded.setdefault(step_id, []).extend(variables)
-        return expanded
+        return self._expand_gating_config_vars(self.gating_config_vars, step_ids)
 
     def __boundaries(self) -> list[Boundary]:
         """

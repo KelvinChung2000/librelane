@@ -602,3 +602,66 @@ def test_metric_modifiers_satisfy_the_contract():
     )
     assert base == "design__power_grid_violation__count"
     assert modifiers == {"net": "VPWR"}
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_preflight_gate_expansion_matches_the_real_run_for_a_colliding_key(
+    PreflightSteps,
+):
+    """
+    Pins the fix for a Task 12 review finding: the preflight's gate expansion
+    used to accumulate variables across a colliding exact and wildcard gating
+    key (``setdefault(...).extend(...)``), while ``SequentialFlow.run``
+    overwrites on collision (last key in iteration order wins). Since the
+    preflight skips a step when any of its gates is false, the accumulating
+    version could treat a step as gated off - and skip checking its inputs -
+    when the real run would in fact execute it.
+
+    In both cases below, the exact key sets a False gate and the wildcard key,
+    which comes later and so wins under ``run``'s overwrite semantics, sets a
+    True gate: the step is not actually gated off. The merging version instead
+    computes ['RUN_A', 'RUN_B'], sees the False 'RUN_A', and wrongly treats the
+    step as gated - which is observable two ways:
+
+    * With a hard-required input nothing produces, the merging preflight
+      skips checking it and construction succeeds silently; the fixed
+      preflight agrees the step runs, walks the input, and raises.
+    * With a satisfiable input, construction succeeds either way, but only
+      the real run's verdict - captured by actually executing the step -
+      says whether the preflight's silent success was for the right reason.
+    """
+    from librelane.config import variable
+    from librelane.flows import StagedFlow
+    from librelane.stages import StageResolutionError
+
+    WantsOptionalHeader, WantsHeader = PreflightSteps
+
+    class RequiredCollision(StagedFlow):
+        Steps = [WantsHeader]
+        gating_config_vars = {
+            "Test.WantsHeader": ["RUN_A"],
+            "Test.Wants*": ["RUN_B"],
+        }
+
+        class Config(StagedFlow.Config):
+            RUN_A: bool = variable(False, description="test gate, shadowed")
+            RUN_B: bool = variable(True, description="test gate, wins")
+
+    with pytest.raises(StageResolutionError, match="json_h"):
+        RequiredCollision(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+    class OptionalCollision(StagedFlow):
+        Steps = [WantsOptionalHeader]
+        gating_config_vars = {
+            "Test.WantsOptionalHeader": ["RUN_A"],
+            "Test.Wants*": ["RUN_B"],
+        }
+
+        class Config(StagedFlow.Config):
+            RUN_A: bool = variable(False, description="test gate, shadowed")
+            RUN_B: bool = variable(True, description="test gate, wins")
+
+    flow = OptionalCollision(_MINIMAL_DESIGN, **_MOCK_PDK)
+    flow.start()
+    assert "Test.WantsOptionalHeader" in [step.id for step in flow.step_objects]
