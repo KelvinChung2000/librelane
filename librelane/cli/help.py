@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""The ``librelane help`` subcommand."""
+
 from typing import Annotated
 
 import rich.console
@@ -19,17 +21,10 @@ import typer
 
 from ..flows import Flow
 from ..steps import Step
+from ._app import make_app
 
 
-cli = typer.Typer(
-    add_completion=False,
-    pretty_exceptions_enable=False,
-    rich_markup_mode="rich",
-)
-
-
-@cli.command()
-def main(
+def show_help(
     step_or_flow: Annotated[
         str, typer.Argument(help="The registered step or flow ID to describe.")
     ],
@@ -48,6 +43,11 @@ def main(
         raise typer.Exit(-1)
 
     rich.console.Console().print(rich.markdown.Markdown(help_md))
+
+
+# Standalone app behind the deprecated `librelane.help` console script.
+cli = make_app()
+cli.command()(show_help)
 
 
 if __name__ == "__main__":

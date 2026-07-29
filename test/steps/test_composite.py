@@ -48,6 +48,20 @@ def _composite(mock_config):
     return Parent(config=mock_config, state_in=State())
 
 
+def test_composite_with_no_steps_is_rejected():
+    """
+    The inherited empty default would otherwise produce a composite whose run()
+    iterates nothing and reports success.
+    """
+    from librelane.steps.step.composite import CompositeStep
+
+    with pytest.raises(TypeError, match="declares no 'Steps'"):
+
+        class Empty(CompositeStep):
+            id = "Test.EmptyComposite"
+            outputs = []
+
+
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([step])
 def test_composite_children_do_not_reread_the_pdk(mock_config):

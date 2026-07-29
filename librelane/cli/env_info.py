@@ -12,16 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-The ``librelane.env_info`` console script.
+The ``librelane env-info`` subcommand.
 
 The implementation stays in :mod:`librelane.env_info` on purpose. That module
-carries no third-party imports so it can survey an environment in which
-LibreLane's dependencies failed to install, which is exactly the situation the
-bug-report template asks users to run it in. This module only gives the
-console script a home inside :mod:`librelane.cli`.
+carries no third-party imports -- not even Typer -- so it can survey an
+environment in which LibreLane's dependencies failed to install, which is
+exactly the situation the bug-report template asks users to run it in. This
+module only gives it a home inside :mod:`librelane.cli`.
 """
 
-from ..env_info import env_info_cli as cli
+from ..env_info import env_info_cli
 
 
-__all__ = ["cli"]
+def show_env_info() -> None:
+    """Print a survey of this machine and its LibreLane installation."""
+    env_info_cli()
+
+
+# The deprecated `librelane.env_info` console script points here. It is the bare
+# function rather than a Typer app so it keeps working with nothing installed.
+cli = env_info_cli
+
+
+__all__ = ["cli", "show_env_info"]

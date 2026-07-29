@@ -15,255 +15,35 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""
+What the shared options in :mod:`librelane.cli.options` actually do.
+
+Typer validates option syntax; these helpers turn the validated values into
+process state: a log level, a thread pool, a downloaded PDK, a loaded state.
+They run after parsing and are the only place in the CLI layer that reaches out
+to the network or mutates the environment.
+"""
+
 from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
-from typing import Annotated
 
 from loguru import logger
 import typer
 
-from ..flows.flow import Flow
 from ..common import (
     ContextPropagatingThreadPoolExecutor,
     _get_process_limit,
     get_pdk_hash,
     set_tpe,
 )
+from ..flows.flow import Flow
 from ..logging import options, set_log_level
 from ..state import InvalidState, State
 
 
-FLOW_OPTIONS = "Flow configuration options"
-RUN_OPTIONS = "Run options"
-SEQUENTIAL_OPTIONS = "Sequential flow controls"
-PDK_OPTIONS = "PDK options"
-DISPLAY_OPTIONS = "Logging and display options"
-
-
-FlowNameOption = Annotated[
-    str | None,
-    typer.Option(
-        "--flow",
-        "-f",
-        help="The built-in LibreLane flow to use for this run.",
-        rich_help_panel=FLOW_OPTIONS,
-    ),
-]
-ConfigOverridesOption = Annotated[
-    list[str] | None,
-    typer.Option(
-        "--override-config",
-        "-c",
-        help=(
-            "Override a configuration variable for this run, in KEY=VALUE "
-            "format. May be specified multiple times; values must be valid JSON."
-        ),
-        rich_help_panel=FLOW_OPTIONS,
-    ),
-]
-InitialStateFilesOption = Annotated[
-    list[Path] | None,
-    typer.Option(
-        "--with-initial-state",
-        "-i",
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        readable=True,
-        help=(
-            "Use these JSON files as an initial state. Multiple files are merged "
-            "in order, with later keys overriding earlier keys."
-        ),
-        rich_help_panel=RUN_OPTIONS,
-    ),
-]
-DesignDirOption = Annotated[
-    Path | None,
-    typer.Option(
-        "--design-dir",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        help=(
-            "The top-level design directory that configuration paths may resolve "
-            "relative to."
-        ),
-        rich_help_panel=RUN_OPTIONS,
-    ),
-]
-RunTagOption = Annotated[
-    str | None,
-    typer.Option(
-        "--run-tag",
-        help="An optional name for this flow run.",
-        rich_help_panel=RUN_OPTIONS,
-    ),
-]
-LastRunOption = Annotated[
-    bool,
-    typer.Option(
-        "--last-run",
-        help="Use the last run as the run tag.",
-        rich_help_panel=RUN_OPTIONS,
-    ),
-]
-FromOption = Annotated[
-    str | None,
-    typer.Option(
-        "--from",
-        "-F",
-        help="Start from this step ID. Supported by sequential flows.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
-    ),
-]
-ToOption = Annotated[
-    str | None,
-    typer.Option(
-        "--to",
-        "-T",
-        help="Stop at this step ID. Supported by sequential flows.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
-    ),
-]
-OnlyOption = Annotated[
-    str | None,
-    typer.Option(
-        "--only",
-        help="Set both --from and --to to this step ID.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
-    ),
-]
-SkipOption = Annotated[
-    list[str] | None,
-    typer.Option(
-        "--skip",
-        "-S",
-        help="Skip this step ID. May be specified multiple times.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
-    ),
-]
-ReproducibleOption = Annotated[
-    str | None,
-    typer.Option(
-        "--reproducible",
-        help="Create a reproducible for this step ID, then abort the flow.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
-    ),
-]
-LogLevelOption = Annotated[
-    str | None,
-    typer.Option(
-        "--log-level",
-        metavar="LEVEL",
-        help=(
-            "Logging level name or number. VERBOSE and higher silence subprocess "
-            "logs. [default: unchanged from SUBPROCESS]"
-        ),
-        rich_help_panel=DISPLAY_OPTIONS,
-    ),
-]
-ShowProgressBarOption = Annotated[
-    bool | None,
-    typer.Option(
-        "--show-progress-bar/--hide-progress-bar",
-        help="Whether to show the progress bar while running flows.",
-        rich_help_panel=DISPLAY_OPTIONS,
-    ),
-]
-CondensedOption = Annotated[
-    bool,
-    typer.Option(
-        "--condensed/--full",
-        help=(
-            "Use terse log messages, suppress subprocess logs, and hide the "
-            "progress bar by default."
-        ),
-        rich_help_panel=DISPLAY_OPTIONS,
-    ),
-]
-UseCielOption = Annotated[
-    bool,
-    typer.Option(
-        "--volare-pdk/--manual-pdk",
-        "--ciel-pdk/--manual-pdk",
-        help="Automatically install and enable the requested PDK with Ciel.",
-        rich_help_panel=PDK_OPTIONS,
-    ),
-]
-PdkRootOption = Annotated[
-    Path | None,
-    typer.Option(
-        "--pdk-root",
-        envvar="PDK_ROOT",
-        file_okay=False,
-        dir_okay=True,
-        help="Override the Ciel PDK root directory.",
-        rich_help_panel=PDK_OPTIONS,
-    ),
-]
-PdkOption = Annotated[
-    str,
-    typer.Option(
-        "--pdk",
-        "-p",
-        envvar="PDK",
-        help="The process design kit to use.",
-        rich_help_panel=PDK_OPTIONS,
-    ),
-]
-SclOption = Annotated[
-    str | None,
-    typer.Option(
-        "--scl",
-        "-s",
-        envvar="STD_CELL_LIBRARY",
-        help="The standard cell library to use.",
-        rich_help_panel=PDK_OPTIONS,
-    ),
-]
-PadOption = Annotated[
-    str | None,
-    typer.Option(
-        "--pad",
-        envvar="PAD_CELL_LIBRARY",
-        help="The standard pad library to use.",
-        rich_help_panel=PDK_OPTIONS,
-    ),
-]
-JobsOption = Annotated[
-    int,
-    typer.Option(
-        "--jobs",
-        "-j",
-        min=1,
-        help="The maximum number of threads or processes LibreLane may use.",
-        rich_help_panel=RUN_OPTIONS,
-    ),
-]
-InitialStateElementOption = Annotated[
-    list[str] | None,
-    typer.Option(
-        "--initial-state-element-override",
-        "-e",
-        help=(
-            "Override an initial-state element in DESIGN_FORMAT_ID=PATH format. "
-            "May be specified multiple times."
-        ),
-        rich_help_panel=RUN_OPTIONS,
-    ),
-]
-ConfigFilesArgument = Annotated[
-    list[Path] | None,
-    typer.Argument(
-        exists=True,
-        file_okay=True,
-        dir_okay=True,
-        readable=True,
-        help="One or more LibreLane configuration files.",
-    ),
-]
+DEFAULT_JOBS = _get_process_limit()
 
 
 @dataclass(frozen=True)
@@ -420,6 +200,3 @@ def resolve_pdk_options(
         raise typer.Exit(1) from error
 
     return ResolvedPdkOptions(pdk_root_string, pdk, scl, pad)
-
-
-DEFAULT_JOBS = _get_process_limit()

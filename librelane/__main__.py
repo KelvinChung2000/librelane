@@ -14,9 +14,10 @@
 """
 Keeps ``python3 -m librelane`` working.
 
-Required by the containerized re-entry in :mod:`librelane.cli.main`, by the
+Required by the containerized re-entry in :mod:`librelane.cli.run`, by the
 ``run_ol.sh`` scripts generated for reproducibles, and by the installation
-documentation.
+documentation. All three pass configuration files without naming a subcommand,
+which :class:`librelane.cli._app.DefaultToRunGroup` resolves to ``run``.
 """
 
 from .cli.main import cli

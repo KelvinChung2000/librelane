@@ -31,4 +31,3 @@ omit =
     */steps/pyosys.py
     */steps/yosys.py
     */steps/verilator.py
-    */steps/openroad_alerts.py

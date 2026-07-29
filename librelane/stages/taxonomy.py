@@ -65,7 +65,9 @@ Stage(
     full_name="Pre-PnR Static Timing Analysis",
     default_provider="openroad",
     requires=(DesignFormat.nl,),
-    provides=(DesignFormat.nl, DesignFormat.sdc),
+    # OpenROAD.STAPrePNR emits sdf and sdc; it does not re-emit the netlist,
+    # which reaches floorplan from synthesis instead.
+    provides=(DesignFormat.sdc,),
 ).register()
 
 Stage(
@@ -81,7 +83,9 @@ Stage(
     full_name="Macro Placement",
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
-    provides=PNR_IN_PLACE_PROVIDES,
+    # Odb.ManualMacroPlacement rewrites the layout only; nl and sdc pass
+    # through untouched from floorplan.
+    provides=(DesignFormat.def_,),
 ).register()
 
 Stage(
@@ -162,7 +166,9 @@ Stage(
     full_name="Global Routing",
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
-    provides=PNR_IN_PLACE_PROVIDES,
+    # OpenROAD.GlobalRouting overrides OpenROADStep.outputs down to odb and
+    # def; it does not re-emit nl or sdc.
+    provides=(DesignFormat.def_,),
 ).register()
 
 Stage(
@@ -274,7 +280,8 @@ Stage(
     id="drc",
     full_name="Design Rule Checking",
     default_provider=("magic", "klayout"),
-    requires=(DesignFormat.gds,),
+    # Magic.DRC reads the DEF alongside the stream; KLayout.DRC needs only gds.
+    requires=(DesignFormat.def_, DesignFormat.gds),
     provides=_NO_VIEWS,
     multi_provider=True,
 ).register()
@@ -283,7 +290,9 @@ Stage(
     id="lvs",
     full_name="Layout Versus Schematic",
     default_provider="netgen",
-    requires=(DesignFormat.gds, DesignFormat.nl),
+    # The schematic side of the comparison is the powered netlist, not the
+    # plain one; Magic.SpiceExtraction additionally reads the DEF.
+    requires=(DesignFormat.def_, DesignFormat.gds, DesignFormat.pnl),
     provides=_NO_VIEWS,
     metrics=("design__lvs_error__count",),
     gating_config_var="RUN_LVS",

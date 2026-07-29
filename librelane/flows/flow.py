@@ -77,27 +77,10 @@ from ..common import (
 import builtins
 
 
-class FlowError(RuntimeError):
-    """
-    A ``RuntimeError`` that occurs when a Flow, or one of its underlying Steps,
-    fails to finish execution properly.
-    """
-
-    pass
-
-
-class FlowException(FlowError):
-    """
-    A variant of :class:`FlowError` for unexpected failures or failures due
-    to misconfiguration, such as:
-
-    * A :class:`StepException` raised by an underlying Step
-    * Invalid inputs
-    * Mis-use of class interfaces of the :class:`Flow`
-    * Other unexpected failures
-    """
-
-    pass
+# Defined in ``common.errors`` so that ``stages`` can derive from them without
+# importing the ``flows`` package, which depends on ``stages``. Re-exported here
+# because this is their documented import site.
+from ..common.errors import FlowError, FlowException  # noqa: E402, F401
 
 
 T = TypeVar("T", bound=Callable)

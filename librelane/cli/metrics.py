@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""The ``librelane metrics`` subcommand group."""
+
 import os
 import sys
 import json
@@ -28,6 +30,7 @@ import typer
 
 from ..common.metrics.util import MetricDiff, TableVerbosity
 from ..common.misc import Filter, get_httpx_session, mkdirp
+from ._app import make_group
 
 default_filter_set = [
     "design__*__area",
@@ -57,12 +60,7 @@ default_filter_set = [
 # ]
 
 
-cli = typer.Typer(
-    add_completion=False,
-    no_args_is_help=True,
-    pretty_exceptions_enable=False,
-    rich_markup_mode="rich",
-)
+cli = make_group(help="Compare metrics.json files produced by LibreLane runs.")
 
 
 def parse_table_verbosity(value: str) -> TableVerbosity:

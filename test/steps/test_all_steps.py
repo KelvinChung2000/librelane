@@ -92,7 +92,7 @@ def test_step_folder(
     from librelane.config import Config
     from librelane.common import Toolbox
     from importlib.resources import files
-    from librelane.steps.openroad_alerts import SupportsOpenROADAlerts
+    from librelane.steps import SupportsOpenROADAlerts
     from decimal import Decimal
     import json
 

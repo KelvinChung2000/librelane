@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""The ``librelane config`` subcommand group."""
+
 from decimal import Decimal
 import json
 import os
@@ -21,8 +23,10 @@ from typing import Annotated
 import typer
 
 from ..config import Config
-from .flow_opts import (
-    DEFAULT_JOBS,
+from ..flows.flow import universal_flow_config_variables
+from ..steps.pyosys import verilog_rtl_cfg_vars
+from ._app import make_group
+from .options import (
     CondensedOption,
     JobsOption,
     LogLevelOption,
@@ -32,28 +36,15 @@ from .flow_opts import (
     SclOption,
     ShowProgressBarOption,
     UseCielOption,
-    apply_runtime_options,
-    resolve_pdk_options,
 )
-from ..flows.flow import universal_flow_config_variables
-from ..steps.pyosys import verilog_rtl_cfg_vars
+from .runtime import DEFAULT_JOBS, apply_runtime_options, resolve_pdk_options
 
 
-cli = typer.Typer(
-    add_completion=False,
-    no_args_is_help=True,
-    pretty_exceptions_enable=False,
-    rich_markup_mode="rich",
-)
+cli = make_group(help="Create and inspect LibreLane design configurations.")
 
 
-@cli.callback()
-def config_cli() -> None:
-    """Create and inspect LibreLane design configurations."""
-
-
-@cli.command("create-config")
-def create_config(
+@cli.command()
+def create(
     design_name: Annotated[
         str,
         typer.Option(
@@ -155,7 +146,7 @@ def create_config(
 
     if not all(source.suffix in {".sv", ".v"} for source in sources):
         typer.echo(
-            "Only Verilog/SystemVerilog files are supported by create-config.",
+            "Only Verilog/SystemVerilog files are supported by 'config create'.",
             err=True,
         )
         raise typer.Exit(-1)

@@ -14,8 +14,6 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-from loguru import logger
-
 from importlib.resources import files
 import os
 import re
@@ -27,10 +25,8 @@ from abc import abstractmethod
 from ...common import Path, aggregate_metrics
 from ...state import DesignFormat, State
 
-from ..openroad import OpenROADStep
-from ..openroad_alerts import OpenROADAlert, OpenROADOutputProcessor
+from ..openroad import OpenROADAlertMixin, OpenROADStep
 from ..step import (
-    DefaultOutputProcessor,
     MetricsUpdate,
     Step,
     StepError,
@@ -41,29 +37,20 @@ from ..step import (
 inf_rx = re.compile(r"\b(-?)inf\b")
 
 
-class OdbpyStep(Step):
+class OdbpyStep(OpenROADAlertMixin, Step):
     inputs = [DesignFormat.ODB]
     outputs = [DesignFormat.ODB, DesignFormat.DEF]
 
-    output_processors = [OpenROADOutputProcessor, DefaultOutputProcessor]
-
-    alerts: list[OpenROADAlert] | None = None
+    ignored_alert_codes = frozenset(
+        {
+            "ORD-0039",  # .openroad ignored with -python
+            "ODB-0220",  # LEF thing obsolete
+        }
+    )
 
     @classmethod
     def get_openroad_path(Self) -> str:
         return OpenROADStep.get_openroad_path()
-
-    def on_alert(self, alert: OpenROADAlert) -> OpenROADAlert:
-        if alert.code in [
-            "ORD-0039",  # .openroad ignored with -python
-            "ODB-0220",  # LEF thing obsolete
-        ]:
-            return alert
-        if alert.cls == "error":
-            logger.bind(step=self.id, key=alert.code).error(str(alert))
-        elif alert.cls == "warning":
-            logger.bind(step=self.id, key=alert.code).warning(str(alert))
-        return alert
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         self.alerts = None

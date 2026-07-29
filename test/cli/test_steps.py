@@ -12,10 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from pathlib import Path
-from typing import cast
 
 import pytest
-import typer
 
 from librelane.cli import steps as steps_cli
 from librelane.cli.metrics import parse_table_verbosity
@@ -50,14 +48,13 @@ def test_create_reproducible_uses_explicit_inputs(
         def create_reproducible(self, output, include_pdk, *, flatten):
             calls["create"] = (output, include_pdk, flatten)
 
-    def fake_load(ctx, id, config, state_in, pdk_root=None):
+    def fake_load(id, config, state_in, pdk_root=None):
         calls["load"] = (config, state_in)
         return FakeStep()
 
     monkeypatch.setattr(steps_cli, "load_step_from_inputs", fake_load)
 
     steps_cli.create_reproducible(
-        ctx=cast(typer.Context, None),
         step_dir_arg=None,
         output=output,
         step_dir=None,

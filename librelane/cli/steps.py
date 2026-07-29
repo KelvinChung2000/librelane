@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""The ``librelane steps`` subcommand group."""
+
 from loguru import logger
 
 import os
@@ -29,16 +31,12 @@ import typer
 from ..steps.step import Step, StepError, StepException
 from ..__version__ import __version__
 from ..common import mkdirp, recreate_tree, Toolbox
-from .flow_opts import (
-    CondensedOption,
-    LogLevelOption,
-    ShowProgressBarOption,
-    apply_runtime_options,
-)
+from ._app import make_group
+from .options import CondensedOption, LogLevelOption, ShowProgressBarOption
+from .runtime import apply_runtime_options
 
 
 def load_step_from_inputs(
-    ctx: typer.Context,
     id: str | None,
     config: str | os.PathLike,
     state_in: str | os.PathLike,
@@ -53,7 +51,7 @@ def load_step_from_inputs(
             logger.info(
                 f"If the step '{id}' is part of a plugin, make sure the plugin's parent directory is in the PYTHONPATH environment variable."
             )
-            ctx.exit(-1)
+            raise typer.Exit(-1)
 
     return Target.load(
         config=config,
@@ -62,18 +60,13 @@ def load_step_from_inputs(
     )
 
 
-cli = typer.Typer(
-    add_completion=False,
-    no_args_is_help=True,
-    pretty_exceptions_enable=False,
-    rich_markup_mode="rich",
-    help=("Run standalone steps and create filesystem-independent step reproducibles."),
+cli = make_group(
+    help="Run standalone steps and create filesystem-independent step reproducibles."
 )
 
 
 @cli.command()
 def run(
-    ctx: typer.Context,
     config: Annotated[
         Path,
         typer.Option(
@@ -148,7 +141,7 @@ def run(
         jobs=None,
     )
     os.environ.pop("PDK_ROOT", None)
-    step = load_step_from_inputs(ctx, id, config, state_in, pdk_root)
+    step = load_step_from_inputs(id, config, state_in, pdk_root)
 
     if step.config.meta.librelane_version != __version__:
         logger.warning(
@@ -165,16 +158,15 @@ def run(
     except StepException as e:
         logger.error("An unexpected error occurred while executing your step:")
         logger.error(e)
-        ctx.exit(-1)
+        raise typer.Exit(-1) from e
     except StepError as e:
         logger.error("An error occurred while executing your step:")
         logger.error(e)
-        ctx.exit(-1)
+        raise typer.Exit(-1) from e
 
 
 @cli.command()
 def eject(
-    ctx: typer.Context,
     config: Annotated[
         Path,
         typer.Option(
@@ -230,7 +222,7 @@ def eject(
       would like to skip reporting an issue with LibreLane first
     """
 
-    step = load_step_from_inputs(ctx, id, config, state_in)
+    step = load_step_from_inputs(id, config, state_in)
 
     if step.config.meta.librelane_version != __version__:
         logger.warning(
@@ -281,7 +273,7 @@ def eject(
         logger.error(
             "Could not eject: The step did not successfully invoke a subprocess using run_subprocess."
         )
-        exit(-1)
+        raise typer.Exit(-1)
 
     canon_scripts_dir = files("librelane").joinpath("scripts")
     canon_scripts_dir_string = str(canon_scripts_dir)
@@ -346,7 +338,6 @@ def eject(
 
 @cli.command("create-reproducible")
 def create_reproducible(
-    ctx: typer.Context,
     step_dir_arg: Annotated[
         Path | None,
         typer.Argument(
@@ -436,7 +427,7 @@ def create_reproducible(
                 "Both --config and --state-in must be provided when --step-dir "
                 "is omitted."
             )
-            ctx.exit(-1)
+            raise typer.Exit(-1)
     else:
         selected_step_dir = selected_step_dir or Path.cwd()
         if config is None:
@@ -446,13 +437,12 @@ def create_reproducible(
 
     assert config is not None
     assert state_in is not None
-    step = load_step_from_inputs(ctx, id, config, state_in)
+    step = load_step_from_inputs(id, config, state_in)
     step.create_reproducible(output, include_pdk, flatten=flatten)
 
 
 @cli.command("create-test", hidden=True)
 def create_test(
-    ctx: typer.Context,
     step_dir_arg: Annotated[
         Path | None,
         typer.Argument(file_okay=False, dir_okay=True),
@@ -477,7 +467,7 @@ def create_test(
     state_in = selected_step_dir / "state_in.json"
     selected_output = output or selected_step_dir / "test"
 
-    step = load_step_from_inputs(ctx, None, config, state_in)
+    step = load_step_from_inputs(None, config, state_in)
     step.create_reproducible(selected_output, include_pdk=False, flatten=True)
     os.remove(selected_output / "run_ol.sh")
     if (selected_output / "base.sdc").exists():

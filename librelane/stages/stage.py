@@ -17,8 +17,8 @@ import builtins
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from ..common.errors import FlowError
 from ..config import Variable
-from ..flows.flow import FlowError
 from ..state import DesignFormat
 
 

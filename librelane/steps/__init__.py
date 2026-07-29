@@ -39,14 +39,14 @@ from . import checker as Checker
 from . import yosys as Yosys
 from .yosys import YosysStep
 
-from .openroad_alerts import (
+from . import openroad as OpenROAD
+from .openroad import (
     OpenROADAlert,
+    OpenROADAlertMixin,
     OpenROADOutputProcessor,
+    OpenROADStep,
     SupportsOpenROADAlerts,
 )
-
-from . import openroad as OpenROAD
-from .openroad import OpenROADStep
 
 from . import odb as Odb
 from .odb import OdbpyStep, ECOBuffer, ECODiode

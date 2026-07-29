@@ -542,7 +542,7 @@ jobs:
 
       - name: Fetch Metrics
         run: |
-          nix develop --command librelane.state latest\
+          nix develop --command librelane state latest\
               ${{ matrix.design.run_dir }}\
               --extract-metrics-to ${{ matrix.design.pdk }}-${{ matrix.design.scl }}-${{ matrix.design.test_name }}.metrics.json
 

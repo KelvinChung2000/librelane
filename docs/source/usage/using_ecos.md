@@ -23,7 +23,7 @@ $ librelane --run-tag my_run_eco --with-initial-state ./runs/my_run/*-openroad-r
 
 ```{tip}
 To know the order of the steps in the default flow, invoke
-`librelane.help Classic`. Steps are case-insensitive.
+`librelane help Classic`. Steps are case-insensitive.
 ```
 
 Though for issues that occur regularly on a particular pin or instance,

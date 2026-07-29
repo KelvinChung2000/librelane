@@ -213,6 +213,12 @@ class StageRegistry(object):
         for stage in stages:
             allowed_inputs.update(stage.requires)
         for view in union.unmet_inputs:
+            # An optional input is satisfiable by absence, so it is not a
+            # boundary requirement. DesignFormat.mkOptional() returns a copy
+            # with a flag set, which compares unequal to the base view, so
+            # this check must come before the membership test.
+            if view.optional:
+                continue
             if view not in allowed_inputs:
                 raise StageError(
                     f"Provider '{registration.provider}' for "

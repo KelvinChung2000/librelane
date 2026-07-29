@@ -19,15 +19,15 @@ import typer
 from typer.testing import CliRunner
 
 from librelane.cli.config import cli as config_cli
-from librelane.cli.flow_opts import (
+from librelane.cli.help import cli as help_cli
+from librelane.cli.main import cli
+from librelane.cli.metrics import cli as metrics_cli
+from librelane.cli.runtime import (
     apply_runtime_options,
     load_initial_state,
     normalize_sequential_controls,
     resolve_pdk_options,
 )
-from librelane.cli.help import cli as help_cli
-from librelane.cli.main import cli
-from librelane.cli.metrics import cli as metrics_cli
 from librelane.cli.state import cli as state_cli
 from librelane.cli.steps import cli as steps_cli
 from librelane.common import get_tpe, set_tpe
@@ -39,7 +39,7 @@ runner = CliRunner()
 
 
 def test_cli_help():
-    result = runner.invoke(cli, ["--help"])
+    result = runner.invoke(cli, ["run", "--help"])
 
     assert result.exit_code == 0
     assert "Flow configuration options" in result.stdout
@@ -51,7 +51,7 @@ def test_cli_help():
     ("app", "expected"),
     [
         (steps_cli, "create-reproducible"),
-        (config_cli, "create-config"),
+        (config_cli, "create"),
         (state_cli, "latest"),
         (help_cli, "step_or_flow"),
         (metrics_cli, "compare-multiple"),
@@ -161,16 +161,15 @@ def test_main_cli_normalizes_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    import librelane.cli.main as main_module
+    import librelane.cli.run as run_module
 
     config = tmp_path / "config.json"
     config.write_text("{}", encoding="utf8")
     captured = {}
 
-    def fake_run(ctx, **kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(main_module, "run", fake_run)
+    monkeypatch.setattr(
+        run_module, "start_flow", lambda request: captured.update(request=request)
+    )
     result = runner.invoke(
         cli,
         [
@@ -184,5 +183,5 @@ def test_main_cli_normalizes_only(
     )
 
     assert result.exit_code == 0, result.output
-    assert captured["frm"] == "this-step"
-    assert captured["to"] == "this-step"
+    assert captured["request"].frm == "this-step"
+    assert captured["request"].to == "this-step"

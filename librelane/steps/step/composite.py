@@ -34,23 +34,45 @@ VT = TypeVar("VT")
 
 class CompositeStep(Step):
     """
-    A step composed of other steps, run sequentially. The steps are intended
-    to run as a unit within a flow and cannot be run separately.
+    A step composed of other steps, run sequentially as one unit. Constituent
+    steps cannot be run, gated, or resumed separately, and may be private to
+    the composite.
 
-    Composite steps are currently considered an internal object that is not
-    ready to be part of the API. The API may change at any time for any reason.
+    A composite is a transaction: either the whole sequence ran or none of it
+    did. Use one when several steps only make sense together, for example an
+    insertion pass followed by the placement legalization that makes its
+    output valid, or a vendor tool's write-scripts, invoke and read-back
+    sequence. The alternative, exposing the parts individually, invites a flow
+    to run half of them.
+
+    This is the supported way for a
+    :class:`librelane.stages.Registration` to bind one stage to several
+    steps while keeping the stage a single gateable, resumable unit. See
+    ``docs/source/usage/writing_tool_backends.md``.
 
     ``inputs`` and ``config_vars`` are automatically generated based on the
     constituent steps.
 
     ``outputs`` may be set explicitly. If not set, it is automatically generated
-    based on the constituent steps.
+    based on the constituent steps. Note that :meth:`run` propagates a view only
+    if it is listed in ``outputs``, so an incomplete explicit ``outputs`` drops
+    views rather than erroring.
     """
 
     Steps: list[type[Step]] = []
 
     def __init_subclass__(Self):
         super().__init_subclass__()
+        if not Self.Steps:
+            # Without this, the inherited empty default makes a composite that
+            # reports success having done nothing: run() iterates no children
+            # and returns empty updates. A typo in the attribute name is enough
+            # to cause it.
+            raise TypeError(
+                f"CompositeStep subclass '{Self.__qualname__}' declares no "
+                f"'Steps'. A composite with no constituent steps would run "
+                f"nothing and report success."
+            )
         union = compose_step_sequence(Self.Steps)
         Self.inputs = union.unmet_inputs
         if Self.outputs == NotImplemented:  # Allow for setting explicit outputs

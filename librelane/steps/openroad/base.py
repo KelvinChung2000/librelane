@@ -19,13 +19,18 @@ from loguru import logger
 
 import os
 import json
+import re
 from abc import abstractmethod
 from base64 import b64encode
 from dataclasses import dataclass
 from decimal import Decimal
 from math import inf
 from typing import (
+    ClassVar,
+    Literal,
     Optional,
+    Protocol,
+    runtime_checkable,
 )
 
 
@@ -40,16 +45,134 @@ from ...common import (
 from ...config import variable
 from ...config.flow import option_variables
 from ...state import DesignFormat, State
-from ..openroad_alerts import OpenROADAlert, OpenROADOutputProcessor
 from ..step import (
     DefaultOutputProcessor,
     MetricsUpdate,
+    OutputProcessor,
     Step,
     StepError,
     StepException,
     ViewsUpdate,
 )
 from ..tclstep import TclStep
+
+openroad_alert_rx = re.compile(r"^\[(WARNING|ERROR)(?:\s+([A-Z]+\-\d+))?\]\s*(.+)")
+
+
+@dataclass
+class OpenROADAlert:
+    """
+    Data structure encapsulating an alert (warning or error) from OpenROAD.
+    """
+
+    cls: Literal["warning", "error"]
+    code: str | None
+    message: str
+
+    def __str__(self) -> str:
+        code_prefix = ""
+        if self.code is not None:
+            code_prefix = f"[{self.code}] "
+        return f"{code_prefix}{self.message}"
+
+
+@runtime_checkable
+class SupportsOpenROADAlerts(Protocol):
+    """
+    A listener for ``OpenROADOutputProcessor``. Fires whenever a line contains
+    an alert.
+    """
+
+    def on_alert(self, alert: OpenROADAlert) -> OpenROADAlert:
+        """
+        :param alert: The alert found in the processed line
+        :returns: The alert once again, modified at the step object's leisure
+        """
+        ...
+
+
+class OpenROADOutputProcessor(OutputProcessor):
+    """
+    A special output processor for steps leveraging OpenROAD-based subprocesses.
+
+    It captures `[ERROR]` and `[WARNING]` lines into a data structure where they
+    can be further processed by the step itself rather than simply printed to
+    the terminal.
+    """
+
+    key = "openroad_alerts"
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.alerts: list[OpenROADAlert] = []
+        if not isinstance(self.step, SupportsOpenROADAlerts):
+            raise ValueError(
+                "OpenROADOutputProcessor is only compatible with steps implementing the SupportsOpenROADAlerts protocol"
+            )
+
+    def process_line(self, line: str):
+        """
+        If a line contains an OpenROAD error/warning, it is processed and handed
+        over to the step's ``on_alert`` method.
+
+        :param line: The line in question
+        :returns: ``True`` if the line has alerts, ``False`` if the line has
+            no alerts
+        """
+        if match := openroad_alert_rx.match(line):
+            cls = match[1].lower()
+            code = None
+            if match[2] is not None:
+                code = match[2]
+            message = match[3]
+            alert = OpenROADAlert(cls, code, message)  # type: ignore
+            assert isinstance(self.step, SupportsOpenROADAlerts)
+            alert = self.step.on_alert(alert)
+            self.alerts.append(alert)
+
+            return True  # munch
+        return False  # pass on to next output processor
+
+    def result(self) -> list[OpenROADAlert]:
+        """
+        :returns: A list of OpenROAD alerts captured by this output processor
+        """
+        return self.alerts
+
+
+class OpenROADAlertMixin:
+    """
+    A mixin for steps invoking OpenROAD-based subprocesses, which routes
+    ``[ERROR]``/``[WARNING]`` lines through :class:`OpenROADOutputProcessor`
+    and echoes them to the logger.
+
+    :cvar ignored_alert_codes: Alert codes that are captured in :attr:`alerts`
+        but not echoed to the logger, i.e., known-harmless noise.
+    :ivar alerts: The alerts emitted by the last subprocess run, or ``None`` if
+        no subprocess has been run yet.
+    """
+
+    id: str  # provided by Step
+
+    ignored_alert_codes: ClassVar[frozenset[str]] = frozenset()
+
+    output_processors = [OpenROADOutputProcessor, DefaultOutputProcessor]
+
+    alerts: list[OpenROADAlert] | None = None
+
+    def on_alert(self, alert: OpenROADAlert) -> OpenROADAlert:
+        """
+        :param alert: The alert found by :class:`OpenROADOutputProcessor`
+        :returns: The alert, unmodified
+        """
+        if alert.code in self.ignored_alert_codes:
+            return alert
+        if alert.cls == "error":
+            logger.bind(step=self.id, key=alert.code).error(str(alert))
+        elif alert.cls == "warning":
+            logger.bind(step=self.id, key=alert.code).warning(str(alert))
+        return alert
+
 
 EXAMPLE_INPUT = """
 li1 X 0.23 0.46
@@ -161,7 +284,7 @@ class CheckSDCFiles(Step):
         return {}, {}
 
 
-class OpenROADStep(TclStep):
+class OpenROADStep(OpenROADAlertMixin, TclStep):
     inputs = [DesignFormat.ODB]
     outputs = [
         DesignFormat.ODB,
@@ -171,9 +294,14 @@ class OpenROADStep(TclStep):
         DesignFormat.POWERED_NETLIST,
     ]
 
-    output_processors = [OpenROADOutputProcessor, DefaultOutputProcessor]
-
-    alerts: list[OpenROADAlert] | None = None
+    ignored_alert_codes = frozenset(
+        {
+            "ORD-0039",  # .openroad ignored with -python
+            "ODB-0220",  # lef parsing/NOWIREEXTENSIONATPIN statement is obsolete in version 5.6 or later.
+            "STA-1256",  # table template \\w+ not found
+            "DRT-0349",  # LEF58_ENCLOSURE with no CUTCLASS is not supported. Skipping for layer \\w+
+        }
+    )
 
     class Config(Step.Config):
         PNR_CORNERS: Optional[list[str]] = variable(
@@ -272,23 +400,6 @@ class OpenROADStep(TclStep):
     @abstractmethod
     def get_script_path(self) -> str:
         pass
-
-    def on_alert(self, alert: OpenROADAlert) -> OpenROADAlert:
-        if (
-            alert.code
-            in [
-                "ORD-0039",  # .openroad ignored with -python
-                "ODB-0220",  # lef parsing/NOWIREEXTENSIONATPIN statement is obsolete in version 5.6 or later.
-                "STA-1256",  # table template \w+ not found
-                "DRT-0349",  # LEF58_ENCLOSURE with no CUTCLASS is not supported. Skipping for layer \w+
-            ]
-        ):
-            return alert
-        if alert.cls == "error":
-            logger.bind(step=self.id, key=alert.code).error(str(alert))
-        elif alert.cls == "warning":
-            logger.bind(step=self.id, key=alert.code).warning(str(alert))
-        return alert
 
     def prepare_env(self, env: dict, state: State) -> dict:
         env = super().prepare_env(env, state)

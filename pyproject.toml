@@ -74,11 +74,13 @@ notebook = [
 
 [project.scripts]
 librelane = "librelane.cli.main:cli"
-"librelane.steps" = "librelane.cli.steps:cli"
-"librelane.config" = "librelane.cli.config:cli"
-"librelane.state" = "librelane.cli.state:cli"
-"librelane.help" = "librelane.cli.help:cli"
-"librelane.env_info" = "librelane.cli.env_info:cli"
+# Deprecated aliases for `librelane <subcommand>`, kept so existing scripts and
+# muscle memory keep working. See librelane/cli/_deprecated.py.
+"librelane.steps" = "librelane.cli._deprecated:steps"
+"librelane.config" = "librelane.cli._deprecated:config"
+"librelane.state" = "librelane.cli._deprecated:state"
+"librelane.help" = "librelane.cli._deprecated:help"
+"librelane.env_info" = "librelane.cli._deprecated:env_info"
 
 [tool.ruff]
 target-version = "py310"

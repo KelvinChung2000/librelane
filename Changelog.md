@@ -32,10 +32,29 @@ Style Notes
 * Migrated the LibreLane, step, configuration, state, help, and metrics command
   interfaces from Cloup decorators to typed Typer applications.
 * Consolidated every command-line frontend into a single `librelane.cli`
-  package, one module per console script. The console scripts themselves are
-  unchanged.
-* Added `python3 -m librelane.cli` as the entry point for the consolidated
-  package.
+  package, one module per console script.
+* Unified the separate console scripts into subcommands of `librelane`:
+  `librelane run`, `librelane steps`, `librelane config`, `librelane state`,
+  `librelane metrics`, `librelane help` and `librelane env-info`.
+  * `run` is the default subcommand, so `librelane config.json` still means
+    `librelane run config.json`. Reproducibles, the containerized re-entry and
+    every documented invocation are unaffected.
+  * `librelane.steps`, `librelane.config`, `librelane.state`, `librelane.help`
+    and `librelane.env_info` continue to work as deprecated aliases that name
+    their replacement on stderr. The equivalent `python3 -m` invocations stay
+    silent, as `run_ol.sh` inside every generated reproducible calls
+    `python3 -m librelane.steps`.
+  * `librelane.config create-config` is now `librelane config create`. The
+    deprecated alias translates the old command name.
+* Added `python3 -m librelane.cli` as the entry point for the CLI package.
+* Split `librelane.cli.flow_opts` into `librelane.cli.options`, which declares
+  the shared options and imports nothing from LibreLane, and
+  `librelane.cli.runtime`, which holds the behaviour behind them. A `--help` no
+  longer pays for loading flows, steps or the PDK machinery.
+* Removed the undocumented `.marshalled` configuration-file path. It read a
+  parameter dictionary via `marshal.load`, which is unsafe on untrusted input,
+  and the code that wrote those files was deleted in 2023 when containerization
+  moved to re-executing `python3 -m librelane` with plain arguments.
 * Fixed metrics table verbosity values not being compared as their declared
   enum type.
 * Fixed standalone reproducible creation ignoring an explicitly supplied
@@ -51,6 +70,13 @@ Style Notes
   generated typed models.
 * Annotated every step's `config` attribute with its own nested `Config` model,
   so attribute reads are checked rather than typed as the empty base model.
+* Folded the `librelane.steps.openroad_alerts` module into
+  `librelane.steps.openroad.base`, next to the steps that use it.
+  `OpenROADAlert`, `OpenROADOutputProcessor` and `SupportsOpenROADAlerts` are
+  still exported from `librelane.steps`, so the documented API is unchanged.
+* Added `OpenROADAlertMixin`, which carries the alert output processor and the
+  `on_alert` logging that `OpenROADStep` and `OdbpyStep` previously duplicated.
+  Subclasses suppress known-harmless alerts by setting `ignored_alert_codes`.
 
 * `Odb.RemovePDNObstructions`
 
@@ -180,8 +206,14 @@ Style Notes
 ## API Breaks
 
 * Removed the Cloup-specific `librelane.flows.cloup_flow_opts` decorator and
-  `librelane.common.cli` helpers. Reusable Typer option annotations and CLI
-  resolution helpers now live in `librelane.cli.flow_opts`.
+  `librelane.common.cli` helpers. Reusable Typer option annotations now live in
+  `librelane.cli.options` and the CLI resolution helpers in
+  `librelane.cli.runtime`.
+* Removed `librelane.cli.flow_opts`. Its option annotations moved to
+  `librelane.cli.options` and its helpers to `librelane.cli.runtime`.
+* Moved the `librelane` command's implementation from `librelane.cli.main` to
+  `librelane.cli.run`. `librelane.cli.main` now only assembles the app, and
+  still exports `cli`.
 * Removed `librelane.flows.cli`, along with the `ResolvedPdkOptions` and
   `resolve_pdk_options` re-exports from `librelane.flows`. Importing
   `librelane.flows` no longer pulls in Typer.

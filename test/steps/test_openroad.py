@@ -91,7 +91,7 @@ def test_threads_precede_the_script(mock_config):
     ],
 )
 def test_suppressed_alerts_are_not_logged(mock_config, mocker, code, logged):
-    from librelane.steps.openroad_alerts import OpenROADAlert
+    from librelane.steps import OpenROADAlert
 
     instance = _threaded_step_instance(mock_config)
     warning = mocker.patch("librelane.steps.openroad.base.logger")

@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""The ``librelane state`` subcommand group."""
+
 import json
 from pathlib import Path
 from typing import Annotated
@@ -18,19 +20,10 @@ from typing import Annotated
 import typer
 
 from ..common import get_latest_file
+from ._app import make_group
 
 
-cli = typer.Typer(
-    add_completion=False,
-    no_args_is_help=True,
-    pretty_exceptions_enable=False,
-    rich_markup_mode="rich",
-)
-
-
-@cli.callback()
-def state_cli() -> None:
-    """Inspect state files produced by LibreLane runs."""
+cli = make_group(help="Inspect state files produced by LibreLane runs.")
 
 
 @cli.command()

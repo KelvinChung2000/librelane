@@ -21,4 +21,5 @@ as a number of built-in flows.
 
 from .flow import FlowError, FlowException, FlowProgressBar, Flow
 from .sequential import SequentialFlow
+from .staged import Boundary, StagedFlow
 from . import builtins

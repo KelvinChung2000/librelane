@@ -12,23 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from .flow import Flow
-from .sequential import SequentialFlow
+from .staged import StagedFlow
 from ..config import variable
+from ..stages import Stage
+
+# Netgen and Verilator no longer appear here: their steps are named by the
+# provider registrations in librelane/stages/providers.py, which is what makes
+# them substitutable from configuration. Yosys remains only for VHDLClassic's
+# substitution map, which Task 12 replaces with a TOOLS selection.
 from ..steps import (
     Yosys,
     OpenROAD,
     Magic,
     KLayout,
     Odb,
-    Netgen,
     Checker,
-    Verilator,
     Misc,
 )
 
 
 @Flow.factory.register()
-class Classic(SequentialFlow):
+class Classic(StagedFlow):
     """
     A flow of type :class:`librelane.flows.SequentialFlow` that is the most
     similar to the original OpenLane flow, running the Verilog RTL through
@@ -37,82 +41,54 @@ class Classic(SequentialFlow):
     This is the default when using LibreLane via the command-line.
     """
 
-    Steps = [
-        Verilator.Lint,
-        Checker.LintTimingConstructs,
-        Checker.LintErrors,
-        Checker.LintWarnings,
-        Yosys.JsonHeader,
-        Yosys.Synthesis,
-        Checker.YosysUnmappedCells,
-        Checker.YosysSynthChecks,
-        Checker.NetlistAssignStatements,
-        OpenROAD.CheckSDCFiles,
-        OpenROAD.CheckMacroInstances,
-        OpenROAD.STAPrePNR,
-        OpenROAD.Floorplan,
-        OpenROAD.DumpRCValues,
-        Odb.CheckMacroAntennaProperties,
-        Odb.SetPowerConnections,
-        Odb.ManualMacroPlacement,
+    Stages = [
+        Stage.lint,
+        Stage.synthesis,
+        Stage.pre_pnr_sta,
+        Stage.floorplan,
+        Stage.macro_placement,
         OpenROAD.CutRows,
-        OpenROAD.TapEndcapInsertion,
-        Odb.AddPDNObstructions,
-        OpenROAD.GeneratePDN,
-        Odb.RemovePDNObstructions,
+        Stage.tapcell_insertion,
+        Stage.power_grid,
         Odb.AddRoutingObstructions,
-        OpenROAD.GlobalPlacementSkipIO,
-        OpenROAD.IOPlacement,
-        Odb.CustomIOPlacement,
-        Odb.ApplyDEFTemplate,
-        OpenROAD.GlobalPlacement,
+        Stage.io_placement,
+        Stage.global_placement,
         Odb.WriteVerilogHeader,
         Checker.PowerGridViolations,
         OpenROAD.STAMidPNR,
-        OpenROAD.RepairDesignPostGPL,
+        Stage.post_gpl_repair,
         Odb.ManualGlobalPlacement,
-        OpenROAD.DetailedPlacement,
-        OpenROAD.CTS,
+        Stage.detailed_placement,
+        Stage.cts,
         OpenROAD.STAMidPNR,
-        OpenROAD.ResizerTimingPostCTS,
+        Stage.post_cts_opt,
         OpenROAD.STAMidPNR,
-        OpenROAD.GlobalRouting,
-        OpenROAD.CheckAntennas,
-        OpenROAD.RepairDesignPostGRT,
-        Odb.DiodesOnPorts,
-        Odb.HeuristicDiodeInsertion,
-        OpenROAD.RepairAntennas,
-        OpenROAD.ResizerTimingPostGRT,
+        Stage.global_routing,
+        Stage.post_grt_repair,
+        Stage.antenna_repair,
+        Stage.post_grt_opt,
         OpenROAD.STAMidPNR,
-        OpenROAD.DetailedRouting,
-        Odb.RemoveRoutingObstructions,
-        OpenROAD.CheckAntennas,
-        Checker.TrDRC,
+        Stage.detailed_routing,
         Odb.ReportDisconnectedPins,
         Checker.DisconnectedPins,
         Odb.ReportWireLength,
         Checker.WireLength,
-        OpenROAD.FillInsertion,
+        Stage.post_route_opt,
+        Stage.fill_insertion,
         Odb.CellFrequencyTables,
-        OpenROAD.RCX,
-        OpenROAD.STAPostPNR,
-        OpenROAD.IRDropReport,
-        Magic.StreamOut,
-        KLayout.StreamOut,
-        KLayout.Render,
+        Stage.extraction,
+        Stage.signoff_sta,
+        Stage.ir_drop,
+        Stage.streamout,
         Magic.WriteLEF,
         Odb.CheckDesignAntennaProperties,
         KLayout.XOR,
         Checker.XOR,
-        Magic.DRC,
-        KLayout.DRC,
+        Stage.drc,
         Checker.MagicDRC,
         Checker.KLayoutDRC,
-        Magic.SpiceExtraction,
-        Checker.IllegalOverlap,
-        Netgen.LVS,
-        Checker.LVS,
-        Yosys.EQY,
+        Stage.lvs,
+        Stage.formal_equivalence,
         Checker.SetupViolations,
         Checker.HoldViolations,
         Checker.MaxSlewViolations,
@@ -120,7 +96,7 @@ class Classic(SequentialFlow):
         Misc.ReportManufacturability,
     ]
 
-    class Config(SequentialFlow.Config):
+    class Config(StagedFlow.Config):
         RUN_TAP_ENDCAP_INSERTION: bool = variable(
             True,
             description="Enables the OpenROAD.TapEndcapInsertion step.",

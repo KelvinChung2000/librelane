@@ -29,6 +29,7 @@ from .stage import (
 from .registry import Registration, StageRegistry
 from . import taxonomy as taxonomy  # noqa: F401  (registration side effects)
 from .taxonomy import STAGE_ORDER
+from . import providers as providers  # noqa: F401  (registration side effects)
 
 __all__ = [
     "Stage",
