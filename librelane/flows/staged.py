@@ -206,8 +206,16 @@ class StagedFlow(SequentialFlow):
         :returns: The remedial half of a preflight error: which registered
             provider declares this view, so the reader is not left working out
             for themselves which tool they dropped.
+
+        Searches both ``provides`` and ``native_views``. A view such as
+        OpenROAD's ``odb`` never appears in any registration's ``provides``:
+        it is carried natively across a provider's own stage boundaries
+        rather than produced as a neutral output. Omitting ``native_views``
+        would misreport an orphaned consumer of such a view as one no
+        registration declares at all, which is false and leaves the reader
+        with no lead on which tool they dropped.
         """
-        producers = sorted(
+        provides_producers = sorted(
             {
                 f"provider '{registration.provider}' of stage '{stage_id}'"
                 for registration in StageRegistry.list()
@@ -215,6 +223,17 @@ class StagedFlow(SequentialFlow):
                 if view in registration.provides
             }
         )
+        native_producers = sorted(
+            {
+                f"provider '{registration.provider}' of stage '{stage_id}' "
+                f"(natively, as an internal carry-over between its own steps "
+                f"rather than a declared neutral output)"
+                for registration in StageRegistry.list()
+                for stage_id in registration.stages
+                if view in registration.native_views
+            }
+        )
+        producers = provides_producers + native_producers
         if producers:
             return (
                 f"View '{view.id}' is declared by {' and '.join(producers)}, "

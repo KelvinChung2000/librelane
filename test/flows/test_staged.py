@@ -665,3 +665,52 @@ def test_preflight_gate_expansion_matches_the_real_run_for_a_colliding_key(
     flow = OptionalCollision(_MINIMAL_DESIGN, **_MOCK_PDK)
     flow.start()
     assert "Test.WantsOptionalHeader" in [step.id for step in flow.step_objects]
+
+
+@pytest.fixture(scope="module")
+def OdbConsumerStep():
+    """
+    An ephemeral step hard-requiring 'odb', which no registration's
+    ``provides`` ever names: it is exclusively a ``native_views`` entry of
+    several OpenROAD provider registrations. Module-scoped because
+    ``Step.factory`` is a process-wide singleton.
+    """
+    from librelane.state import DesignFormat
+    from librelane.steps import Step
+
+    @Step.factory.register()
+    class WantsOdb(Step):
+        id = "Test.WantsOdb"
+        name = "Wants Odb"
+        inputs = [DesignFormat.odb]
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    return WantsOdb
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_orphaned_native_view_consumer_names_a_native_provider(OdbConsumerStep):
+    """
+    Pins the fix for a Task 12 review finding: '__how_to_produce' only
+    searched 'provides', so an orphaned consumer of a tool-native view such as
+    'odb' fell into the "no provider registration declares view" branch, which
+    is false - OpenROAD carries 'odb' natively across several of its stages.
+    The remedial half of the message must instead name an OpenROAD provider.
+    """
+    from librelane.flows import StagedFlow
+    from librelane.stages import StageResolutionError
+
+    class Orphan(StagedFlow):
+        Steps = [OdbConsumerStep]
+
+    with pytest.raises(StageResolutionError) as excinfo:
+        Orphan(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+    message = str(excinfo.value)
+    assert "odb" in message
+    assert "No provider registration declares view" not in message
+    assert "provider 'openroad'" in message
