@@ -235,14 +235,33 @@ plugin. Calling `StageRegistry.register` at import time, the same way
 new discovery mechanism: whatever your module's top level does at import
 already runs before anything asks for its stages.
 
+## Commercial CAD tool scaffolds
+
+`librelane/steps/` includes step scaffolds for sixteen commercial CAD tools
+(Cadence, Synopsys and Siemens implementation and signoff tools). Every step
+in them raises `NotImplementedError` from `run()`: nobody who wrote these
+scaffolds had access to the tool in question, so no vendor command is guessed
+anywhere in them. They exist to hold the shape of a real backend, for someone
+with a license and the tool's own documentation to fill in.
+
+These scaffolds register with `Step.factory` unconditionally, the same as
+any other step, but they do not register as stage providers by default. That
+registration is opt-in, behind importing `librelane.stages.providers_vendor`.
+Nothing under `librelane.stages` imports that module for you; until your own
+code does, `StageRegistry.providers()` and `librelane help` know nothing
+about any of these sixteen tools. Import it once to make them visible, the
+same way a real backend from the previous sections would.
+
 ## Scope
 
-No commercial backend ships with LibreLane, and none has been tested against
-this contract. Everything on this page describes the enforcement machinery as
-it exists today, exercised entirely by the open-source providers in
-`librelane/stages/providers.py`. The first person to write a commercial
-backend against it should expect to find and correct parts of this contract
-that a purely open-source toolchain never exercised. For example, LibreLane
+No commercial backend ships with LibreLane in working order, and none has
+been tested against a real tool invocation. Everything on this page describes
+the enforcement machinery as it exists today, exercised by the open-source
+providers in `librelane/stages/providers.py` and, at the registration-contract
+level only, by the scaffolds in the previous section. The first person to
+write a commercial backend against it should expect to find and correct parts
+of this contract that a purely open-source toolchain never exercised. For
+example, LibreLane
 currently has no step that imports a `DEF` file into a fresh OpenDB database,
 so an `openroad` stage cannot yet follow a non-OpenROAD stage: the `odb`
 native view would be absent, and the view preflight correctly rejects such a

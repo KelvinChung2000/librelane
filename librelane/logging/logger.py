@@ -33,7 +33,12 @@ _ADDED_LEVELS = {
 }
 
 console = rich.console.Console()
-atexit.register(console.show_cursor)
+#: Repairs the cursor a progress bar or live display hid but never restored,
+#: for instance because the flow died mid-render. It writes to stderr rather
+#: than to ``console``: stdout carries data a caller may be parsing, and merely
+#: importing LibreLane must not put a control code in front of it.
+_control_console = rich.console.Console(stderr=True)
+atexit.register(_control_console.show_cursor)
 _log_level = _ADDED_LEVELS["SUBPROCESS"]
 _terminal_sink_id: int | None = None
 

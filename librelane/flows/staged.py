@@ -649,8 +649,8 @@ class StagedFlow(SequentialFlow):
             )
 
         for step in steps:
-            span = getattr(step, "_stage_span", None)
-            provider = getattr(step, "_stage_provider", None)
+            span: tuple[str, ...] | None = getattr(step, "_stage_span", None)
+            provider: str | None = getattr(step, "_stage_provider", None)
             step_key = key(span, provider) if span is not None else None
             if step_key != current_key:
                 flush()
@@ -660,6 +660,11 @@ class StagedFlow(SequentialFlow):
                 current_ids = []
             if span is None:
                 continue
+            # Both tags are written together by
+            # StageRegistration.tagged_steps, so a step carrying a span carries
+            # a provider. Stated rather than guarded: a None here would mean the
+            # tagging itself is broken, and "+".join would fail further away.
+            assert provider is not None
             if provider not in current_providers:
                 current_providers.append(provider)
             current_ids.append(step.id)

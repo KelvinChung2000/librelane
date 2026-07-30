@@ -29,6 +29,7 @@ from importlib import import_module
 from pathlib import Path
 
 import pytest
+from rich.text import Text
 from typer.testing import CliRunner
 
 from librelane.cli.main import cli
@@ -131,7 +132,9 @@ class TestSubcommands:
         result = runner.invoke(cli, argv)
 
         assert result.exit_code == 0, result.output
-        assert expected in result.stdout
+        # Rich styles an option name from the inside, so the raw output splits
+        # "--with-initial-state" across colour codes whenever colour is on.
+        assert expected in Text.from_ansi(result.stdout).plain
 
     def test_root_help_lists_every_subcommand(self):
         result = runner.invoke(cli, ["--help"])

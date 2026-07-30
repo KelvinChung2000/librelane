@@ -343,12 +343,20 @@ def test_flow_control(MetricIncrementer):
         scl="dummy_scl",
         pdk_root="/pdk",
     )
+    # --from takes the steps before it from their previous results rather than
+    # skipping them, so the tag has to have been run once for there to be a
+    # result to take. Starting from the middle of a tag that was never run is
+    # an error, covered by test_from_on_a_fresh_tag_refuses.
+    flow.start(tag="FLOW_CONTROL")
+
     state = flow.start(
+        tag="FLOW_CONTROL",
         frm="test.othermetricincrementer",
         to="test.lastmetricincrement*",
         skip=["test.*another*"],
     )
     assert list(state.metrics.keys()) == [
+        "counter",
         "other_counter",
         "last_another_counter",
     ], "flow control did not yield the expected results"

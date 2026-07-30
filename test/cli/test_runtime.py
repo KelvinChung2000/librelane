@@ -16,6 +16,7 @@ import os
 
 import pytest
 import typer
+from rich.text import Text
 from typer.testing import CliRunner
 
 from librelane.cli.config import cli as config_cli
@@ -42,9 +43,12 @@ def test_cli_help():
     result = runner.invoke(cli, ["run", "--help"])
 
     assert result.exit_code == 0
-    assert "Flow configuration options" in result.stdout
-    assert "--with-initial-state" in result.stdout
-    assert "Containerization options" in result.stdout
+    # Rich styles an option name from the inside, so the raw output splits
+    # "--with-initial-state" across colour codes whenever colour is on.
+    help_text = Text.from_ansi(result.stdout).plain
+    assert "Flow configuration options" in help_text
+    assert "--with-initial-state" in help_text
+    assert "Containerization options" in help_text
 
 
 @pytest.mark.parametrize(
