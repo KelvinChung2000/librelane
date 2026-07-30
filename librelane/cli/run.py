@@ -39,7 +39,7 @@ from .. import common
 from ..__version__ import __version__
 from ..config import Config, InvalidConfig, PassedDirectoryError
 from ..container import run_in_container
-from ..flows import Flow, FlowError, FlowException, SequentialFlow
+from ..flows import Flow, FlowError, FlowException
 from ..state import DesignFormat, State
 from .options import (
     CondensedOption,
@@ -58,7 +58,6 @@ from .options import (
     JobsOption,
     LastRunOption,
     LogLevelOption,
-    OnlyOption,
     OverwriteOption,
     PadOption,
     PdkOption,
@@ -79,7 +78,6 @@ from .runtime import (
     ResolvedPdkOptions,
     apply_runtime_options,
     load_initial_state,
-    normalize_sequential_controls,
     resolve_pdk_options,
     validate_flow_name,
 )
@@ -120,7 +118,18 @@ def select_flow(request: FlowRequest) -> type[Flow]:
 
     for config_file in request.config_files:
         if meta := Config.get_meta(config_file):
-            if isinstance(meta.flow, str):
+            if meta.flow is not None:
+                # `Meta` is a plain dataclass, so narrowing the annotation does
+                # not reject a list on its own. Falling through would silently
+                # run Classic instead of what the configuration named.
+                if not isinstance(meta.flow, str):
+                    logger.error(
+                        f"'meta.flow' must name a registered flow, but got a "
+                        f"{type(meta.flow).__name__}. Building an anonymous "
+                        f"flow from a list of step IDs is no longer supported; "
+                        f"declare a flow class and name it here instead."
+                    )
+                    raise typer.Exit(1)
                 if found := Flow.factory.get(meta.flow):
                     target_flow = found
                 else:
@@ -129,19 +138,6 @@ def select_flow(request: FlowRequest) -> type[Flow]:
                         "configuration file's 'meta' object."
                     )
                     raise typer.Exit(1)
-            elif isinstance(meta.flow, list):
-                target_flow = SequentialFlow.make(meta.flow)
-            if meta.substituting_steps is not None:
-                if meta.flow is None:
-                    logger.error(
-                        "Configuration has substituting_steps set with no flow."
-                    )
-                    raise typer.Exit(1)
-                assert target_flow is not None, (
-                    "run failed to deduce a target flow; please file an issue"
-                )
-                if issubclass(target_flow, SequentialFlow):
-                    target_flow = target_flow.Substitute(meta.substituting_steps)  # type: ignore
 
     if request.flow_name is not None:
         if found := Flow.factory.get(request.flow_name):
@@ -357,7 +353,6 @@ def run(
     last_run: LastRunOption = False,
     frm: FromOption = None,
     to: ToOption = None,
-    only: OnlyOption = None,
     skip: SkipOption = None,
     overwrite: OverwriteOption = False,
     reproducible: ReproducibleOption = None,
@@ -406,7 +401,6 @@ def run(
         condensed=condensed,
         jobs=jobs,
     )
-    frm, to = normalize_sequential_controls(frm, to, only)
     request = FlowRequest(
         config_files=tuple(str(path) for path in config_files or []),
         flow_name=validate_flow_name(flow_name),

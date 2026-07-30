@@ -28,33 +28,27 @@ from librelane.stages import StageRegistry
 from librelane.state import DesignFormat
 
 StageRegistry.register(
-    stages=["synthesis"],
+    stage="synthesis",
     provider="genus",
     steps=[Genus.Synthesis, Checker.GenusSynthChecks],
     namespaces=("GENUS_",),
-    requires_pdk_vars=(),
     provides=(),
     metrics=(),
     native_views=(),
 )
 ```
 
-* `stages`: the stage ids this registration covers, in flow order. Every
-  registration seen in LibreLane's own providers covers exactly one stage;
-  see [Spanning is declared, not implemented](#spanning-is-declared-not-implemented)
-  for why that is the only supported shape.
+* `stage`: the id of the one stage this registration implements. A
+  registration names exactly one; see
+  [One registration, one stage](#one-registration-one-stage) for why.
 * `provider`: the tool name, for example `genus`, not a vendor name. This is
   what a `TOOLS` entry names to select the registration.
 * `steps`: the ordered concrete `Step` classes that implement the stage. Must
   be non-empty: a provider that runs nothing cannot satisfy a stage's
   contract.
 * `namespaces`: the configuration variable prefixes this registration's steps
-  are allowed to declare beyond the stage's own canonical variables and the
-  common flow variables. See [`namespaces`](#namespaces) below.
-* `requires_pdk_vars`: PDK-supplied configuration variable names that must be
-  non-`None` for this provider to run at all, for example a vendor
-  characterization file the open-source PDKs do not ship. Checked once per
-  flow instantiation, before any tool runs.
+  are allowed to declare beyond the common flow variables. See
+  [`namespaces`](#namespaces) below.
 * `provides`: neutral views this provider guarantees beyond what the stage
   itself already promises. Most registrations leave this empty because the
   stage's own `provides` already covers it; `synthesis`/`yosys` uses it to add
@@ -93,13 +87,10 @@ rejects an unknown provider name, a list supplied for a stage that is not
 `multi_provider`, and an unknown key in `TOOLS`.
 
 **Startup time**, inside `StagedFlow.__init__` once `Config.load` has produced
-a resolved configuration, runs the two preflights. These need a configuration
-and so cannot live in `resolve()`; if you are chasing one of their messages,
-they are the place to look.
+a resolved configuration, runs the preflight. It needs a configuration and so
+cannot live in `resolve()`; if you are chasing one of its messages, that is the
+place to look.
 
-* `StagedFlow._preflight_pdk_vars` checks every `requires_pdk_vars` entry of
-  every selected provider, and fails naming the stage, the provider, the
-  variable and the PDK.
 * `StagedFlow._preflight_views` walks the resolved step list and checks that
   every non-optional input a step consumes is actually produced by an earlier
   step, with steps whose gating variables are false excluded. This is what
@@ -172,20 +163,18 @@ different providers all work uniformly; it is also what pays that startup
 cost repeatedly. Weigh the two: a vendor tool with a fast, persistent-session
 mode should still expose that session as one subprocess per stage from
 LibreLane's point of view. The session lives *inside* your step's `run()`,
-not across stage boundaries. A spanning registration is not an available way
-to avoid the cost. See the next section for why.
+not across stage boundaries. Registering one provider across several stages is
+not an available way to avoid the cost. See the next section for why.
 
-(spanning-is-declared-not-implemented)=
-## Spanning is declared, not implemented
+(one-registration-one-stage)=
+## One registration, one stage
 
-`Registration.stages` accepts more than one stage id, and a registration
-whose `stages` covers several stages is called *spanning*. However, resolution
-rejects one outright, naming the stages it would have covered. Nothing in
-LibreLane decomposes a spanning registration back into per-stage steps, gates
-part of one, or re-enters a flow in the middle of one. If you are tempted to
-register one provider across several stages to avoid the subprocess cost
-above, that path does not exist today, and this section explains why it was
-not built rather than merely deferred.
+`Registration.stage` is a single stage id, and there is no way to say that a
+provider covers several. Gating, contract checking and provider selection are
+all per-stage, so a registration covering more than one has no meaning in any
+of them. If you are tempted to register one provider across several stages to
+avoid the subprocess cost above, this section explains why that shape was not
+built rather than merely deferred.
 
 The evidence comes from a study of
 [SiliconCompiler](https://github.com/siliconcompiler/siliconcompiler), an
@@ -195,7 +184,7 @@ framework and OpenROAD flow are a close analogue to this problem. Three
 findings from that study, attributed to the SiliconCompiler project rather
 than presented as this project's own conclusion:
 
-* SiliconCompiler has no spanning primitive at all. Its `node(step, task,
+* SiliconCompiler has no multi-step primitive at all. Its `node(step, task,
   index)` binds exactly one tool and task to one node; there is no construct
   that lets one node cover more than one step.
 * Its closest analogue to a proprietary tool whose native mode is one long
@@ -204,7 +193,7 @@ than presented as this project's own conclusion:
   into four separate nodes (`syn_fpga`, `place`, `route`, `bitstream`), each
   a cold `vivado -mode batch` process, stitched together by Vivado's own
   `.dcp` checkpoint format declared as ordinary node output and input. There
-  is no persistent session and no spanning node.
+  is no persistent session and no multi-step node.
 * In its OpenROAD flow, antenna repair is its own node between global and
   detailed route, and the detailed-route task carries no antenna options at
   all. That separation works because the upstream node hands over
@@ -222,7 +211,7 @@ SiliconCompiler's own execution model is built to amortize across a cluster.
 For a single-machine flow, that cost is smaller in absolute terms, but the
 answer to it is a persistent tool session held open *inside* a step across
 however many stages that step's `run()` chooses to cover internally, not a
-registration that spans stages in LibreLane's own bookkeeping. The stage
+registration covering several stages in LibreLane's own bookkeeping. The stage
 boundary, the gate, and the contract check all still need to know where one
 provider's responsibility ends and the next stage's begins.
 

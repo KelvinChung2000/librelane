@@ -3,7 +3,7 @@ import pathlib
 
 import pytest
 
-from librelane.config import Variable
+from librelane.config import variable
 from librelane.flows import flow
 from librelane.steps import step
 
@@ -52,7 +52,9 @@ def ResumeSteps():
 
     class First(Base):
         id = "Test.First"
-        config_vars = [Variable("DUMMY_VARIABLE", type=str, description="x")]
+
+        class Config(Base.Config):
+            DUMMY_VARIABLE: str = variable(description="x")
 
         def payload(self, state_in: State) -> str:
             # Test.First has no input, so its configuration is what its output
@@ -483,8 +485,8 @@ def test_a_shorter_step_list_leaves_the_orphaned_directory_alone(ResumeSteps):
 @mock_variables([flow, step])
 def test_an_explicit_initial_state_stands_in_for_the_steps_before_from(ResumeFlow):
     """
-    The ECO workflow documented in ``docs/source/usage/using_ecos.md``: hand a
-    step the state a previous run produced and start there, in a fresh tag.
+    Hand a step the state a previous run produced and start there, in a fresh
+    tag.
 
     The steps before it must not be resolved from cache. There is nothing in a
     fresh tag to resolve, and resolving would discard the very state the user

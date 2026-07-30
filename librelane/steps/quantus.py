@@ -93,7 +93,7 @@ class Extraction(QuantusStep):
 #: agent), not by this module.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["extraction"],
+        "stage": "extraction",
         "provider": "quantus",
         "steps": [Extraction],
         # The specific QUANTUS_* configuration variables a real Quantus

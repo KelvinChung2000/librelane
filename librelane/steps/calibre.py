@@ -128,13 +128,13 @@ _CALIBRE_NAMESPACES = ("CALIBRE_",)
 #: ``StageRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["drc"],
+        "stage": "drc",
         "provider": "calibre",
         "steps": [DRC],
         "namespaces": _CALIBRE_NAMESPACES,
     },
     {
-        "stages": ["lvs"],
+        "stage": "lvs",
         "provider": "calibre",
         "steps": [LVS],
         "namespaces": _CALIBRE_NAMESPACES,

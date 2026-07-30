@@ -318,12 +318,22 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         self.state_in = state_in_future
 
     def __init_subclass__(cls):
-        if "Config" in cls.__dict__ and "config_vars" not in cls.__dict__:
+        if "config_vars" in cls.__dict__:
+            raise TypeError(
+                f"Step '{cls.__name__}' assigns 'config_vars' directly. Declare "
+                f"a nested 'class Config' instead, which is the only spelling "
+                f"an author writes; 'config_vars' is derived from it and is "
+                f"read-only to a subclass."
+            )
+        if "Config" in cls.__dict__:
             cls.config_vars = model_to_variables(cls.Config)
         cls._config_model_cache = None
         if hasattr(cls, "flow_control_variable"):
-            logger.warning(
-                f"Step '{cls.__name__}' uses deprecated property 'flow_control_variable'. Flow control should now be done using the Flow class's 'gating_config_vars' property."
+            raise TypeError(
+                f"Step '{cls.__name__}' defines 'flow_control_variable', which "
+                f"nothing has read since 2.0, so the step silently failed to "
+                f"gate. Gate it from the flow instead, with an entry in that "
+                f"flow's 'gating_config_vars'."
             )
         if cls.id != NotImplemented:
             if f".{cls.__name__}" not in cls.id:

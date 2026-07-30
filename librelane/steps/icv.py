@@ -116,13 +116,13 @@ _ICV_NAMESPACES = ("ICV_",)
 #: ``StageRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["drc"],
+        "stage": "drc",
         "provider": "icv",
         "steps": [DRC],
         "namespaces": _ICV_NAMESPACES,
     },
     {
-        "stages": ["lvs"],
+        "stage": "lvs",
         "provider": "icv",
         "steps": [LVS],
         "namespaces": _ICV_NAMESPACES,

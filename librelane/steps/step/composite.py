@@ -45,10 +45,11 @@ class CompositeStep(Step):
     sequence. The alternative, exposing the parts individually, invites a flow
     to run half of them.
 
-    This is the supported way for a
-    :class:`librelane.stages.Registration` to bind one stage to several
-    steps while keeping the stage a single gateable, resumable unit. See
-    ``docs/source/usage/writing_tool_backends.md``.
+    A :class:`librelane.stages.Registration` also binds one stage to several
+    steps, but keeps them individually addressable, which is what lets a stage
+    gate be lowered onto each of them. A composite instead hides its
+    constituents behind one identifier, one configuration model, one directory
+    and one resume unit. See ``docs/source/usage/writing_tool_backends.md``.
 
     ``inputs`` and ``config_vars`` are automatically generated based on the
     constituent steps.

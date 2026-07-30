@@ -65,7 +65,7 @@ This is a basic configuration file which has only these variables:
   obstructions interfering with PDN generation.
 ______________________________________________________________________
 
-### Running Synthesis Exploration
+### Picking a synthesis strategy
 
 When running a new design, it's always good to first find the best synthesis
 strategy. Synthesis strategies are scripts for the {term}`ABC` utility that
@@ -75,10 +75,20 @@ You can find a list of synthesis strategies at
 {var}`Yosys.Synthesis::SYNTH_STRATEGY`. Generally, the `AREA` strategies result
 in smaller area, while the `DELAY` strategies focus on a lower delay. There is
 really no way to figure out which strategy would be the best for your design
-ahead of time, so LibreLane provides a synthesis exploration flow that tries
-all of them.
+ahead of time, so the strategy is worth trying a few of and comparing the
+`design__instance__area` and `timing__setup__ws` metrics each run reports.
 
-To run that flow, enter the following command:
+For this design, `DELAY 4` gives both a reasonable area and a good minimum
+register-to-register setup slack, so we're going to add this to our
+`config.json`:
+
+```json
+    "SYNTH_STRATEGY": "DELAY 4"
+```
+
+______________________________________________________________________
+
+### Running the flow
 
 ````{tip}
 Double-checking: are you inside a `nix-shell`? Your terminal prompt
@@ -104,40 +114,6 @@ parallel processes LibreLane can run by passing the flag `-j1` as follows:
 [nix-shell:~]$ librelane -j1 [the rest of your command]
 ```
 
-```console
-[nix-shell:~]$ librelane ~/caravel_aes_accelerator/openlane/aes_wb_wrapper/config.json --flow SynthesisExploration
-```
-
-This should return a table that looks kind of like this:
-
-```text
-┏━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ SYNTH_STRATEGY ┃ Gates ┃ Area (µm²)    ┃ Worst Register-to-Register Setup Slack (ns) ┃ Worst Setup Slack (ns) ┃ Total -ve Setup Slack (ns) ┃
-┡━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ AREA 0         │ 18699 │ 224750.553600 │ -3.678872                                   │ -23.16954693684463     │ -70604.06114353641         │
-│ AREA 1         │ 18440 │ 223714.560000 │ 2.928326                                    │ -23.16954693684463     │ -69382.42054960704         │
-│ AREA 2         │ 18182 │ 220866.828800 │ 3.088555                                    │ -23.16954693684463     │ -69382.42054960704         │
-│ AREA 3         │ 34425 │ 310343.894400 │ 10.985539                                   │ -23.16954693684463     │ -69382.42054960704         │
-│ DELAY 0        │ 25047 │ 289742.886400 │ -2.446718                                   │ -23.16954693684463     │ -69590.4983913423          │
-│ DELAY 1        │ 26409 │ 300157.875200 │ -9.997910                                   │ -23.16954693684463     │ -71329.1176162534          │
-│ DELAY 2        │ 25996 │ 296683.292800 │ -9.903142                                   │ -23.16954693684463     │ -71459.85930232028         │
-│ DELAY 3        │ 24572 │ 285931.731200 │ -14.924423                                  │ -23.16954693684463     │ -72522.01817679392         │
-│ DELAY 4        │ 24181 │ 256146.915200 │ 10.684316                                   │ -23.16954693684463     │ -69382.42054960704         │
-└────────────────┴───────┴───────────────┴─────────────────────────────────────────────┴────────────────────────┴────────────────────────────┘
-```
-
-You'll notice they all share the same worst setup slack, but `DELAY 4` has both
-a reasonable area and the second best minimum register-to-register setup slack.
-The non-register-to-register setup slacks can typically only be addressed with
-more realistic constraints, which we'll dicuss later, but for now, we're going
-to add this to our `config.json` to use the `DELAY 4` strategy:
-
-```json
-    "SYNTH_STRATEGY": "DELAY 4"
-```
-
-
-### Running the flow
 
 To harden macros with LibreLane, we use the default flow, {flow}`Classic`.
 

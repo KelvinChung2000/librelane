@@ -325,6 +325,67 @@ class TestRunIsTheDefaultCommand:
         assert "No such command" not in result.output
 
 
+class TestMetaFlowSelection:
+    """`meta.flow` names a registered flow, and nothing else."""
+
+    def _select(self, tmp_path: Path, meta: dict):
+        from librelane.cli.run import FlowRequest, select_flow
+        from librelane.cli.runtime import ResolvedPdkOptions
+
+        config = tmp_path / "config.json"
+        config.write_text(json.dumps({"meta": meta}), encoding="utf8")
+        return select_flow(
+            FlowRequest(
+                config_files=(str(config),),
+                flow_name=None,
+                pdk=ResolvedPdkOptions(
+                    pdk_root=str(tmp_path), pdk="sky130A", scl=None, pad=None
+                ),
+                tag=None,
+                last_run=False,
+                frm=None,
+                to=None,
+                skip=(),
+                overwrite=False,
+                reproducible=None,
+                initial_state=None,
+                initial_state_overrides=(),
+                config_overrides=(),
+                design_dir=None,
+                force_run_dir=None,
+                save_views_to=None,
+                ef_save_views_to=None,
+            )
+        )
+
+    def test_a_step_list_is_rejected(self, tmp_path: Path):
+        """
+        A list of step IDs used to build an anonymous flow. `Meta` is a plain
+        dataclass and validates nothing, so without an explicit rejection the
+        list falls through the `isinstance` test and silently runs Classic --
+        a different flow than the configuration named.
+        """
+        import typer
+
+        with pytest.raises(typer.Exit) as raised:
+            self._select(tmp_path, {"version": 2, "flow": ["Yosys.Synthesis"]})
+
+        assert raised.value.exit_code == 1
+
+    def test_a_registered_flow_name_is_accepted(self, tmp_path: Path):
+        selected = self._select(tmp_path, {"version": 2, "flow": "Classic"})
+
+        assert selected.__name__ == "Classic"
+
+    def test_an_unknown_flow_name_is_still_rejected(self, tmp_path: Path):
+        import typer
+
+        with pytest.raises(typer.Exit) as raised:
+            self._select(tmp_path, {"version": 2, "flow": "NoSuchFlow"})
+
+        assert raised.value.exit_code == 1
+
+
 class TestModuleInvocations:
     @pytest.mark.parametrize(
         ("module", "argument"), sorted(SUPPORTED_MODULE_INVOCATIONS.items())

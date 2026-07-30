@@ -75,7 +75,7 @@ class IRDrop(VoltusStep):
 #: agent), not by this module.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["ir_drop"],
+        "stage": "ir_drop",
         "provider": "voltus",
         "steps": [IRDrop],
         # The specific VOLTUS_* configuration variables a real Voltus flow

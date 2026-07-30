@@ -127,16 +127,6 @@ def load_initial_state(state_files: list[Path] | None) -> State | None:
         raise typer.Exit(-1) from error
 
 
-def normalize_sequential_controls(
-    frm: str | None,
-    to: str | None,
-    only: str | None,
-) -> tuple[str | None, str | None]:
-    if only is not None:
-        return only, only
-    return frm, to
-
-
 def resolve_pdk_options(
     *,
     use_ciel: bool,

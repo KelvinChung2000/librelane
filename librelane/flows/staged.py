@@ -32,7 +32,6 @@ from ..stages.resolution import (
 from ..stages.stage import (
     Stage,
     StageContractError,
-    StageError,
     StageResolutionError,
 )
 from ..stages.tools import extract_tools
@@ -80,7 +79,7 @@ class StagedFlow(SequentialFlow):
     ``Steps`` is expanded from ``Stages`` at class-definition time using each
     stage's ``default_provider``, so it is a fully populated list at import and
     every existing ``SequentialFlow`` facility keeps working unchanged:
-    ``Substitute``, ``get_help_md``, step IDs and step directory names.
+    ``get_help_md``, step IDs and step directory names.
     """
 
     Stages: list[StageEntry] = []
@@ -93,9 +92,10 @@ class StagedFlow(SequentialFlow):
 
     #: The gating entries a flow author wrote by hand, as opposed to those
     #: generated from stage gates. Kept apart because generated entries name
-    #: concrete step IDs and so must be rebuilt for every subclass:
-    #: ``Substitutions`` may have removed the very steps they name, which would
-    #: otherwise leave an inherited entry matching nothing.
+    #: concrete step IDs and so must be rebuilt for every subclass: a subclass
+    #: declaring its own ``Stages`` produces different ones, which would
+    #: otherwise leave an inherited entry naming a step that is not in the
+    #: flow.
     _explicit_gating_config_vars: dict[str, list[str]] = {}
 
     #: The resolution ``Steps`` was expanded from. Its spans carry the
@@ -139,8 +139,8 @@ class StagedFlow(SequentialFlow):
             Self._explicit_gating_config_vars = dict(Self.gating_config_vars)
         Self.gating_config_vars = dict(Self._explicit_gating_config_vars)
 
-        # Step IDs are only final once the base class has normalized duplicates
-        # and applied Substitutions, so gates cannot be generated until after.
+        # Step IDs are only final once the base class has normalized
+        # duplicates, so gates cannot be generated until after.
         super().__init_subclass__(scm_type=scm_type, name=name, **kwargs)
         Self._apply_stage_gating(Self)
         Self._validate_gating_config_vars(Self)
@@ -158,8 +158,8 @@ class StagedFlow(SequentialFlow):
         # run below: their spans are the only place a selected provider's PDK
         # requirements and native views live. Compared against the class-level
         # resolution, not self.Steps, because a bypassed flow (Steps declared
-        # directly, no Stages) or a Substitute()'d one has a self.Steps that
-        # legitimately differs from what resolving its (possibly empty)
+        # directly, no Stages) has a self.Steps that legitimately differs from
+        # what resolving its (possibly empty)
         # Stages produces; _resolution is what __init_subclass__ actually
         # derived Steps from, and is the correct baseline for "did TOOLS
         # change anything".
@@ -177,14 +177,6 @@ class StagedFlow(SequentialFlow):
             # TOOLS pre-pass exists is that the step set has to be known first.
             self.Steps = resolution.steps
             self._normalize_step_ids(self)
-            # In the same order the class definition used: normalize, then
-            # substitute. resolve() knows nothing about Substitutions, so the
-            # freshly expanded list has none of them, and the class no longer
-            # holds Substitutions to consult - __init_subclass__ cleared it after
-            # applying it. A substitution key naming a step this provider
-            # selection removed raises here, which is correct: it named a step
-            # that is not in the flow.
-            self._substitute_in_place(self, self._applied_substitutions)
             self._apply_stage_gating(self)
             self.__prune_deselected_gates(self)
 
@@ -202,43 +194,7 @@ class StagedFlow(SequentialFlow):
             self.__boundaries_by_last_step.setdefault(boundary.last_step_id, []).append(
                 boundary
             )
-        self._preflight_pdk_vars()
         self._preflight_views()
-
-    def _preflight_pdk_vars(self) -> None:
-        """
-        Checks each selected provider's ``requires_pdk_vars`` against the
-        resolved configuration. A variable that is absent or ``None`` fails
-        the run before any tool is invoked.
-
-        This is the seam a PDK-ingestion feature plugs into: a provider that
-        needs a PDK view the PDK does not define must fail here, naming the
-        stage, the provider, the variable and the PDK, rather than crashing
-        somewhere deep in a Tcl script.
-        """
-        pdk = self.config["PDK"]
-        for span in self._resolution.spans:
-            for contract in span.providers:
-                provider = contract.provider
-                registration = StageRegistry.get(span.stage_ids[0], provider)
-                if registration is None:
-                    # Unreachable through resolve(), which raises on a provider
-                    # the registry does not have. Reaching it means the registry
-                    # and the resolution disagree, so skipping the check would
-                    # skip it on a provider that is about to run.
-                    raise StageError(
-                        f"{span.stage_ids[0]}: the resolution selected provider "
-                        f"'{provider}', which the registry has no registration "
-                        f"for. The registry and the resolution disagree, which "
-                        f"is a programming error."
-                    )
-                for name in registration.requires_pdk_vars:
-                    if self.config.get(name) is not None:
-                        continue
-                    raise StageResolutionError(
-                        f"{span.stage_ids[0]}: provider '{provider}' requires "
-                        f"{name}, which PDK '{pdk}' does not define"
-                    )
 
     def _preflight_views(self) -> None:
         """
@@ -297,19 +253,17 @@ class StagedFlow(SequentialFlow):
         """
         provides_producers = sorted(
             {
-                f"provider '{registration.provider}' of stage '{stage_id}'"
+                f"provider '{registration.provider}' of stage '{registration.stage}'"
                 for registration in StageRegistry.list()
-                for stage_id in registration.stages
                 if view in registration.provides
             }
         )
         native_producers = sorted(
             {
-                f"provider '{registration.provider}' of stage '{stage_id}' "
-                f"(natively, as an internal carry-over between its own steps "
-                f"rather than a declared neutral output)"
+                f"provider '{registration.provider}' of stage "
+                f"'{registration.stage}' (natively, as an internal carry-over "
+                f"between its own steps rather than a declared neutral output)"
                 for registration in StageRegistry.list()
-                for stage_id in registration.stages
                 if view in registration.native_views
             }
         )
@@ -336,7 +290,7 @@ class StagedFlow(SequentialFlow):
         here, is what keeps the preflight from disagreeing with the run it is
         meant to predict: a step excluded by a wildcard gate must be excluded
         from the view walk as well, and a colliding exact and wildcard key
-        must resolve to the same winner in both places.
+        must union to the same variable list in both places.
         """
         step_ids = [step.id for step in self.Steps]
         return self._expand_gating_config_vars(self.gating_config_vars, step_ids)
@@ -387,9 +341,8 @@ class StagedFlow(SequentialFlow):
             stage, which means the step tags and the resolution disagree.
 
         Every tagged step in a ``StagedFlow``'s ``Steps`` came out of that flow's
-        own resolution, whether directly, through ``Step.with_id``, or through
-        ``Substitutions``, so a miss here is a programming error rather than a
-        configuration mistake. It has to be loud either way, because both callers
+        own resolution, whether directly or through ``Step.with_id``, so a
+        miss here is a programming error rather than a configuration mistake. It has to be loud either way, because both callers
         would otherwise carry on with an unenforced contract or an ungated stage.
         """
         for span in target._resolution.spans:
@@ -624,10 +577,9 @@ class StagedFlow(SequentialFlow):
         Scans ``steps`` for contiguous runs whose tags agree under ``key``.
 
         Reading the tags off the classes rather than remembering index ranges
-        is what makes this survive duplicate-ID normalization and
-        ``Substitutions``: ``Step.with_id`` subclasses, so the tag is
-        inherited, while a substituted-in step carries no tag and correctly
-        falls outside every boundary.
+        is what makes this survive duplicate-ID normalization: ``Step.with_id``
+        subclasses, so the tag is inherited, while an untagged plain step
+        correctly falls outside every boundary.
         """
         boundaries: list[Boundary] = []
         current_key: object = None

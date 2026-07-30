@@ -286,79 +286,71 @@ def test_step_is_registered_in_step_factory(step_id):
 def test_genus_registrations_cover_exactly_synthesis():
     from librelane.steps.genus import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == ["synthesis"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "genus"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 def test_innovus_registrations_cover_exactly_the_seventeen_pnr_stages():
     from librelane.steps.innovus import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == sorted(PNR_STAGE_IDS)
     for entry in REGISTRATIONS:
         assert entry["provider"] == "innovus"
-        assert len(entry["stages"]) == 1, "each registration should cover one stage"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 def test_tempus_registrations_cover_exactly_pre_and_signoff_sta():
     from librelane.steps.tempus import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == sorted(["pre_pnr_sta", "signoff_sta"])
     for entry in REGISTRATIONS:
         assert entry["provider"] == "tempus"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 def test_quantus_registrations_cover_exactly_extraction():
     from librelane.steps.quantus import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == ["extraction"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "quantus"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 def test_voltus_registrations_cover_exactly_ir_drop():
     from librelane.steps.voltus import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == ["ir_drop"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "voltus"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 def test_pegasus_registrations_cover_exactly_drc_and_lvs():
     from librelane.steps.pegasus import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == sorted(["drc", "lvs"])
     for entry in REGISTRATIONS:
         assert entry["provider"] == "pegasus"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 def test_conformal_registrations_cover_exactly_formal_equivalence():
     from librelane.steps.conformal import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == ["formal_equivalence"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "conformal"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 # ----------------------------------------------------------------------
@@ -368,14 +360,14 @@ def test_conformal_registrations_cover_exactly_formal_equivalence():
 def test_pegasus_drc_declares_no_extra_metrics():
     from librelane.steps.pegasus import REGISTRATIONS
 
-    drc_entry = next(e for e in REGISTRATIONS if e["stages"] == ["drc"])
+    drc_entry = next(e for e in REGISTRATIONS if e["stage"] == "drc")
     assert drc_entry.get("metrics", []) == []
 
 
 def test_pegasus_lvs_declares_only_the_stage_s_own_metric():
     from librelane.steps.pegasus import REGISTRATIONS
 
-    lvs_entry = next(e for e in REGISTRATIONS if e["stages"] == ["lvs"])
+    lvs_entry = next(e for e in REGISTRATIONS if e["stage"] == "lvs")
     assert lvs_entry.get("metrics", []) == ["design__lvs_error__count"]
 
 

@@ -15,15 +15,9 @@ from __future__ import annotations
 
 from loguru import logger
 
-import os
-import fnmatch
 import shutil
-from typing import (
-    Union,
-)
 from collections.abc import Iterable
 
-from deprecated.sphinx import deprecated
 from rapidfuzz import process, fuzz, utils
 
 from .flow import Flow, FlowException, FlowError
@@ -36,26 +30,6 @@ from ..steps import (
     StepException,
     DeferredStepError,
 )
-
-Substitution = Union[str, type[Step], None]
-SubstitutionsObject = Union[
-    dict[str, Substitution],
-    list[tuple[str, Substitution]],
-]
-
-
-def _substitution_pairs(
-    Substitutions: SubstitutionsObject,
-) -> list[tuple[str, Substitution]]:
-    """
-    Normalizes either accepted spelling of ``Substitutions`` to the list-of-pairs
-    form, which is the one that can be stored and replayed: a dictionary cannot
-    hold the same key twice, but the pair list is what application order is
-    defined against either way.
-    """
-    if isinstance(Substitutions, dict):
-        return list(Substitutions.items())
-    return list(Substitutions)
 
 
 class SequentialFlow(Flow):
@@ -72,55 +46,15 @@ class SequentialFlow(Flow):
     set the ID to the previous step's ID with a suffix: i.e. the second instance
     of ``Test.MyStep`` will have an ID of ``Test.MyStep1``, and so on.
 
-    :param Substitute: Substitute all instances of one `Step` type by another `Step`
-        type in the :attr:`.Steps` attribute for this instance only.
-
-        You may also use the string Step IDs in place of a `Step` type object.
-
-        Duplicate ID normalization is re-run after substitutions.
-
     :param args: Arguments for :class:`Flow`.
     :param kwargs: Keyword arguments for :class:`Flow`.
 
     :cvar gating_config_vars: A mapping from step ID (wildcards) to lists of
         Boolean variable names. All Boolean variables must be True for a step with
         a specific ID to execute.
-
-    :cvar Substitutions: Consumed by the subclass initializer - allows for a
-        quick interface where steps can be removed, replaced, appended or
-        prepended. After subclass intialization, it is set to ``None``, and
-        a new subclass must be created to modify substitutions further.
-
-        The list of substitutions may be specified as either a dictionary
-        or a list of tuples: while the former is more terse, the latter is
-        allows using the same key more than once.
-
-        The substitutions are mappings from Step IDs or objects to Step IDs,
-        objects, or ``None``. In case of ``None``, the step in question is
-        removed.
-
-        In case the key is specified as a string, you may add ``-`` as a prefix
-        to the Step ID to indicate you want to insert a step before the step
-        in question, and similary ``+`` indicates you want to insert a step
-        after the step in question. You may not prepend or append ``None``.
-
-        Step IDs are made unique after every substitution, i.e., whenever the
-        substitution occurs, the first instance of a Step in a sequential flow
-        shall have its ID unadulterated, while the next instance will have
-        ``-1``, the one after ``-2``, etc. If ``-1`` is removed, the previous
-        ``-2`` shall become ``-1``, for example.
     """
 
-    Substitutions: SubstitutionsObject | None = None
     gating_config_vars: dict[str, list[str]] = {}
-
-    #: Every substitution applied to reach this class's ``Steps``, in the order
-    #: it was applied, accumulated down the inheritance chain. ``Substitutions``
-    #: itself is cleared once applied, so this is the only record of them, and
-    #: :class:`librelane.flows.StagedFlow` needs it: re-expanding ``Steps`` from
-    #: a ``TOOLS`` selection discards the substituted list, and the
-    #: substitutions have to be replayed onto the new one.
-    _applied_substitutions: list[tuple[str, Substitution]] = []
 
     def __init__(
         self,
@@ -137,14 +71,7 @@ class SequentialFlow(Flow):
         Self.Steps = Self.Steps.copy()  # Break global reference
         Self.config_vars = Self.config_vars.copy()
         Self.gating_config_vars = Self.gating_config_vars.copy()
-        Self._applied_substitutions = list(Self._applied_substitutions)
         Self._normalize_step_ids(Self)
-        if Self.Substitutions:
-            pairs = _substitution_pairs(Self.Substitutions)
-            Self._substitute_in_place(Self, pairs)
-            Self._applied_substitutions += pairs
-            Self.Substitutions = None
-
         Self._validate_gating_config_vars(Self)
 
     @staticmethod
@@ -155,8 +82,8 @@ class SequentialFlow(Flow):
 
         Separate from ``__init_subclass__`` so that :class:`StagedFlow` can
         re-run it after generating gating entries from stage gates, which it can
-        only do once step IDs have been normalized and substitutions applied.
-        Takes a target, like ``_normalize_step_ids``, because instance-level
+        only do once step IDs have been normalized. Takes a target, like
+        ``_normalize_step_ids``, because instance-level
         ``TOOLS`` rebuilds ``Steps`` on the instance rather than the class.
         """
         name = getattr(target, "__qualname__", type(target).__qualname__)
@@ -195,10 +122,13 @@ class SequentialFlow(Flow):
         Expands gating keys, which may be exact step IDs or wildcards, against
         a concrete step ID list.
 
-        A key matching more than one step, or a wildcard colliding with a
-        later exact key (or vice versa), is resolved by later keys in
-        iteration order overwriting earlier ones for the steps they share -
-        matching plain ``dict`` assignment rather than merging the two lists.
+        A step matched by more than one key, whether exact or wildcard, is
+        gated by the deduplicated union of their lists, order-preserving. The
+        run loop requires every variable in a step's list to be true, so the
+        union reads as "all of the conditions that named this step apply",
+        which is the only reading under which a wildcard a flow author wrote
+        cannot silently displace a stage gate generated for the same step.
+
         Shared between :meth:`run` and
         :meth:`librelane.flows.StagedFlow._preflight_views`, so that the
         preflight can never evaluate a different set of gates than the run it
@@ -210,19 +140,20 @@ class SequentialFlow(Flow):
         expanded: dict[str, list[str]] = {}
         for key, value in gating_config_vars.items():
             if key in step_id_list:
-                expanded[key] = value
-                continue
-            matched = list(Filter([key]).filter(step_id_list))
-            if not matched:
-                # Checked per key rather than against `expanded`, whose
-                # entries are matched step IDs and so never contain a
-                # wildcard key even when it matched.
-                raise FlowException(
-                    f"Gating key '{key}' matches no step in this run. A gating "
-                    f"key that matches nothing silently fails to gate anything."
-                )
+                matched = [key]
+            else:
+                matched = list(Filter([key]).filter(step_id_list))
+                if not matched:
+                    # Checked per key rather than against `expanded`, whose
+                    # entries are matched step IDs and so never contain a
+                    # wildcard key even when it matched.
+                    raise FlowException(
+                        f"Gating key '{key}' matches no step in this run. A "
+                        f"gating key that matches nothing silently fails to "
+                        f"gate anything."
+                    )
             for id in matched:
-                expanded[id] = value
+                expanded[id] = list(dict.fromkeys(expanded.get(id, []) + list(value)))
         return expanded
 
     def _after_step(self, step: Step, state: State, executed: bool) -> None:
@@ -252,98 +183,6 @@ class SequentialFlow(Flow):
 
         return CustomSequentialFlow
 
-    @classmethod
-    @deprecated(
-        "use .Make",
-        version="3.0.0",
-        action="once",
-    )
-    def make(Self, step_ids: list[str]) -> type[SequentialFlow]:
-        return Self.Make(step_ids)
-
-    @classmethod
-    def Substitute(Self, Substitutions: SubstitutionsObject) -> type[SequentialFlow]:
-        """
-        Convenience method to quickly subclass a sequential flow and add
-        Substitutions to it.
-
-        The new flow shall be named ``{previous_flow_name}'``.
-
-        :param Substitutions: The substitutions to use for the new subclass.
-        """
-        return type(Self.__name__ + "'", (Self,), {"Substitutions": Substitutions})
-
-    @staticmethod
-    def _substitute_in_place(
-        target: SequentialFlow | type[SequentialFlow],
-        Substitutions: list[tuple[str, Substitution]],
-    ):
-        """
-        Applies substitutions to ``target.Steps``, in order.
-
-        Not private, because :class:`librelane.flows.StagedFlow` replays a
-        class's substitutions onto an instance whose ``Steps`` a ``TOOLS``
-        selection rebuilt.
-        """
-        for key, item in Substitutions:
-            target.__substitute_step(target, key, item)
-
-    @staticmethod
-    def __substitute_step(
-        target: SequentialFlow | type[SequentialFlow],
-        id: str,
-        with_step: str | type[Step] | None,
-    ):
-        step_indices: list[int] = []
-        mode = "replace"
-        if id.startswith("+"):
-            id = id[1:]
-            mode = "append"
-            if with_step is None:
-                raise FlowException("Cannot prepend or append None.")
-        elif id.startswith("-"):
-            id = id[1:]
-            mode = "prepend"
-            if with_step is None:
-                raise FlowException("Cannot prepend or append None.")
-
-        for i, step in enumerate(target.Steps):
-            if (
-                step.id
-                != NotImplemented  # Will be validated later by initialization: ignore for now
-                and fnmatch.fnmatch(step.id.lower(), id.lower())
-            ):
-                step_indices.append(i)
-        if len(step_indices) == 0:
-            if with_step is None:
-                raise FlowException(
-                    f"Could not remove '{id}': no steps with ID '{id}' found in flow"
-                )
-            raise FlowException(
-                f"Could not {mode} '{id}' with '{with_step}': no steps with ID '{id}' found in flow."
-            )
-
-        if with_step is None:
-            for index in reversed(step_indices):
-                del target.Steps[index]
-        else:
-            if isinstance(with_step, str):
-                with_step_opt = Step.factory.get(with_step)
-                if with_step_opt is None:
-                    raise FlowException(
-                        f"Could not {mode} '{id}' with '{with_step}': no replacement step with ID '{with_step}' found."
-                    )
-                with_step = with_step_opt
-
-            for i in step_indices:
-                if mode == "replace":
-                    target.Steps[i] = with_step
-                elif mode == "append":
-                    target.Steps.insert(i + 1, with_step)
-                elif mode == "prepend":
-                    target.Steps.insert(i, with_step)
-        target._normalize_step_ids(target)
-
     @staticmethod
     def _normalize_step_ids(target: SequentialFlow | type[SequentialFlow]):
         ids_used: set[str] = set()
@@ -362,6 +201,61 @@ class SequentialFlow(Flow):
             if id != step.id:
                 target.Steps[i] = step.with_id(id)
             ids_used.add(id)
+
+    def _step_ids_by_lowercase(self) -> dict[str, str]:
+        """
+        :returns: A mapping from each step's lowercased ID to the real one.
+            Built in reverse so that the first step wins any collision, which
+            duplicate-ID normalization should already have made impossible.
+        """
+        return {cls.id.lower(): cls.id for cls in reversed(self.Steps)}
+
+    def _resolve_step_id(
+        self,
+        matchable: str | None,
+        multiple_ok: bool = False,
+    ) -> str | list[str] | None:
+        """
+        Resolves one ``--from``, ``--to``, ``--skip`` or ``--reproducible``
+        argument against this flow's step list. Matching is case-insensitive
+        and accepts wildcards.
+
+        :param matchable: The argument, or ``None``.
+        :param multiple_ok: Whether a key matching several steps is legal, as
+            it is for ``--skip``.
+        :returns: ``None``, a step ID, or a list of them when ``multiple_ok``.
+        :raises FlowException: If the argument matches no step, or matches
+            several when ``multiple_ok`` is false. A near miss above the fuzzy
+            score cutoff is named in the message as a suggestion, and is not
+            acted on: a flow that ran a step the user did not name is worse
+            than one that stopped.
+        """
+        if matchable is None:
+            return None
+        step_ids = self._step_ids_by_lowercase()
+        ids = list(Filter([matchable.lower()]).filter(step_ids))
+        if len(ids) > 0:
+            if multiple_ok:
+                return [step_ids[id] for id in ids]
+            if len(ids) > 1:
+                raise FlowException(f"{matchable} matched multiple steps.")
+            return step_ids[ids[0]]
+
+        match_tuple = process.extractOne(
+            matchable,
+            step_ids,
+            scorer=fuzz.partial_ratio,
+            score_cutoff=80,
+            processor=utils.default_process,
+        )
+        suggestion = ""
+        if match_tuple is not None:
+            match, _, _ = match_tuple
+            suggestion = f" Did you mean: '{match}'?"
+        raise FlowException(
+            f"Failed to process '{matchable}': no step(s) with ID "
+            f"'{matchable}' found in flow.{suggestion}"
+        )
 
     def run(
         self,
@@ -405,56 +299,21 @@ class SequentialFlow(Flow):
         :returns: ``(final_state, steps_run)``
         """
         logger.debug(f"Starting run ▶ '{self.run_dir}'")
-        step_ids = {cls.id.lower(): cls.id for cls in reversed(self.Steps)}
         skipped_ids: list[str] = []
 
-        def resolve_step(matchable: str | None, multiple_ok: bool = False):
-            nonlocal step_ids
-            dangerous_fuzzy_matching = (
-                os.getenv(
-                    "_i_want_librelane_to_fuzzy_match_steps_and_im_willing_to_accept_the_risks",
-                    None,
-                )
-                == "1"
-            )
-            if matchable is None:
-                return None
-            ids = list(Filter([matchable.lower()]).filter(step_ids))
-            if len(ids) > 0:
-                if multiple_ok:
-                    return [step_ids[id] for id in ids]
-                if len(ids) > 1:
-                    raise FlowException(f"{matchable} matched multiple steps.")
-                if len(ids) == 1:
-                    return step_ids[ids[0]]
-            else:
-                matchTuple = process.extractOne(
-                    matchable,
-                    step_ids,
-                    scorer=fuzz.partial_ratio,
-                    score_cutoff=80,
-                    processor=utils.default_process,
-                )
-                suggestion = ""
-                if matchTuple is not None:
-                    match, _, _ = matchTuple
-                    if dangerous_fuzzy_matching:
-                        return [match] if multiple_ok else match
-                    else:
-                        suggestion = f" Did you mean: '{match}'?"
-                raise FlowException(
-                    f"Failed to process '{matchable}': no step(s) with ID '{matchable}' found in flow.{suggestion}"
-                )
+        frm_resolved = self._resolve_step_id(frm)
 
-        frm_resolved = resolve_step(frm)
+        to_resolved = self._resolve_step_id(to)
 
-        to_resolved = resolve_step(to)
-
-        reproducible_resolved = resolve_step(reproducible)
+        reproducible_resolved = self._resolve_step_id(reproducible)
 
         if skipped_steps := skip:
             for skipped_step in skipped_steps:
-                skipped_ids += resolve_step(skipped_step, multiple_ok=True)
+                resolved = self._resolve_step_id(skipped_step, multiple_ok=True)
+                # `skipped_step` is never None and `multiple_ok` is set, so the
+                # other two arms of the return type are unreachable here.
+                assert isinstance(resolved, list)
+                skipped_ids += resolved
 
         step_count = len(self.Steps)
         self.progress_bar.set_max_stage_count(step_count)
@@ -471,7 +330,8 @@ class SequentialFlow(Flow):
         stopped = False
 
         gating_cvars_expanded = self._expand_gating_config_vars(
-            self.gating_config_vars, step_ids.values()
+            self.gating_config_vars,
+            [cls.id for cls in self.Steps],
         )
 
         current_state = initial_state
@@ -482,27 +342,55 @@ class SequentialFlow(Flow):
                 executing = True
                 forced = True
 
-            gated = False
-            if gating_cvars := gating_cvars_expanded.get(step.id):
-                for variable in gating_cvars:
-                    if not self.config[variable]:
-                        logger.info(
-                            f"Gating variable for step '{step.id}' set to 'False'- the step will be skipped."
-                        )
-                        gated = True
+            gated_by = [
+                variable
+                for variable in gating_cvars_expanded.get(step.id, [])
+                if not self.config[variable]
+            ]
+            explicitly_skipped = cls.id in skipped_ids
 
             self.progress_bar.start_stage(step.name)
             executed = True
-            if stopped:
+            if cls.id == reproducible_resolved:
+                # Ahead of every skip test, so that a request for a step this
+                # configuration would never execute is diagnosed rather than
+                # silently discarded.
+                if gated_by:
+                    raise FlowException(
+                        f"Cannot create a reproducible for step '{step.id}': it "
+                        f"is gated off by {', '.join(gated_by)}, so this "
+                        f"configuration would never execute it. Set "
+                        f"{' and '.join(gated_by)} to true, or name another step."
+                    )
+                if explicitly_skipped:
+                    raise FlowException(
+                        f"Cannot create a reproducible for step '{step.id}': it "
+                        f"is named by --skip, so this run would never execute "
+                        f"it. Drop it from --skip, or name another step."
+                    )
+                step.create_reproducible(step_dir / "reproducible")
+                break
+            elif gated_by:
+                logger.info(
+                    f"Skipping step '{step.name}': gated off by {', '.join(gated_by)}."
+                )
+                executed = False
+            elif explicitly_skipped:
+                logger.info(f"Skipping step '{step.name}': named by --skip.")
+                executed = False
+            elif stopped:
                 # Past --to. Nothing downstream will ask for this step's output,
                 # so unlike the steps before --from it does not have to be
                 # resolved at all.
-                logger.info(f"Skipping step '{step.name}'…")
+                logger.info(f"Skipping step '{step.name}': after --to '{to_resolved}'.")
                 executed = False
             elif not executing and initial_state_given:
                 # Before --from, but the caller handed us the state that stands
                 # in for these steps. Resolving them would discard it.
-                logger.info(f"Skipping step '{step.name}'…")
+                logger.info(
+                    f"Skipping step '{step.name}': before --from "
+                    f"'{frm_resolved}', and an initial state was supplied."
+                )
                 executed = False
             elif not executing:
                 # Before --from. The step is not re-run, but the next step needs
@@ -525,12 +413,6 @@ class SequentialFlow(Flow):
                 current_state = reused
                 step_list.append(step)
                 reused_count += 1
-            elif cls.id in skipped_ids or gated:
-                logger.info(f"Skipping step '{step.name}'…")
-                executed = False
-            elif cls.id == reproducible_resolved:
-                step.create_reproducible(step_dir / "reproducible")
-                break
             else:
                 assert self.fingerprinter is not None
                 key = resume_key(step, current_state, self.fingerprinter)

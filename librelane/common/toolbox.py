@@ -26,15 +26,13 @@ from typing import (
     Any,
     Literal,
 )
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 import libparse
-from deprecated.sphinx import deprecated
 
 
 from .misc import mkdirp, gzopen
 from .types import Path
-from .metrics import aggregate_metrics
 from .generic_dict import GenericImmutableDict, is_string
 from ..state import DesignFormat
 from ..common import Filter
@@ -55,18 +53,6 @@ class Toolbox(object):
 
         self.remove_cells_from_lib = lru_cache(16, True)(self.remove_cells_from_lib)  # type: ignore
         self.create_blackbox_model = lru_cache(16, True)(self.create_blackbox_model)  # type: ignore
-
-    @deprecated(
-        version="2.0.0b1",
-        reason="Use 'aggregate_metrics' from 'librelane.common'",
-        action="once",
-    )
-    def aggregate_metrics(
-        self,
-        input: dict[str, Any],
-        aggregator_by_metric: dict[str, tuple[Any, Callable[[Iterable], Any]]],
-    ) -> dict[str, Any]:
-        return aggregate_metrics(input, aggregator_by_metric)
 
     def filter_views(
         self,

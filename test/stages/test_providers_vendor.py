@@ -116,8 +116,8 @@ def test_every_vendor_module_exports_registrations_for_real_stages():
         registrations = module.REGISTRATIONS
         assert registrations, f"{module.__name__}.REGISTRATIONS is empty"
         for entry in registrations:
-            for stage_id in entry["stages"]:
-                assert stage_id in known_stages, (
-                    f"{module.__name__}: registration for provider "
-                    f"'{entry['provider']}' names unknown stage '{stage_id}'"
-                )
+            stage_id = entry["stage"]
+            assert stage_id in known_stages, (
+                f"{module.__name__}: registration for provider "
+                f"'{entry['provider']}' names unknown stage '{stage_id}'"
+            )

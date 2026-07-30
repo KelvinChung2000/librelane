@@ -12,100 +12,13 @@ This defines many of the terms used and enumerates strictures mentioned in this 
 
 ## Custom Sequential Flows
 
-### In Configuration Files
-
-(config-substituting-steps)=
-#### By Substituting Steps
-
-If you're constructing a flow that is largely based on another flow, albeit
-with some substitutions or removals, you may declare your base flow and
-substitutions as follows:
-
-<table>
-<tr>
-  <th>JSON</th>
-  <th>YAML</th>
-</tr>
-<tr>
-  <td>
-
-```json
-{
-  "meta": {
-    "flow": "Classic",
-    "substituting_steps": {
-      "OpenROAD.STAMidPNR*": null,
-      "Magic.DRC": "KLayout.DRC",
-    }
-  }
-}
-```
-
-  </td>
-  <td>
-
-```yaml
-meta:
-  flow: Classic
-  substituting_steps:
-    "OpenROAD.STAMidPnR*": null
-    "Magic.DRC": "KLayout.DRC"
-```
-
-  </td>
-</tr>
-</table>
-
-This replaces `Magic.DRC` with *another* `KLayout.DRC` step (which is
-useless but this is just for demonstration); and removes all steps starting
-with `OpenROAD.STAMidPNR` from the `Classic` flow.
-
-Instead of replacing, you can also emplace steps before or after steps. Simply
-put a `-` before the target step ID to place before, and a `+` to place after.
-
-Substitutions are more useful if you have custom steps registered in
-[LibreLane Plugins](./writing_plugins.md).
-
-(config-by-listing-steps)=
-#### By Listing Steps
-
-If your custom sequential flow entirely relies on built-in steps, you can
-actually specify a flow entirely in the `config.json` file, with no API access
-needed:
-
-```json
-{
-  "meta": {
-    "version": 2,
-    "flow": [
-      "Yosys.Synthesis",
-      "OpenROAD.CheckSDCFiles",
-      "OpenROAD.Floorplan",
-      "OpenROAD.TapEndcapInsertion",
-      "OpenROAD.GeneratePDN",
-      "OpenROAD.IOPlacement",
-      "OpenROAD.GlobalPlacement",
-      "OpenROAD.DetailedPlacement",
-      "OpenROAD.GlobalRouting",
-      "OpenROAD.DetailedRouting",
-      "OpenROAD.FillInsertion",
-      "Magic.StreamOut",
-      "Magic.DRC",
-      "Magic.SpiceExtraction",
-      "Netgen.LVS"
-    ]
-  }
-}
-```
-
 ### Using the API
 
 #### By Listing Steps
 
 You'll need to import the `Flow` class as well as any steps you intend to use.
 
-An equivalent flow to the one in {ref}`config-by-listing-steps` would look
-something like this:
+A flow that entirely relies on built-in steps looks something like this:
 
 ```python
 from librelane.flows import SequentialFlow
@@ -200,8 +113,7 @@ the example self-contained. A stage that does declare one, such as `cts` or
 
 `Steps` is populated from `Stages` at class-definition time, using each
 stage's default provider, so every existing `SequentialFlow` facility -
-`Substitute`, `get_help_md`, step IDs and step directory names - keeps working
-unchanged.
+`get_help_md`, step IDs and step directory names - keeps working unchanged.
 
 What a `Stages` list buys over a plain `Steps` list is that the tool behind
 each stage becomes a configuration choice instead of a hardcoded step class.
@@ -297,20 +209,41 @@ This approach creates a dependency chain between steps, so if you attempt to
 inspect the last Future from a set of asynchronous steps, it will automatically
 run the required steps, in parallel if need be.
 
-Here is a demo flow built on exactly this principle. It works across two stages:
+Here is a flow built on exactly this principle. It runs two floorplanning
+attempts concurrently and keeps whichever produced the smaller die.
 
-* The Synthesis Exploration - tries multiple synthesis strategies in _parallel_.
-  The best-performing strategy in terms of minimizing the area makes it to the
-  next stage.
-* Floorplanning and Placement - tries FP and placement with a high utilization.
-  * If the high utilization fails, a lower is fallen back to as a suggestion.
+```python
+@Flow.factory.register()
+class TryTwoUtilizations(Flow):
+    Steps = [Yosys.Synthesis, OpenROAD.Floorplan]
 
-```{literalinclude} ../../../librelane/flows/optimizing.py
----
-language: python
-start-after: "@Flow.factory.register()"
----
+    def run(self, initial_state, **kwargs):
+        synthesized = self.start_step(
+            Yosys.Synthesis(config=self.config, state_in=initial_state),
+        )
+
+        attempts = [
+            self.start_step_async(
+                OpenROAD.Floorplan(
+                    config=self.config.copy(FP_CORE_UTIL=utilization),
+                    state_in=synthesized,
+                    id=f"floorplan-{utilization}",
+                ),
+            )
+            for utilization in (60, 40)
+        ]
+
+        # Inspecting a Future blocks until that chain has run, so the two
+        # floorplans run in parallel and both are complete after this line.
+        results = [attempt.result() for attempt in attempts]
+        best = min(results, key=lambda state: state.metrics["design__die__area"])
+        return best, []
 ```
+
+A flow whose steps depend on each other's results this way is what the
+{meth}`librelane.flows.Flow.start_step_async` seam exists for. Note that the
+`Flow` object is not thread-safe, so everything above happens on one thread and
+only the steps themselves run concurrently.
 
 ## Error Throwing and Handling
 

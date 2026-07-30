@@ -86,7 +86,7 @@ _STARRC_NAMESPACES = ("STARRC_",)
 #: ``StageRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["extraction"],
+        "stage": "extraction",
         "provider": "starrc",
         "steps": [Extraction],
         "namespaces": _STARRC_NAMESPACES,

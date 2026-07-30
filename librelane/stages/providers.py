@@ -113,7 +113,7 @@ _ODB = (DesignFormat.odb,)
 
 _REGISTRATIONS: list[dict] = [
     {
-        "stages": ["lint"],
+        "stage": "lint",
         "provider": "verilator",
         "steps": [
             Verilator.Lint,
@@ -124,7 +124,7 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": ("LINTER_", "ERROR_ON_LINTER_", "VERILOG_"),
     },
     {
-        "stages": ["synthesis"],
+        "stage": "synthesis",
         "provider": "yosys",
         "steps": [
             Yosys.JsonHeader,
@@ -137,7 +137,7 @@ _REGISTRATIONS: list[dict] = [
         "provides": [DesignFormat.json_h],
     },
     {
-        "stages": ["synthesis"],
+        "stage": "synthesis",
         "provider": "yosys_vhdl",
         "steps": [
             Yosys.VHDLSynthesis,
@@ -148,7 +148,7 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": _YOSYS_NAMESPACES + ("GHDL_", "VHDL_"),
     },
     {
-        "stages": ["pre_pnr_sta"],
+        "stage": "pre_pnr_sta",
         "provider": "openroad",
         "steps": [
             OpenROAD.CheckSDCFiles,
@@ -158,7 +158,7 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": _OPENROAD_NAMESPACES,
     },
     {
-        "stages": ["floorplan"],
+        "stage": "floorplan",
         "provider": "openroad",
         # Odb.SetPowerConnections used to be the last step here, which forced
         # this registration to declare json_h as a native view. That made a
@@ -174,21 +174,21 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": _OPENROAD_NAMESPACES,
     },
     {
-        "stages": ["macro_placement"],
+        "stage": "macro_placement",
         "provider": "openroad",
         "steps": [Odb.ManualMacroPlacement],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["tapcell_insertion"],
+        "stage": "tapcell_insertion",
         "provider": "openroad",
         "steps": [OpenROAD.TapEndcapInsertion],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["power_grid"],
+        "stage": "power_grid",
         "provider": "openroad",
         "steps": [
             Odb.AddPDNObstructions,
@@ -199,7 +199,7 @@ _REGISTRATIONS: list[dict] = [
         "native_views": _ODB,
     },
     {
-        "stages": ["io_placement"],
+        "stage": "io_placement",
         "provider": "openroad",
         "steps": [
             OpenROAD.GlobalPlacementSkipIO,
@@ -211,56 +211,56 @@ _REGISTRATIONS: list[dict] = [
         "native_views": _ODB,
     },
     {
-        "stages": ["global_placement"],
+        "stage": "global_placement",
         "provider": "openroad",
         "steps": [OpenROAD.GlobalPlacement],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["post_gpl_repair"],
+        "stage": "post_gpl_repair",
         "provider": "openroad",
         "steps": [OpenROAD.RepairDesignPostGPL],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["detailed_placement"],
+        "stage": "detailed_placement",
         "provider": "openroad",
         "steps": [OpenROAD.DetailedPlacement],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["cts"],
+        "stage": "cts",
         "provider": "openroad",
         "steps": [OpenROAD.CTS],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["post_cts_opt"],
+        "stage": "post_cts_opt",
         "provider": "openroad",
         "steps": [OpenROAD.ResizerTimingPostCTS],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["global_routing"],
+        "stage": "global_routing",
         "provider": "openroad",
         "steps": [OpenROAD.GlobalRouting, OpenROAD.CheckAntennas],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["post_grt_repair"],
+        "stage": "post_grt_repair",
         "provider": "openroad",
         "steps": [OpenROAD.RepairDesignPostGRT],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["antenna_repair"],
+        "stage": "antenna_repair",
         "provider": "openroad",
         "steps": [
             Odb.DiodesOnPorts,
@@ -271,14 +271,14 @@ _REGISTRATIONS: list[dict] = [
         "native_views": _ODB,
     },
     {
-        "stages": ["post_grt_opt"],
+        "stage": "post_grt_opt",
         "provider": "openroad",
         "steps": [OpenROAD.ResizerTimingPostGRT],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["detailed_routing"],
+        "stage": "detailed_routing",
         "provider": "openroad",
         "steps": [
             OpenROAD.DetailedRouting,
@@ -290,20 +290,20 @@ _REGISTRATIONS: list[dict] = [
         "native_views": _ODB,
     },
     {
-        "stages": ["fill_insertion"],
+        "stage": "fill_insertion",
         "provider": "openroad",
         "steps": [OpenROAD.FillInsertion],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["extraction"],
+        "stage": "extraction",
         "provider": "openroad",
         "steps": [OpenROAD.RCX],
         "namespaces": _OPENROAD_NAMESPACES,
     },
     {
-        "stages": ["signoff_sta"],
+        "stage": "signoff_sta",
         "provider": "openroad",
         "steps": [OpenROAD.STAPostPNR],
         "namespaces": _OPENROAD_NAMESPACES,
@@ -311,21 +311,21 @@ _REGISTRATIONS: list[dict] = [
         # native here: this stage can run on a boundary that carries no odb.
     },
     {
-        "stages": ["ir_drop"],
+        "stage": "ir_drop",
         "provider": "openroad",
         "steps": [OpenROAD.IRDropReport],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stages": ["streamout"],
+        "stage": "streamout",
         "provider": "magic",
         "steps": [Magic.StreamOut],
         "namespaces": _MAGIC_NAMESPACES,
         "provides": [DesignFormat.mag_gds],
     },
     {
-        "stages": ["streamout"],
+        "stage": "streamout",
         "provider": "klayout",
         "steps": [KLayout.StreamOut, KLayout.Render],
         "namespaces": ("KLAYOUT_",),
@@ -335,21 +335,21 @@ _REGISTRATIONS: list[dict] = [
     # declares no inputs, so the view preflight cannot catch it being orphaned;
     # ownership is the only thing that removes it along with the tool it checks.
     {
-        "stages": ["drc"],
+        "stage": "drc",
         "provider": "magic",
         "steps": [Magic.DRC, Checker.MagicDRC],
         "namespaces": _MAGIC_NAMESPACES + ("ERROR_ON_MAGIC_DRC",),
         "metrics": ["magic__drc_error__count"],
     },
     {
-        "stages": ["drc"],
+        "stage": "drc",
         "provider": "klayout",
         "steps": [KLayout.DRC, Checker.KLayoutDRC],
         "namespaces": ("KLAYOUT_", "ERROR_ON_KLAYOUT_DRC"),
         "metrics": ["klayout__drc_error__count"],
     },
     {
-        "stages": ["lvs"],
+        "stage": "lvs",
         "provider": "netgen",
         "steps": [
             Magic.SpiceExtraction,
@@ -362,7 +362,7 @@ _REGISTRATIONS: list[dict] = [
         "metrics": ["magic__illegal_overlap__count"],
     },
     {
-        "stages": ["formal_equivalence"],
+        "stage": "formal_equivalence",
         "provider": "yosys",
         "steps": [Yosys.EQY],
         "namespaces": _YOSYS_NAMESPACES

@@ -26,7 +26,6 @@ from librelane.cli.metrics import cli as metrics_cli
 from librelane.cli.runtime import (
     apply_runtime_options,
     load_initial_state,
-    normalize_sequential_controls,
     resolve_pdk_options,
 )
 from librelane.cli.state import cli as state_cli
@@ -73,13 +72,6 @@ def test_no_args_prints_help_without_resolving_pdk():
 
     assert result.exit_code == 2
     assert "Usage:" in result.stdout
-
-
-def test_only_flag():
-    frm, to = normalize_sequential_controls("first", "last", "this-step")
-
-    assert frm == "this-step"
-    assert to == "this-step"
 
 
 def test_log_level_flag():
@@ -159,33 +151,3 @@ def test_manual_pdk_consumes_environment(
     assert "PDK" not in os.environ
     assert "STD_CELL_LIBRARY" not in os.environ
     assert "PAD_CELL_LIBRARY" not in os.environ
-
-
-def test_main_cli_normalizes_only(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    import librelane.cli.run as run_module
-
-    config = tmp_path / "config.json"
-    config.write_text("{}", encoding="utf8")
-    captured = {}
-
-    monkeypatch.setattr(
-        run_module, "start_flow", lambda request: captured.update(request=request)
-    )
-    result = runner.invoke(
-        cli,
-        [
-            "--manual-pdk",
-            "--pdk-root",
-            str(tmp_path),
-            "--only",
-            "this-step",
-            str(config),
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert captured["request"].frm == "this-step"
-    assert captured["request"].to == "this-step"

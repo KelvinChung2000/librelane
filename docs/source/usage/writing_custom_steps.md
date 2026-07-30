@@ -84,7 +84,9 @@ declared is a type error rather than a surprise at runtime.
 
 `config_vars`, the flat list of {class}`librelane.config.Variable` objects, is
 derived from `Config` automatically and remains available for introspection and
-for the generated documentation.
+for the generated documentation. It is read-only to a subclass: `Config` is the
+only spelling an author writes, and assigning `config_vars` in a class body
+raises a `TypeError`.
 
 There are some conventions to writing these variables.
 

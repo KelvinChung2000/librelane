@@ -19,7 +19,6 @@ from dataclasses import dataclass, field, replace
 from typing import ClassVar
 
 from ..common.errors import FlowError
-from ..config import Variable
 from ..state import DesignFormat
 
 
@@ -76,8 +75,6 @@ class Stage(metaclass=StageMetaclass):
         the registration.
     :param provides: The neutral views every provider of this stage must have
         produced by the time the stage completes. Enforced at runtime.
-    :param config_vars: The canonical, portable configuration variables. Every
-        provider must accept all of them; this is checked at registration.
     :param metrics: The metric names every provider of this stage must have
         produced by the time it completes. Enforced at runtime.
     :param gating_config_var: A Boolean flow configuration variable that, when
@@ -93,7 +90,6 @@ class Stage(metaclass=StageMetaclass):
     default_provider: str | tuple[str, ...] | None
     requires: tuple[DesignFormat, ...]
     provides: tuple[DesignFormat, ...]
-    config_vars: tuple[Variable, ...] = field(default=())
     metrics: tuple[str, ...] = field(default=())
     gating_config_var: str | None = None
     multi_provider: bool = False

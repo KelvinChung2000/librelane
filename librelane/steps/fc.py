@@ -331,12 +331,9 @@ class FillInsertion(FCPNRStep):
 #: separate, explicit step from importing this module. See
 #: ``librelane/stages/providers.py`` for the shape this list mirrors.
 #:
-#: Each stage below is its own single-stage registration, not one
-#: registration spanning all eighteen: resolution rejects a spanning
-#: registration outright (see "Spanning is declared, not implemented" in
-#: ``docs/source/usage/writing_tool_backends.md``), and a real Fusion
-#: Compiler backend would use ``native_views`` between its own steps to get
-#: the single-data-model benefit instead. Fusion Compiler carries a
+#: A registration names exactly one stage, so each stage below gets its own
+#: entry. A real Fusion Compiler backend would use ``native_views`` between
+#: its own steps to get the single-data-model benefit. Fusion Compiler carries a
 #: proprietary in-memory design database across stages, the same way
 #: OpenROAD's live ``odb`` database does, but no public source establishes
 #: its view name or on-disk format (see vendor-python-apis.md, section 12),
@@ -349,109 +346,109 @@ class FillInsertion(FCPNRStep):
 #: every LEF at each boundary.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["synthesis"],
+        "stage": "synthesis",
         "provider": "fc",
         "steps": [Synthesis],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["floorplan"],
+        "stage": "floorplan",
         "provider": "fc",
         "steps": [Floorplan],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["macro_placement"],
+        "stage": "macro_placement",
         "provider": "fc",
         "steps": [MacroPlacement],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["tapcell_insertion"],
+        "stage": "tapcell_insertion",
         "provider": "fc",
         "steps": [TapcellInsertion],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["power_grid"],
+        "stage": "power_grid",
         "provider": "fc",
         "steps": [PowerGrid],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["io_placement"],
+        "stage": "io_placement",
         "provider": "fc",
         "steps": [IOPlacement],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["global_placement"],
+        "stage": "global_placement",
         "provider": "fc",
         "steps": [GlobalPlacement],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["post_gpl_repair"],
+        "stage": "post_gpl_repair",
         "provider": "fc",
         "steps": [PostGPLRepair],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["detailed_placement"],
+        "stage": "detailed_placement",
         "provider": "fc",
         "steps": [DetailedPlacement],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["cts"],
+        "stage": "cts",
         "provider": "fc",
         "steps": [CTS],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["post_cts_opt"],
+        "stage": "post_cts_opt",
         "provider": "fc",
         "steps": [PostCTSOpt],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["global_routing"],
+        "stage": "global_routing",
         "provider": "fc",
         "steps": [GlobalRouting],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["post_grt_repair"],
+        "stage": "post_grt_repair",
         "provider": "fc",
         "steps": [PostGRTRepair],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["antenna_repair"],
+        "stage": "antenna_repair",
         "provider": "fc",
         "steps": [AntennaRepair],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["post_grt_opt"],
+        "stage": "post_grt_opt",
         "provider": "fc",
         "steps": [PostGRTOpt],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["detailed_routing"],
+        "stage": "detailed_routing",
         "provider": "fc",
         "steps": [DetailedRouting],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["post_route_opt"],
+        "stage": "post_route_opt",
         "provider": "fc",
         "steps": [PostRouteOpt],
         "namespaces": ("FC_",),
     },
     {
-        "stages": ["fill_insertion"],
+        "stage": "fill_insertion",
         "provider": "fc",
         "steps": [FillInsertion],
         "namespaces": ("FC_",),

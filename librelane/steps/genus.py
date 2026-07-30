@@ -89,7 +89,7 @@ class Synthesis(GenusStep):
 #: ``librelane/stages/providers.py`` for the shape this list mirrors.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["synthesis"],
+        "stage": "synthesis",
         "provider": "genus",
         "steps": [Synthesis],
         # The specific GENUS_* configuration variables a real Genus

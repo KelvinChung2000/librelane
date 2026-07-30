@@ -138,7 +138,7 @@ _PEGASUS_NAMESPACES = (
 
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["drc"],
+        "stage": "drc",
         "provider": "pegasus",
         "steps": [DRC],
         "namespaces": _PEGASUS_NAMESPACES,
@@ -151,7 +151,7 @@ REGISTRATIONS: list[dict] = [
         "metrics": [],
     },
     {
-        "stages": ["lvs"],
+        "stage": "lvs",
         "provider": "pegasus",
         "steps": [LVS],
         "namespaces": _PEGASUS_NAMESPACES,

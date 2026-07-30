@@ -6,7 +6,7 @@ pytestmark = pytest.mark.all
 
 @pytest.fixture
 def steps():
-    from librelane.config import Variable
+    from librelane.config import variable
     from librelane.state import DesignFormat
     from librelane.steps import Step
 
@@ -14,7 +14,9 @@ def steps():
         id = "Composition.A"
         inputs = [DesignFormat.nl]
         outputs = [DesignFormat.odb]
-        config_vars = [Variable("A_VAR", int, "desc", default=1)]
+
+        class Config(Step.Config):
+            A_VAR: int = variable(1, description="desc")
 
         def run(self, state_in, **kwargs):
             return {}, {}
@@ -23,7 +25,9 @@ def steps():
         id = "Composition.B"
         inputs = [DesignFormat.odb]
         outputs = [DesignFormat.def_]
-        config_vars = [Variable("B_VAR", int, "desc", default=2)]
+
+        class Config(Step.Config):
+            B_VAR: int = variable(2, description="desc")
 
         def run(self, state_in, **kwargs):
             return {}, {}
@@ -54,7 +58,7 @@ def test_unmet_inputs_preserve_first_appearance_order(steps):
 
 
 def test_contradictory_config_vars_raise(steps):
-    from librelane.config import Variable
+    from librelane.config import variable
     from librelane.steps import Step
     from librelane.steps.step.composition import compose_step_sequence
 
@@ -64,7 +68,9 @@ def test_contradictory_config_vars_raise(steps):
         id = "Composition.Conflicting"
         inputs = []
         outputs = []
-        config_vars = [Variable("A_VAR", str, "different", default="x")]
+
+        class Config(Step.Config):
+            A_VAR: str = variable("x", description="different")
 
         def run(self, state_in, **kwargs):
             return {}, {}

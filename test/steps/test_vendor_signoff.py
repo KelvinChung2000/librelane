@@ -225,7 +225,7 @@ def test_registrations_cover_exactly_the_intended_stages():
     for module in modules:
         assert module.REGISTRATIONS, f"{module.__name__} declares no REGISTRATIONS"
         for registration in module.REGISTRATIONS:
-            all_stage_ids.update(registration["stages"])
+            all_stage_ids.add(registration["stage"])
 
     assert all_stage_ids == {
         "pre_pnr_sta",

@@ -136,13 +136,13 @@ _PT_NAMESPACES = ("PT_",)
 #: ``StageRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["pre_pnr_sta"],
+        "stage": "pre_pnr_sta",
         "provider": "pt",
         "steps": [PreSTA],
         "namespaces": _PT_NAMESPACES,
     },
     {
-        "stages": ["signoff_sta"],
+        "stage": "signoff_sta",
         "provider": "pt",
         "steps": [SignoffSTA],
         "namespaces": _PT_NAMESPACES,

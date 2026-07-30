@@ -88,13 +88,54 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
     """
     from librelane.stages import Stage
     from librelane.stages.providers import _REGISTRATIONS
+    from librelane.steps import (
+        calibre,
+        conformal,
+        dc,
+        fc,
+        fm,
+        genus,
+        icc2,
+        icv,
+        innovus,
+        pegasus,
+        pt,
+        quantus,
+        starrc,
+        tempus,
+        vc_spyglass,
+        voltus,
+    )
 
-    for entry in _REGISTRATIONS:
-        contracted_by_stage = {
-            metric
-            for stage_id in entry["stages"]
-            for metric in Stage.factory.get(stage_id).metrics
-        }
+    # Read each vendor module's data directly rather than importing
+    # librelane.stages.providers_vendor, whose import registers every
+    # commercial provider as a side effect and would defeat the opt-in
+    # boundary test/stages/test_providers_vendor.py pins.
+    vendor_registrations = [
+        entry
+        for module in (
+            calibre,
+            conformal,
+            dc,
+            fc,
+            fm,
+            genus,
+            icc2,
+            icv,
+            innovus,
+            pegasus,
+            pt,
+            quantus,
+            starrc,
+            tempus,
+            vc_spyglass,
+            voltus,
+        )
+        for entry in module.REGISTRATIONS
+    ]
+
+    for entry in _REGISTRATIONS + vendor_registrations:
+        contracted_by_stage = set(Stage.factory.get(entry["stage"]).metrics)
         tool_specific = set(entry.get("metrics", ())) - contracted_by_stage
         checked = {
             metric
@@ -102,7 +143,7 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
             if (metric := getattr(step, "metric_name", None)) is not None
         }
         assert tool_specific <= checked, (
-            f"{entry['stages']}:{entry['provider']} declares "
+            f"{entry['stage']}:{entry['provider']} declares "
             f"{sorted(tool_specific - checked)}, which nothing in the sequence "
             f"checks. A checker for it elsewhere in a flow would outlive the "
             f"tool it checks."
@@ -121,18 +162,14 @@ def test_declared_native_views_are_exactly_the_hard_unmet_inputs():
 
     for entry in _REGISTRATIONS:
         union = compose_step_sequence(entry["steps"])
-        supplied = {
-            view
-            for stage_id in entry["stages"]
-            for view in Stage.factory.get(stage_id).requires
-        }
+        supplied = set(Stage.factory.get(entry["stage"]).requires)
         needed = {
             view.id
             for view in union.unmet_inputs
             if not view.optional and view not in supplied
         }
         declared = {view.id for view in entry.get("native_views", ())}
-        assert needed == declared, f"{entry['stages']}:{entry['provider']}"
+        assert needed == declared, f"{entry['stage']}:{entry['provider']}"
 
 
 def test_openroad_carries_odb_across_pnr_boundaries():

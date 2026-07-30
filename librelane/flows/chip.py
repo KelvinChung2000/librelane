@@ -13,10 +13,13 @@
 # limitations under the License.
 from .flow import Flow
 from .classic import Classic
+from ..stages import Stage
 from ..steps import (
     OpenROAD,
     KLayout,
+    Odb,
     Checker,
+    Misc,
 )
 
 
@@ -26,35 +29,106 @@ class Chip(Classic):
     A flow of type :class:`librelane.flows.SequentialFlow` that is used
     to implement complete chip designs. This includes pad ring generation,
     seal ring generation, filler insertion, and density check.
+
+    It subclasses :class:`Classic` for the configuration variables, which are
+    genuinely shared, but declares its own ``Stages``.
     """
 
-    Substitutions = {
-        # Generate the pad ring right after
-        # setting the the power connections
-        "+Odb.SetPowerConnections": OpenROAD.PadRing,
-        # No pin placement necessary
-        # -> pads are the BTerms
-        "OpenROAD.IOPlacement": None,
-        "Odb.CustomIOPlacement": None,
-        # This is not a macro, there's no need to
-        # write a LEF and check antenna properties
-        "Magic.WriteLEF": None,
-        "Odb.CheckDesignAntennaProperties": None,
-        # Add finishing steps
-        "+Checker.XOR": KLayout.Antenna,
-        "+KLayout.Antenna": Checker.KLayoutAntenna,
-        "+Checker.KLayoutAntenna": KLayout.SealRing,
-        "+KLayout.SealRing": KLayout.Filler,
-        "+KLayout.Filler": KLayout.Density,
-        "+KLayout.Density": Checker.KLayoutDensity,
-    }
+    #: Written out in full rather than derived from ``Classic.Stages``, for the
+    #: reason given on ``VHDLClassic.Stages``. The differences from ``Classic``
+    #: are ``OpenROAD.PadRing`` after ``Odb.SetPowerConnections``, the six
+    #: finishing steps after ``Checker.XOR``, and three omissions:
+    #: ``Magic.WriteLEF`` and ``Odb.CheckDesignAntennaProperties``, which a chip
+    #: does not need because it is not a macro, and ``Stage.io_placement``,
+    #: whose pins are the pad ring's bumps.
+    #:
+    #: ``Stage.io_placement`` is omitted rather than pinned to another provider,
+    #: and the two steps of it a chip still needs are listed here as plain
+    #: steps. ``OpenROAD.GlobalPlacementSkipIO`` seeds placement before the pins
+    #: exist and ``Odb.ApplyDEFTemplate`` copies a pin arrangement from a
+    #: template, neither of which places a pin itself. The cost is that this
+    #: flow has no ``io_placement`` boundary and so cannot swap that stage's
+    #: tool from ``TOOLS``.
+    Stages = [
+        Stage.lint,
+        Stage.synthesis,
+        Stage.pre_pnr_sta,
+        Stage.floorplan,
+        Odb.SetPowerConnections,
+        OpenROAD.PadRing,
+        Stage.macro_placement,
+        OpenROAD.CutRows,
+        Stage.tapcell_insertion,
+        Stage.power_grid,
+        Odb.AddRoutingObstructions,
+        OpenROAD.GlobalPlacementSkipIO,
+        Odb.ApplyDEFTemplate,
+        Stage.global_placement,
+        Odb.WriteVerilogHeader,
+        Checker.PowerGridViolations,
+        OpenROAD.STAMidPNR,
+        Stage.post_gpl_repair,
+        Odb.ManualGlobalPlacement,
+        Stage.detailed_placement,
+        Stage.cts,
+        OpenROAD.STAMidPNR,
+        Stage.post_cts_opt,
+        OpenROAD.STAMidPNR,
+        Stage.global_routing,
+        Stage.post_grt_repair,
+        Stage.antenna_repair,
+        Stage.post_grt_opt,
+        OpenROAD.STAMidPNR,
+        Stage.detailed_routing,
+        Odb.ReportDisconnectedPins,
+        Checker.DisconnectedPins,
+        Odb.ReportWireLength,
+        Checker.WireLength,
+        Stage.post_route_opt,
+        Stage.fill_insertion,
+        Odb.CellFrequencyTables,
+        Stage.extraction,
+        Stage.signoff_sta,
+        Stage.ir_drop,
+        Stage.streamout,
+        KLayout.XOR,
+        Checker.XOR,
+        KLayout.Antenna,
+        Checker.KLayoutAntenna,
+        KLayout.SealRing,
+        KLayout.Filler,
+        KLayout.Density,
+        Checker.KLayoutDensity,
+        Stage.drc,
+        Stage.lvs,
+        Stage.formal_equivalence,
+        Checker.SetupViolations,
+        Checker.HoldViolations,
+        Checker.MaxSlewViolations,
+        Checker.MaxCapViolations,
+        Misc.ReportManufacturability,
+    ]
 
-    # Magic.WriteLEF is substituted out above, so the gate Classic declares for
-    # it matches no step here and has never done anything. Removing a step means
-    # removing its gate. This restates Classic's hand-written gates rather than
-    # its full set, because the rest are generated per subclass from stage gates.
+    #: ``Classic`` gates ``Magic.WriteLEF`` with ``RUN_MAGIC_WRITE_LEF``, and
+    #: this flow has no such step, so that entry is dropped. The rest are
+    #: restated rather than inherited because ``_explicit_gating_config_vars``
+    #: is what a subclass inherits and a gating key naming no step raises.
     gating_config_vars = {
-        key: value
-        for key, value in Classic._explicit_gating_config_vars.items()
-        if key != "Magic.WriteLEF"
+        "Odb.HeuristicDiodeInsertion": ["RUN_HEURISTIC_DIODE_INSERTION"],
+        "Magic.StreamOut": ["RUN_MAGIC_STREAMOUT"],
+        "KLayout.StreamOut": ["RUN_KLAYOUT_STREAMOUT"],
+        "Magic.DRC": ["RUN_MAGIC_DRC"],
+        "KLayout.DRC": ["RUN_KLAYOUT_DRC"],
+        "Checker.MagicDRC": ["RUN_MAGIC_DRC"],
+        "Checker.KLayoutDRC": ["RUN_KLAYOUT_DRC"],
+        "KLayout.XOR": [
+            "RUN_KLAYOUT_XOR",
+            "RUN_MAGIC_STREAMOUT",
+            "RUN_KLAYOUT_STREAMOUT",
+        ],
+        "Checker.XOR": [
+            "RUN_KLAYOUT_XOR",
+            "RUN_MAGIC_STREAMOUT",
+            "RUN_KLAYOUT_STREAMOUT",
+        ],
     }

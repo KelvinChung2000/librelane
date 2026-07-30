@@ -69,16 +69,6 @@ def test_boundaries_exclude_plain_steps(SmallStaged):
     ]
 
 
-def test_substitute_still_works(SmallStaged):
-    Substituted = SmallStaged.Substitute({"OpenROAD.CTS": None})
-
-    assert "OpenROAD.CTS" not in [step.id for step in Substituted.Steps]
-    assert [b.stage_ids for b in Substituted.stage_boundaries(Substituted.Steps)] == [
-        ("global_placement",),
-        ("detailed_placement",),
-    ]
-
-
 def test_duplicate_normalization_preserves_tags():
     from librelane.flows import StagedFlow
     from librelane.stages import Stage
@@ -165,7 +155,7 @@ def ProbeStage():
     ).register()
 
     StageRegistry.register(
-        stages=["probe_stage"],
+        stage="probe_stage",
         provider="probe",
         steps=[Probe],
         namespaces=["PROBE_"],
@@ -322,17 +312,15 @@ def test_gates_for_a_deselected_tool_are_dropped_not_rejected(mock_config):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
-def test_chip_with_tools_keeps_its_substitutions(mock_config):
+def test_chip_with_tools_keeps_its_own_step_list(mock_config):
     """
-    Instance-time re-expansion replaces ``Steps`` with the freshly resolved list,
-    which has none of the ``Substitutions`` the class definition applied. Since
-    ``SequentialFlow.__init_subclass__`` clears ``Substitutions`` after applying
-    them, they have to be recorded on the class to be replayable, or setting
-    TOOLS on Chip silently runs plain Classic.
+    Instance-time re-expansion rebuilds ``Steps`` from ``Stages``. Chip declares
+    its own ``Stages``, so the rebuilt list must still be Chip's and not
+    Classic's, or setting TOOLS on Chip silently runs plain Classic.
 
-    Magic.WriteLEF is the sharpest case: Chip drops that gate because it removed
-    the step, so a WriteLEF that comes back is a step running with a gating
-    variable that no longer reaches it.
+    Magic.WriteLEF is the sharpest case: Chip has no such step and so drops the
+    gate Classic declares for it, which means a WriteLEF that comes back is a
+    step running with a gating variable that no longer reaches it.
     """
     from librelane.flows import Flow
 
@@ -350,59 +338,6 @@ def test_chip_with_tools_keeps_its_substitutions(mock_config):
     # The selection itself still took effect.
     assert "Magic.DRC" not in ids
     assert "KLayout.DRC" in ids
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow_module, sequential_module, step_module])
-def test_substitutions_replayed_down_a_whole_inheritance_chain(mock_config):
-    """
-    The record has to accumulate rather than be per-class, because ``Steps``
-    reaches its class-definition shape through every substitution in the
-    ancestry, and re-expansion throws all of them away at once. Chip contributes
-    eleven and Substitute() one more.
-    """
-    from librelane.flows import Flow
-
-    Chip = Flow.factory.get("Chip")
-    Trimmed = Chip.Substitute({"Checker.HoldViolations": None})
-
-    assert Chip._applied_substitutions is not Trimmed._applied_substitutions, (
-        "a subclass must not append to its parent's record"
-    )
-    assert len(Trimmed._applied_substitutions) == len(Chip._applied_substitutions) + 1
-
-    flow = _flow_with_tools(mock_config, Trimmed, {"drc": "klayout"}, **_NO_XOR)
-
-    ids = [step.id for step in flow.Steps]
-    assert "OpenROAD.PadRing" in ids, "Chip's own substitution"
-    assert "Checker.HoldViolations" not in ids, "the subclass's substitution"
-    assert "Checker.SetupViolations" in ids
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow_module, sequential_module, step_module])
-def test_substitution_naming_a_step_the_selection_removed_raises(SwappableStage):
-    """
-    The other half of replaying substitutions: a substitution key that the new
-    provider selection removed cannot be applied, and must say so rather than be
-    quietly skipped. Selecting 'beta' removes Test.Alpha, which the flow's
-    Substitutions name.
-    """
-    from librelane.flows import FlowException, StagedFlow
-
-    Swappable, Extra = SwappableStage
-
-    class Swapped(StagedFlow):
-        Stages = [Swappable]
-        Substitutions = {"+Test.Alpha": Extra}
-
-    assert [step.id for step in Swapped.Steps] == ["Test.Alpha", "Test.Extra"]
-
-    with pytest.raises(FlowException, match="Test.Alpha"):
-        Swapped(
-            {**_MINIMAL_DESIGN, "TOOLS": {"swappable": "beta"}},
-            **_MOCK_PDK,
-        )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -425,60 +360,6 @@ def test_unknown_stage_key_is_rejected_with_a_suggestion():
     Classic = Flow.factory.get("Classic")
     with pytest.raises(StageResolutionError, match="Did you mean: 'synthesis'"):
         Classic({**_MINIMAL_DESIGN, "TOOLS": {"synthesys": "yosys"}}, **_MOCK_PDK)
-
-
-@pytest.fixture(scope="module")
-def SwappableStage():
-    """
-    A stage with two providers whose step sequences share no step, plus a plain
-    step to substitute in, for exercising how ``TOOLS`` composes with
-    ``Substitutions``.
-
-    Module-scoped because Stage.factory and StageRegistry are process-wide
-    singletons. The step IDs use the Test. prefix the repository reserves for
-    ephemeral test steps, which test_registry_snapshot.py excludes.
-    """
-    from librelane.stages import Stage, StageRegistry
-    from librelane.steps import Step
-
-    class Quiet(Step):
-        inputs = []
-        outputs = []
-
-        def run(self, state_in, **kwargs):
-            return {}, {}
-
-    @Step.factory.register()
-    class Alpha(Quiet):
-        id = "Test.Alpha"
-        name = "Alpha"
-
-    @Step.factory.register()
-    class Beta(Quiet):
-        id = "Test.Beta"
-        name = "Beta"
-
-    @Step.factory.register()
-    class Extra(Quiet):
-        id = "Test.Extra"
-        name = "Extra"
-
-    Stage(
-        id="swappable",
-        full_name="Swappable",
-        default_provider="alpha",
-        requires=(),
-        provides=(),
-    ).register()
-
-    for provider, steps in (("alpha", [Alpha]), ("beta", [Beta])):
-        StageRegistry.register(
-            stages=["swappable"],
-            provider=provider,
-            steps=steps,
-            namespaces=["TEST_"],
-        )
-    return Stage.factory.get("swappable"), Extra
 
 
 @pytest.fixture(scope="module")
@@ -514,7 +395,7 @@ def ContractTestStage():
     ).register()
 
     StageRegistry.register(
-        stages=["contract_test"],
+        stage="contract_test",
         provider="silent",
         steps=[Silent],
         namespaces=["TEST_"],
@@ -629,7 +510,7 @@ def MultiProviderContractStages():
     )
     for stage_id, provider, step, metrics in registrations:
         StageRegistry.register(
-            stages=[stage_id],
+            stage=stage_id,
             provider=provider,
             steps=[step],
             namespaces=["TEST_"],
@@ -1014,91 +895,31 @@ def test_metric_modifiers_satisfy_the_contract():
     assert modifiers == {"net": "VPWR"}
 
 
-@pytest.fixture(scope="module")
-def PdkHungryStage():
-    from librelane.stages import Stage, StageRegistry
-    from librelane.steps import Step
-
-    @Step.factory.register()
-    class Hungry(Step):
-        id = "Test.Hungry"
-        inputs = []
-        outputs = []
-
-        def run(self, state_in, **kwargs):
-            return {}, {}
-
-    Stage(
-        id="pdk_hungry",
-        full_name="PDK Hungry",
-        default_provider="hungry",
-        requires=(),
-        provides=(),
-    ).register()
-
-    StageRegistry.register(
-        stages=["pdk_hungry"],
-        provider="hungry",
-        steps=[Hungry],
-        namespaces=["MOCK_"],
-        requires_pdk_vars=["QRC_TECHFILE"],
-    )
-    return Stage.factory.get("pdk_hungry")
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow_module, sequential_module, step_module])
-def test_missing_pdk_variable_names_stage_provider_variable_and_pdk(
-    PdkHungryStage,
-):
-    from librelane.flows import StagedFlow
-    from librelane.stages import StageResolutionError
-
-    class Hungry(StagedFlow):
-        Stages = [PdkHungryStage]
-
-    with pytest.raises(StageResolutionError) as excinfo:
-        Hungry(
-            {"DESIGN_NAME": "WHATEVER", "VERILOG_FILES": ["/cwd/src/a.v"]},
-            design_dir="/cwd",
-            pdk="dummy",
-            scl="dummy_scl",
-            pdk_root="/pdk",
-        )
-
-    message = str(excinfo.value)
-    assert "pdk_hungry" in message
-    assert "hungry" in message
-    assert "QRC_TECHFILE" in message
-    assert "dummy" in message
-
-
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
 def test_preflight_gate_expansion_matches_the_real_run_for_a_colliding_key(
     PreflightSteps,
 ):
     """
-    Pins the fix for a Task 12 review finding: the preflight's gate expansion
-    used to accumulate variables across a colliding exact and wildcard gating
-    key (``setdefault(...).extend(...)``), while ``SequentialFlow.run``
-    overwrites on collision (last key in iteration order wins). Since the
-    preflight skips a step when any of its gates is false, the accumulating
-    version could treat a step as gated off - and skip checking its inputs -
-    when the real run would in fact execute it.
+    The preflight and the real run must expand a colliding exact and wildcard
+    gating key identically, or the preflight predicts a run that does not
+    happen. Both go through ``SequentialFlow._expand_gating_config_vars``,
+    which unions the two lists, so a step named by both keys is gated off when
+    either variable is false.
 
-    In both cases below, the exact key sets a False gate and the wildcard key,
-    which comes later and so wins under ``run``'s overwrite semantics, sets a
-    True gate: the step is not actually gated off. The merging version instead
-    computes ['RUN_A', 'RUN_B'], sees the False 'RUN_A', and wrongly treats the
-    step as gated - which is observable two ways:
+    In the first two flows below the exact key sets a false gate and the
+    wildcard key a true one. The union is ['RUN_A', 'RUN_B'], the false RUN_A
+    gates the step off, and that verdict shows up on both sides:
 
-    * With a hard-required input nothing produces, the merging preflight
-      skips checking it and construction succeeds silently; the fixed
-      preflight agrees the step runs, walks the input, and raises.
-    * With a satisfiable input, construction succeeds either way, but only
-      the real run's verdict - captured by actually executing the step -
-      says whether the preflight's silent success was for the right reason.
+    * With a hard-required input nothing produces, the preflight agrees the
+      step never runs and so never walks the input, and construction succeeds.
+    * With a satisfiable input, construction succeeds too, and the real run
+      confirms the shared verdict by never executing the step.
+
+    The third flow is the control. Turning RUN_A true leaves both members of
+    the union true, the step runs, and the preflight raises on the input
+    nothing produces - so the silence above is the gate, not a preflight that
+    has stopped looking.
     """
     from librelane.config import variable
     from librelane.flows import StagedFlow
@@ -1114,11 +935,10 @@ def test_preflight_gate_expansion_matches_the_real_run_for_a_colliding_key(
         }
 
         class Config(StagedFlow.Config):
-            RUN_A: bool = variable(False, description="test gate, shadowed")
-            RUN_B: bool = variable(True, description="test gate, wins")
+            RUN_A: bool = variable(False, description="test gate, false")
+            RUN_B: bool = variable(True, description="test gate, true")
 
-    with pytest.raises(StageResolutionError, match="json_h"):
-        RequiredCollision(_MINIMAL_DESIGN, **_MOCK_PDK)
+    RequiredCollision(_MINIMAL_DESIGN, **_MOCK_PDK)
 
     class OptionalCollision(StagedFlow):
         Steps = [WantsOptionalHeader]
@@ -1128,12 +948,26 @@ def test_preflight_gate_expansion_matches_the_real_run_for_a_colliding_key(
         }
 
         class Config(StagedFlow.Config):
-            RUN_A: bool = variable(False, description="test gate, shadowed")
-            RUN_B: bool = variable(True, description="test gate, wins")
+            RUN_A: bool = variable(False, description="test gate, false")
+            RUN_B: bool = variable(True, description="test gate, true")
 
     flow = OptionalCollision(_MINIMAL_DESIGN, **_MOCK_PDK)
     flow.start()
-    assert "Test.WantsOptionalHeader" in [step.id for step in flow.step_objects]
+    assert "Test.WantsOptionalHeader" not in [step.id for step in flow.step_objects]
+
+    class BothTrue(StagedFlow):
+        Steps = [WantsHeader]
+        gating_config_vars = {
+            "Test.WantsHeader": ["RUN_A"],
+            "Test.Wants*": ["RUN_B"],
+        }
+
+        class Config(StagedFlow.Config):
+            RUN_A: bool = variable(True, description="test gate, true")
+            RUN_B: bool = variable(True, description="test gate, true")
+
+    with pytest.raises(StageResolutionError, match="json_h"):
+        BothTrue(_MINIMAL_DESIGN, **_MOCK_PDK)
 
 
 @pytest.fixture(scope="module")
@@ -1205,3 +1039,31 @@ def test_describe_stages_reports_the_default_selection():
 
     assert described["cts"] == "openroad"
     assert described["post_route_opt"] is None
+
+
+def test_a_wildcard_explicit_gate_does_not_displace_the_stage_gate():
+    """
+    _apply_stage_gating merges by exact key, so a wildcard explicit key lands
+    as a separate entry and only collides with the generated one at expansion.
+    Both entries must survive the merge for the union there to be reachable.
+    """
+    from librelane.config import variable
+    from librelane.flows import StagedFlow
+    from librelane.stages import Stage
+
+    class Both(StagedFlow):
+        Stages = [Stage.cts]
+        gating_config_vars = {"OpenROAD.CTS*": ["MY_GATE"]}
+
+        class Config(StagedFlow.Config):
+            RUN_CTS: bool = variable(True, description="test gate")
+            MY_GATE: bool = variable(True, description="test gate")
+
+    assert Both.gating_config_vars["OpenROAD.CTS"] == ["RUN_CTS"]
+    assert Both.gating_config_vars["OpenROAD.CTS*"] == ["MY_GATE"]
+
+    expanded = StagedFlow._expand_gating_config_vars(
+        Both.gating_config_vars,
+        [step.id for step in Both.Steps],
+    )
+    assert expanded["OpenROAD.CTS"] == ["RUN_CTS", "MY_GATE"]

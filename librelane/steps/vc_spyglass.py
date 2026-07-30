@@ -86,7 +86,7 @@ _VC_SPYGLASS_NAMESPACES = ("VC_SPYGLASS_",)
 #: ``StageRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["lint"],
+        "stage": "lint",
         "provider": "vc_spyglass",
         "steps": [Lint],
         "namespaces": _VC_SPYGLASS_NAMESPACES,

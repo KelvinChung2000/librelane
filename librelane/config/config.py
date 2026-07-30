@@ -142,10 +142,7 @@ class Meta:
     """
 
     version: int = 1
-    flow: None | str | list[str] = None
-    substituting_steps: None | dict[str, str | None] | list[tuple[str, str | None]] = (
-        None
-    )
+    flow: None | str = None
     step: None | str = None
     librelane_version: None | str = __version__
 

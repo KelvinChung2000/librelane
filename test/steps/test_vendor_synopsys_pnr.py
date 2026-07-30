@@ -193,36 +193,31 @@ def test_step_is_registered_in_step_factory(step_id):
 def test_dc_registrations_cover_exactly_synthesis():
     from librelane.steps.dc import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == ["synthesis"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "dc"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 def test_icc2_registrations_cover_exactly_the_seventeen_pnr_stages():
     from librelane.steps.icc2 import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == sorted(PNR_STAGE_IDS)
     for entry in REGISTRATIONS:
         assert entry["provider"] == "icc2"
-        assert len(entry["stages"]) == 1, "each registration should cover one stage"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 def test_fc_registrations_cover_synthesis_and_the_seventeen_pnr_stages():
     from librelane.steps.fc import REGISTRATIONS
 
-    covered = sorted({stage for entry in REGISTRATIONS for stage in entry["stages"]})
+    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
     assert covered == sorted(["synthesis"] + PNR_STAGE_IDS)
     for entry in REGISTRATIONS:
         assert entry["provider"] == "fc"
-        assert len(entry["stages"]) == 1, "each registration should cover one stage"
-        for stage_id in entry["stages"]:
-            assert stage_id in Stage.factory.list()
+        assert entry["stage"] in Stage.factory.list()
 
 
 # ----------------------------------------------------------------------

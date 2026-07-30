@@ -129,182 +129,6 @@ def test_custom_seqflow_bad_id(MetricIncrementer):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_flow_module, step_module])
-def test_substitution(MetricIncrementer):
-    from librelane.flows import SequentialFlow
-
-    @Step.factory.register()
-    class FirstMetricIncrementer(MetricIncrementer):
-        id = "Test.FirstMetricIncrementer"
-        counter_name = "first_counter"
-
-    @Step.factory.register()
-    class OtherMetricIncrementer(MetricIncrementer):
-        id = "Test.OtherMetricIncrementer"
-        counter_name = "other_counter"
-
-    @Step.factory.register()
-    class FinalMetricIncrementer(MetricIncrementer):
-        id = "Test.FinalMetricIncrementer"
-        counter_name = "final_counter"
-
-    MyFlow = SequentialFlow.Make(
-        [
-            "Test.MetricIncrementer",
-            "Test.MetricIncrementer",
-            "Test.MetricIncrementer",
-            "Test.MetricIncrementer",
-        ]
-    )
-
-    flow = MyFlow.Substitute(
-        {
-            "-Test.MetricIncrementer": FirstMetricIncrementer,
-            "Test.MetricIncrementer-1": OtherMetricIncrementer,
-            "Test.MetricIncrementer": "Test.OtherMetricIncrementer",
-            "+Test.MetricIncrementer-1": "Test.FinalMetricIncrementer",
-        }
-    )(
-        {
-            "DESIGN_NAME": "WHATEVER",
-            "VERILOG_FILES": ["/cwd/src/a.v"],
-        },
-        design_dir="/cwd",
-        pdk="dummy",
-        scl="dummy_scl",
-        pdk_root="/pdk",
-    )
-
-    assert [step.id for step in flow.Steps] == [
-        "Test.FirstMetricIncrementer",
-        "Test.OtherMetricIncrementer",
-        "Test.OtherMetricIncrementer-1",
-        "Test.MetricIncrementer",
-        "Test.MetricIncrementer-1",
-        "Test.FinalMetricIncrementer",
-    ], "SequentialFlow did not increment IDs properly for duplicate steps"
-
-    state = flow.start()
-    assert state.metrics == {
-        "first_counter": 1,
-        "other_counter": 2,
-        "counter": 2,
-        "final_counter": 1,
-    }, "step substitution execution returned unexpected metrics"
-
-    flow2 = MyFlow.Substitute(
-        [
-            ("-Test.MetricIncrementer", FirstMetricIncrementer),
-            ("Test.MetricIncrementer", "Test.OtherMetricIncrementer"),
-            ("Test.MetricIncrementer", OtherMetricIncrementer),
-            ("+Test.MetricIncrementer-1", "Test.FinalMetricIncrementer"),
-        ]
-    )(
-        {
-            "DESIGN_NAME": "WHATEVER",
-            "VERILOG_FILES": ["/cwd/src/a.v"],
-        },
-        design_dir="/cwd",
-        pdk="dummy",
-        scl="dummy_scl",
-        pdk_root="/pdk",
-    )
-
-    assert [step.id for step in flow2.Steps] == [
-        "Test.FirstMetricIncrementer",
-        "Test.OtherMetricIncrementer",
-        "Test.OtherMetricIncrementer-1",
-        "Test.MetricIncrementer",
-        "Test.MetricIncrementer-1",
-        "Test.FinalMetricIncrementer",
-    ], (
-        "SequentialFlow did not increment IDs properly for duplicate steps when using tuples"
-    )
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow_module, sequential_flow_module, step_module])
-def test_substitute_none(MetricIncrementer):
-    from librelane.flows import SequentialFlow, FlowException
-
-    MyFlow = SequentialFlow.Make(
-        [
-            "Test.MetricIncrementer",
-            "Test.MetricIncrementer",
-            "Test.MetricIncrementer",
-            "Test.MetricIncrementer",
-        ]
-    )
-
-    with pytest.raises(FlowException, match="Cannot prepend or append None"):
-        MyFlow.Substitute({"-Test.MetricIncrementer": None})
-
-    with pytest.raises(FlowException, match="Cannot prepend or append None"):
-        MyFlow.Substitute({"+Test.MetricIncrementer": None})
-
-    flow_with_removal = MyFlow.Substitute({"Test.MetricIncrementer-1": None})(
-        {
-            "DESIGN_NAME": "WHATEVER",
-            "VERILOG_FILES": ["/cwd/src/a.v"],
-        },
-        design_dir="/cwd",
-        pdk="dummy",
-        scl="dummy_scl",
-        pdk_root="/pdk",
-    )
-    assert [step.id for step in flow_with_removal.Steps] == [
-        "Test.MetricIncrementer",
-        "Test.MetricIncrementer-1",
-        "Test.MetricIncrementer-2",
-    ], "Removal did not work as expected"
-
-    with pytest.raises(FlowException, match="no steps with ID"):
-        MyFlow.Substitute({"Test.MetricIncrementer-80": None})
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow_module, sequential_flow_module, step_module])
-def test_bad_substitution(MetricIncrementer):
-    from librelane.flows import SequentialFlow, FlowException
-
-    MyFlow = SequentialFlow.Make(
-        [
-            "Test.MetricIncrementer",
-            "Test.MetricIncrementer",
-            "Test.MetricIncrementer",
-            "Test.MetricIncrementer",
-        ]
-    )
-
-    with pytest.raises(
-        FlowException, match=r"no replacement step with ID '[\w\.]+' found"
-    ):
-        MyFlow.Substitute({"Test.MetricIncrementer": "Test.NotARealStep"})(
-            {
-                "DESIGN_NAME": "WHATEVER",
-                "VERILOG_FILES": ["/cwd/src/a.v"],
-            },
-            design_dir="/cwd",
-            pdk="dummy",
-            scl="dummy_scl",
-            pdk_root="/pdk",
-        )
-    with pytest.raises(
-        FlowException, match=r"no steps with ID '[\w\.]+' found in flow"
-    ):
-        MyFlow.Substitute({"Test.NotAStepInTheFlow": "Test.MetricIncrementer"})(
-            {
-                "DESIGN_NAME": "WHATEVER",
-                "VERILOG_FILES": ["/cwd/src/a.v"],
-            },
-            design_dir="/cwd",
-            pdk="dummy",
-            scl="dummy_scl",
-            pdk_root="/pdk",
-        )
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow_module, sequential_flow_module, step_module])
 def test_flow_control(MetricIncrementer):
     from librelane.flows import SequentialFlow
 
@@ -432,3 +256,223 @@ def test_gating_validation(MetricIncrementer):
 
         class _Test2(Dummy):
             gating_config_vars = {"Test.MetricIncrementer": ["BAD_GATING_VARIABLE"]}
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_flow_module, step_module])
+def test_from_works_when_an_earlier_step_is_gated(MetricIncrementer):
+    """
+    A gated step never reached the execute path, so it wrote no resume entry.
+    Requiring one from it made --from unusable on any flow with a gate turned
+    off, which is every real configuration.
+    """
+    from librelane.config import Variable
+    from librelane.flows import SequentialFlow
+
+    class Gated(MetricIncrementer):
+        id = "Test.Gated"
+        counter_name = "gated_counter"
+
+    class Later(MetricIncrementer):
+        id = "Test.Later"
+        counter_name = "later_counter"
+
+    class Dummy(SequentialFlow):
+        Steps = [MetricIncrementer, Gated, Later]
+
+        config_vars = [Variable("TEST_GATE", bool, description="x", default=False)]
+
+        gating_config_vars = {"Test.Gated": ["TEST_GATE"]}
+
+    flow = Dummy(
+        {"DESIGN_NAME": "WHATEVER", "VERILOG_FILES": ["/cwd/src/a.v"]},
+        design_dir="/cwd",
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+    flow.start(tag="GATED_FROM")
+
+    state = flow.start(tag="GATED_FROM", frm="Test.Later")
+    # Metrics do not accumulate across runs: each run's state chain starts
+    # empty, so Later increments from zero both times. What is being pinned is
+    # that the run reaches Later at all, having reused the step before the gate
+    # and passed over the gate itself without demanding a resume entry from it.
+    assert state.metrics["counter"] == 1
+    assert state.metrics["later_counter"] == 1
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_flow_module, step_module])
+def test_reproducible_of_a_gated_step_raises_naming_the_gate(MetricIncrementer):
+    """
+    Packaging a reproducible for a step this configuration would never execute
+    is a contradiction. It used to be resolved by discarding the request and
+    running the whole flow instead, with no message.
+    """
+    from librelane.config import Variable
+    from librelane.flows import SequentialFlow, FlowException
+
+    class Gated(MetricIncrementer):
+        id = "Test.GatedRepro"
+        counter_name = "gated_counter"
+
+    class Dummy(SequentialFlow):
+        Steps = [MetricIncrementer, Gated]
+
+        config_vars = [Variable("TEST_GATE", bool, description="x", default=False)]
+
+        gating_config_vars = {"Test.GatedRepro": ["TEST_GATE"]}
+
+    flow = Dummy(
+        {"DESIGN_NAME": "WHATEVER", "VERILOG_FILES": ["/cwd/src/a.v"]},
+        design_dir="/cwd",
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+
+    with pytest.raises(FlowException, match="TEST_GATE"):
+        flow.start(reproducible="Test.GatedRepro")
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_flow_module, step_module])
+def test_each_skip_reason_names_its_cause(MetricIncrementer, caplog):
+    """
+    Three unrelated mechanisms used to emit the identical 'Skipping step' line,
+    so a user reading a log could not tell which one had fired.
+    """
+    from librelane.config import Variable
+    from librelane.flows import SequentialFlow
+
+    class Gated(MetricIncrementer):
+        id = "Test.GatedReason"
+
+    class Skipped(MetricIncrementer):
+        id = "Test.SkippedReason"
+
+    class Windowed(MetricIncrementer):
+        id = "Test.WindowedReason"
+
+    class Dummy(SequentialFlow):
+        Steps = [MetricIncrementer, Gated, Skipped, Windowed]
+
+        config_vars = [Variable("TEST_GATE", bool, description="x", default=False)]
+
+        gating_config_vars = {"Test.GatedReason": ["TEST_GATE"]}
+
+    flow = Dummy(
+        {"DESIGN_NAME": "WHATEVER", "VERILOG_FILES": ["/cwd/src/a.v"]},
+        design_dir="/cwd",
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+    flow.start(skip=["Test.SkippedReason"], to="Test.SkippedReason")
+
+    assert "TEST_GATE" in caplog.text
+    assert "--skip" in caplog.text
+    assert "--to" in caplog.text
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_flow_module, step_module])
+def test_overlapping_gating_keys_union_rather_than_overwrite(MetricIncrementer):
+    """
+    A wildcard key and an exact key matching the same step both apply. Taking
+    the last one in iteration order silently dropped the other, which on a
+    StagedFlow means dropping the stage gate a flow never wrote by hand and
+    cannot see.
+    """
+    from librelane.flows import SequentialFlow
+
+    expanded = SequentialFlow._expand_gating_config_vars(
+        {
+            "Test.Alpha": ["EXACT_GATE"],
+            "Test.Alph*": ["WILDCARD_GATE"],
+        },
+        ["Test.Alpha", "Test.Beta"],
+    )
+
+    assert expanded["Test.Alpha"] == ["EXACT_GATE", "WILDCARD_GATE"]
+    assert "Test.Beta" not in expanded
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_flow_module, step_module])
+def test_gating_union_is_order_independent():
+    from librelane.flows import SequentialFlow
+
+    forward = SequentialFlow._expand_gating_config_vars(
+        {"Test.Alph*": ["WILDCARD_GATE"], "Test.Alpha": ["EXACT_GATE"]},
+        ["Test.Alpha"],
+    )
+
+    assert sorted(forward["Test.Alpha"]) == ["EXACT_GATE", "WILDCARD_GATE"]
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_flow_module, step_module])
+def test_gating_union_deduplicates():
+    from librelane.flows import SequentialFlow
+
+    expanded = SequentialFlow._expand_gating_config_vars(
+        {"Test.Alpha": ["SHARED_GATE"], "Test.Alph*": ["SHARED_GATE"]},
+        ["Test.Alpha"],
+    )
+
+    assert expanded["Test.Alpha"] == ["SHARED_GATE"]
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_flow_module, step_module])
+def test_a_mistyped_step_id_raises_and_suggests(MetricIncrementer, monkeypatch):
+    """
+    The suggestion stays; proceeding on the guess does not. The environment
+    variable that used to make a near miss run anyway is gone, so setting it
+    changes nothing.
+    """
+    from librelane.flows import SequentialFlow, FlowException
+
+    monkeypatch.setenv(
+        "_i_want_librelane_to_fuzzy_match_steps_and_im_willing_to_accept_the_risks",
+        "1",
+    )
+
+    class Dummy(SequentialFlow):
+        Steps = [MetricIncrementer]
+
+    flow = Dummy(
+        {"DESIGN_NAME": "WHATEVER", "VERILOG_FILES": ["/cwd/src/a.v"]},
+        design_dir="/cwd",
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+
+    with pytest.raises(FlowException, match="Did you mean"):
+        flow.start(frm="Test.MetricIncrementerr")
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_flow_module, step_module])
+def test_resolve_step_id_is_reachable_without_running(MetricIncrementer):
+    from librelane.flows import SequentialFlow
+
+    class Dummy(SequentialFlow):
+        Steps = [MetricIncrementer]
+
+    flow = Dummy(
+        {"DESIGN_NAME": "WHATEVER", "VERILOG_FILES": ["/cwd/src/a.v"]},
+        design_dir="/cwd",
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+
+    assert flow._resolve_step_id("test.metricincrementer") == "Test.MetricIncrementer"
+    assert flow._resolve_step_id(None) is None
+    assert flow._resolve_step_id("test.*", multiple_ok=True) == [
+        "Test.MetricIncrementer"
+    ]

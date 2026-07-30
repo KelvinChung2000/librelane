@@ -14,7 +14,6 @@ timing_corners
 timing_closure/index
 using_macros
 using_vhdl
-using_ecos
 lvs/index
 writing_custom_flows
 swapping_tools

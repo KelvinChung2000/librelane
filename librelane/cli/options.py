@@ -168,14 +168,6 @@ ToOption = Annotated[
         rich_help_panel=SEQUENTIAL_OPTIONS,
     ),
 ]
-OnlyOption = Annotated[
-    str | None,
-    typer.Option(
-        "--only",
-        help="Set both --from and --to to this step ID.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
-    ),
-]
 SkipOption = Annotated[
     list[str] | None,
     typer.Option(

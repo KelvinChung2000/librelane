@@ -89,7 +89,7 @@ class Synthesis(DCStep):
 #: ``librelane/stages/providers.py`` for the shape this list mirrors.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["synthesis"],
+        "stage": "synthesis",
         "provider": "dc",
         "steps": [Synthesis],
         # The specific DC_* configuration variables a real Design Compiler

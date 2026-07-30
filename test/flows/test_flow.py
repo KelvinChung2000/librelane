@@ -18,7 +18,7 @@ from collections.abc import Callable
 import pytest
 
 from librelane.flows import flow
-from librelane.config import Variable
+from librelane.config import Variable, variable as config_variable
 from librelane.steps import step
 
 pytestmark = pytest.mark.all
@@ -42,7 +42,8 @@ def MockStepTuple(variable: Variable):
         inputs = [DesignFormat.JSON_HEADER]
         outputs = [DesignFormat.JSON_HEADER]
 
-        config_vars = [variable]
+        class Config(Step.Config):
+            DUMMY_VARIABLE: str = config_variable(description="x")
 
         def run(self, state_in: State, **kwargs):
             import json
@@ -87,7 +88,8 @@ def MockStepTuple(variable: Variable):
         inputs = [DesignFormat.JSON_HEADER]
         outputs = [DesignFormat.JSON_HEADER]
 
-        config_vars = [Variable("DUMMY_VARIABLE", type=int, description="x")]
+        class Config(Step.Config):
+            DUMMY_VARIABLE: int = config_variable(description="x")
 
         def run(self, state_in: State, **kwargs):
             import json
@@ -154,7 +156,6 @@ def test_factory(DummyFlow: type[flow.Flow]):
     assert all(
         flow in Flow.factory.list()
         for flow in [
-            "Optimizing",
             "Classic",
             "OpenInKLayout",
             "OpenInOpenROAD",

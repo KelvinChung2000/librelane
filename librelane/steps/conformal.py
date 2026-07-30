@@ -110,7 +110,7 @@ class LEC(ConformalStep):
 #: agent), not by this module.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["formal_equivalence"],
+        "stage": "formal_equivalence",
         "provider": "conformal",
         "steps": [LEC],
         # The specific CONFORMAL_* configuration variables a real Conformal

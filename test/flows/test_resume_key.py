@@ -4,7 +4,7 @@ import pathlib
 import pytest
 
 from librelane.common import Fingerprinter
-from librelane.config import Variable
+from librelane.config import variable
 from librelane.flows import flow
 from librelane.steps import step
 
@@ -23,9 +23,9 @@ def KeyStep():
         id = "Test.KeyStep"
         inputs = []
         outputs = [DesignFormat.JSON_HEADER]
-        config_vars = [
-            Variable("DUMMY_VARIABLE", type=str, description="x"),
-        ]
+
+        class Config(Step.Config):
+            DUMMY_VARIABLE: str = variable(description="x")
 
         def run(self, state_in: State, **kwargs):
             out_file = pathlib.Path(self.step_dir) / "whatever.json"

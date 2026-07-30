@@ -91,17 +91,19 @@ if one of them has none, LibreLane names it and stops rather than continuing on
 a state it cannot justify.
 
 Supplying `--with-initial-state` alongside `--from` skips the earlier steps
-instead of resolving them, because that state is what stands in for them. This
-is the pattern the {doc}`ECO guide <using_ecos>` uses.
+instead of resolving them, because that state is what stands in for them. That
+is how you carry a state a previous run produced into a fresh tag and continue
+from a chosen step.
 
 `--overwrite` discards everything and is the blunt instrument when you would
 rather not reason about it.
 
 ## Which flows participate
 
-Resume applies to sequential flows, which includes `Classic` and every flow
-built from a fixed list of steps.
+Every flow LibreLane ships. Resume needs a step's position in the flow to be
+knowable before the flow runs, which is true of any flow built from a fixed list
+of steps, and every built-in flow is built that way.
 
-`Optimizing` and `SynthesisExploration` build their steps in data-dependent
-loops, so a step's position is not knowable in advance and there is nothing
-stable to reuse against. They re-run in full.
+A flow that builds its steps in a data-dependent loop, deciding what to run next
+from what the last step produced, has no such position and cannot be resumed.
+None ships today.

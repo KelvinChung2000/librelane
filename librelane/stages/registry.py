@@ -18,7 +18,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
-from ..config import Variable
 from ..config.flow import flow_common_variables
 from ..state import DesignFormat
 from ..steps import Step
@@ -35,9 +34,10 @@ class Registration:
     Binds a span of one or more consecutive stages, plus one provider, to an
     ordered sequence of concrete steps.
 
-    :param stages: The stage ids covered, in flow order. Length greater than
-        one means the provider cannot decompose this span; see the
-        "Spanning providers" section of the design document.
+    :param stage: The stage id this registration implements. Exactly one. A
+        provider that cannot decompose a span of stages has no way to say so,
+        deliberately: gating, contract checking and provider selection are all
+        per-stage.
     :param provider: The tool name, for example ``openroad``. Not a vendor
         name.
     :param steps: The ordered step sequence that implements the span.
@@ -45,9 +45,6 @@ class Registration:
         this sequence. New providers declare exactly one, tool-named prefix;
         the ``openroad`` provider declares the several legacy prefixes that
         predate this design.
-    :param requires_pdk_vars: Configuration variable names that must be
-        non-``None`` in the resolved configuration for this provider to run.
-        Checked by the PDK view preflight.
     :param provides: Views this provider guarantees beyond the stage's own
         ``provides``.
     :param metrics: Metric names this provider guarantees beyond the stage's
@@ -58,18 +55,13 @@ class Registration:
         availability check at resolution.
     """
 
-    stages: tuple[str, ...]
+    stage: str
     provider: str
     steps: tuple[type[Step], ...]
     namespaces: tuple[str, ...]
-    requires_pdk_vars: tuple[str, ...] = ()
     provides: tuple[DesignFormat, ...] = ()
     metrics: tuple[str, ...] = ()
     native_views: tuple[DesignFormat, ...] = ()
-
-    @property
-    def spanning(self) -> bool:
-        return len(self.stages) > 1
 
     def tagged_steps(self) -> builtins.list[type[Step]]:
         """
@@ -77,17 +69,16 @@ class Registration:
         ``_stage_span`` and ``_stage_provider``.
 
         Tagging by subclass rather than by index range is what makes the
-        boundary map survive duplicate-ID normalization and ``Substitutions``:
-        ``Step.with_id`` also subclasses, so the tag is inherited, while a
-        substituted-in step class carries no tag and is correctly treated as a
-        plain step.
+        boundary map survive duplicate-ID normalization:
+        ``Step.with_id`` also subclasses, so the tag is inherited, while an
+        untagged step class is correctly treated as a plain step.
         """
         return [
             type(
                 step.__name__,
                 (step,),
                 {
-                    "_stage_span": self.stages,
+                    "_stage_span": (self.stage,),
                     "_stage_provider": self.provider,
                 },
             )
@@ -108,11 +99,10 @@ class StageRegistry(object):
     def register(
         Self,
         *,
-        stages: Sequence[str],
+        stage: str,
         provider: str,
         steps: Sequence[type[Step]],
         namespaces: Sequence[str],
-        requires_pdk_vars: Sequence[str] = (),
         provides: Sequence[DesignFormat] = (),
         metrics: Sequence[str] = (),
         native_views: Sequence[DesignFormat] = (),
@@ -124,45 +114,39 @@ class StageRegistry(object):
         offending provider package.
         """
         registration = Registration(
-            stages=tuple(stages),
+            stage=stage,
             provider=provider,
             steps=tuple(steps),
             namespaces=tuple(namespaces),
-            requires_pdk_vars=tuple(requires_pdk_vars),
             provides=tuple(provides),
             metrics=tuple(metrics),
             native_views=tuple(native_views),
         )
 
-        if len(registration.stages) == 0:
-            raise StageError(f"Provider '{provider}' registered against no stages.")
         if len(registration.steps) == 0:
             raise StageError(
                 f"Provider '{provider}' registered for "
-                f"{list(registration.stages)} with no steps. A provider that "
+                f"stage '{registration.stage}' with no steps. A provider that "
                 f"runs nothing cannot satisfy a stage contract."
             )
 
-        resolved: builtins.list[Stage] = []
-        for stage_id in registration.stages:
-            stage = Stage.factory.get(stage_id)
-            if stage is None:
-                raise StageError(
-                    f"Provider '{provider}': no stage with id '{stage_id}' is "
-                    f"registered. Known stages: {sorted(Stage.factory.list())}"
-                )
-            key = (stage_id, provider)
-            if key in Self._by_stage_and_provider:
-                raise StageError(
-                    f"Provider '{provider}' is already registered for stage "
-                    f"'{stage_id}'."
-                )
-            resolved.append(stage)
+        resolved_stage = Stage.factory.get(registration.stage)
+        if resolved_stage is None:
+            raise StageError(
+                f"Provider '{provider}': no stage with id "
+                f"'{registration.stage}' is registered. Known stages: "
+                f"{sorted(Stage.factory.list())}"
+            )
+        key = (registration.stage, provider)
+        if key in Self._by_stage_and_provider:
+            raise StageError(
+                f"Provider '{provider}' is already registered for stage "
+                f"'{registration.stage}'."
+            )
 
-        Self.__check_contract(registration, resolved)
+        Self.__check_contract(registration, resolved_stage)
 
-        for stage_id in registration.stages:
-            Self._by_stage_and_provider[(stage_id, provider)] = registration
+        Self._by_stage_and_provider[key] = registration
         Self._all.append(registration)
         return registration
 
@@ -170,30 +154,12 @@ class StageRegistry(object):
     def __check_contract(
         Self,
         registration: Registration,
-        stages: Sequence[Stage],
+        stage: Stage,
     ) -> None:
         union = compose_step_sequence(registration.steps)
-        declared = {variable.name for variable in union.config_vars}
-
-        canonical: dict[str, Variable] = {}
-        for stage in stages:
-            for variable in stage.config_vars:
-                canonical[variable.name] = variable
-
-        # Canonical variable coverage.
-        for name in canonical:
-            if name not in declared:
-                raise StageError(
-                    f"Provider '{registration.provider}' for "
-                    f"{list(registration.stages)} does not declare canonical "
-                    f"variable '{name}'. A user who set it would have that "
-                    f"setting silently discarded."
-                )
 
         # Namespace discipline.
         for variable in union.config_vars:
-            if variable.name in canonical:
-                continue
             if variable.name in _COMMON_VARIABLE_NAMES:
                 continue
             if any(
@@ -202,16 +168,14 @@ class StageRegistry(object):
                 continue
             raise StageError(
                 f"Provider '{registration.provider}' for "
-                f"{list(registration.stages)} declares variable "
-                f"'{variable.name}', which is neither canonical for these "
-                f"stages, nor a common flow variable, nor prefixed with any "
-                f"of {list(registration.namespaces)}."
+                f"stage '{registration.stage}' declares variable "
+                f"'{variable.name}', which is neither a common flow variable "
+                f"nor prefixed with any of {list(registration.namespaces)}."
             )
 
         # View plausibility.
         allowed_inputs = set(registration.native_views)
-        for stage in stages:
-            allowed_inputs.update(stage.requires)
+        allowed_inputs.update(stage.requires)
         for view in union.unmet_inputs:
             # An optional input is satisfiable by absence, so it is not a
             # boundary requirement. DesignFormat.mkOptional() returns a copy
@@ -222,20 +186,19 @@ class StageRegistry(object):
             if view not in allowed_inputs:
                 raise StageError(
                     f"Provider '{registration.provider}' for "
-                    f"{list(registration.stages)} consumes view '{view.id}', "
-                    f"which is neither in the stages' 'requires' nor declared "
+                    f"stage '{registration.stage}' consumes view '{view.id}', "
+                    f"which is neither in the stage's 'requires' nor declared "
                     f"as one of its native_views."
                 )
 
         promised = set(registration.provides)
-        for stage in stages:
-            promised.update(stage.provides)
+        promised.update(stage.provides)
         produced = set(union.outputs)
         for view in promised:
             if view not in produced:
                 raise StageError(
                     f"Provider '{registration.provider}' for "
-                    f"{list(registration.stages)} never produces view "
+                    f"stage '{registration.stage}' never produces view "
                     f"'{view.id}', which it is contracted to provide."
                 )
 
@@ -252,7 +215,7 @@ class StageRegistry(object):
         return [
             registration.provider
             for registration in Self._all
-            if stage in registration.stages
+            if registration.stage == stage
         ]
 
     @classmethod

@@ -44,7 +44,6 @@ from rich.progress import (
     TaskID,
 )
 from rich.text import Text
-from deprecated.sphinx import deprecated
 import rich.console
 from librelane.common.types import Path
 
@@ -603,20 +602,6 @@ class Flow(ABC):
 
         return [variable for variable, _ in flow_variables_by_name.values()]
 
-    @classmethod
-    @deprecated(
-        version="2.0.0a29",
-        reason="Use the constructor for the class instead",
-        action="once",
-    )
-    def init_with_config(
-        Self,
-        config_in: Config | str | os.PathLike | dict,
-        **kwargs,
-    ):  # pragma: no cover
-        kwargs["config"] = config_in
-        return Self(**kwargs)
-
     @final
     def start(
         self,
@@ -824,9 +809,8 @@ class Flow(ABC):
             position rather than on how many earlier steps happened to run, which
             is what lets a resumed run find its own prior output.
 
-            Flows that build steps in data-dependent loops, such as
-            :class:`librelane.flows.Optimizing`, omit it and keep the running
-            counter.
+            A flow that builds its steps in a data-dependent loop has no fixed
+            position for a step, so it omits this and keeps the running counter.
         :returns: A directory within the run directory for a specific step.
         """
         if self.run_dir is None:
@@ -1066,42 +1050,6 @@ class Flow(ABC):
                 shutil.copyfile(
                     view, os.path.join(target_dir, f"{self.config['DESIGN_NAME']}.sdf")
                 )
-
-    @deprecated(
-        version="2.0.0a46",
-        reason="Use .progress_bar.set_max_stage_count",
-        action="once",
-    )
-    @protected
-    def set_max_stage_count(self, count: int):  # pragma: no cover
-        """
-        Alias for ``self.progress_bar``'s :py:meth:`FlowProgressBar.set_max_stage_count`.
-        """
-        self.progress_bar.set_max_stage_count(count)
-
-    @deprecated(
-        version="2.0.0a46",
-        reason="Use .progress_bar.start_stage",
-        action="once",
-    )
-    @protected
-    def start_stage(self, name: str):  # pragma: no cover
-        """
-        Alias for ``self.progress_bar``'s :py:meth:`FlowProgressBar.start_stage`.
-        """
-        self.progress_bar.start_stage(name)
-
-    @deprecated(
-        version="2.0.0a46",
-        reason="Use .progress_bar.end_stage",
-        action="once",
-    )
-    @protected
-    def end_stage(self, increment_ordinal: bool = True):  # pragma: no cover
-        """
-        Alias for ``self.progress_bar``'s :py:meth:`FlowProgressBar.end_stage`.
-        """
-        self.progress_bar.end_stage(increment_ordinal=increment_ordinal)
 
     class FlowFactory(object):
         """

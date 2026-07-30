@@ -579,8 +579,6 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
         inputs = []
         outputs = []
 
-        config_vars = []
-
         def run(self, *args, **kwargs):
             self.run_subprocess(
                 [
@@ -687,3 +685,43 @@ def test_steps_only_read_config_variables_they_declare():
         if name not in step._get_config_model().model_fields:
             undeclared.append(f"{step_id} reads '{name}'")
     assert undeclared == []
+
+
+def test_flow_control_variable_raises():
+    """
+    Nothing has read this attribute since 2.0. A step defining it appeared to
+    gate and did not, which is worse than a step that refuses to define.
+    """
+    from librelane.steps import Step
+
+    with pytest.raises(TypeError, match="gating_config_vars"):
+
+        class Gating(Step):
+            id = "Test.FlowControlVariable"
+            inputs = []
+            outputs = []
+            flow_control_variable = "RUN_WHATEVER"
+
+            def run(self, state_in, **kwargs):
+                return {}, {}
+
+
+def test_author_written_config_vars_raises():
+    """
+    'class Config' and 'config_vars' were two spellings of one thing, converted
+    one into the other. Every shipped step uses Config and none uses
+    config_vars.
+    """
+    from librelane.config import Variable
+    from librelane.steps import Step
+
+    with pytest.raises(TypeError, match="class Config"):
+
+        class Author(Step):
+            id = "Test.AuthorWrittenConfigVars"
+            inputs = []
+            outputs = []
+            config_vars = [Variable("TEST_VAR", int, "desc", default=1)]
+
+            def run(self, state_in, **kwargs):
+                return {}, {}

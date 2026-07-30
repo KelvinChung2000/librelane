@@ -108,13 +108,13 @@ _TEMPUS_NAMESPACES = (
 
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["pre_pnr_sta"],
+        "stage": "pre_pnr_sta",
         "provider": "tempus",
         "steps": [PrePNRSTA],
         "namespaces": _TEMPUS_NAMESPACES,
     },
     {
-        "stages": ["signoff_sta"],
+        "stage": "signoff_sta",
         "provider": "tempus",
         "steps": [SignoffSTA],
         "namespaces": _TEMPUS_NAMESPACES,

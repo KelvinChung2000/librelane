@@ -91,7 +91,7 @@ _FM_NAMESPACES = ("FM_",)
 #: ``StageRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["formal_equivalence"],
+        "stage": "formal_equivalence",
         "provider": "fm",
         "steps": [FormalEquivalence],
         "namespaces": _FM_NAMESPACES,

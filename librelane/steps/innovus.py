@@ -388,10 +388,9 @@ class FillInsertion(InnovusStep):
 
 
 #: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
-#: agent), not by this module. Each entry is a separate, single-stage
-#: registration ("spanning is declared, not implemented" per
-#: ``docs/source/usage/writing_tool_backends.md``), even though Innovus's
-#: real database persists across all seventeen of these steps in a real run.
+#: agent), not by this module. A registration names exactly one stage, so each
+#: entry below is separate, even though Innovus's real database persists across
+#: all seventeen of these steps in a real run.
 _INNOVUS_NAMESPACES = (
     # The specific INNOVUS_* configuration variables a real Innovus flow
     # would read are not enumerated anywhere in the research: no public
@@ -403,103 +402,103 @@ _INNOVUS_NAMESPACES = (
 
 REGISTRATIONS: list[dict] = [
     {
-        "stages": ["floorplan"],
+        "stage": "floorplan",
         "provider": "innovus",
         "steps": [Floorplan],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["macro_placement"],
+        "stage": "macro_placement",
         "provider": "innovus",
         "steps": [MacroPlacement],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["tapcell_insertion"],
+        "stage": "tapcell_insertion",
         "provider": "innovus",
         "steps": [TapEndcapInsertion],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["power_grid"],
+        "stage": "power_grid",
         "provider": "innovus",
         "steps": [PowerGrid],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["io_placement"],
+        "stage": "io_placement",
         "provider": "innovus",
         "steps": [IOPlacement],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["global_placement"],
+        "stage": "global_placement",
         "provider": "innovus",
         "steps": [GlobalPlacement],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["post_gpl_repair"],
+        "stage": "post_gpl_repair",
         "provider": "innovus",
         "steps": [PostGPLRepair],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["detailed_placement"],
+        "stage": "detailed_placement",
         "provider": "innovus",
         "steps": [DetailedPlacement],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["cts"],
+        "stage": "cts",
         "provider": "innovus",
         "steps": [CTS],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["post_cts_opt"],
+        "stage": "post_cts_opt",
         "provider": "innovus",
         "steps": [PostCTSOpt],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["global_routing"],
+        "stage": "global_routing",
         "provider": "innovus",
         "steps": [GlobalRouting],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["post_grt_repair"],
+        "stage": "post_grt_repair",
         "provider": "innovus",
         "steps": [PostGRTRepair],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["antenna_repair"],
+        "stage": "antenna_repair",
         "provider": "innovus",
         "steps": [AntennaRepair],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["post_grt_opt"],
+        "stage": "post_grt_opt",
         "provider": "innovus",
         "steps": [PostGRTOpt],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["detailed_routing"],
+        "stage": "detailed_routing",
         "provider": "innovus",
         "steps": [DetailedRouting],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["post_route_opt"],
+        "stage": "post_route_opt",
         "provider": "innovus",
         "steps": [PostRouteOpt],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stages": ["fill_insertion"],
+        "stage": "fill_insertion",
         "provider": "innovus",
         "steps": [FillInsertion],
         "namespaces": _INNOVUS_NAMESPACES,

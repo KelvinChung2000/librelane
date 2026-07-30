@@ -46,12 +46,12 @@ def test_vhdl_classic_steps_match_golden():
     assert _snapshot(VHDLClassic) == _load_golden("vhdl_classic_steps.json")
 
 
-def test_vhdl_classic_declares_its_own_stages_rather_than_substitutions():
+def test_vhdl_classic_declares_its_own_stages():
     """
     The strongest available validation that the abstraction does its job: a real
     tool swap between two real tools, expressed as a flow declaring the stages
-    it runs and pinning a provider for one of them, reproducing byte-for-byte a
-    step list that until now took a Substitutions map to produce.
+    it runs and pinning a provider for one of them, reproducing byte-for-byte
+    the step list Classic produces with the VHDL frontend in place of Verilog.
     """
     from librelane.stages import Stage
 

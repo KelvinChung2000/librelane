@@ -23,7 +23,7 @@ entirely backwards compatible, with some conveniences:
   previous steps.
   * In OpenLane, they are all extracted at the end.
 * The ability to use command-line flow control options such as `--from`, `--to`,
-  `--skip` and `--only`, with the ability to resume from a snapshot of your
+  `--skip`, with the ability to resume from a snapshot of your
   design at certain parts of flows, without worrying about surprises related
   to state variables missing.
 
