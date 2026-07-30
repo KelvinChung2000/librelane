@@ -16,8 +16,8 @@ limitations under the License.
 
 # Writing Tool Backends
 
-This page is for whoever registers a new **provider**: a tool implementing
-one or more of the stages listed in [Swapping Tools](./swapping_tools.md). It
+This page is for whoever registers a new **provider** (a tool implementing
+one or more of the stages listed in [Swapping Tools](./swapping_tools.md)). It
 assumes you have already read that page and {doc}`/usage/writing_custom_steps`,
 since a provider is built out of ordinary `Step` subclasses.
 
@@ -61,7 +61,7 @@ StageRegistry.register(
   `json_h`, a view only the Verilog frontend produces.
 * `metrics`: metric names this provider guarantees beyond the stage's own,
   for a metric that is genuinely tool-specific rather than portable across
-  every provider of the stage — `magic__drc_error__count` on the `drc` stage's
+  every provider of the stage. For example, `magic__drc_error__count` on the `drc` stage's
   `magic` provider is the existing example, since `klayout` could never
   promise the same name.
 * `native_views`: tool-native views this provider carries across its own
@@ -90,8 +90,8 @@ import rather than quietly at run time:
 **Resolution time**, inside `resolve()`, runs once a flow's `Stages` list and
 its `TOOLS` selection are both known: an unknown provider name, a list
 supplied for a stage that is not `multi_provider`, an unknown key in `TOOLS`,
-a `requires_pdk_vars` entry the PDK does not define, and — walking the
-resolved step list — whether every non-optional input a step consumes is
+a `requires_pdk_vars` entry the PDK does not define, and (walking the
+resolved step list) whether every non-optional input a step consumes is
 actually produced by an earlier step under the resolved gating. This last
 check is what makes an untested `TOOLS` combination safe to attempt: a
 provider selection that leaves a consumer stranded fails at flow
@@ -109,8 +109,8 @@ unexamined design.
 ## `namespaces`
 
 Declare exactly one prefix, named after your tool: `GENUS_`, `INNOVUS_`, and
-so on. The several legacy prefixes declared on the `openroad` provider —
-`FP_`, `PL_`, `CTS_`, `GRT_`, `DRT_`, and a dozen more — predate this design
+so on. The several legacy prefixes declared on the `openroad` provider
+(`FP_`, `PL_`, `CTS_`, `GRT_`, `DRT_`, and a dozen more) predate this design
 and are grandfathered because OpenROAD's per-phase variables were never
 namespaced by tool in the first place. They are not a pattern to copy for a
 new provider; a new backend should not need more than one prefix.
@@ -120,7 +120,7 @@ new provider; a new backend should not need more than one prefix.
 
 A native view is a tool-native artifact one step of your sequence hands to
 the next step of the same sequence, instead of going through a portable
-format. OpenROAD's `odb` — its live OpenDB database — is the worked example
+format. OpenROAD's `odb` (its live OpenDB database) is the worked example
 already in the codebase: sixteen of the `openroad` provider's registrations
 in `librelane/stages/providers.py` declare `native_views=(DesignFormat.odb,)`,
 because every OpenROAD place-and-route step after `floorplan` takes the
@@ -132,7 +132,7 @@ Declaring a view as native is only an exemption from the registration-time
 without the stage's own `requires` naming it. It is never an exemption from
 the *production* side of the contract. The rule to hold onto is: **correctness
 must never depend on the native path.** Your registration must still emit
-every neutral view your stage promises — `DEF`, netlist, `SDC` — through the
+every neutral view your stage promises (`DEF`, netlist, `SDC`) through the
 ordinary `outputs` mechanism, exactly as if the native shortcut did not exist,
 so that a flow which switches providers at the next stage boundary, or a
 `--from`/`--to` invocation that starts partway through your sequence, still
@@ -142,22 +142,22 @@ own steps, not a second, silent contract with the rest of the flow.
 ## How finely to decompose a sequence
 
 Each step in your `steps` list is a separate subprocess: a fresh interpreter
-start, a licence checkout if your tool needs one, and — unless you carry a
-native view between your own steps — a full read of the technology LEF and
+start, a licence checkout if your tool needs one, and (unless you carry a
+native view between your own steps) a full read of the technology LEF and
 every standard-cell LEF. Decomposing finely, one step per logical operation,
 is what makes gating, `--from`/`--to`, and native-view boundaries between
 different providers all work uniformly; it is also what pays that startup
 cost repeatedly. Weigh the two: a vendor tool with a fast, persistent-session
 mode should still expose that session as one subprocess per stage from
-LibreLane's point of view — the session lives *inside* your step's `run()`,
-not across stage boundaries — because a spanning registration is not an
-available way to avoid the cost. See the next section for why.
+LibreLane's point of view. The session lives *inside* your step's `run()`,
+not across stage boundaries. A spanning registration is not an available way
+to avoid the cost. See the next section for why.
 
 (spanning-is-declared-not-implemented)=
 ## Spanning is declared, not implemented
 
 `Registration.stages` accepts more than one stage id, and a registration
-whose `stages` covers several stages is called *spanning* — but resolution
+whose `stages` covers several stages is called *spanning*. However, resolution
 rejects one outright, naming the stages it would have covered. Nothing in
 LibreLane decomposes a spanning registration back into per-stage steps, gates
 part of one, or re-enters a flow in the middle of one. If you are tempted to
@@ -179,14 +179,14 @@ than presented as this project's own conclusion:
 * Its closest analogue to a proprietary tool whose native mode is one long
   interactive session is Vivado, which natively covers synthesis through
   bitstream generation in a single session. SiliconCompiler still splits it
-  into four separate nodes — `syn_fpga`, `place`, `route`, `bitstream` — each
+  into four separate nodes (`syn_fpga`, `place`, `route`, `bitstream`), each
   a cold `vivado -mode batch` process, stitched together by Vivado's own
   `.dcp` checkpoint format declared as ordinary node output and input. There
   is no persistent session and no spanning node.
 * In its OpenROAD flow, antenna repair is its own node between global and
   detailed route, and the detailed-route task carries no antenna options at
   all. That separation works because the upstream node hands over
-  `.odb.gz` — OpenROAD's own native database — losslessly across the node
+  `.odb.gz` (OpenROAD's own native database) losslessly across the node
   boundary. The mechanism that makes fine-grained decomposition affordable is
   a native database carried between steps, which is the same mechanism this
   project already has in [`native_views`](#native_views): for OpenROAD it is
@@ -195,12 +195,12 @@ than presented as this project's own conclusion:
 The honest counter-argument: SiliconCompiler's fine granularity is partly
 driven by needs LibreLane does not share, particularly cloud-scale
 distribution and per-node caching. Starting a vendor tool once per stage is a
-real cost — one licence checkout and one technology/LEF read per stage — that
+real cost (one licence checkout and one technology/LEF read per stage) that
 SiliconCompiler's own execution model is built to amortize across a cluster.
 For a single-machine flow, that cost is smaller in absolute terms, but the
 answer to it is a persistent tool session held open *inside* a step across
 however many stages that step's `run()` chooses to cover internally, not a
-registration that spans stages in LibreLane's own bookkeeping — the stage
+registration that spans stages in LibreLane's own bookkeeping. The stage
 boundary, the gate, and the contract check all still need to know where one
 provider's responsibility ends and the next stage's begins.
 
@@ -220,7 +220,7 @@ this contract. Everything on this page describes the enforcement machinery as
 it exists today, exercised entirely by the open-source providers in
 `librelane/stages/providers.py`. The first person to write a commercial
 backend against it should expect to find and correct parts of this contract
-that a purely open-source toolchain never exercised — for example, LibreLane
+that a purely open-source toolchain never exercised. For example, LibreLane
 currently has no step that imports a `DEF` file into a fresh OpenDB database,
 so an `openroad` stage cannot yet follow a non-OpenROAD stage: the `odb`
 native view would be absent, and the view preflight correctly rejects such a

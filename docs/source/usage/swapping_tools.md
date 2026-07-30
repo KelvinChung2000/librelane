@@ -25,7 +25,7 @@ link](../reference/architecture.md). This page assumes you already know what a
 A `Flow` built on `StagedFlow`, such as `Classic`, is not written as one fixed
 list of steps. It is written as a list of **stages**. A stage is a named phase
 of the flow, such as `detailed_routing` or `streamout`, and it never executes
-anything by itself: a *provider* registration binds a stage to the concrete
+anything by itself. A *provider* registration binds a stage to the concrete
 steps that actually implement it for one tool. This split is what makes a
 stage the unit of three things at once: which tool runs a phase, whether that
 phase can be turned off independently of every other phase, and where a flow
