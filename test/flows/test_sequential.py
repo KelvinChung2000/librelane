@@ -22,26 +22,6 @@ pytestmark = pytest.mark.all
 mock_variables = pytest.mock_variables
 
 
-@pytest.fixture
-def MetricIncrementer():
-    from librelane.steps import Step
-
-    @Step.factory.register()
-    class MetricIncrementer(Step):
-        id = "Test.MetricIncrementer"
-        inputs = []
-        outputs = []
-
-        counter_name = "counter"
-
-        def run(self, state_in, **kwargs):
-            metric_to_increment = state_in.metrics.get(self.counter_name, 0)
-            metric_to_increment += 1
-            return {}, {self.counter_name: metric_to_increment}
-
-    return MetricIncrementer
-
-
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_flow_module, step_module])
 def test_sequential_flow(MetricIncrementer: type[Step]):

@@ -18,7 +18,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import ClassVar
-from deprecated.sphinx import deprecated
 import builtins
 
 
@@ -69,26 +68,8 @@ class DesignFormat(metaclass=DFMetaclass):
         return self.folder_override or self.id
 
     @property
-    @deprecated(
-        "The DesignFormat is directly returned now, no need for .value",
-        version="3.0.0",
-        action="once",
-    )
-    def value(self) -> DesignFormat:
-        return self
-
-    @property
     def optional(self) -> bool:
         return self._instance_optional
-
-    @property
-    @deprecated(
-        ".name has been removed because it's redundant, use .id",
-        version="3.0.0",
-        action="once",
-    )
-    def name(self) -> str:
-        return self.id
 
     def register(self):
         self.__class__.factory.register(self)
@@ -98,15 +79,6 @@ class DesignFormat(metaclass=DFMetaclass):
 
     def __hash__(self):
         return hash(self.id)
-
-    @staticmethod
-    @deprecated(
-        "Use DesignFormat.factory.get",
-        version="3.0.0",
-        action="once",
-    )
-    def by_id(id: str) -> "DesignFormat" | None:
-        return DesignFormat.factory.get(id)
 
     class DesignFormatFactory(object):
         """
@@ -123,8 +95,8 @@ class DesignFormat(metaclass=DFMetaclass):
         def register(Self, df: DesignFormat) -> DesignFormat:
             """
             Adds a DesignFormat to the registry using its
-            :attr:`DesignFormat.id`, :attr:`DesignFormat.name` and
-            :attr:`DesignFormat.alts` attributes.
+            :attr:`DesignFormat.id` and :attr:`DesignFormat.alts`
+            attributes.
             """
             Self._registry[df.id] = df
             for alt in df.alts:

@@ -39,7 +39,7 @@ from .. import common
 from ..__version__ import __version__
 from ..config import Config, InvalidConfig, PassedDirectoryError
 from ..container import run_in_container
-from ..flows import Flow, FlowError, FlowException
+from ..flows import Explanation, Flow, FlowError, FlowException, SequentialFlow
 from ..state import DesignFormat, State
 from .options import (
     CondensedOption,
@@ -68,6 +68,7 @@ from .options import (
     SaveViewsOption,
     SclOption,
     ShowProgressBarOption,
+    ExplainOption,
     SkipOption,
     SmokeTestOption,
     ToOption,
@@ -101,6 +102,7 @@ class FlowRequest:
     frm: str | None
     to: str | None
     skip: tuple[str, ...]
+    explain: bool
     overwrite: bool
     reproducible: str | None
     initial_state: State | None
@@ -173,6 +175,30 @@ def apply_initial_state_overrides(request: FlowRequest) -> State | None:
     return type(state)(state, overrides=overrides)
 
 
+def format_explanation(explanation: Explanation) -> str:
+    """
+    Renders an :class:`librelane.flows.Explanation` as a fixed-width table.
+
+    :param explanation: What the flow reported.
+    :returns: The table, without a trailing newline.
+    """
+    width = max((len(d.step_id) for d in explanation.steps), default=0)
+    lines = [f"{'STEP'.ljust(width)}  RUN  MECHANISM  REASON"]
+    for disposition in explanation.steps:
+        mark = "yes" if disposition.will_run else "no "
+        mechanism = (disposition.mechanism or "").ljust(9)
+        lines.append(
+            f"{disposition.step_id.ljust(width)}  {mark}  {mechanism}  "
+            f"{disposition.reason}"
+        )
+    if explanation.unselected_stages:
+        lines.append("")
+        lines.append(
+            "Stages contributing no steps: " + ", ".join(explanation.unselected_stages)
+        )
+    return "\n".join(lines)
+
+
 def start_flow(request: FlowRequest) -> None:
     """Build the requested flow, run it, and save any requested view snapshots."""
     try:
@@ -215,6 +241,24 @@ def start_flow(request: FlowRequest) -> None:
         logger.debug(traceback.format_exc())
         logger.error("LibreLane will now quit.")
         raise typer.Exit(1) from error
+
+    if request.explain:
+        if not isinstance(flow, SequentialFlow):
+            logger.error(
+                f"--explain requires a sequential flow; '{type(flow).__name__}' "
+                f"writes its own run() and has no step list to predict."
+            )
+            raise typer.Exit(1)
+        typer.echo(
+            format_explanation(
+                flow.explain(
+                    frm=request.frm,
+                    to=request.to,
+                    skip=list(request.skip),
+                )
+            )
+        )
+        raise typer.Exit(0)
 
     try:
         state_out = flow.start(
@@ -273,6 +317,7 @@ def run_included_example(
             to=None,
             reproducible=None,
             skip=(),
+            explain=False,
             initial_state=None,
             config_overrides=(),
             force_run_dir=None,
@@ -354,6 +399,7 @@ def run(
     frm: FromOption = None,
     to: ToOption = None,
     skip: SkipOption = None,
+    explain: ExplainOption = False,
     overwrite: OverwriteOption = False,
     reproducible: ReproducibleOption = None,
     log_level: LogLevelOption = None,
@@ -416,6 +462,7 @@ def run(
         frm=frm,
         to=to,
         skip=tuple(skip or []),
+        explain=explain,
         overwrite=overwrite,
         reproducible=reproducible,
         initial_state=load_initial_state(with_initial_state_files),

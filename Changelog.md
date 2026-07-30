@@ -61,6 +61,14 @@ Style Notes
   configuration and input-state pair.
 * Made `--state-in` explicitly required for standalone step runs and ejection,
   matching the underlying step loader contract.
+* Added `--explain`, which prints one row per step of the resolved step list
+  saying whether this configuration would run it and, if not, which of gating,
+  `--skip` or the `--from`/`--to` window excluded it, then exits without
+  running. A step a `TOOLS` selection dropped has no row at all, since it is
+  not in the list; stages that contributed no steps are named separately below
+  the table. Requires a sequential flow.
+* Removed `--only`. `--from X --to X` is the same thing, one mechanism instead
+  of two.
 
 ## Steps
 
@@ -339,9 +347,35 @@ Style Notes
   There is no `--list-stages` CLI flag; the CLI is being restructured on this
   branch and `get_help_md` is what both `librelane help` and the documentation
   build already consult, so the same information needs no new CLI surface.
-* The error raised for a spanning provider registration no longer says "not
-  yet supported": spanning providers were designed but not built, and are not
-  planned. See {doc}`/usage/writing_tool_backends` for why.
+* A provider registration names exactly one stage. Gating, contract checking
+  and provider selection are all per-stage, so a registration covering several
+  had no meaning in any of them. See {doc}`/usage/writing_tool_backends` for
+  the reasoning and for what a tool with a long-lived session does instead.
+* Removed `Substitutions`, `Substitute` and `meta.substituting_steps`. Declare
+  an explicit `Stages` list, as `VHDLClassic` and `Chip` do. The
+  `hold_eco_demo` example and the ECO usage guide are removed with them; a
+  flow that inserts `Odb.InsertECOBuffers` is now written as a flow class.
+* `meta.flow` no longer accepts a list of step IDs, and a list is now rejected
+  with an error rather than silently falling through to `Classic`. Name a
+  registered flow.
+* Removed the `Optimizing` and `SynthesisExploration` demo flows. Both built
+  their steps in data-dependent loops, which is the one shape per-step resume
+  cannot serve; the multi-threading pattern they demonstrated is now written
+  out inline in {doc}`/usage/writing_custom_flows`.
+* Added `SequentialFlow.explain`, which reports what a prospective invocation
+  would do without running it, and `StagedFlow.explain`, which additionally
+  names the stages that contributed no steps. Resume is deliberately not
+  reported: a resume verdict depends on content fingerprints of files that
+  later steps in the same run will rewrite, so it cannot be known beforehand.
+* Fixed `--from` naming a step whose gating variable is off. Gating and
+  skipping are now decided before reuse in the run loop, so the two mechanisms
+  no longer interfere.
+* Fixed a gating key matching a step another key also matches. The two lists
+  now union rather than the later one overwriting the earlier, so a wildcard a
+  flow author wrote can no longer silently displace a generated stage gate.
+* `--reproducible` naming a step this configuration would never execute,
+  because it is gated off or named by `--skip`, now raises rather than
+  silently producing nothing.
 
 ## Tool Updates
 
@@ -460,6 +494,27 @@ Style Notes
 * Removed the Nix shell arguments `extra-python-packages` and
   `include-librelane`. Plugins are supplied through `librelane-plugins`, and
   the shell's Python environment is selected with `python-env`.
+* `StageRegistry.register` takes `stage="x"` rather than `stages=["x"]`, and
+  `Registration.stages`/`Registration.spanning` are removed in favour of
+  `Registration.stage`.
+* Removed `Stage.config_vars` and `Registration.requires_pdk_vars`. Both were
+  empty on every shipped stage and registration, so the checks reading them
+  never checked anything. Provider variable portability is still enforced by
+  the `namespaces` allowlist.
+* A `Step` that defines `flow_control_variable` now raises `TypeError`.
+  Nothing had read the attribute since 2.0, so such a step appeared to gate and
+  did not. Gate it from the flow's `gating_config_vars` instead.
+* A `Step` that assigns `config_vars` in its class body now raises
+  `TypeError`. A nested `class Config` is the only spelling an author writes;
+  `config_vars` is derived from it.
+* Removed `SequentialFlow.make`. Use `SequentialFlow.Make`.
+* Removed `Flow.init_with_config`, `Flow.set_max_stage_count`,
+  `Flow.start_stage`, `Flow.end_stage` and `Toolbox.aggregate_metrics`. Use the
+  constructor, `flow.progress_bar.*`, and `aggregate_metrics` from
+  `librelane.common`. The `FlowProgressBar` methods of the same names are the
+  real implementations and are unchanged.
+* Removed `DesignFormat.value`, `DesignFormat.name` and `DesignFormat.by_id`.
+  Use the `DesignFormat` itself, `.id`, and `DesignFormat.factory.get`.
 
 ## Documentation
 
@@ -485,15 +540,23 @@ Style Notes
   `get_help_md`.
 * Added {doc}`/usage/writing_tool_backends`, the provider-authoring reference:
   a minimal `StageRegistry.register` call, the four enforcement points
-  (registration, resolution, startup time, run time), `namespaces`, `native_views`, and why
-  spanning providers are declared but not implemented.
+  (registration, resolution, startup time, run time), `namespaces`,
+  `native_views`, and why a registration names exactly one stage.
 * Added a "Declaring a Flow as Stages" section to {doc}`/usage/writing_custom_flows`,
-  describing `StagedFlow` and its `Stages` list as a third way to build a
-  sequential flow, alongside step substitution and listing steps directly.
+  describing `StagedFlow` and its `Stages` list as a second way to build a
+  sequential flow, alongside listing steps directly.
 * Added a "Commercial CAD tool scaffolds" section to
   {doc}`/usage/writing_tool_backends`, covering the sixteen unimplemented
   vendor step scaffolds and the opt-in `librelane.stages.providers_vendor`
   import that registers them as stage providers.
+* Removed {doc}`/usage/using_ecos` and the `hold_eco_demo` example, which
+  documented step substitution.
+* Rewrote the "Which flows participate" section of {doc}`/usage/resuming_runs`:
+  every flow LibreLane ships now participates, since the two that could not are
+  removed.
+* Replaced the multi-threading example in {doc}`/usage/writing_custom_flows`,
+  which included the source of a now-removed flow, with an example written out
+  in the page, so a future flow deletion cannot break the documentation build.
 
 # 3.0.4
 

@@ -346,6 +346,7 @@ class TestMetaFlowSelection:
                 frm=None,
                 to=None,
                 skip=(),
+                explain=False,
                 overwrite=False,
                 reproducible=None,
                 initial_state=None,
@@ -384,6 +385,39 @@ class TestMetaFlowSelection:
             self._select(tmp_path, {"version": 2, "flow": "NoSuchFlow"})
 
         assert raised.value.exit_code == 1
+
+
+class TestExplainOption:
+    def test_explain_reaches_the_request(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """
+        --explain short-circuits inside start_flow, which this test replaces,
+        so it pins that the flag reaches the request. The table itself is
+        covered by test/flows/test_explain.py.
+        """
+        import librelane.cli.run as run_module
+
+        config = tmp_path / "config.json"
+        config.write_text("{}", encoding="utf8")
+        captured: dict = {}
+        monkeypatch.setattr(
+            run_module, "start_flow", lambda request: captured.update(request=request)
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "--manual-pdk",
+                "--pdk-root",
+                str(tmp_path),
+                "--explain",
+                str(config),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert captured["request"].explain is True
 
 
 class TestModuleInvocations:

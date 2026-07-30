@@ -20,6 +20,7 @@ from collections.abc import Iterable
 
 from rapidfuzz import process, fuzz, utils
 
+from .explanation import Explanation, StepDisposition
 from .flow import Flow, FlowException, FlowError
 from .resume import resume_key, reusable_state, write_entry
 from ..common import Filter
@@ -256,6 +257,82 @@ class SequentialFlow(Flow):
             f"Failed to process '{matchable}': no step(s) with ID "
             f"'{matchable}' found in flow.{suggestion}"
         )
+
+    def explain(
+        self,
+        *,
+        frm: str | None = None,
+        to: str | None = None,
+        skip: Iterable[str] | None = None,
+    ) -> Explanation:
+        """
+        :param frm: As :meth:`run`.
+        :param to: As :meth:`run`.
+        :param skip: As :meth:`run`.
+        :returns: One entry per step in this flow's resolved step list, in
+            execution order, stating whether the step will run under this
+            configuration and these flow-control arguments, and if not, which
+            mechanism excluded it, together with the stages that contributed no
+            steps at all.
+
+        Resume is deliberately not reported. A resume verdict depends on
+        content fingerprints of files that later steps in the same run will
+        rewrite, so it cannot be known before the run. This says what the flow
+        will attempt, not which attempts will be served from cache.
+        """
+        frm_resolved = self._resolve_step_id(frm)
+        to_resolved = self._resolve_step_id(to)
+        skipped_ids: list[str] = []
+        for skipped_step in skip or []:
+            resolved = self._resolve_step_id(skipped_step, multiple_ok=True)
+            # `skipped_step` is never None and `multiple_ok` is set, so the
+            # other two arms of the return type are unreachable here.
+            assert isinstance(resolved, list)
+            skipped_ids += resolved
+
+        gating = self._expand_gating_config_vars(
+            self.gating_config_vars,
+            [cls.id for cls in self.Steps],
+        )
+
+        dispositions: list[StepDisposition] = []
+        executing = frm is None
+        stopped = False
+        for cls in self.Steps:
+            if frm_resolved is not None and frm_resolved == cls.id:
+                executing = True
+
+            gated_by = [
+                variable
+                for variable in gating.get(cls.id, [])
+                if not self.config[variable]
+            ]
+            if gated_by:
+                disposition = StepDisposition(
+                    cls.id,
+                    False,
+                    f"gated off by {', '.join(gated_by)}",
+                    "gate",
+                )
+            elif cls.id in skipped_ids:
+                disposition = StepDisposition(cls.id, False, "named by --skip", "skip")
+            elif stopped:
+                disposition = StepDisposition(
+                    cls.id, False, f"after --to '{to_resolved}'", "window"
+                )
+            elif not executing:
+                disposition = StepDisposition(
+                    cls.id, False, f"before --from '{frm_resolved}'", "window"
+                )
+            else:
+                disposition = StepDisposition(cls.id, True, "will run", None)
+            dispositions.append(disposition)
+
+            if to_resolved and to_resolved == cls.id:
+                executing = False
+                stopped = True
+
+        return Explanation(tuple(dispositions), ())
 
     def run(
         self,

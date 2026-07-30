@@ -168,6 +168,14 @@ ToOption = Annotated[
         rich_help_panel=SEQUENTIAL_OPTIONS,
     ),
 ]
+ExplainOption = Annotated[
+    bool,
+    typer.Option(
+        "--explain",
+        help="Print which steps this configuration would run, and why each of the rest would not, then exit without running. Requires a sequential flow.",
+        rich_help_panel=SEQUENTIAL_OPTIONS,
+    ),
+]
 SkipOption = Annotated[
     list[str] | None,
     typer.Option(

@@ -14,7 +14,7 @@
 """A sequential flow whose step list is expanded from a list of stages."""
 
 from dataclasses import dataclass, replace
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Optional, Union
 
 from loguru import logger
@@ -38,6 +38,7 @@ from ..stages.tools import extract_tools
 from ..state import DesignFormat, State
 from ..steps import Step
 
+from .explanation import Explanation
 from .sequential import SequentialFlow
 
 
@@ -485,6 +486,23 @@ class StagedFlow(SequentialFlow):
             # that is both a stage gate and an explicit entry appears once.
             merged[key] = list(dict.fromkeys(merged.get(key, []) + list(value)))
         target.gating_config_vars = merged
+
+    def explain(
+        self,
+        *,
+        frm: str | None = None,
+        to: str | None = None,
+        skip: Iterable[str] | None = None,
+    ) -> Explanation:
+        """
+        As :meth:`librelane.flows.SequentialFlow.explain`, additionally
+        reporting the stages that contributed no steps. Those are announced
+        only at debug level during construction, so nothing else surfaces them.
+        """
+        return replace(
+            super().explain(frm=frm, to=to, skip=skip),
+            unselected_stages=tuple(self._resolution.unselected),
+        )
 
     @classmethod
     def describe_stages(Self) -> list[tuple[str, Optional[str]]]:

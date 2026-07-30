@@ -239,3 +239,15 @@ def test_loads():
 
     new_state = State.loads(json.dumps(state.to_raw_dict()))
     assert new_state.to_raw_dict() == state.to_raw_dict()
+
+
+def test_removed_design_format_accessors():
+    """
+    Three 3.0.0-era deprecations. The DesignFormat is returned directly, so
+    .value was an identity; .name duplicated .id; .by_id duplicated the factory.
+    """
+    from librelane.state import DesignFormat
+
+    assert not hasattr(DesignFormat.GDS, "value")
+    assert not hasattr(DesignFormat.GDS, "name")
+    assert not hasattr(DesignFormat, "by_id")
