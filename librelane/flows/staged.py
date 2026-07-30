@@ -438,6 +438,53 @@ class StagedFlow(SequentialFlow):
             merged[key] = list(dict.fromkeys(merged.get(key, []) + list(value)))
         target.gating_config_vars = merged
 
+    @classmethod
+    def describe_stages(Self) -> list[tuple[str, Optional[str]]]:
+        """
+        :returns: One entry per stage in ``Stages``, in flow order, pairing the
+            stage id with the provider selected for it by default. The
+            provider is ``None`` for an unselected optional stage, and several
+            names joined by ``", "`` for a multi-provider stage.
+        """
+        described: list[tuple[str, Optional[str]]] = []
+        for entry in Self.Stages:
+            if not isinstance(entry, Stage):
+                continue
+            providers = entry.default_providers
+            described.append((entry.id, ", ".join(providers) if providers else None))
+        return described
+
+    @classmethod
+    def get_help_md(Self, myst_anchors: bool = False) -> str:  # pragma: no cover
+        result = super().get_help_md(myst_anchors=myst_anchors)
+        if not Self.Stages:
+            return result
+        result += "\n#### Stages\n\n"
+        result += (
+            "Set the `TOOLS` configuration variable to change the tool used "
+            "for any of these. See "
+            "[Swapping Tools](./swapping_tools.md).\n\n"
+        )
+        result += "| Stage | Default provider | Alternatives |\n"
+        result += "| --- | --- | --- |\n"
+        for stage_id, default in Self.describe_stages():
+            selected = set((default or "").split(", "))
+            others = [
+                provider
+                for provider in StageRegistry.providers(stage_id)
+                if provider not in selected
+            ]
+            default_cell = (
+                ", ".join(f"`{name}`" for name in default.split(", "))
+                if default
+                else "none selected"
+            )
+            others_cell = (
+                ", ".join(f"`{name}`" for name in others) if others else "none"
+            )
+            result += f"| `{stage_id}` | {default_cell} | {others_cell} |\n"
+        return result
+
     @staticmethod
     def __report_unselected(resolution: Resolution) -> None:
         for stage_id in resolution.unselected:

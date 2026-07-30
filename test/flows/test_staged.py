@@ -604,7 +604,7 @@ def test_metric_modifiers_satisfy_the_contract():
     assert modifiers == {"net": "VPWR"}
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def PdkHungryStage():
     from librelane.stages import Stage, StageRegistry
     from librelane.steps import Step
@@ -773,3 +773,25 @@ def test_orphaned_native_view_consumer_names_a_native_provider(OdbConsumerStep):
     assert "odb" in message
     assert "No provider registration declares view" not in message
     assert "provider 'openroad'" in message
+
+
+def test_help_lists_stages_and_their_providers():
+    from librelane.flows import Flow
+
+    Classic = Flow.factory.get("Classic")
+    help_md = Classic.get_help_md()
+
+    assert "#### Stages" in help_md
+    assert "| `detailed_routing` | `openroad` |" in help_md
+    assert "| `streamout` | `magic`, `klayout` |" in help_md
+    assert "| `post_route_opt` | none selected |" in help_md
+
+
+def test_describe_stages_reports_the_default_selection():
+    from librelane.flows import Flow
+
+    Classic = Flow.factory.get("Classic")
+    described = dict(Classic.describe_stages())
+
+    assert described["cts"] == "openroad"
+    assert described["post_route_opt"] is None
