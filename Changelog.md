@@ -266,6 +266,17 @@ Style Notes
   correctness problem once a stage can be implemented by a tool whose step IDs
   differ. This surfaced one long-dead gate: `Chip` substitutes out
   `Magic.WriteLEF` but inherited `Classic`'s gate for it.
+* Added `StagedFlow.describe_stages`, pairing each stage in a flow's `Stages`
+  list with the provider selected for it by default. `StagedFlow.get_help_md`
+  now renders this as a stage table, so `librelane help Classic` and the
+  documentation build show every stage alongside its default provider and its
+  registered alternatives, with a pointer to the new tool-swapping guide.
+  There is no `--list-stages` CLI flag; the CLI is being restructured on this
+  branch and `get_help_md` is what both `librelane help` and the documentation
+  build already consult, so the same information needs no new CLI surface.
+* The error raised for a spanning provider registration no longer says "not
+  yet supported": spanning providers were designed but not built, and are not
+  planned. See {doc}`/usage/writing_tool_backends` for why.
 
 ## Tool Updates
 
@@ -384,6 +395,17 @@ Style Notes
   around nested `Config` models and attribute access, replacing the flat
   `config_vars` lists and `self.config[KEY]` reads the typed configuration
   redesign left behind.
+* Added {doc}`/usage/swapping_tools`, covering the `TOOLS` configuration
+  variable, `Stage.using`, multi-provider stages, configuration layering
+  across several stages at once, and the stage table now rendered by
+  `get_help_md`.
+* Added {doc}`/usage/writing_tool_backends`, the provider-authoring reference:
+  a minimal `StageRegistry.register` call, the three enforcement points
+  (registration, resolution, run time), `namespaces`, `native_views`, and why
+  spanning providers are declared but not implemented.
+* Added a "Declaring a Flow as Stages" section to {doc}`/usage/writing_custom_flows`,
+  describing `StagedFlow` and its `Stages` list as a third way to build a
+  sequential flow, alongside step substitution and listing steps directly.
 
 # 3.0.4
 

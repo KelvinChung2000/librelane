@@ -97,7 +97,7 @@ def _registration_for(stage: Stage, provider: str) -> Registration:
         raise StageResolutionError(
             f"stage '{stage.id}': provider '{provider}' is a spanning "
             f"registration covering {list(registration.stages)}, which is not "
-            f"yet supported."
+            f"supported: no provider may cover more than one stage."
         )
     return registration
 

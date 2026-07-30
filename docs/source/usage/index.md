@@ -16,6 +16,8 @@ using_vhdl
 using_ecos
 lvs/index
 writing_custom_flows
+swapping_tools
 writing_custom_steps
+writing_tool_backends
 writing_plugins
 ```

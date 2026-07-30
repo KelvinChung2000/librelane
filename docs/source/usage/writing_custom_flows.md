@@ -161,6 +161,62 @@ does some incredibly important processing.
 You should not be overriding `start` either.
 ```
 
+## Declaring a Flow as Stages
+
+`Classic` and `VHDLClassic` are both built on {class}`librelane.flows.StagedFlow`,
+a `SequentialFlow` whose `Steps` list is expanded from a `Stages` list rather
+than written out directly. A `Stages` entry is either a `Stage` object, which
+expands into whichever concrete steps implement it for the tool it selects, or
+a plain `Step` class, for a provider-neutral utility or a step that sits at a
+stage boundary. This is a third way to build a sequential flow, alongside
+substituting and listing steps above, and the one `Classic` itself uses.
+
+```python
+from librelane.flows import StagedFlow
+from librelane.stages import Stage
+
+
+class MyStagedFlow(StagedFlow):
+    Stages = [
+        Stage.synthesis,
+        Stage.pre_pnr_sta,
+        Stage.floorplan,
+        Stage.macro_placement,
+        Stage.power_grid,
+        Stage.io_placement,
+        Stage.global_placement,
+        Stage.detailed_placement,
+        Stage.global_routing,
+        Stage.streamout,
+        Stage.drc,
+    ]
+```
+
+Every stage here happens to have no gating variable of its own, which keeps
+the example self-contained. A stage that does declare one, such as `cts` or
+`detailed_routing`, needs the matching Boolean declared in the flow's own
+`Config`, exactly as any other configuration variable a step reads would; see
+`Classic`'s `Config` in `librelane/flows/classic.py` for a complete example.
+
+`Steps` is populated from `Stages` at class-definition time, using each
+stage's default provider, so every existing `SequentialFlow` facility -
+`Substitute`, `get_help_md`, step IDs and step directory names - keeps working
+unchanged.
+
+What a `Stages` list buys over a plain `Steps` list is that the tool behind
+each stage becomes a configuration choice instead of a hardcoded step class.
+A user sets the `TOOLS` configuration variable to pick a different provider
+for one or more stages, for example `{"streamout": "klayout"}` to run only
+KLayout's stream-out instead of both Magic's and KLayout's. A flow author can
+also pin a stage to a specific provider from inside the `Stages` list itself
+with `Stage.using`, as `VHDLClassic` does for `synthesis`; a pin is the flow's
+default, not a lock, since a matching `TOOLS` entry still overrides it.
+
+See [Swapping Tools](./swapping_tools.md) for the full `TOOLS` reference,
+including multi-provider stages and its limitations, and
+[Writing Tool Backends](./writing_tool_backends.md) for how to register a new
+provider.
+
 ## Fully Customized Flows
 
 Each `Flow` subclass must:
