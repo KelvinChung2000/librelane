@@ -153,6 +153,42 @@ Style Notes
 
 ## Flows
 
+* Sequential flows resume within an existing run tag. A step whose own
+  configuration, the contents of every file that configuration names, and whose
+  entire input state including metrics are all unchanged reuses the result it
+  recorded, provided the views it produced still exist. Everything else
+  re-runs, and re-running a step invalidates the steps after it.
+  * Identity is content, not paths and not timestamps. Editing a file in place
+    invalidates the steps that read it even though every path is byte for byte
+    the same, and `touch`-ing a file without editing it invalidates nothing.
+    The cascade follows contents too, so a re-run step that produces identical
+    output leaves the steps after it reusable.
+  * A step directory now records `resume.json`. Its presence is what marks the
+    step complete, so a directory left half written by an interrupted run is a
+    miss. Anything that cannot be proven is a miss, including an entry
+    truncated by `kill -9`.
+  * A tool upgraded in place, or a script edited in a development checkout,
+    under an unchanged LibreLane version is not detected. `--from` and
+    `--overwrite` are the remedies, and {doc}`/usage/resuming_runs` says so.
+  * `Optimizing` and `SynthesisExploration` build their steps in
+    data-dependent loops and do not participate.
+* **Behaviour change:** re-invoking a flow on an existing run tag no longer
+  appends a second full pass to it. It previously re-executed every step into
+  the same directory under fresh ordinals, seeded with whichever
+  `state_out.json` had the latest modification time, which also meant metrics
+  accumulated across passes and a step could receive a state produced
+  downstream of it. `--overwrite` remains the way to discard a tag.
+* **Behaviour change:** `--from` now forces re-execution of the named step and
+  every step after it, ignoring their recorded results, and takes the steps
+  before it from theirs. If one of those has no reusable result the run stops
+  and names it, rather than proceeding on a state it cannot justify. Supplying
+  `--with-initial-state` skips the earlier steps instead, since that state is
+  what stands in for them, which is what the ECO guide's workflow relies on.
+* Sequential step directories are named for the step's position in the flow
+  rather than for how many steps happened to run, so a gated or skipped step
+  leaves a gap in the numbering. A step keeps its directory whether or not the
+  steps before it ran, which is what lets a resumed run find its own previous
+  result. A full run with nothing gated is named exactly as before.
 * Migrated the `Classic` flow's configuration declarations to a nested typed
   `Config` model.
 * Created `StagedFlow`, a `SequentialFlow` whose step list is expanded from a
@@ -254,6 +290,15 @@ Style Notes
 
 ## API Breaks
 
+* `Flow.start` passes `initial_state_given` to `Flow.run` alongside
+  `initial_state` and `starting_ordinal`. A `run` override that accepts
+  `**kwargs`, as the abstract signature declares, is unaffected.
+* `Flow.dir_for_step` takes an optional `position`. Sequential flows pass it to
+  name a step's directory by its index; omitting it keeps the running counter.
+* `Flow.start` no longer pre-populates `step_objects` from a resumed run's
+  directories, and no longer seeds the initial state from the most recently
+  modified `state_out.json`. `Step.load_finished` and
+  `librelane.common.get_latest_file` are unchanged and remain supported.
 * `CompositeStep` subclasses must declare a non-empty `Steps`. An empty one ran
   nothing and reported success. The class is also no longer marked internal: it
   is the supported way to bind one stage to a multi-step tool sequence.
@@ -309,6 +354,9 @@ Style Notes
 
 ## Documentation
 
+* Added {doc}`/usage/resuming_runs`, covering what resuming a run tag reuses,
+  that invalidation cascades, why step directory numbering leaves gaps, and
+  that a tool upgraded in place is not detected.
 * Removed the clock period from the arrival-time equations in the timing
   closure guide; arrival time is measured from the launch edge (#974).
 * Finished the LVS mismatch guide and added it to the usage toctree; it was

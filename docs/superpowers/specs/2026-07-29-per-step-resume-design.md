@@ -274,6 +274,21 @@ multi-gigabyte GDS to confirm what the entry already asserts would cost more tha
 the step it is trying to avoid. A user who edits a step's output by hand and
 expects that to be noticed is outside what this design promises.
 
+### Invalidation cascades by content, not by execution
+
+Re-running a step changes what the next step receives, so the next step misses
+too, and so on. That is the usual case, but it is a consequence of the key rather
+than a rule of its own, and the difference shows: a step that re-runs and
+produces byte-identical output leaves the steps after it with the very input they
+already ran on, so they hit and are correctly reused.
+
+This is the payoff of hashing contents rather than counting executions, and it is
+what makes restoring one deleted view cost one step instead of the rest of the
+flow. It also constrains the tests. Dummy steps whose output ignores their input
+regenerate identical views, so a cascade cannot be observed through them at all;
+the steps in `test/flows/test_resume.py` therefore derive their output from their
+input, as any real step does.
+
 ### `SequentialFlow.run`
 
 ```python
@@ -373,12 +388,24 @@ rather than proceeding with an empty state and failing later on a missing input.
 Steps from X onward execute unconditionally, their directories deleted first,
 whether or not their keys match.
 
+**Unless `--with-initial-state` is also given**, in which case the steps before X
+are skipped rather than resolved. The supplied state is what stands in for them,
+so resolving them would both fail on a fresh tag, where there is nothing to
+resolve, and discard the state the caller supplied. This is the pairing the ECO
+guide documents, and it was found by writing that documentation rather than by
+the tests planned for `--from`.
+
 This redefinition is required, not incidental: the state that today's `--from`
 relies upon is the modification time seeding being removed. It is also the
 documented remedy for the non-goal above, an in-place tool upgrade.
 
 **`--to Y` is unchanged.** Directories past Y are left alone. A later resume
 re-checks them normally, so `--to` followed by a plain resume continues the flow.
+
+Being past Y and being before X both leave the loop not executing, so the two
+must be told apart. A step past Y is skipped, because nothing downstream will ask
+for its output, whereas a step before X has to be resolved precisely because the
+next step will.
 
 **`--skip S` and gating variables** pass the state through untouched. Downstream
 steps therefore see a different `state_in` than in a non-skipped run and
@@ -390,6 +417,12 @@ An unparseable `resume.json` or `state_out.json`, a schema mismatch, or a missin
 output view is classified as a miss and logged at `VERBOSE`. A truncated file
 after `kill -9` is an expected condition, and a miss is the correct reading of
 "cannot prove a hit".
+
+The two files fail differently and both have to be caught. `resume.json` is read
+with `json.loads` and raises `json.JSONDecodeError`, whereas `state_out.json`
+goes through `State.loads`, which wraps a decode failure in
+`InvalidState(RuntimeError)` (`librelane/state/state.py:40`). Catching only the
+former would leave a truncated output state escaping as an unhandled error.
 
 Interruption during a step leaves no entry, so that step misses next time.
 

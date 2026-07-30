@@ -57,7 +57,7 @@ from ..config import (
     universal_flow_config_variables,
 )
 from ..state import State, DesignFormat
-from ..steps import Step, StepNotFound
+from ..steps import Step
 from ..logging import (
     LiveLog,
     additional_sink,
@@ -71,8 +71,8 @@ from ..common import (
     protected,
     final,
     slugify,
+    Fingerprinter,
     Toolbox,
-    get_latest_file,
 )
 import builtins
 
@@ -423,6 +423,12 @@ class Flow(ABC):
     step_objects: list[Step] | None = None
     run_dir: pathlib.Path | None = None
     toolbox: Toolbox | None = None
+
+    #: Content identity for files this run's steps depend on. Assigned by
+    #: :meth:`start` and shared by every step, so a PDK view referenced by
+    #: twenty steps is read once.
+    fingerprinter: Fingerprinter | None = None
+
     config_resolved_path: pathlib.Path | None = None
 
     def __init_subclass__(cls):
@@ -618,7 +624,6 @@ class Flow(ABC):
         tag: str | None = None,
         last_run: bool = False,
         _force_run_dir: str | os.PathLike[str] | None = None,
-        _no_load_previous_steps: bool = False,
         *,
         overwrite: bool = False,
         **kwargs,
@@ -627,11 +632,11 @@ class Flow(ABC):
         The entry point for a flow.
 
         :param with_initial_state: An optional initial state object to use.
-            If not provided:
+            If not provided, an empty state object is created.
 
-            * If resuming a previous run, the latest ``state_out.json`` (by filesystem modification date)
-
-            * If not, an empty state object is created.
+            Resuming a run does not seed this. Each step resolves its own input
+            from the step before it, and reuses its own previous result when
+            that input and its configuration are unchanged.
 
         :param tag: A name for this invocation of the flow. If not provided,
             one based on a date string will be created.
@@ -644,8 +649,10 @@ class Flow(ABC):
 
             If ``last_run`` and ``tag`` are both set, a :class:`FlowException` will
             also be raised.
-        :param overwrite: If true and a run with the desired tag was found, the
-            contents will be deleted instead of appended.
+        :param overwrite: If true and a run with the desired tag was found, its
+            contents are deleted and the flow starts clean. If false, the run is
+            resumed: every step whose configuration and input are unchanged
+            reuses its previous result.
 
         :returns: ``(success, state_list)``
         """
@@ -698,39 +705,12 @@ class Flow(ABC):
                 key=lambda x: int(x.split("-", maxsplit=1)[0]),
             )
             for entry in entries_sorted:
-                components = entry.split("-", maxsplit=1)
-
                 try:
-                    extracted_ordinal = int(components[0])
+                    extracted_ordinal = int(entry.split("-", maxsplit=1)[0])
                 except ValueError:
                     continue
 
-                if not _no_load_previous_steps:
-                    try:
-                        self.step_objects.append(
-                            Step.load_finished(
-                                self.run_dir / entry,
-                                self.config["PDK_ROOT"],
-                                self.Steps,
-                            )
-                        )
-                    except StepNotFound as e:
-                        raise FlowException(
-                            f"Error while loading concluded step in {entry}: {e}"
-                        )
-                    except FileNotFoundError:
-                        pass
-
                 starting_ordinal = max(starting_ordinal, extracted_ordinal + 1)
-
-            # Extract Maximum State
-            if with_initial_state is None:
-                if latest_json := get_latest_file(self.run_dir, "state_out.json"):
-                    logger.log("VERBOSE", f"Using state at '{latest_json}'.")
-
-                    initial_state = State.loads(
-                        open(latest_json, encoding="utf8").read()
-                    )
 
         except NotADirectoryError:
             raise FlowException(
@@ -744,6 +724,7 @@ class Flow(ABC):
 
         # Stored until next start()
         self.toolbox = Toolbox(os.fspath(self.run_dir / "tmp"))
+        self.fingerprinter = Fingerprinter()
 
         issue_handler = Flow._StepIssueSink()
         try:
@@ -791,6 +772,7 @@ class Flow(ABC):
                 try:
                     final_state, step_objects = self.run(
                         initial_state=initial_state,
+                        initial_state_given=with_initial_state is not None,
                         starting_ordinal=starting_ordinal,
                         **kwargs,
                     )
@@ -831,21 +813,32 @@ class Flow(ABC):
         pass
 
     @protected
-    def dir_for_step(self, step: Step) -> pathlib.Path:
+    def dir_for_step(self, step: Step, position: int | None = None) -> pathlib.Path:
         """
         May only be called while :attr:`run_dir` is not None, i.e., the flow
         has started. Otherwise, a :class:`FlowException` is raised.
 
-        :returns: A directory within the run directory for a specific step,
-            prefixed with the current progress bar stage number.
+        :param step: The step to name a directory for.
+        :param position: The step's index in :attr:`Steps`, if the flow has a
+            fixed step list. Passing it makes the directory depend on the step's
+            position rather than on how many earlier steps happened to run, which
+            is what lets a resumed run find its own prior output.
+
+            Flows that build steps in data-dependent loops, such as
+            :class:`librelane.flows.Optimizing`, omit it and keep the running
+            counter.
+        :returns: A directory within the run directory for a specific step.
         """
         if self.run_dir is None:
             raise FlowException(
                 "Attempted to call dir_for_step on a flow that has not been started."
             )
-        return self.run_dir / (
-            f"{self.progress_bar.get_ordinal_prefix()}{slugify(step.id)}"
-        )
+        if position is None:
+            prefix = self.progress_bar.get_ordinal_prefix()
+        else:
+            width = len(str(len(self.Steps)))
+            prefix = f"{position + 1:0{width}d}-"
+        return self.run_dir / f"{prefix}{slugify(step.id)}"
 
     @protected
     def start_step(
