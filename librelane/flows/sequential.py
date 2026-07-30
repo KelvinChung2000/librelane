@@ -42,6 +42,20 @@ SubstitutionsObject = Union[
 ]
 
 
+def _substitution_pairs(
+    Substitutions: SubstitutionsObject,
+) -> list[tuple[str, Substitution]]:
+    """
+    Normalizes either accepted spelling of ``Substitutions`` to the list-of-pairs
+    form, which is the one that can be stored and replayed: a dictionary cannot
+    hold the same key twice, but the pair list is what application order is
+    defined against either way.
+    """
+    if isinstance(Substitutions, dict):
+        return list(Substitutions.items())
+    return list(Substitutions)
+
+
 class SequentialFlow(Flow):
     """
     The simplest Flow, running each Step as a stage, serially,
@@ -98,6 +112,14 @@ class SequentialFlow(Flow):
     Substitutions: SubstitutionsObject | None = None
     gating_config_vars: dict[str, list[str]] = {}
 
+    #: Every substitution applied to reach this class's ``Steps``, in the order
+    #: it was applied, accumulated down the inheritance chain. ``Substitutions``
+    #: itself is cleared once applied, so this is the only record of them, and
+    #: :class:`librelane.flows.StagedFlow` needs it: re-expanding ``Steps`` from
+    #: a ``TOOLS`` selection discards the substituted list, and the
+    #: substitutions have to be replayed onto the new one.
+    _applied_substitutions: list[tuple[str, Substitution]] = []
+
     def __init__(
         self,
         *args,
@@ -113,9 +135,12 @@ class SequentialFlow(Flow):
         Self.Steps = Self.Steps.copy()  # Break global reference
         Self.config_vars = Self.config_vars.copy()
         Self.gating_config_vars = Self.gating_config_vars.copy()
+        Self._applied_substitutions = list(Self._applied_substitutions)
         Self._normalize_step_ids(Self)
         if Self.Substitutions:
-            Self.__substitute_in_place(Self, Self.Substitutions)
+            pairs = _substitution_pairs(Self.Substitutions)
+            Self._substitute_in_place(Self, pairs)
+            Self._applied_substitutions += pairs
             Self.Substitutions = None
 
         Self._validate_gating_config_vars(Self)
@@ -247,18 +272,19 @@ class SequentialFlow(Flow):
         return type(Self.__name__ + "'", (Self,), {"Substitutions": Substitutions})
 
     @staticmethod
-    def __substitute_in_place(
-        target: type[SequentialFlow],
-        Substitutions: SubstitutionsObject | None,
+    def _substitute_in_place(
+        target: SequentialFlow | type[SequentialFlow],
+        Substitutions: list[tuple[str, Substitution]],
     ):
-        if Substitutions is None:
-            return Substitutions
-        if isinstance(Substitutions, dict):
-            for key, item in Substitutions.items():
-                target.__substitute_step(target, key, item)
-        else:
-            for key, item in Substitutions:
-                target.__substitute_step(target, key, item)
+        """
+        Applies substitutions to ``target.Steps``, in order.
+
+        Not private, because :class:`librelane.flows.StagedFlow` replays a
+        class's substitutions onto an instance whose ``Steps`` a ``TOOLS``
+        selection rebuilt.
+        """
+        for key, item in Substitutions:
+            target.__substitute_step(target, key, item)
 
     @staticmethod
     def __substitute_step(
@@ -443,6 +469,14 @@ class SequentialFlow(Flow):
                 except StepException as e:
                     raise FlowException(str(e)) from None
                 except DeferredStepError as e:
+                    # current_state keeps its pre-failure value, while
+                    # increment_ordinal stays True, so the _after_step hook below
+                    # sees the step as executed against a state that never
+                    # received its output. That matters to
+                    # librelane.flows.StagedFlow, which checks a stage contract
+                    # there: a provider whose final step both emits a contracted
+                    # metric and defers an error would raise StageContractError
+                    # and bury the real deferred error. No provider does today.
                     deferred_errors.append(str(e))
                 except StepError as e:
                     raise FlowError(str(e)) from None

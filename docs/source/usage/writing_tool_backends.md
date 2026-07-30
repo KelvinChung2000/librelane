@@ -68,7 +68,7 @@ StageRegistry.register(
   stage boundaries rather than through the neutral view contract. See
   [`native_views`](#native_views) below.
 
-## The three enforcement points
+## The four enforcement points
 
 **Registration time**, inside `StageRegistry.register`, runs three checks the
 moment your module is imported, so a broken registration fails loudly at
@@ -88,22 +88,44 @@ import rather than quietly at run time:
   `provides` must actually appear in some step's `outputs`.
 
 **Resolution time**, inside `resolve()`, runs once a flow's `Stages` list and
-its `TOOLS` selection are both known: an unknown provider name, a list
-supplied for a stage that is not `multi_provider`, an unknown key in `TOOLS`,
-a `requires_pdk_vars` entry the PDK does not define, and (walking the
-resolved step list) whether every non-optional input a step consumes is
-actually produced by an earlier step under the resolved gating. This last
-check is what makes an untested `TOOLS` combination safe to attempt: a
-provider selection that leaves a consumer stranded fails at flow
-construction, naming the view, the step, and the last stage before it, rather
-than crashing once some tool reaches for a file that was never written.
+its `TOOLS` selection are both known, and before any configuration exists. It
+rejects an unknown provider name, a list supplied for a stage that is not
+`multi_provider`, and an unknown key in `TOOLS`.
 
-**Run time**, inside `StagedFlow`, enforces the stage contract: when the last
-step of a stage completes, every view in the stage's (and registration's)
-`provides` must be in the state, and every metric in `metrics` must have been
-emitted, or the flow fails immediately. A backend that does not actually emit
-`route__drc_errors` must not be able to let a downstream checker pass on an
-unexamined design.
+**Startup time**, inside `StagedFlow.__init__` once `Config.load` has produced
+a resolved configuration, runs the two preflights. These need a configuration
+and so cannot live in `resolve()`; if you are chasing one of their messages,
+they are the place to look.
+
+* `StagedFlow._preflight_pdk_vars` checks every `requires_pdk_vars` entry of
+  every selected provider, and fails naming the stage, the provider, the
+  variable and the PDK.
+* `StagedFlow._preflight_views` walks the resolved step list and checks that
+  every non-optional input a step consumes is actually produced by an earlier
+  step, with steps whose gating variables are false excluded. This is what
+  makes an untested `TOOLS` combination safe to attempt, because a provider
+  selection that leaves a consumer stranded fails at flow construction, naming
+  the view, the step, and the last stage before it, rather than crashing once
+  some tool reaches for a file that was never written.
+
+**Run time**, inside `StagedFlow`, enforces the stage contract at two
+granularities. A backend that does not actually emit `route__drc_errors` must
+not be able to let a downstream checker pass on an unexamined design.
+
+* Once the last step of *your registration* completes, every view in your
+  registration's own `provides` must be in the state and every metric in its
+  own `metrics` must have been emitted. Your contract is yours alone, so on a
+  `multi_provider` stage it still holds when the other tool of that stage is
+  gated off.
+* Once the last step of the *whole stage* completes, every view in the stage's
+  `provides` and every metric in the stage's `metrics` must likewise be there.
+  This one the selected providers satisfy jointly, which is what lets both
+  `streamout` tools share the obligation to produce a neutral `gds` while
+  `PRIMARY_GDSII_STREAMOUT_TOOL` decides which of them writes it.
+
+Either check is skipped when the run it covers did not execute every one of its
+steps, since views and metrics that were never attempted cannot be owed. That
+is what allows `RUN_MAGIC_STREAMOUT=false`.
 
 (namespaces)=
 ## `namespaces`

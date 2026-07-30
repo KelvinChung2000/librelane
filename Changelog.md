@@ -158,7 +158,8 @@ Style Notes
 * Created `StagedFlow`, a `SequentialFlow` whose step list is expanded from a
   list of stages drawn from a 27-stage taxonomy, so the tool used for a phase
   can be selected rather than hardcoded. `Classic`, `VHDLClassic` and `Chip`
-  produce exactly the same step lists as before.
+  produce the same step lists as before, except for the DRC step reorder
+  described below.
 * Moved gating from individual step IDs to the stage that owns them, so a
   gating variable applies whichever tool implements the stage. Fifteen of
   `Classic`'s twenty-five step-level gates are now generated from the
@@ -189,6 +190,11 @@ Style Notes
   * Selecting one tool of a multi-tool stage drops the other's hand-written
     gates, since the steps they name are no longer in the flow. A dead gate is
     still an error when a flow class declares one, which is where a typo is.
+  * `TOOLS` composes with `Substitutions`. Stage expansion happens first and the
+    flow's substitutions are replayed onto the result, so setting `TOOLS` on a
+    flow such as `Chip` keeps the steps it substitutes in and out. A
+    substitution naming a step the selected provider removed is an error, the
+    same as one naming a step that was never there.
 * Stage contracts are enforced at run time. When the last step of a stage
   completes, every view in the stage's `provides` must be in the state and every
   metric in its `metrics` must have been emitted, or the run fails. There is no
@@ -196,9 +202,17 @@ Style Notes
   be able to let `Checker.TrDRC` pass on an unexamined design. Metrics are
   compared on base names, so a provider emitting only per-net or per-corner
   variants of a contracted metric still satisfies it.
-  * A stage that did not run every one of its steps, because it was gated,
+  * A run that did not execute every step it covers, because they were gated,
     skipped, or excluded by `--from`/`--to`, is not checked. Its views and
     metrics were never attempted.
+  * Each provider of a multi-tool stage additionally answers for the `provides`
+    and `metrics` its own registration declares, checked once its own steps
+    complete rather than once the stage does. So `RUN_MAGIC_DRC=false` leaves
+    KLayout still answerable for `klayout__drc_error__count`, where a single
+    stage-wide check would have excused it along with Magic. The stage's own
+    `provides` stay a joint obligation, which is what lets both `streamout`
+    tools share the promise of a neutral `gds` view while
+    `PRIMARY_GDSII_STREAMOUT_TOOL` decides which of them writes it.
 * View availability is checked before any tool runs. Every non-optional view a
   step consumes must be produced by an earlier step that the resolved
   configuration actually runs, or the flow fails at startup naming the view, the
@@ -400,8 +414,8 @@ Style Notes
   across several stages at once, and the stage table now rendered by
   `get_help_md`.
 * Added {doc}`/usage/writing_tool_backends`, the provider-authoring reference:
-  a minimal `StageRegistry.register` call, the three enforcement points
-  (registration, resolution, run time), `namespaces`, `native_views`, and why
+  a minimal `StageRegistry.register` call, the four enforcement points
+  (registration, resolution, startup time, run time), `namespaces`, `native_views`, and why
   spanning providers are declared but not implemented.
 * Added a "Declaring a Flow as Stages" section to {doc}`/usage/writing_custom_flows`,
   describing `StagedFlow` and its `Stages` list as a third way to build a

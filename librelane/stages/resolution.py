@@ -34,17 +34,66 @@ ToolSelection = Union[str, Sequence[str]]
 
 
 @dataclass(frozen=True)
-class ResolvedSpan:
+class ProviderContract:
     """
-    One stage, or one contiguous span of stages, bound to the provider chosen
-    for it and to the contract that must hold when it completes.
+    What one provider of a stage promises on its own account: the views and
+    metrics its :class:`librelane.stages.Registration` declares beyond the
+    stage's.
+
+    Held separately from the stage's own contract because the two have different
+    scopes on a ``multi_provider`` stage. Each provider of ``drc`` runs its own
+    deck and contracts its own metric, so gating one off must not excuse the
+    other; the stage's own contract, by contrast, is satisfied by the providers
+    jointly.
     """
 
-    stage_ids: tuple[str, ...]
     provider: str
     provides: tuple[DesignFormat, ...]
     metrics: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ResolvedSpan:
+    """
+    One stage, bound to the providers chosen for it and to the contract that
+    must hold when it completes.
+
+    :param provides: The views the *stage* owes once it completes, which its
+        selected providers satisfy jointly.
+    :param metrics: Likewise for metrics.
+    :param providers: One entry per selected provider, in the order their step
+        sequences were concatenated, carrying what that provider owes alone.
+    """
+
+    stage_ids: tuple[str, ...]
+    providers: tuple[ProviderContract, ...]
+    provides: tuple[DesignFormat, ...]
+    metrics: tuple[str, ...]
     gating_config_var: str | None
+
+    @property
+    def provider(self) -> str:
+        """
+        :returns: The selected provider names as one string, joined by ``+`` for
+            a multi-provider stage.
+        """
+        return "+".join(contract.provider for contract in self.providers)
+
+    def contract_for(self, provider: str) -> ProviderContract:
+        """
+        :returns: The named provider's own contract.
+        :raises StageResolutionError: If this resolution did not select that
+            provider, which means the step tags and the resolution disagree.
+        """
+        for contract in self.providers:
+            if contract.provider == provider:
+                return contract
+        raise StageResolutionError(
+            f"stage {list(self.stage_ids)}: this resolution selected "
+            f"{[contract.provider for contract in self.providers]}, not "
+            f"'{provider}'. A step tagged for a provider the resolution did not "
+            f"select is a programming error, not a configuration mistake."
+        )
 
 
 @dataclass(frozen=True)
@@ -156,22 +205,26 @@ def resolve(
             unselected.append(entry.id)
             continue
 
-        span_steps: list[type[Step]] = []
-        provides = set(entry.provides)
-        metrics = set(entry.metrics)
+        contracts: list[ProviderContract] = []
         for provider in providers:
             registration = _registration_for(entry, provider)
-            span_steps.extend(registration.tagged_steps())
-            provides.update(registration.provides)
-            metrics.update(registration.metrics)
+            steps.extend(registration.tagged_steps())
+            contracts.append(
+                ProviderContract(
+                    provider=provider,
+                    provides=tuple(
+                        sorted(set(registration.provides), key=lambda view: view.id)
+                    ),
+                    metrics=tuple(sorted(set(registration.metrics))),
+                )
+            )
 
-        steps.extend(span_steps)
         spans.append(
             ResolvedSpan(
                 stage_ids=(entry.id,),
-                provider="+".join(providers),
-                provides=tuple(sorted(provides, key=lambda view: view.id)),
-                metrics=tuple(sorted(metrics)),
+                providers=tuple(contracts),
+                provides=tuple(sorted(set(entry.provides), key=lambda view: view.id)),
+                metrics=tuple(sorted(set(entry.metrics))),
                 gating_config_var=entry.gating_config_var,
             )
         )

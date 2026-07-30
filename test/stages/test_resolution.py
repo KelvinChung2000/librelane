@@ -120,7 +120,16 @@ def test_multi_provider_stage_accepts_a_single_provider():
         "KLayout.DRC",
         "Checker.KLayoutDRC",
     ]
-    assert resolution.spans[0].metrics == ("klayout__drc_error__count",)
+    # A metric a registration declares is that provider's own obligation, not
+    # the stage's, so it hangs off the provider's contract. The distinction is
+    # load-bearing on a multi_provider stage: the stage's own metrics are
+    # satisfied by its providers jointly, while each provider answers for its
+    # own even when the other tool is gated off.
+    assert resolution.spans[0].metrics == ()
+    assert [contract.provider for contract in resolution.spans[0].providers] == [
+        "klayout"
+    ]
+    assert resolution.spans[0].providers[0].metrics == ("klayout__drc_error__count",)
 
 
 def test_using_pins_a_provider_without_registering_a_new_stage():

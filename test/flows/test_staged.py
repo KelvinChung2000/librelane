@@ -133,6 +133,73 @@ def test_stage_gate_applies_to_every_step_of_the_stage():
     }
 
 
+@pytest.fixture(scope="module")
+def ProbeStage():
+    """
+    A stage whose gating variable can be overridden via dataclasses.replace.
+
+    Module-scoped because Stage.factory and StageRegistry are process-wide
+    singletons. The step ID uses the Test. prefix the repository reserves for
+    ephemeral test steps.
+    """
+    from librelane.stages import Stage, StageRegistry
+    from librelane.steps import Step
+
+    @Step.factory.register()
+    class Probe(Step):
+        id = "Test.ProbeStep"
+        name = "Probe Step"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    Stage(
+        id="probe_stage",
+        full_name="Probe Stage",
+        default_provider="probe",
+        requires=(),
+        provides=(),
+        gating_config_var="RUN_PROBE_STAGE",
+    ).register()
+
+    StageRegistry.register(
+        stages=["probe_stage"],
+        provider="probe",
+        steps=[Probe],
+        namespaces=["PROBE_"],
+    )
+    return Stage.factory.get("probe_stage")
+
+
+def test_modified_stage_gating_variable_is_respected(ProbeStage):
+    """
+    When a flow places a modified copy of a stage in its Stages list with
+    dataclasses.replace(stage, gating_config_var="NEW_VAR"), the modified
+    gating variable is used, not the one from Stage.factory.
+
+    Regression test: under the old code that re-derived the gating variable
+    from Stage.factory, this would have produced ["RUN_PROBE_STAGE"] instead
+    of the correct ["MY_GATE"]. ResolvedSpan.gating_config_var must remain
+    authoritative.
+    """
+    import dataclasses
+
+    from librelane.config import variable
+    from librelane.flows import StagedFlow
+
+    class ModifiedGate(StagedFlow):
+        Stages = [dataclasses.replace(ProbeStage, gating_config_var="MY_GATE")]
+
+        class Config(StagedFlow.Config):
+            MY_GATE: bool = variable(True, description="test gate")
+
+    assert ModifiedGate.gating_config_vars == {
+        "Test.ProbeStep": ["MY_GATE"],
+    }
+
+
 def test_gating_key_matching_no_step_is_rejected():
     from librelane.config import variable
     from librelane.flows import SequentialFlow
@@ -159,26 +226,31 @@ def test_subclass_may_declare_steps_directly():
     assert Bypassed.stage_boundaries(Bypassed.Steps) == []
 
 
-def _classic_with_tools(mock_config, tools, **overrides):
+def _flow_with_tools(mock_config, FlowClass, tools, **overrides):
     """
-    Instantiates Classic from an already-resolved configuration, which skips
+    Instantiates a real flow from an already-resolved configuration, which skips
     Config.load. The mock variable set the fixtures install collides with real
     step variables (DIODE_ON_PORTS), so the real flow cannot be validated under
     them; the pre-pass that reads TOOLS out of raw sources is covered by
     test/stages/test_tools_extraction.py instead.
 
-    Skipping Config.load also means nothing put Classic's own variables into the
-    configuration, so the flow's declared defaults are supplied here, with
-    ``overrides`` applied on top. The view preflight reads the gating variables,
-    and a flow is entitled to assume its own variables are present.
+    Skipping Config.load also means nothing put the flow's own variables into the
+    configuration, so its declared defaults are supplied here, with ``overrides``
+    applied on top. The view preflight reads the gating variables, and a flow is
+    entitled to assume its own variables are present.
     """
-    from librelane.flows import Flow
-
-    Classic = Flow.factory.get("Classic")
-    values = {variable.name: variable.default for variable in Classic.config_vars}
+    values = {variable.name: variable.default for variable in FlowClass.config_vars}
     values.update(overrides)
     values["TOOLS"] = tools
-    return Classic(mock_config.copy(**values))
+    return FlowClass(mock_config.copy(**values))
+
+
+def _classic_with_tools(mock_config, tools, **overrides):
+    from librelane.flows import Flow
+
+    return _flow_with_tools(
+        mock_config, Flow.factory.get("Classic"), tools, **overrides
+    )
 
 
 #: Selecting klayout alone for the streamout stage removes Magic.StreamOut, and
@@ -250,6 +322,91 @@ def test_gates_for_a_deselected_tool_are_dropped_not_rejected(mock_config):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
+def test_chip_with_tools_keeps_its_substitutions(mock_config):
+    """
+    Instance-time re-expansion replaces ``Steps`` with the freshly resolved list,
+    which has none of the ``Substitutions`` the class definition applied. Since
+    ``SequentialFlow.__init_subclass__`` clears ``Substitutions`` after applying
+    them, they have to be recorded on the class to be replayable, or setting
+    TOOLS on Chip silently runs plain Classic.
+
+    Magic.WriteLEF is the sharpest case: Chip drops that gate because it removed
+    the step, so a WriteLEF that comes back is a step running with a gating
+    variable that no longer reaches it.
+    """
+    from librelane.flows import Flow
+
+    flow = _flow_with_tools(
+        mock_config, Flow.factory.get("Chip"), {"drc": "klayout"}, **_NO_XOR
+    )
+
+    ids = [step.id for step in flow.Steps]
+    assert "OpenROAD.PadRing" in ids
+    assert "Magic.WriteLEF" not in ids
+    assert "OpenROAD.IOPlacement" not in ids
+    assert "Odb.CustomIOPlacement" not in ids
+    assert "Odb.CheckDesignAntennaProperties" not in ids
+    assert "Checker.KLayoutDensity" in ids
+    # The selection itself still took effect.
+    assert "Magic.DRC" not in ids
+    assert "KLayout.DRC" in ids
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_substitutions_replayed_down_a_whole_inheritance_chain(mock_config):
+    """
+    The record has to accumulate rather than be per-class, because ``Steps``
+    reaches its class-definition shape through every substitution in the
+    ancestry, and re-expansion throws all of them away at once. Chip contributes
+    eleven and Substitute() one more.
+    """
+    from librelane.flows import Flow
+
+    Chip = Flow.factory.get("Chip")
+    Trimmed = Chip.Substitute({"Checker.HoldViolations": None})
+
+    assert Chip._applied_substitutions is not Trimmed._applied_substitutions, (
+        "a subclass must not append to its parent's record"
+    )
+    assert len(Trimmed._applied_substitutions) == len(Chip._applied_substitutions) + 1
+
+    flow = _flow_with_tools(mock_config, Trimmed, {"drc": "klayout"}, **_NO_XOR)
+
+    ids = [step.id for step in flow.Steps]
+    assert "OpenROAD.PadRing" in ids, "Chip's own substitution"
+    assert "Checker.HoldViolations" not in ids, "the subclass's substitution"
+    assert "Checker.SetupViolations" in ids
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_substitution_naming_a_step_the_selection_removed_raises(SwappableStage):
+    """
+    The other half of replaying substitutions: a substitution key that the new
+    provider selection removed cannot be applied, and must say so rather than be
+    quietly skipped. Selecting 'beta' removes Test.Alpha, which the flow's
+    Substitutions name.
+    """
+    from librelane.flows import FlowException, StagedFlow
+
+    Swappable, Extra = SwappableStage
+
+    class Swapped(StagedFlow):
+        Stages = [Swappable]
+        Substitutions = {"+Test.Alpha": Extra}
+
+    assert [step.id for step in Swapped.Steps] == ["Test.Alpha", "Test.Extra"]
+
+    with pytest.raises(FlowException, match="Test.Alpha"):
+        Swapped(
+            {**_MINIMAL_DESIGN, "TOOLS": {"swappable": "beta"}},
+            **_MOCK_PDK,
+        )
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
 def test_unknown_provider_is_rejected_with_the_registered_names():
     from librelane.flows import Flow
     from librelane.stages import StageResolutionError
@@ -268,6 +425,60 @@ def test_unknown_stage_key_is_rejected_with_a_suggestion():
     Classic = Flow.factory.get("Classic")
     with pytest.raises(StageResolutionError, match="Did you mean: 'synthesis'"):
         Classic({**_MINIMAL_DESIGN, "TOOLS": {"synthesys": "yosys"}}, **_MOCK_PDK)
+
+
+@pytest.fixture(scope="module")
+def SwappableStage():
+    """
+    A stage with two providers whose step sequences share no step, plus a plain
+    step to substitute in, for exercising how ``TOOLS`` composes with
+    ``Substitutions``.
+
+    Module-scoped because Stage.factory and StageRegistry are process-wide
+    singletons. The step IDs use the Test. prefix the repository reserves for
+    ephemeral test steps, which test_registry_snapshot.py excludes.
+    """
+    from librelane.stages import Stage, StageRegistry
+    from librelane.steps import Step
+
+    class Quiet(Step):
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    @Step.factory.register()
+    class Alpha(Quiet):
+        id = "Test.Alpha"
+        name = "Alpha"
+
+    @Step.factory.register()
+    class Beta(Quiet):
+        id = "Test.Beta"
+        name = "Beta"
+
+    @Step.factory.register()
+    class Extra(Quiet):
+        id = "Test.Extra"
+        name = "Extra"
+
+    Stage(
+        id="swappable",
+        full_name="Swappable",
+        default_provider="alpha",
+        requires=(),
+        provides=(),
+    ).register()
+
+    for provider, steps in (("alpha", [Alpha]), ("beta", [Beta])):
+        StageRegistry.register(
+            stages=["swappable"],
+            provider=provider,
+            steps=steps,
+            namespaces=["TEST_"],
+        )
+    return Stage.factory.get("swappable"), Extra
 
 
 @pytest.fixture(scope="module")
@@ -341,6 +552,205 @@ def test_skipped_stage_is_not_contract_checked(ContractTestStage):
     flow = Broken(_MINIMAL_DESIGN, **_MOCK_PDK)
 
     flow.start(skip=["Test.SilentContract"])
+
+
+@pytest.fixture(scope="module")
+def MultiProviderContractStages():
+    """
+    Two multi_provider stages, both shaped like a real one:
+
+    * ``per_provider_contract`` is shaped like ``drc``. Each provider runs its
+      own deck and contracts its own metric, and neither emits it.
+    * ``joint_contract`` is shaped like ``streamout``. The obligation belongs to
+      the stage rather than to either provider, and exactly one of the two
+      satisfies it, the way ``PRIMARY_GDSII_STREAMOUT_TOOL`` decides which
+      stream-out result becomes the neutral ``gds`` view.
+
+    Module-scoped because Stage.factory and StageRegistry are process-wide
+    singletons. The step IDs use the Test. prefix the repository reserves for
+    ephemeral test steps, which test_registry_snapshot.py excludes.
+    """
+    from librelane.stages import Stage, StageRegistry
+    from librelane.steps import Step
+
+    class Quiet(Step):
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    @Step.factory.register()
+    class FirstSilent(Quiet):
+        id = "Test.FirstSilent"
+        name = "First Silent"
+
+    @Step.factory.register()
+    class SecondSilent(Quiet):
+        id = "Test.SecondSilent"
+        name = "Second Silent"
+
+    @Step.factory.register()
+    class JointSilent(Quiet):
+        id = "Test.JointSilent"
+        name = "Joint Silent"
+
+    @Step.factory.register()
+    class JointEmitter(Quiet):
+        id = "Test.JointEmitter"
+        name = "Joint Emitter"
+
+        def run(self, state_in, **kwargs):
+            return {}, {"test__joint": 0}
+
+    Stage(
+        id="per_provider_contract",
+        full_name="Per Provider Contract",
+        default_provider=("first", "second"),
+        requires=(),
+        provides=(),
+        multi_provider=True,
+    ).register()
+    Stage(
+        id="joint_contract",
+        full_name="Joint Contract",
+        default_provider=("silent", "emitter"),
+        requires=(),
+        provides=(),
+        metrics=("test__joint",),
+        multi_provider=True,
+    ).register()
+
+    registrations = (
+        ("per_provider_contract", "first", FirstSilent, ["test__first"]),
+        ("per_provider_contract", "second", SecondSilent, ["test__second"]),
+        ("joint_contract", "silent", JointSilent, []),
+        ("joint_contract", "emitter", JointEmitter, []),
+    )
+    for stage_id, provider, step, metrics in registrations:
+        StageRegistry.register(
+            stages=[stage_id],
+            provider=provider,
+            steps=[step],
+            namespaces=["TEST_"],
+            metrics=metrics,
+        )
+    return Stage.factory.get("per_provider_contract"), Stage.factory.get(
+        "joint_contract"
+    )
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_gating_one_tool_leaves_the_other_s_contract_enforced(
+    MultiProviderContractStages,
+):
+    """
+    Both providers of a multi_provider stage used to be collapsed into one
+    boundary, and a boundary whose steps did not all run is not held to its
+    contract. So gating one tool off - RUN_MAGIC_DRC=false being the real,
+    documented case - excused the *other* tool from producing its metric, on a
+    stage whose whole point is that each provider checks the design
+    independently. Since MetricChecker.run warns and returns success when its
+    metric is absent, that is a DRC check passing on an unexamined design.
+    """
+    from librelane.config import variable
+    from librelane.flows import StagedFlow
+    from librelane.stages import StageContractError
+
+    PerProvider, _ = MultiProviderContractStages
+
+    class Both(StagedFlow):
+        Stages = [PerProvider]
+        gating_config_vars = {"Test.FirstSilent": ["RUN_FIRST"]}
+
+        class Config(StagedFlow.Config):
+            RUN_FIRST: bool = variable(False, description="test gate")
+
+    flow = Both(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+    with pytest.raises(StageContractError, match="test__second"):
+        flow.start()
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_a_stage_level_contract_stays_joint_across_its_providers(
+    MultiProviderContractStages,
+):
+    """
+    The converse of the test above, and the reason a provider's contract cannot
+    simply be the stage's contract repeated per provider.
+
+    A stage's own ``provides``/``metrics`` are what the stage owes once it
+    completes, and a multi_provider stage may satisfy them with any one of its
+    providers. ``streamout`` is the live case: both tools stream out, but only
+    the one named by PRIMARY_GDSII_STREAMOUT_TOOL writes the neutral ``gds``
+    view. Holding each provider to the stage's obligation separately would fail
+    the flow at the first provider's boundary.
+    """
+    from librelane.flows import StagedFlow
+
+    _, Joint = MultiProviderContractStages
+
+    class Both(StagedFlow):
+        Stages = [Joint]
+
+    flow = Both(_MINIMAL_DESIGN, **_MOCK_PDK)
+
+    flow.start()
+
+
+#: The four ways an ordinary user turns off one tool of one of `Classic`'s two
+#: multi-provider stages: the gating variable, the stage, the provider it
+#: removes, and the provider that must stay answerable for its own contract.
+_ONE_TOOL_GATED = [
+    ("RUN_MAGIC_DRC", "drc", "magic", "klayout"),
+    ("RUN_KLAYOUT_DRC", "drc", "klayout", "magic"),
+    ("RUN_MAGIC_STREAMOUT", "streamout", "magic", "klayout"),
+    ("RUN_KLAYOUT_STREAMOUT", "streamout", "klayout", "magic"),
+]
+
+
+@pytest.mark.parametrize(("gate", "stage_id", "gated", "kept"), _ONE_TOOL_GATED)
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
+def test_gating_one_real_tool_leaves_the_other_s_contract_checked(
+    mock_config, gate, stage_id, gated, kept
+):
+    """
+    The same defect as test_gating_one_tool_leaves_the_other_s_contract_enforced,
+    read off the real flow rather than an ephemeral stage, for all four ways a
+    user can turn one tool of a multi-provider stage off.
+
+    The stage-wide boundary is legitimately not checked here, since a run that
+    skipped steps cannot be held to an obligation those steps would have met.
+    That is exactly why the surviving provider needs a boundary of its own.
+    """
+    flow = _classic_with_tools(mock_config, {}, **{gate: False})
+    gates = flow._expand_gating_config_vars(
+        flow.gating_config_vars, [step.id for step in flow.Steps]
+    )
+
+    def runs(step_id: str) -> bool:
+        return all(flow.config[name] for name in gates.get(step_id, []))
+
+    boundaries = {
+        (boundary.stage_ids, boundary.provider): boundary
+        for boundary in flow._boundaries(flow)
+    }
+    whole_stage = boundaries[((stage_id,), "magic+klayout")]
+    assert not all(runs(step_id) for step_id in whole_stage.step_ids)
+
+    assert not all(
+        runs(step_id) for step_id in boundaries[((stage_id,), gated)].step_ids
+    )
+    surviving = boundaries[((stage_id,), kept)]
+    assert all(runs(step_id) for step_id in surviving.step_ids)
+    assert surviving.provides or surviving.metrics, (
+        "the surviving provider must have something of its own to answer for, "
+        "or this configuration proves nothing"
+    )
 
 
 @pytest.fixture(scope="module")

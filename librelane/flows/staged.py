@@ -22,8 +22,19 @@ from loguru import logger
 from ..common import Filter, parse_metric_modifiers
 from ..config import Config as ResolvedConfig, variable
 from ..stages.registry import StageRegistry
-from ..stages.resolution import Resolution, StageEntry, ToolSelection, resolve
-from ..stages.stage import Stage, StageContractError, StageResolutionError
+from ..stages.resolution import (
+    Resolution,
+    ResolvedSpan,
+    StageEntry,
+    ToolSelection,
+    resolve,
+)
+from ..stages.stage import (
+    Stage,
+    StageContractError,
+    StageError,
+    StageResolutionError,
+)
 from ..stages.tools import extract_tools
 from ..state import DesignFormat, State
 from ..steps import Step
@@ -34,11 +45,17 @@ from .sequential import SequentialFlow
 @dataclass(frozen=True)
 class Boundary:
     """
-    A contiguous run of resolved steps belonging to one stage or span, and the
-    contract that must hold once its last step completes.
+    A contiguous run of resolved steps belonging to one stage, and the contract
+    that must hold once its last step completes.
+
+    :param provider: The provider whose obligation this boundary carries. A
+        single name for a boundary covering one provider's steps, and the
+        selected names joined by ``+`` for one covering a whole
+        ``multi_provider`` stage.
     """
 
     stage_ids: tuple[str, ...]
+    provider: str
     step_ids: tuple[str, ...]
     provides: tuple[DesignFormat, ...]
     metrics: tuple[str, ...]
@@ -147,18 +164,29 @@ class StagedFlow(SequentialFlow):
         # derived Steps from, and is the correct baseline for "did TOOLS
         # change anything".
         resolution = resolve(self.Stages, tools)
-        if [step.id for step in resolution.steps] != [
+        reexpanded = [step.id for step in resolution.steps] != [
             step.id for step in self._resolution.steps
-        ]:
+        ]
+        # Assigned before the re-expansion below rather than after, because
+        # _apply_stage_gating reads each stage's gate off the spans.
+        self._resolution = resolution
+        if reexpanded:
             # Re-expansion happens before super().__init__, because that is
             # where get_all_config_variables() reads self.Steps to build the
             # model configuration is validated against. The whole reason the
             # TOOLS pre-pass exists is that the step set has to be known first.
             self.Steps = resolution.steps
             self._normalize_step_ids(self)
+            # In the same order the class definition used: normalize, then
+            # substitute. resolve() knows nothing about Substitutions, so the
+            # freshly expanded list has none of them, and the class no longer
+            # holds Substitutions to consult - __init_subclass__ cleared it after
+            # applying it. A substitution key naming a step this provider
+            # selection removed raises here, which is correct: it named a step
+            # that is not in the flow.
+            self._substitute_in_place(self, self._applied_substitutions)
             self._apply_stage_gating(self)
             self.__prune_deselected_gates(self)
-        self._resolution = resolution
 
         super().__init__(
             config,
@@ -167,9 +195,13 @@ class StagedFlow(SequentialFlow):
         )
 
         self.__executed_step_ids: set[str] = set()
-        self.__boundary_by_last_step = {
-            boundary.last_step_id: boundary for boundary in self.__boundaries()
-        }
+        # A list per step, not one boundary: the last provider's boundary and the
+        # boundary covering the whole stage necessarily end on the same step.
+        self.__boundaries_by_last_step: dict[str, list[Boundary]] = {}
+        for boundary in self._boundaries(self):
+            self.__boundaries_by_last_step.setdefault(boundary.last_step_id, []).append(
+                boundary
+            )
         self._preflight_pdk_vars()
         self._preflight_views()
 
@@ -184,12 +216,22 @@ class StagedFlow(SequentialFlow):
         stage, the provider, the variable and the PDK, rather than crashing
         somewhere deep in a Tcl script.
         """
-        pdk = self.config.get("PDK", "<unknown>")
+        pdk = self.config["PDK"]
         for span in self._resolution.spans:
-            for provider in span.provider.split("+"):
+            for contract in span.providers:
+                provider = contract.provider
                 registration = StageRegistry.get(span.stage_ids[0], provider)
                 if registration is None:
-                    continue
+                    # Unreachable through resolve(), which raises on a provider
+                    # the registry does not have. Reaching it means the registry
+                    # and the resolution disagree, so skipping the check would
+                    # skip it on a provider that is about to run.
+                    raise StageError(
+                        f"{span.stage_ids[0]}: the resolution selected provider "
+                        f"'{provider}', which the registry has no registration "
+                        f"for. The registry and the resolution disagree, which "
+                        f"is a programming error."
+                    )
                 for name in registration.requires_pdk_vars:
                     if self.config.get(name) is not None:
                         continue
@@ -299,45 +341,92 @@ class StagedFlow(SequentialFlow):
         step_ids = [step.id for step in self.Steps]
         return self._expand_gating_config_vars(self.gating_config_vars, step_ids)
 
-    def __boundaries(self) -> list[Boundary]:
+    @staticmethod
+    def _boundaries(target) -> list[Boundary]:
         """
-        The boundary map for the resolved step list, with each boundary's
-        contract taken from the span that produced it.
-
-        ``stage_boundaries`` recovers step membership from the tags on the step
-        classes, but falls back to the taxonomy for the contract. Only the
+        Every contract to check for ``target``, with each boundary's contract
+        taken from the resolution rather than from the taxonomy. Only the
         resolution knows which providers were selected, and a
         :class:`librelane.stages.Registration` may declare ``provides`` and
-        ``metrics`` beyond its stage's, so the span is the authority here.
+        ``metrics`` beyond its stage's.
+
+        There are two contracts per stage, at two granularities, because the two
+        say different things on a ``multi_provider`` stage:
+
+        * The stage's own ``provides``/``metrics``, checked once the whole stage
+          has run. This obligation is satisfied by the selected providers
+          jointly: both ``streamout`` tools stream out, but only the one named
+          by ``PRIMARY_GDSII_STREAMOUT_TOOL`` writes the neutral ``gds`` view.
+        * Each provider's own, checked once that provider's steps have run, so
+          that gating one tool of a stage off leaves the other still answerable
+          for its metric.
+
+        For a single-provider stage the two cover the same steps and their union
+        is the whole contract, so no special case is needed.
         """
-        spans = {span.stage_ids: span for span in self._resolution.spans}
-        result = []
-        for boundary in self.stage_boundaries(self.Steps):
-            span = spans.get(boundary.stage_ids)
-            if span is not None:
-                boundary = replace(
-                    boundary, provides=span.provides, metrics=span.metrics
-                )
-            result.append(boundary)
+        result: list[Boundary] = []
+        for boundary in StagedFlow.stage_boundaries(target.Steps):
+            span = StagedFlow._span_for(target, boundary)
+            result.append(
+                replace(boundary, provides=span.provides, metrics=span.metrics)
+            )
+        for boundary in StagedFlow.provider_boundaries(target.Steps):
+            contract = StagedFlow._span_for(target, boundary).contract_for(
+                boundary.provider
+            )
+            result.append(
+                replace(boundary, provides=contract.provides, metrics=contract.metrics)
+            )
         return result
+
+    @staticmethod
+    def _span_for(target, boundary: Boundary) -> ResolvedSpan:
+        """
+        :returns: The resolved span the steps of ``boundary`` were expanded from.
+        :raises StageResolutionError: If the resolution does not cover that
+            stage, which means the step tags and the resolution disagree.
+
+        Every tagged step in a ``StagedFlow``'s ``Steps`` came out of that flow's
+        own resolution, whether directly, through ``Step.with_id``, or through
+        ``Substitutions``, so a miss here is a programming error rather than a
+        configuration mistake. It has to be loud either way, because both callers
+        would otherwise carry on with an unenforced contract or an ungated stage.
+        """
+        for span in target._resolution.spans:
+            if span.stage_ids == boundary.stage_ids:
+                return span
+        name = getattr(target, "__qualname__", type(target).__qualname__)
+        raise StageResolutionError(
+            f"flow '{name}' has steps tagged for stage "
+            f"{list(boundary.stage_ids)}, which its own resolution does not "
+            f"cover. A 'Steps' list may not be assembled out of the steps "
+            f"another flow's 'Stages' expanded to."
+        )
 
     def _after_step(self, step: Step, state: State, executed: bool) -> None:
         if executed:
             self.__executed_step_ids.add(step.id)
-        boundary = self.__boundary_by_last_step.get(step.id)
-        if boundary is None:
-            return
-        if not all(
-            step_id in self.__executed_step_ids for step_id in boundary.step_ids
-        ):
-            # A stage that did not run every step cannot be held to its
-            # contract: the views and metrics were never attempted.
-            logger.debug(
-                f"stage {list(boundary.stage_ids)}: not every step ran, "
-                f"contract not checked"
-            )
-            return
-        self.__check_contract(boundary, state)
+        # Note for a backend author: on a DeferredStepError,
+        # SequentialFlow.run leaves current_state at its pre-failure value while
+        # still reporting the step as executed, so a boundary ending on a step
+        # that both emits a contracted metric and defers an error is checked
+        # against a state that cannot contain the metric. It would then raise
+        # StageContractError and bury the real deferred error. No provider is
+        # affected today: every contracted metric is emitted by a step earlier in
+        # its provider's sequence than the checker that defers.
+        for boundary in self.__boundaries_by_last_step.get(step.id, []):
+            if not all(
+                step_id in self.__executed_step_ids for step_id in boundary.step_ids
+            ):
+                # A run that did not execute every step cannot be held to its
+                # contract: the views and metrics were never attempted.
+                logger.debug(
+                    f"stage {list(boundary.stage_ids)}, provider "
+                    f"'{boundary.provider}': not every step ran, contract not "
+                    f"checked"
+                )
+                continue
+            self.__check_contract(boundary, state)
 
     @staticmethod
     def __check_contract(boundary: Boundary, state: State) -> None:
@@ -356,10 +445,10 @@ class StagedFlow(SequentialFlow):
         if missing_metrics:
             parts.append(f"metrics {missing_metrics}")
         raise StageContractError(
-            f"stage {list(boundary.stage_ids)} completed without producing "
-            f"{' and '.join(parts)}. Every provider of these stages is "
-            f"contracted to produce them; a stage whose contract is not met "
-            f"cannot be handed to the next stage."
+            f"stage {list(boundary.stage_ids)}, provider "
+            f"'{boundary.provider}', completed without producing "
+            f"{' and '.join(parts)}. It is contracted to produce them; a stage "
+            f"whose contract is not met cannot be handed to the next stage."
         )
 
     @classmethod
@@ -421,15 +510,21 @@ class StagedFlow(SequentialFlow):
 
         Takes a target rather than binding to a class because instance-level
         ``TOOLS`` rebuilds ``Steps`` on the instance.
+
+        The gate is read off the resolution rather than looked back up from
+        ``Stage.factory``, so that a flow placing a modified copy of a stage in
+        its ``Stages`` list, as ``replace(Stage.cts, gating_config_var="MY_GATE")``,
+        is gated by the variable it asked for. The registered stage is a default,
+        not the authority, in the same way ``Stage.using`` makes a pinned provider
+        a default.
         """
         generated: dict[str, list[str]] = {}
         for boundary in StagedFlow.stage_boundaries(target.Steps):
-            for stage_id in boundary.stage_ids:
-                stage = Stage.factory.get(stage_id)
-                if stage.gating_config_var is None:
-                    continue
-                for step_id in boundary.step_ids:
-                    generated.setdefault(step_id, []).append(stage.gating_config_var)
+            gate = StagedFlow._span_for(target, boundary).gating_config_var
+            if gate is None:
+                continue
+            for step_id in boundary.step_ids:
+                generated.setdefault(step_id, []).append(gate)
 
         merged = generated
         for key, value in target._explicit_gating_config_vars.items():
@@ -496,6 +591,38 @@ class StagedFlow(SequentialFlow):
         Recovers the stage boundary map from a final step list by scanning for
         contiguous runs of steps carrying the same ``_stage_span`` tag.
 
+        One boundary per stage: for a ``multi_provider`` stage its ``step_ids``
+        are every selected provider's steps and its ``provider`` is their names
+        joined by ``+``. See :meth:`provider_boundaries` for the finer grouping.
+
+        The contract is left empty, because only the resolution knows which
+        providers were selected and what each of them promised;
+        :meth:`_boundaries` fills it in from there.
+        """
+        return Self.__runs(steps, lambda span, provider: span)
+
+    @classmethod
+    def provider_boundaries(Self, steps: list[type[Step]]) -> list[Boundary]:
+        """
+        As :meth:`stage_boundaries`, but one boundary per provider of a stage
+        rather than one per stage, by grouping on the ``_stage_provider`` tag as
+        well as ``_stage_span``.
+
+        This is the granularity at which a provider's own contract has to be
+        checked. A boundary whose steps did not all run cannot be held to its
+        contract, which is what lets ``RUN_MAGIC_STREAMOUT=false`` work at all.
+        At stage granularity that escape is far too wide on a ``multi_provider``
+        stage: gating one of the two ``drc`` tools off would excuse the other
+        from producing its metric, on a stage whose whole point is that each
+        provider checks the design independently.
+        """
+        return Self.__runs(steps, lambda span, provider: (span, provider))
+
+    @staticmethod
+    def __runs(steps: list[type[Step]], key) -> list[Boundary]:
+        """
+        Scans ``steps`` for contiguous runs whose tags agree under ``key``.
+
         Reading the tags off the classes rather than remembering index ranges
         is what makes this survive duplicate-ID normalization and
         ``Substitutions``: ``Step.with_id`` subclasses, so the tag is
@@ -503,35 +630,39 @@ class StagedFlow(SequentialFlow):
         falls outside every boundary.
         """
         boundaries: list[Boundary] = []
+        current_key: object = None
         current_span: tuple[str, ...] | None = None
+        current_providers: list[str] = []
         current_ids: list[str] = []
 
         def flush():
             if current_span is None:
                 return
-            provides: set = set()
-            metrics: set = set()
-            for stage_id in current_span:
-                stage = Stage.factory.get(stage_id)
-                provides.update(stage.provides)
-                metrics.update(stage.metrics)
             boundaries.append(
                 Boundary(
                     stage_ids=current_span,
+                    provider="+".join(current_providers),
                     step_ids=tuple(current_ids),
-                    provides=tuple(sorted(provides, key=lambda view: view.id)),
-                    metrics=tuple(sorted(metrics)),
+                    provides=(),
+                    metrics=(),
                 )
             )
 
         for step in steps:
             span = getattr(step, "_stage_span", None)
-            if span != current_span:
+            provider = getattr(step, "_stage_provider", None)
+            step_key = key(span, provider) if span is not None else None
+            if step_key != current_key:
                 flush()
+                current_key = step_key
                 current_span = span
+                current_providers = []
                 current_ids = []
-            if span is not None:
-                current_ids.append(step.id)
+            if span is None:
+                continue
+            if provider not in current_providers:
+                current_providers.append(provider)
+            current_ids.append(step.id)
         flush()
 
         return [boundary for boundary in boundaries if boundary.stage_ids]

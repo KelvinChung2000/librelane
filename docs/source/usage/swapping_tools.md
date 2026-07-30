@@ -27,9 +27,8 @@ list of steps. It is written as a list of **stages**. A stage is a named phase
 of the flow, such as `detailed_routing` or `streamout`, and it never executes
 anything by itself. A *provider* registration binds a stage to the concrete
 steps that actually implement it for one tool. This split is what makes a
-stage the unit of three things at once: which tool runs a phase, whether that
-phase can be turned off independently of every other phase, and where a flow
-can be re-entered after handing off to a different tool. `Classic` and
+stage the unit of two things at once, which tool runs a phase and whether that
+phase can be turned off independently of every other phase. `Classic` and
 `VHDLClassic` are both `StagedFlow`s; their `Stages` lists live in
 `librelane/flows/classic.py`.
 
@@ -214,6 +213,12 @@ last source for each top-level key as a whole; if `config.json` also sets
   cannot express "use this vendor tool for floorplanning on this process."
 * `TOOLS` cannot come from a Tcl configuration file, for the same reason: Tcl
   evaluation needs process information that is not available this early.
+* A stage id is not a `--from`/`--to` target. Those options resolve concrete
+  step IDs, so re-entering a flow at, say, `detailed_routing` is not
+  implemented, and `--from detailed_routing` is rejected with a suggestion
+  naming the step ID of whichever tool is currently selected. Resuming a run
+  therefore still means naming a step, and the step to name changes when
+  `TOOLS` changes.
 * View-level compatibility across a provider boundary is guaranteed; semantic
   compatibility is not. The view preflight confirms that the `DEF`, netlist,
   or `SDC` a provider hands off is present, but it cannot confirm that two

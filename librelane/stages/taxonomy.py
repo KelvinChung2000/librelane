@@ -310,9 +310,12 @@ Stage(
 ).register()
 
 
-#: The canonical flow order of every stage. A ``StagedFlow`` may omit stages
-#: and may interleave plain steps, but may not reorder these relative to one
-#: another.
+#: The canonical reference order of every stage, and the order a ``StagedFlow``
+#: is expected to declare its own stages in. A flow may omit stages and may
+#: interleave plain steps. Nothing enforces the order itself: ``resolve()``
+#: expands a ``Stages`` list exactly as written, and two stages swapped relative
+#: to each other are caught only if the swap strands a view consumer, which the
+#: view preflight then reports.
 STAGE_ORDER: tuple[str, ...] = (
     "lint",
     "synthesis",

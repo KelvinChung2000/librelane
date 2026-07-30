@@ -56,13 +56,15 @@ class StageMetaclass(type):
 @dataclass(frozen=True)
 class Stage(metaclass=StageMetaclass):
     """
-    A named phase of a flow. A stage is the unit of tool substitution,
-    independent gating, and flow re-entry. It never executes anything: a
-    provider registration binds it to a sequence of concrete steps.
+    A named phase of a flow. A stage is the unit of tool substitution and of
+    independent gating. It never executes anything: a provider registration
+    binds it to a sequence of concrete steps.
 
     :param id: A lowercase alphanumeric/underscore identifier, for example
         ``detailed_routing``. This is what appears in the ``TOOLS``
-        configuration key and in ``--from``/``--to``.
+        configuration key. It is not accepted by ``--from``/``--to``, which
+        resolve concrete step IDs only; re-entering a flow at a stage is not
+        implemented.
     :param full_name: A human-readable name.
     :param default_provider: The provider used when ``TOOLS`` does not name
         one. A tuple of provider names is legal only for a
@@ -131,6 +133,9 @@ class Stage(metaclass=StageMetaclass):
             ``default_provider``. A pin is a flow's default, not a lock.
         :raises StageError: If several providers are named for a stage that runs
             exactly one tool, or if no provider is named at all.
+
+        Naming a list is the multi-provider idiom, and is how a flow pins several
+        tools to one stage. It is legal only for a :attr:`multi_provider` stage.
 
         The provider is not checked against the registry here. Registration
         order follows import order, so a check at flow-definition time would be

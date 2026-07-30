@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Stages: the unit of tool substitution, independent gating and flow re-entry.
+Stages: the unit of tool substitution and independent gating.
 
 See ``docs/source/usage/swapping_tools.md`` for user documentation and
 ``docs/source/usage/writing_tool_backends.md`` for the provider contract.
