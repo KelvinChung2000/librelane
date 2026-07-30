@@ -342,6 +342,34 @@ def _mock_progress():
 
 
 @pytest.fixture(autouse=True)
+def _restore_runtime_options():
+    """
+    Undoes the process-global options a CLI invocation applies.
+
+    :func:`librelane.cli.runtime.apply_runtime_options` mutates the two flags on
+    :class:`librelane.logging.options`, the log-level threshold and the global
+    thread pool. Not restoring them is right for a process that exits afterwards
+    and wrong for a test session, where the next test inherits them: a single
+    ``--condensed`` invocation left ``show_progress_bar`` false for everything
+    collected after it. See ``test/test_option_isolation.py``.
+    """
+    from librelane.common import get_tpe, set_tpe
+    from librelane.logging import get_log_level, options, set_log_level
+
+    condensed = options.get_condensed_mode()
+    show_progress_bar = options.get_show_progress_bar()
+    log_level = get_log_level()
+    tpe = get_tpe()
+    try:
+        yield
+    finally:
+        options.set_condensed_mode(condensed)
+        options.set_show_progress_bar(show_progress_bar)
+        set_log_level(log_level)
+        set_tpe(tpe)
+
+
+@pytest.fixture(autouse=True)
 def _quiesce_log_pump():
     """
     Keeps the shared :data:`librelane.logging.live` pump thread from rendering
