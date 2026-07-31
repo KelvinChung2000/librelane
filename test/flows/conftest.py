@@ -36,3 +36,67 @@ def MetricIncrementer():
             return {}, {self.counter_name: metric_to_increment}
 
     return MetricIncrementer
+
+
+@pytest.fixture
+def minimal_design():
+    """
+    The smallest design configuration ``_mock_conf_fs`` supports. Paired with
+    :func:`mock_pdk`, which supplies the keyword half of a flow constructor.
+    """
+    return {
+        "DESIGN_NAME": "WHATEVER",
+        "VERILOG_FILES": ["/cwd/src/a.v"],
+    }
+
+
+@pytest.fixture
+def mock_pdk():
+    """
+    The PDK keyword arguments that resolve against the fake filesystem
+    ``_mock_conf_fs`` builds. Spread into a flow constructor as ``**mock_pdk``.
+    """
+    return {
+        "design_dir": "/cwd",
+        "pdk": "dummy",
+        "scl": "dummy_scl",
+        "pdk_root": "/pdk",
+    }
+
+
+@pytest.fixture
+def counting_steps():
+    """
+    Two trivially registered steps that record the order they ran in, so a
+    test can assert the engine's firing order without invoking a real tool.
+
+    Returns
+    -------
+    ``(order, First, Second)``, where ``order`` is the list the
+    steps append their ids to as they run.
+    """
+    from librelane.steps import Step
+
+    order: list[str] = []
+
+    @Step.factory.register()
+    class First(Step):
+        id = "Test.EngineFirst"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            order.append(self.id)
+            return {}, {"first": 1}
+
+    @Step.factory.register()
+    class Second(Step):
+        id = "Test.EngineSecond"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            order.append(self.id)
+            return {}, {"second": 1}
+
+    return order, First, Second
