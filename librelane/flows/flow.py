@@ -15,12 +15,14 @@ from __future__ import annotations
 
 from loguru import logger
 import os
+import csv
 import glob
 import shutil
 import fnmatch
 import datetime
 import textwrap
 import pathlib
+import uuid
 from contextlib import ExitStack
 from dataclasses import dataclass
 from abc import abstractmethod, ABC
@@ -60,11 +62,14 @@ from librelane.steps import Step
 from librelane.logging import (
     LiveLog,
     additional_sink,
+    belongs_to_flow_run,
     console as default_console,
+    flow_context,
     live as default_live,
     options,
 )
 from librelane.common import (
+    format_elapsed_time,
     get_tpe,
     mkdirp,
     protected,
@@ -753,9 +758,19 @@ class Flow(ABC):
 
         issue_handler = Flow._StepIssueSink()
         try:
+            # Loguru sinks are process-wide, so the logs below would otherwise
+            # also collect the records of any other flow running at the same
+            # time in this process. Every sink this flow registers is scoped to
+            # this token, which the steps inherit through the context.
+            flow_run = uuid.uuid4().hex
             with ExitStack() as sink_stack:
+                sink_stack.enter_context(flow_context(flow_run))
                 sink_stack.enter_context(
-                    additional_sink(issue_handler, level="WARNING")
+                    additional_sink(
+                        issue_handler,
+                        level="WARNING",
+                        filter=belongs_to_flow_run(flow_run),
+                    )
                 )
                 for level in ["WARNING", "ERROR"]:
                     sink_stack.enter_context(
@@ -766,9 +781,7 @@ class Flow(ABC):
                             # warning.log. Loguru's ``level`` is a minimum and
                             # its ``filter`` dict form keys on the module name,
                             # so neither expresses this.
-                            filter=lambda record, level=level: (
-                                record["level"].name == level
-                            ),
+                            filter=belongs_to_flow_run(flow_run, level),
                         )
                     )
                 sink_stack.enter_context(
@@ -776,6 +789,7 @@ class Flow(ABC):
                         self.run_dir / "flow.log",
                         mode="a+",
                         level="VERBOSE",
+                        filter=belongs_to_flow_run(flow_run),
                     )
                 )
 
@@ -806,6 +820,7 @@ class Flow(ABC):
 
                 # Stored until next start()
                 self.step_objects += step_objects
+                self._write_runtimes_csv()
 
         finally:
             # Replayed after the run because the terminal is a live view: an
@@ -820,6 +835,49 @@ class Flow(ABC):
                     logger.error(f"{record}")
 
         return final_state
+
+    @protected
+    def _write_runtimes_csv(self) -> None:
+        """
+        Writes ``runtimes.csv`` over the run's steps.
+
+        Each step already drops a ``runtime.txt`` in its own directory, so
+        answering "what was slow?" meant walking every step directory and
+        collating by hand. This is the same numbers in one file.
+
+        A step that was reused from an earlier run rather than executed never
+        gets a start time, and is written with empty runtime columns rather
+        than omitted: that it was skipped is itself part of the answer.
+        """
+        if self.run_dir is None or self.step_objects is None:
+            raise FlowException(
+                "_write_runtimes_csv called outside of a run: "
+                "run_dir and step_objects are only set by start()"
+            )
+
+        with open(self.run_dir / "runtimes.csv", "w", encoding="utf8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                ["step_dir", "step_id", "step_name", "elapsed_seconds", "elapsed"]
+            )
+            for step_object in self.step_objects:
+                elapsed_seconds: float | None = None
+                if (
+                    step_object.start_time is not None
+                    and step_object.end_time is not None
+                ):
+                    elapsed_seconds = step_object.end_time - step_object.start_time
+                writer.writerow(
+                    [
+                        os.path.basename(os.fspath(step_object.step_dir)),
+                        step_object.id,
+                        step_object.name,
+                        "" if elapsed_seconds is None else f"{elapsed_seconds:.3f}",
+                        ""
+                        if elapsed_seconds is None
+                        else format_elapsed_time(elapsed_seconds),
+                    ]
+                )
 
     @protected
     @abstractmethod

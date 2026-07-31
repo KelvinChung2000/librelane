@@ -17,6 +17,9 @@ if !defined?(RBA)
     opts.on("-o", "--output OUTPUT", "Klayout RDB (.xml) output file (required)") do |rdb_out|
       options[:rdb_out] = rdb_out
     end
+    opts.on("-g", "--gds-output GDS_OUTPUT", "Also write the XOR differences as a GDSII layout") do |gds_out|
+      options[:gds_out] = gds_out
+    end
     opts.on("-i", "--ignore SEMICOLON_DELIMITED_LIST", "Ignore layer(s)") do |ignore|
       options[:ignore] = ignore
     end
@@ -45,6 +48,7 @@ if !defined?(RBA)
     "-rd", "b=#{ARGV[1]}",
     "-rd", "jobs=#{options[:threads]}",
     "-rd", "rdb_out=#{File.absolute_path(options[:rdb_out])}",
+    "-rd", "gds_out=#{options[:gds_out] ? File.absolute_path(options[:gds_out]) : ""}",
     "-rd", "ignore=#{options[:ignore]}",
     "-rd", "tilesize=#{options[:tile_size]}",
   ]
@@ -79,11 +83,25 @@ a = source($a, $top_cell)
 b = source($b, $top_cell)
 
 # Set up output
-# target($gds_out, "XOR")
 report("XOR #{$a} vs. #{$b}", $rdb_out)
+
+# The GDS is built directly rather than with target(). target() and report()
+# both claim the single output channel that `output` writes to, and the last
+# one called silently wins: with target() after report() the report database
+# comes out with zero categories and zero items, and with report() after
+# target() the layout comes out empty. Writing the layout here keeps both.
+$gds = nil
+if $gds_out != ""
+  $gds = RBA::Layout::new
+  $gds.dbu = a.layout.dbu
+  $gds_top = $gds.create_cell("XOR")
+end
 
 def write_data(xor_data, layer_info)
   xor_data.output(layer_info.to_s, "XOR data for layer #{layer_info.to_s}")
+  if $gds
+    $gds_top.shapes($gds.insert_layer(layer_info)).insert(xor_data.data)
+  end
 end
 
 ## Collect all common layers
@@ -116,5 +134,10 @@ end
 
 info "---"
 info "Total XOR differences: #{total_xor_differences}"
+
+if $gds
+  info "Writing XOR differences to #{$gds_out}…"
+  $gds.write($gds_out)
+end
 
 puts "%OL_METRIC_I design__xor_difference__count #{total_xor_differences}"

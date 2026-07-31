@@ -1001,3 +1001,69 @@ def test_create_blackbox_model_from_libs_is_lintable(tmp_path):
 
     assert "Cannot find file containing module" not in result.stdout + result.stderr
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+_PINLESS_LIB = """
+library (pinless) {
+  cell (has_pins) {
+    pin (A) { direction : input; }
+    pin (Y) { direction : output; }
+  }
+  cell (physical_only) {
+    area : 12.0;
+  }
+  cell (also_physical_only) {
+    area : 4.0;
+  }
+  cell (has_a_bus) {
+    bus (D) { bus_type : bus8; direction : input; }
+  }
+}
+"""
+
+
+@pytest.mark.usefixtures("_chdir_tmp")
+def test_find_pinless_cells_names_only_the_pinless_ones():
+    """Issue 910: a lib cell with no pins carries no timing and nothing can
+    connect to it, but it was accepted silently."""
+    from librelane.common import Toolbox
+
+    with open("pinless.lib", "w", encoding="utf8") as f:
+        f.write(_PINLESS_LIB)
+
+    assert Toolbox(".").find_pinless_cells("pinless.lib") == (
+        "physical_only",
+        "also_physical_only",
+    )
+
+
+@pytest.mark.usefixtures("_chdir_tmp")
+def test_check_lib_pins_warns_once_per_offending_lib(mocker):
+    from librelane.common import Toolbox
+
+    with open("pinless.lib", "w", encoding="utf8") as f:
+        f.write(_PINLESS_LIB)
+
+    warning = mocker.patch("librelane.common.toolbox.logger").warning
+    Toolbox(".").check_lib_pins(["pinless.lib"], label="Macro 'a' LIB")
+
+    messages = [str(call.args[0]) for call in warning.call_args_list]
+    assert len(messages) == 1
+    assert "Macro 'a' LIB" in messages[0]
+    assert "2 cell(s) with no pins" in messages[0]
+    assert "physical_only" in messages[0]
+    # A cell that does have pins must not be named.
+    assert "has_pins" not in messages[0]
+
+
+@pytest.mark.usefixtures("_chdir_tmp")
+def test_check_lib_pins_stays_quiet_when_every_cell_has_pins(mocker):
+    from librelane.common import Toolbox
+
+    with open("fine.lib", "w", encoding="utf8") as f:
+        f.write("library (fine) {\n  cell (a) { pin (A) { direction : input; } }\n}\n")
+
+    warning = mocker.patch("librelane.common.toolbox.logger").warning
+    Toolbox(".").check_lib_pins(["fine.lib"], label="Macro 'a' LIB")
+
+    warning.assert_not_called()

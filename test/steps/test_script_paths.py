@@ -12,7 +12,6 @@ from librelane.steps import Step
 SCRIPT_STEPS = [
     ("OpenROAD.Floorplan", ("openroad", "floorplan.tcl")),
     ("OpenROAD.CheckMacroInstances", ("openroad", "sta", "check_macro_instances.tcl")),
-    ("OpenROAD.RMP", ("openroad", "restructure.tcl")),
     ("Odb.ApplyDEFTemplate", ("odbpy", "apply_def_template.py")),
     ("Odb.SetPowerConnections", ("odbpy", "power_utils.py")),
     ("Magic.WriteLEF", ("magic", "lef.tcl")),

@@ -70,7 +70,6 @@ def test_vhdl_classic_declares_its_own_stages():
 
 
 GATING_VARIABLES = [
-    "RUN_RMP",
     "RUN_TAP_ENDCAP_INSERTION",
     "RUN_POST_GPL_DESIGN_REPAIR",
     "RUN_POST_GRT_DESIGN_REPAIR",

@@ -349,17 +349,4 @@ def migrate_old_config(config: Mapping[str, Any]) -> dict[str, Any]:
         if "HEURISTIC_ANTENNA_THRESHOLD" not in config:
             new["HEURISTIC_ANTENNA_THRESHOLD"] = 130
 
-    # x7. Isolated Substrate (subcut) Layer
-    #
-    # Both PDKs already carry this: their Magic tech files map the `isosub`
-    # layer to the CIF layer `SUBCUT`, and give SUBCUT these numbers with a
-    # `calma` line. KLayout has no equivalent mapping to read, so the pair is
-    # restated here rather than parsed back out of a Magic tech file.
-    if new["PDK"].startswith("sky130"):
-        if "ISOSUB_LAYER" not in config:
-            new["ISOSUB_LAYER"] = (81, 53)
-    elif new["PDK"].startswith("gf180mcu"):
-        if "ISOSUB_LAYER" not in config:
-            new["ISOSUB_LAYER"] = (23, 5)
-
     return new

@@ -87,12 +87,6 @@ class PdkConfig(BaseConfigModel):
         pdk=True,
     )
 
-    ISOSUB_LAYER: Optional[tuple[int, int]] = variable(
-        None,
-        description="The GDSII layer and datatype pair for the isolated substrate (subcut) layer, if the PDK has one.",
-        pdk=True,
-    )
-
 
 pdk_variables = model_to_variables(PdkConfig)
 

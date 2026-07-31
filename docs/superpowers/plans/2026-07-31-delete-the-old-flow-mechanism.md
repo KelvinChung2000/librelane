@@ -411,7 +411,7 @@ uv run make -C docs html
 - [ ] **Step 3: Run a real design end to end**
 
 ```bash
-uv run librelane librelane/examples/spm/config.yaml
+uv run librelane test/designs/spm/config.json
 ```
 
 Expected: completes, and `runs/<tag>/` contains one directory per job rather than a flat numbered list of steps.
@@ -419,7 +419,7 @@ Expected: completes, and `runs/<tag>/` contains one directory per job rather tha
 - [ ] **Step 4: Confirm the concurrency is real**
 
 ```bash
-uv run librelane --target magic_drc librelane/examples/spm/config.yaml
+uv run librelane --target magic_drc test/designs/spm/config.json
 ```
 
 Expected: `klayout_drc`, `lvs` and `formal_equivalence` do not appear in the run directory, because none of them is an ancestor of `magic_drc`.

@@ -53,6 +53,9 @@ class Toolbox(object):
 
         self.remove_cells_from_lib = lru_cache(16, True)(self.remove_cells_from_lib)  # type: ignore
         self.create_blackbox_model = lru_cache(16, True)(self.create_blackbox_model)  # type: ignore
+        # Parsing a liberty file is not cheap and several steps ask the same
+        # question of the same macro libs.
+        self.find_pinless_cells = lru_cache(16, True)(self.find_pinless_cells)  # type: ignore
 
     def filter_views(
         self,
@@ -146,6 +149,63 @@ class Toolbox(object):
             logger.warning(
                 f"{label} resolves to the same view at all {len(corners)} timing corners. "
                 "Corner-specific timing will not be seen by the resizer or by STA."
+            )
+
+    def find_pinless_cells(self, input_lib: str) -> tuple[str, ...]:
+        """
+        Returns the cells in a liberty file that declare no pins at all.
+
+        Parameters
+        ----------
+        input_lib : str
+            The liberty file to read.
+
+        Returns
+        -------
+        tuple[str, ...]
+            The names of the pinless cells, in the order they appear.
+        """
+        pinless = []
+        ast = libparse.LibertyParser(open(input_lib, encoding="utf8")).ast
+        for cell in ast.children:
+            if cell.id != "cell":
+                continue
+            if any(member.id in ("pin", "bus") for member in cell.children):
+                continue
+            pinless.append(str(cell.args[0]).strip('"'))
+        return tuple(pinless)
+
+    def check_lib_pins(
+        self,
+        libs: Iterable[str],
+        *,
+        label: str,
+    ) -> None:
+        """
+        Warns when a liberty file declares cells that have no pins.
+
+        A pinless cell carries no timing and nothing to connect to, so STA
+        silently has nothing to say about it and the linter's generated
+        blackbox is an empty module. The usual cause is a ``lib`` written for
+        an abstract or physical-only view being handed to a timing step.
+
+        Parameters
+        ----------
+        libs : Iterable[str]
+            The liberty files to read.
+        label : str
+            How to name the owner of the files in the warning.
+        """
+        for lib in libs:
+            pinless = self.find_pinless_cells(lib)
+            if not pinless:
+                continue
+            shown = ", ".join(pinless[:5])
+            if len(pinless) > 5:
+                shown += f", … ({len(pinless) - 5} more)"
+            logger.warning(
+                f"{label}: '{lib}' declares {len(pinless)} cell(s) with no pins: "
+                f"{shown}. They carry no timing and nothing can connect to them."
             )
 
     def get_macro_views(

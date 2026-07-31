@@ -39,7 +39,7 @@ registry subclasses every step to carry a `_stage_span` and `_stage_provider`
 tag, and `StagedFlow` reads those tags back to rebuild the grouping it already
 had before flattening. That apparatus is `Boundary`, `_span_for`, `_boundaries`,
 `_after_step`, `stage_boundaries`, `provider_boundaries`, `ResolvedSpan` and
-`Resolution.spans`, 26 lines of `staged.py` alone, and it exists only
+`Resolution.spans`, 28 references in `staged.py` alone, and it exists only
 because the flow declares a list where it means a graph.
 
 Gating is a side-channel. `Flow.gating_config_vars` is a dictionary keyed by
@@ -80,24 +80,8 @@ Per-arc keeps the firing rule literally true as stated, and it is the encoding
 spec 3 needs unchanged, because a loop genuinely consumes its token and a
 resource semaphore is genuinely a shared place with a count above one.
 
-Sources and sinks follow the same per-arc rule. Every job with no `needs` gets
-its own source arc, and the initial state is deposited on each one, so
-`--with-initial-state` needs no special case. A single shared source place would
-be wrong for the same reason one place per job is wrong. The first root to fire
-would consume the only token and starve every other root permanently.
-
-Every job no other job depends on gets its own sink arc. The flow's final state
-is the join of the tokens on the sink arcs, under the same join rule every other
-fan-in uses. Classic has many parallel leaves, and returning whichever one
-happened to be last in the topological order would reinstate the implicit
-ordering this design exists to delete.
-
-The sink join can conflict. Under the migrated Classic, `magic_drc`'s branch
-carries Magic's `gds` while `xor`'s carries KLayout's, which is unequal and so a
-conflict. No job's `source` can resolve it, because the sink is not a job. The
-document therefore takes an optional top-level `final` key naming the job whose
-state is returned. A document whose sink join conflicts and which declares no
-`final` is a load error naming the conflicting views and the candidate jobs.
+A single source place holds the initial state. Jobs with no `needs` consume from
+it, so `--with-initial-state` needs no special case.
 
 ### A job is a stage
 
@@ -163,8 +147,8 @@ of a flow, not of the CTS stage.
 
 A flow is a YAML document validated by a pydantic model. There is no
 subclassable `Flow` base for declaring flows, and no custom `run()`. After spec
-1 no shipped flow overrides `run()`. `flow.py:826` is the abstract method and
-`sequential.py:371` is its only implementation, so every flow LibreLane ships is
+1 no shipped flow overrides `run()`. `flow.py:786` is the abstract method and
+`sequential.py:337` is its only implementation, so every flow LibreLane ships is
 already pure data wearing a class. Keeping an escape hatch for a custom `run()`
 would mean the engine supports two execution models forever, which is the
 duality spec 1 spent ten commits removing.
@@ -194,14 +178,12 @@ jobs:
   set_power_connections:
     needs: [floorplan]
     steps: [Odb.SetPowerConnections]
-  signoff_sta:
-    needs: [set_power_connections]
   magic_streamout:
-    needs: [signoff_sta]
+    needs: [signoff]
     uses: streamout/magic
     if: RUN_MAGIC_STREAMOUT
   klayout_streamout:
-    needs: [signoff_sta]
+    needs: [signoff]
     uses: streamout/klayout
     if: RUN_KLAYOUT_STREAMOUT
   magic_drc:
@@ -210,16 +192,11 @@ jobs:
     if: RUN_MAGIC_DRC
   xor:
     needs: [magic_streamout, klayout_streamout]
-    steps: [KLayout.XOR, Checker.XOR]
-    if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
+    if: RUN_KLAYOUT_XOR
     source: {gds: klayout_streamout}
 ```
 
-An excerpt, not the whole flow. Every job id above except `set_power_connections`
-and `xor` names one of the 27 registered templates. There is no `xor` template
-and no `signoff` template, which is why `xor` lists its steps inline.
-
-Six keys per job, all declarative, none of them positional.
+Five keys per job, all declarative, none of them positional.
 
 `needs` declares the incoming edges. There is no rule making an omitted `needs`
 mean "after the previous list entry". An implicit-previous rule would make list
@@ -230,13 +207,6 @@ for that stage's default provider. The named stage supplies the view and metric
 contract. Because the job id is free-form, one stage may appear under several
 job names, which is what `streamout` in fact does today.
 
-An omitted `uses` on a job whose id is itself a registered template id means
-`uses: <that id>`. This is why `lint` and `floorplan` above carry no `uses`. The
-rule is unambiguous because template ids are a closed set of 27 known at load,
-and it is worth having because without it the common case restates the job id on
-every job. A job whose id names no template and which declares neither `uses`
-nor `steps` is a load error, and the message says which of the two it needs.
-
 `steps` names step ids inline, resolved through `Step.factory`, for a job with no
 registered template. This is how Classic's thirteen registry-less steps such as
 `Odb.SetPowerConnections`, `OpenROAD.CutRows` and `Checker.PowerGridViolations`
@@ -244,24 +214,7 @@ are expressed. An inline job takes its `requires`, `provides` and `metrics` from
 the union of its steps' own declarations, since it has no template to inherit
 them from. A job declares `uses` or `steps`, never both.
 
-`if` is a conjunction of one or more Boolean configuration variables, written
-`A`, or `A and B and C`. This is the whole of gating.
-
-The conjunction is not general expression evaluation, which remains spec 3. It
-is here because without it the migration loses function. `Checker.XOR` and
-`KLayout.XOR` gate today on `RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and
-RUN_KLAYOUT_STREAMOUT`, and the reason is pass-through firing rather than
-authorial taste. A gated producer still fires and deposits its input state
-unchanged, so `klayout_streamout` with `RUN_KLAYOUT_STREAMOUT` false passes
-through carrying no `klayout_gds`, and `KLayout.XOR` requires `klayout_gds`.
-Gating `xor` on `RUN_KLAYOUT_XOR` alone would turn a cleanly skipped job into a
-missing-input crash. The load-time view check cannot catch this, because it
-reasons over declared contracts and the gated producer does declare the view.
-
-The general form of the problem is that a job must be gated on the conditions of
-every producer whose views it actually consumes. A conjunction is what expresses
-that, and a document declaring `needs` on a conditional producer without
-repeating that producer's condition is a load warning naming both.
+`if` names a Boolean configuration variable. This is the whole of gating.
 
 `source` resolves a fan-in conflict, mapping a view to the predecessor it comes
 from.
@@ -279,7 +232,6 @@ class JobSpec(BaseModel):
     uses: str | None = None
     steps: list[str] | None = None
     source: dict[str, str] = {}
-    values: dict[str, Any] = Field(default_factory=dict, alias="with")
     condition: str | None = Field(default=None, alias="if")
 
 class FlowSpec(BaseModel):
@@ -288,12 +240,7 @@ class FlowSpec(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict, alias="with")
     config: list[VariableSpec] = []
     jobs: dict[str, JobSpec]
-    final: str | None = None
 ```
-
-`condition` is parsed, not evaluated as Python. The grammar is one or more
-variable names separated by the literal `and`, so a malformed condition is a
-load error rather than a runtime surprise.
 
 `VariableSpec` is a pydantic model mirroring the fields of `librelane.config.
 Variable`, so a YAML `config` entry validates into a `Variable` with the same
@@ -346,32 +293,12 @@ Mechanically this is one additional `ConfigSource` in the list assembled at
 `config.py:591-636`. `layer_mappings` records provenance per key, so the origin
 of every value is already reportable without new bookkeeping.
 
-`with` rejects `PDK`, `SCL`, `PAD` and `meta`. Those keys select the process
-before any other value is resolved, so a document setting `PDK` would override
-the `--pdk` argument rather than layer under it. A document naming one is a load
-error.
-
-A job takes a `with` block only for variables of **reach one**, meaning
-variables whose declaring steps appear in no other job. That is statically
-checkable, and it covers 217 of the 312 step-declared variables.
-
-The restriction exists because a value's reach is derived rather than declared.
-`DIE_AREA` sits in `option_variables`, so `flow_common_variables` places it in
-every step's filtered configuration, and the KLayout sealring reads
-`self.config.DIE_AREA` directly, raising only when it is unset. A per-job
-override on `floorplan` alone would floorplan one die and draw a sealring around
-another, silently and with no error anywhere. Reach one is exactly the condition
-under which that cannot happen.
-
-The case this serves is two jobs of the same stage, which the schema already
-permits and which is not a matrix. Two Yosys jobs with different
-`SYNTH_STRATEGY` are declarable today and unconfigurable without this, since
-`SYNTH_STRATEGY` is declared by `Yosys.Synthesis` alone.
-
-A matrix, when spec 3 adds one, supplies per-instance values structurally rather
-than through this key, because a matrix instance is a parallel copy of a whole
-subgraph and its scope is therefore correct by construction rather than by
-validation.
+There is no per-job `with`. The reason is that a value's *reach*, meaning the
+set of jobs that can read it, is derived rather than declared. `DIE_AREA` sits
+in `option_variables`, so `flow_common_variables` places it in every step's
+filtered configuration, and `Magic.StreamOut` and the KLayout sealring genuinely
+read it. A per-job override on `floorplan` alone would floorplan one die and
+stream out another, silently and with no error anywhere.
 
 The case that wants a locally overridden global is a matrix, and a matrix does
 not have this problem. A matrix instance is a parallel copy of a whole subgraph,
@@ -399,25 +326,9 @@ CTS_SINK_CLUSTERING_SIZE = 16      default
   reach: cts
 ```
 
-This makes the scope that has always existed visible for the first time.
-
-Reach is reported by declaring class where one exists. Thirteen variables,
-including `OPENROAD_THREADS`, `PNR_CORNERS` and `PNR_SDC_FILE`, are declared on
-`OpenROADStep` and are therefore read by 31 of Classic's 80 steps, every one of
-them an `OpenROAD.*` or `Odb.*` step. Listing 31 job names for each of those is
-noise. Reporting "read by all 31 OpenROAD-based jobs" is the same fact, and the
-class hierarchy that makes it true is already available.
-
-This is also why those thirteen stay where they are. They look design-wide by
-reach and are in fact tool-family-scoped, so moving them into
-`flow_common_variables` would falsely extend them to `Yosys.Synthesis` and, since
-universal variables sit in every step's filtered configuration, invalidate every
-existing resume key.
-
-`layer_mappings` records provenance only for keys a design source wrote. PDK and
-SCL values arrive through `Config.__get_pdk_config` and defaults through variable
-processing, neither of which passes through it, so the `default` and PDK origins
-in the sample above need provenance entries that do not exist today.
+This makes the scope that has always existed visible for the first time. It
+needs no new concepts, only the provenance `layer_mappings` already keeps and
+the step lists the resolved jobs already hold.
 
 ### What survives of `Flow`
 
@@ -535,17 +446,9 @@ errors, and the graph checks are a model validator over the assembled document.
 - A cycle in `needs`. Spec 2 is acyclic, and spec 3 lifts this deliberately.
 - `uses` naming an unregistered stage or provider.
 - `steps` naming an unregistered step id.
-- A job declaring both `uses` and `steps`, and a job declaring neither whose id
-  is not itself a registered template id.
-- `if` that is not a conjunction of variable names, or naming a configuration
-  variable the flow does not declare.
+- A job declaring both `uses` and `steps`, or neither.
+- `if` naming a configuration variable the flow does not declare.
 - `source` naming a job that is not a predecessor.
-- A document-level `with` naming `PDK`, `SCL`, `PAD` or `meta`.
-- A job-level `with` naming a variable of reach greater than one. The error
-  names the variable and the other jobs that read it.
-- `final` naming an undeclared job.
-- A conflicting sink join with no `final` declared. The error names the
-  conflicting views and the leaf jobs that produced them.
 - An undeclared fan-in conflict, where two predecessors on disjoint branches both
   declare a view or metric and `source` names neither. The error names the key
   and both producers.
@@ -566,19 +469,10 @@ A job completing without its declared `provides` or `metrics` raises
 recovered span.
 
 Two invariants are asserted rather than assumed, because they are what a spec 3
-bug will trip first. A place holds at most one token. The run never reaches a
-state in which some job has not fired and no transition is enabled. Neither can
-occur on a validated acyclic graph with pass-through firing, which is precisely
-why they are worth asserting.
-
-Both are properties of the acyclic engine, not of Petri nets generally. Spec 3's
-resource semaphore is a place whose capacity is above one, which is why the
-capacity belongs to the place rather than to the engine. When spec 3 introduces
-semaphores it raises the capacity of those places, and the assertion becomes a
-check against each place's own declared capacity. That is a generalisation of
-the invariant rather than a repeal of it, but it is a change to spec 2's text,
-and pretending otherwise would leave two contradictory sentences in one
-document.
+bug will trip first. A place never holds two tokens. The run never reaches a
+state with no enabled transition and no token at the sink. Neither can occur on
+a validated acyclic graph with pass-through firing, which is precisely why they
+are worth asserting.
 
 ## Testing
 
@@ -616,8 +510,8 @@ test behaviour that survives.
 - `Boundary`, `_span_for`, `_boundaries`, `_after_step`, `stage_boundaries`,
   `provider_boundaries`, `ResolvedSpan`, `Resolution.spans`.
 - `Registration.tagged_steps` and the `_stage_span` / `_stage_provider` subclass
-  tags, read in exactly one place outside the registry, at `staged.py:240` and
-  `staged.py:647`.
+  tags, read in exactly one place outside the registry, at `staged.py:234` and
+  `staged.py:622`.
 - The `--from`, `--to` options, replaced by `--invalidate` and `--target`.
 
 ## Migration

@@ -534,10 +534,7 @@ class JobSpec(BaseModel):
 class FlowSpec(BaseModel):
     """A complete workflow document."""
 
-    # populate_by_name is required, not optional. With extra="forbid" and an
-    # aliased field, pydantic 2.13 rejects the Python field name outright, so
-    # FlowSpec(values=...) raises extra_forbidden without it.
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="forbid")
 
     name: str
     description: str = ""

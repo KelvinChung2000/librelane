@@ -78,8 +78,9 @@ import click
 @click.option(
     "-M",
     "--lym",
-    required=True,
-    help="KLayout .map (LEF/DEF layer map) file",
+    required=False,
+    default=None,
+    help="KLayout .map (LEF/DEF layer map) file. Omit when the .lyt embeds the mapping.",
 )
 @click.option("-w", "--with-gds-file", "input_gds_files", multiple=True, default=[])
 @click.option("-s", "--seal-gds-file", "seal_gds", default=None)
@@ -101,33 +102,17 @@ import click
     default="RenameCell",
     help="Cell conflict resolution handling.",
 )
-@click.option(
-    "--isosub-layer",
-    "isosub_layer",
-    type=int,
-    default=None,
-    help="GDSII layer of the isolated substrate (subcut) layer. Given together with --isosub-datatype, a shape covering the top cell's bounding box is drawn on it.",
-)
-@click.option(
-    "--isosub-datatype",
-    "isosub_datatype",
-    type=int,
-    default=None,
-    help="GDSII datatype of the isolated substrate (subcut) layer.",
-)
 def stream_out(
     output: str,
     input_lefs: tuple[str, ...],
     lyt: str,
     lyp: str,
-    lym: str,
+    lym: Optional[str],
     input_gds_files: tuple[str, ...],
     seal_gds: Optional[str],
     design_name: str,
     input: str,
     conflict_resolution: str,
-    isosub_layer: Optional[int],
-    isosub_datatype: Optional[int],
 ):  # Load technology file
     try:
         tech = pya.Technology()
@@ -135,7 +120,10 @@ def stream_out(
         layout_options = tech.load_layout_options
         layout_options.lefdef_config.read_lef_with_def = False
         layout_options.lefdef_config.lef_files = list(input_lefs)
-        layout_options.lefdef_config.map_file = lym
+        # Left alone when no .map was given, so the mapping the .lyt embeds
+        # survives; assigning an empty value clears it.
+        if lym is not None:
+            layout_options.lefdef_config.map_file = lym
         # Don't produce user properties
         layout_options.lefdef_config.net_property_name = None
         layout_options.lefdef_config.instance_property_name = None
@@ -210,20 +198,6 @@ def stream_out(
                         f"[INFO] Merging '{cell.name}' as child of '{top_cell.name}'…"
                     )
                     top.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
-
-        if isosub_layer is not None:
-            if isosub_datatype is None:
-                raise Exception(
-                    "--isosub-layer requires --isosub-datatype, and vice-versa."
-                )
-            print(
-                f"[INFO] Drawing isolated substrate on {isosub_layer}/{isosub_datatype}…"
-            )
-            top_cell = top_only_layout.top_cell()
-            isosub = top_only_layout.layer(isosub_layer, isosub_datatype)
-            top_cell.shapes(isosub).insert(top_cell.bbox())
-        elif isosub_datatype is not None:
-            raise Exception("--isosub-datatype requires --isosub-layer.")
 
         # Write out the GDS
         print(f"[INFO] Writing out GDS '{output}'…")

@@ -1073,10 +1073,10 @@ Expected: all pass
 
 - [ ] **Step 4: Run the flow end to end by hand**
 
-Run: `uv run librelane --explain librelane/examples/spm/config.yaml`
+Run: `uv run librelane --explain test/designs/spm/config.json`
 Expected: a job table with a `NEEDS` column and no `Stages contributing no steps` footer.
 
-Run: `uv run librelane --target signoff_sta librelane/examples/spm/config.yaml`
+Run: `uv run librelane --target signoff_sta test/designs/spm/config.json`
 Expected: the run stops after signoff STA, and no streamout, DRC or LVS directory exists under the run tag.
 
 - [ ] **Step 5: Lint and commit**
@@ -1094,7 +1094,7 @@ git commit -m "feat!: run workflow documents from the command line"
 **Files:**
 - Modify: `librelane/config/config.py:560-640`
 - Modify: `librelane/flows/flow.py:491-501`
-- Modify: `librelane/flows/engine.py`
+- Modify: `librelane/flows/workflow.py`
 - Test: `test/flows/test_document_values.py`
 
 **Interfaces:**
@@ -1122,7 +1122,7 @@ import pytest
 
 from librelane.config import Config
 from librelane.flows.spec import FlowSpec, JobSpec
-from librelane.flows.engine import Workflow
+from librelane.flows.workflow import Workflow
 
 pytestmark = pytest.mark.all
 
@@ -1232,7 +1232,7 @@ git commit -m "feat: a workflow document supplies configuration values"
 
 **Files:**
 - Modify: `librelane/flows/explanation.py`
-- Modify: `librelane/flows/engine.py`
+- Modify: `librelane/flows/workflow.py`
 - Modify: `librelane/cli/run.py`
 - Test: `test/flows/test_explain.py`
 

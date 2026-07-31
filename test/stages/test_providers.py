@@ -150,6 +150,48 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
         )
 
 
+def test_providers_that_run_together_do_not_declare_the_same_metric():
+    """
+    On a ``multi_provider`` stage every provider runs, so two of them declaring
+    the same metric key means whichever finishes last silently wins and the
+    other tool's result is lost. That is the metric-side twin of two steps
+    writing the same view.
+
+    Single-provider stages are exempt on purpose: exactly one provider runs, so
+    its providers are alternatives and are *expected* to share the stage's
+    contracted key. That is why ``Pegasus.LVS`` reuses
+    ``design__lvs_error__count`` rather than inventing a name, and why
+    ``KLayout.LVS`` may keep it while it remains an alternative. Issue 696 wants
+    KLayout LVS to run *alongside* Netgen, which would make ``lvs``
+    multi_provider -- and this test is what will then require the rename.
+    """
+    from collections import defaultdict
+
+    from librelane.stages import Stage, StageRegistry
+    from librelane.stages.taxonomy import STAGE_ORDER
+
+    for stage_id in STAGE_ORDER:
+        stage = Stage.factory.get(stage_id)
+        if not stage.multi_provider:
+            continue
+
+        owners = defaultdict(list)
+        for provider in StageRegistry.providers(stage_id):
+            registration = StageRegistry.get(stage_id, provider)
+            for metric in registration.metrics:
+                owners[metric].append(provider)
+
+        clashing = {
+            metric: providers
+            for metric, providers in owners.items()
+            if len(providers) > 1
+        }
+        assert not clashing, (
+            f"{stage_id} runs every provider, but {clashing} declare the same "
+            f"metric. The last one to finish would silently overwrite the other."
+        )
+
+
 def test_declared_native_views_are_exactly_the_hard_unmet_inputs():
     """
     native_views is an exemption from the registration-time view check, so an

@@ -296,11 +296,6 @@ class StreamOut(MagicStep):
             deprecated_names=["MAGIC_DISABLE_HIER_GDS"],
         )
 
-        MAGIC_ADD_ISOSUB: bool = variable(
-            False,
-            description="Draws the isolated substrate (subcut) layer over the design's bounding box. Useful when the design is to be integrated into another design with multiple power domains. The PDK's Magic tech file must define an `isosub` layer.",
-        )
-
         MAGIC_MACRO_STD_CELL_SOURCE: Literal["PDK", "macro"] = variable(
             "macro",
             description="If set to PDK, magic will use the PDK definition of the STD cells for macros inside the design."

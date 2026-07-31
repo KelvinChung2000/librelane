@@ -185,85 +185,6 @@ def test_repair_antennas_still_runs_diode_insertion():
     ]
 
 
-def _rmp_instance(mock_config, mocker, trimmed_libs, **overrides):
-    from librelane.state import State
-    from librelane.steps.openroad.restructure import RMP
-
-    instance = RMP(config=mock_config, state_in=State(), **overrides)
-
-    raw = instance.config.to_raw_dict()
-    raw.setdefault("LIB", {"*": ["/pdk/scl.lib"]})
-    raw.setdefault("EXTRA_EXCLUDED_CELLS", None)
-    # process_list_file opens these unconditionally, so they must be real.
-    with open("/cwd/excluded.txt", "w") as f:
-        f.write("")
-    raw.setdefault("SYNTH_EXCLUDED_CELL_FILE", "/cwd/excluded.txt")
-    raw.setdefault("PNR_EXCLUDED_CELL_FILE", "/cwd/excluded.txt")
-    instance.config = type(instance.config).model_construct(**raw)
-
-    instance.step_dir = "/cwd/rmp"
-
-    mocker.patch.object(instance, "toolbox", mocker.MagicMock())
-    instance.toolbox.filter_views.return_value = ["/pdk/scl.lib"]
-    instance.toolbox.remove_cells_from_lib.return_value = trimmed_libs
-
-    return instance
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-def test_rmp_hands_abc_a_single_liberty_file(mock_config, mocker):
-    """restructure passes -liberty_file straight to one ABC read_lib."""
-    from librelane.state import State
-    from librelane.steps.openroad.base import OpenROADStep
-
-    instance = _rmp_instance(mock_config, mocker, ["/tmp/trimmed-scl.lib"])
-    captured: dict = {}
-    mocker.patch.object(
-        OpenROADStep,
-        "run",
-        lambda self, state_in, env, **kwargs: (captured.update(env), ({}, {}))[1],
-    )
-
-    instance.run(State())
-
-    assert captured["_RMP_LIB"] == "/tmp/trimmed-scl.lib"
-    assert captured["_RMP_ABC_LOG"] == "/cwd/rmp/abc.log"
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-@pytest.mark.parametrize("trimmed_libs", [[], ["/tmp/a.lib", "/tmp/b.lib"]])
-def test_rmp_refuses_a_corner_without_exactly_one_liberty_file(
-    mock_config, mocker, trimmed_libs
-):
-    """A Tcl list would reach ABC as one filename, so it must not be built."""
-    from librelane.state import State
-    from librelane.steps.step import StepError
-
-    instance = _rmp_instance(mock_config, mocker, trimmed_libs)
-
-    with pytest.raises(StepError, match="exactly one liberty file"):
-        instance.run(State())
-
-
-def test_rmp_target_matches_what_openroad_accepts():
-    """OpenROAD's Restructure::setMode compares against "timing" and "area";
-    anything else only warns and silently restructures for area."""
-    from librelane.steps.openroad.restructure import RMP
-
-    annotation = RMP.Config.model_fields["RMP_TARGET"].annotation
-
-    assert set(annotation.__args__) == {"timing", "area"}
-
-
-def test_rmp_is_off_by_default_in_classic():
-    from librelane.flows.classic import Classic
-
-    assert Classic.Config.model_fields["RUN_RMP"].default is False
-    assert Classic.gating_config_vars["OpenROAD.RMP"] == ["RUN_RMP"]
-
-
 def test_pdn_cfg_can_come_from_the_pdk():
     """A PDK whose grid is better expressed as a script than as PDN_* variables
     needs to be able to supply the script itself."""
@@ -272,3 +193,170 @@ def test_pdn_cfg_can_come_from_the_pdk():
     extra = GeneratePDN.Config.model_fields["PDN_CFG"].json_schema_extra
 
     assert extra["pdk"] is True
+
+
+# OpenROAD's ``check_antennas -verbose`` emits, per net/pin/layer, a
+# calculated/required pair for each of PAR (Gate area), CAR (Cumulative area),
+# PSR (Side area) and CSR (Cumulative side area). The ``(VIOLATED)`` marker sits
+# on the ``Required ratio:`` line, and the calculated value is always the line
+# immediately above it.
+_CAR_VIOLATION_REPORT = """\
+Net: net384
+  Pin:   _22354_/A (sky130_fd_sc_hd__inv_2)
+    Layer: met5
+      Partial area ratio:   12.34
+      Required ratio:  400.00 (Gate area)
+      Cumulative area ratio: 7298.29
+      Required ratio: 3091.96 (Cumulative area) (VIOLATED)
+      Partial area ratio:    5.00
+      Required ratio:  100.00 (Side area)
+      Cumulative area ratio:   45.67
+      Required ratio:  200.00 (Cumulative side area)
+
+"""
+
+
+def _parse(tmp_path, text):
+    from librelane.steps.openroad.routing import parse_antenna_report
+
+    report = tmp_path / "antenna.rpt"
+    report.write_text(text, encoding="utf8")
+    return parse_antenna_report(str(report))
+
+
+def test_antenna_summary_reports_the_cumulative_ratio_that_violated(tmp_path):
+    """Issue 797: with no regex for ``Cumulative area ratio:``, a CAR violation
+    carried the partial ratio left over from the PAR check above it, so the
+    reported ratio and its P/R column were both wrong."""
+    violations = _parse(tmp_path, _CAR_VIOLATION_REPORT)
+
+    assert len(violations) == 1
+    violation = violations[0]
+    assert violation.calculated_ratio == 7298.29
+    assert violation.required_ratio == 3091.96
+    assert violation.check == "Cumulative area"
+    assert violation.net == "net384"
+    assert violation.layer == "met5"
+
+
+def test_antenna_summary_still_reports_partial_area_violations(tmp_path):
+    report = _CAR_VIOLATION_REPORT.replace(
+        "Required ratio:  400.00 (Gate area)",
+        "Required ratio:  400.00 (Gate area) (VIOLATED)",
+    ).replace(
+        "Required ratio: 3091.96 (Cumulative area) (VIOLATED)",
+        "Required ratio: 3091.96 (Cumulative area)",
+    )
+
+    violations = _parse(tmp_path, report)
+
+    assert len(violations) == 1
+    assert violations[0].calculated_ratio == 12.34
+    assert violations[0].required_ratio == 400.00
+    assert violations[0].check == "Gate area"
+
+
+def test_antenna_summary_sorts_the_worst_violation_first(tmp_path):
+    report = _CAR_VIOLATION_REPORT + _CAR_VIOLATION_REPORT.replace(
+        "Cumulative area ratio: 7298.29", "Cumulative area ratio: 4000.00"
+    ).replace("Net: net384", "Net: net999")
+
+    violations = _parse(tmp_path, report)
+
+    assert [v.net for v in violations] == ["net384", "net999"]
+    assert violations[0].calculated_to_required > violations[1].calculated_to_required
+
+
+def test_antenna_summary_rejects_a_report_it_cannot_attribute(tmp_path):
+    """A VIOLATED marker with no calculated ratio above it means the report
+    format changed; guessing a number would silently mislabel a violation."""
+    import pytest
+
+    with pytest.raises(ValueError, match="antenna report"):
+        _parse(
+            tmp_path,
+            "Net: net384\n  Pin:   a/A (cell)\n    Layer: met5\n"
+            "      Required ratio: 3091.96 (Cumulative area) (VIOLATED)\n",
+        )
+
+
+def _save_image_env(mocker, mock_config, **overrides):
+    """Runs OpenROAD.SaveImage with the OpenROAD invocation stubbed, returns env."""
+    from librelane.state import State
+    from librelane.steps.openroad.base import OpenROADStep
+    from librelane.steps.openroad.finishing import SaveImage
+
+    instance = SaveImage(config=mock_config, state_in=State(), **overrides)
+    instance.step_dir = "/cwd/step"
+
+    parent = mocker.patch.object(OpenROADStep, "run", return_value=({}, {}))
+    instance.run(State())
+
+    return parent.call_args.kwargs["env"]
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_forces_the_offscreen_qt_platform(mocker, mock_config):
+    """Issue 611: with no usable display, save_image does not raise a catchable
+    Tcl error. It fails to load the "xcb" Qt platform plugin and aborts the
+    whole OpenROAD process with SIGABRT, taking the step with it. Verified
+    against OpenROAD dcf3613, which is built +GUI."""
+    env = _save_image_env(mocker, mock_config)
+
+    assert env["QT_QPA_PLATFORM"] == "offscreen"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_writes_a_png_into_its_own_step_dir(mocker, mock_config):
+    """Several instances in one flow must not fight over one path."""
+    env = _save_image_env(mocker, mock_config)
+
+    assert env["_SAVE_IMAGE_OUTPUT"] == "/cwd/step/whatever.png"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_passes_display_options_as_tcl_pairs(mocker, mock_config):
+    """save_image takes -display_option repeatedly, each a {control value}
+    two-element list."""
+    env = _save_image_env(
+        mocker,
+        mock_config,
+        SAVE_IMAGE_DISPLAY_OPTIONS={"Nets/Power": False, "Nets/Ground": True},
+    )
+
+    assert env["_SAVE_IMAGE_DISPLAY_OPTIONS"] == "{Nets/Power false} {Nets/Ground true}"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_leaves_optional_knobs_empty_when_unset(mocker, mock_config):
+    """The Tcl only appends -resolution and -area when non-empty, so an unset
+    variable must not become the string "None"."""
+    env = _save_image_env(mocker, mock_config)
+
+    assert env["_SAVE_IMAGE_RESOLUTION"] == ""
+    assert env["_SAVE_IMAGE_AREA"] == ""
+    assert env["_SAVE_IMAGE_DISPLAY_OPTIONS"] == ""
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_rejects_an_area_that_is_not_four_numbers(mocker, mock_config):
+    from librelane.steps.step import StepException
+
+    with pytest.raises(StepException, match="four elements"):
+        _save_image_env(mocker, mock_config, SAVE_IMAGE_AREA=[0, 0, 10])
+
+
+def test_save_image_reads_the_odb_so_it_can_run_anywhere():
+    """KLayout.Render needs a DEF or GDS and so only runs after stream-out.
+    Reading the ODB is what lets this one sit mid-flow."""
+    from librelane.state import DesignFormat
+    from librelane.steps.openroad.finishing import SaveImage
+
+    assert SaveImage.inputs == [DesignFormat.ODB]
+    # It must not claim a view, or two instances would collide in the state.
+    assert SaveImage.outputs == []

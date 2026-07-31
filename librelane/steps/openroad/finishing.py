@@ -30,6 +30,7 @@ from typing import (
 
 from librelane.common import (
     Path,
+    TclUtils,
     _get_process_limit,
     ContextPropagatingThreadPoolExecutor,
     mkdirp,
@@ -404,6 +405,97 @@ class DEFtoODB(OpenROADStep):
         return str(
             files("librelane").joinpath("scripts", "openroad", "write_views.tcl")
         )
+
+
+@Step.factory.register()
+class SaveImage(OpenROADStep):
+    """
+    Renders a PNG of the current layout using OpenROAD's ``save_image``.
+
+    Unlike ``KLayout.Render``, which needs a DEF or a GDS and so only runs once
+    the layout has been streamed out, this reads the ODB and can therefore be
+    placed anywhere in the flow: after floorplanning, after CTS, after routing.
+    Insert it as many times as there are moments worth a picture.
+
+    The image is written to ``<step_dir>/<design>.png``. The step does not
+    update the state, so several instances do not fight over one view.
+    """
+
+    id = "OpenROAD.SaveImage"
+    name = "Save Layout Image"
+
+    inputs = [DesignFormat.ODB]
+    outputs = []
+
+    class Config(OpenROADStep.Config):
+        SAVE_IMAGE_WIDTH: int = variable(
+            1000,
+            description="The width of the rendered image, in pixels.",
+            units="px",
+        )
+
+        SAVE_IMAGE_RESOLUTION: Optional[Decimal] = variable(
+            None,
+            description="Microns per pixel. Overrides the width when set.",
+            units="µm/px",
+        )
+
+        SAVE_IMAGE_AREA: Optional[list[Decimal]] = variable(
+            None,
+            description="The area to render as four numbers, x0 y0 x1 y1. The whole design is rendered when unset.",
+            units="µm",
+        )
+
+        SAVE_IMAGE_DISPLAY_OPTIONS: Optional[dict[str, bool]] = variable(
+            None,
+            description="OpenROAD display controls to override, e.g. {'Nets/Power': false}. The names are those of the GUI's Display Control pane.",
+        )
+
+    config: Config
+
+    def get_script_path(self):
+        return files("librelane").joinpath("scripts", "openroad", "save_image.tcl")
+
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
+        kwargs, env = self.extract_env(kwargs)
+
+        output = os.path.join(
+            self.step_dir,
+            f"{self.config.DESIGN_NAME}.{DesignFormat.KLAYOUT_RENDER.extension}",
+        )
+        env["_SAVE_IMAGE_OUTPUT"] = output
+        env["_SAVE_IMAGE_WIDTH"] = str(self.config.SAVE_IMAGE_WIDTH)
+        env["_SAVE_IMAGE_RESOLUTION"] = (
+            ""
+            if self.config.SAVE_IMAGE_RESOLUTION is None
+            else str(self.config.SAVE_IMAGE_RESOLUTION)
+        )
+        if area := self.config.SAVE_IMAGE_AREA:
+            if len(area) != 4:
+                raise StepException(
+                    f"SAVE_IMAGE_AREA must have exactly four elements (x0 y0 x1 y1), got {len(area)}."
+                )
+            env["_SAVE_IMAGE_AREA"] = TclUtils.join([str(value) for value in area])
+        else:
+            env["_SAVE_IMAGE_AREA"] = ""
+        env["_SAVE_IMAGE_DISPLAY_OPTIONS"] = TclUtils.join(
+            [
+                TclUtils.join([control, "true" if value else "false"])
+                for control, value in (
+                    self.config.SAVE_IMAGE_DISPLAY_OPTIONS or {}
+                ).items()
+            ]
+        )
+
+        # save_image drives Qt. With no usable display it does not raise a Tcl
+        # error that could be caught -- it fails to load the "xcb" platform
+        # plugin and aborts the whole OpenROAD process with SIGABRT, taking the
+        # step with it. The offscreen platform renders to the file identically
+        # and is the only one that always works, so it is set unconditionally
+        # rather than left to depend on whether a DISPLAY happens to exist.
+        env["QT_QPA_PLATFORM"] = "offscreen"
+
+        return super().run(state_in, env=env, **kwargs)
 
 
 @Step.factory.register()

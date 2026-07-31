@@ -30,16 +30,24 @@ uses `config_vars = [Variable(...)]` lists where this fork uses nested typed
 | 567 | `8ea9ef0` | 7 emitted-but-unregistered metrics registered, plus a scan test |
 | 579 | `2dba783` | Linter blackboxes generated from macro `lib` views |
 | 605 | `830d943` | Warn when a macro's LIB or SPEF is not per-corner |
+| 611 | `0ec2b9e` | New `OpenROAD.SaveImage` step; reads the ODB so it can sit anywhere in the flow, and forces the offscreen Qt platform |
 | 621 | `ab57d84` | Reproducibles created from composite steps actually run |
 | 630 | `7f84df7` | `report_dont_touch`, `report_dont_use`, `filler_placement -verbose` |
+| 692 | `f80dc33` | `KLAYOUT_XOR_WRITE_GDS` writes the XOR differences to `xor.gds` alongside the marker database |
+| 797 | `019e6b3` | Antenna summary pairs each `(VIOLATED)` with the ratio line above it, so CAR/CSR violations report their own cumulative ratio and name the broken rule |
 | 802 | `c563a13` | `LINTER_INCLUDE_PDK_MODELS` made functional |
+| 812 | `4c03f13` | `runtimes.csv` written per run from `Flow.step_objects`; skipped steps get empty runtime columns rather than being omitted |
+| 889 | `9ae8f28` | `flow_run` contextvar scopes every sink a flow registers, so concurrent flows stop cross-contaminating `error.log` / `warning.log` / `flow.log` and the end-of-run issue summary |
+| 910 | `1abe0ed` | `Toolbox.check_lib_pins` warns when a macro's `.lib` declares cells with no pins, called from `OpenROAD.CheckMacroInstances` |
 | 920 | `07eb1e8` | `OpenROAD.DiodeInsertion` registered so its reproducibles load |
+| 924 | `efc7024` | `COLUMNS` propagated to every subprocess, so Rich tables in the odbpy scripts use the real terminal width instead of the 80-column pipe fallback |
 | 928 | `d9eff48` | `gds maskhints true` (cherry-picked upstream `9636a6b`, authorship kept) |
 | 940 | `09b2313` | Macro libs and `EXTRA_LIBS` reach the synthesis lib set (from PR 943, with its cache bug fixed) |
 | 947 | `286a8aa` | Warn when the PDN halo exceeds the row-cutting halo |
 | 948 | `6d717bc` | `MAGIC_WRITE_LEF_PINONLY` defaults to `True` **(breaking)** |
 | 974 | `869cf4c` | `t_ck` removed from the arrival-time equations |
 | 997 | `5d865bb` | `PDN_CFG` marked `pdk=True` |
+| 999 | `f0b3f4b` | `KLAYOUT_DEF_LAYER_MAP` optional; `--lym` omitted entirely rather than passed empty, so a `.lyt`-embedded mapping survives |
 | — | `865bbe3` | Sphinx build fix; a one-line module docstring crashed the build and blocked verifying any docs change |
 
 Three breaking changes are in here (370, 521, 948). The user confirmed keeping
@@ -79,42 +87,344 @@ connect), `39a8ada` (`SYNTH_BUFFER_CELL`), `e607def` + `415c7e2` (padring),
 
 | Issue | Size | Summary |
 |---|---|---|
-| 692 | S | XOR: add a variable to save the GDS; `target($gds_out,...)` is commented out in `xor.drc` |
-| 696 | S | Add `KLayout.LVS` to Classic behind `RUN_KLAYOUT_LVS`. Caveat: it shares the metric key `design__lvs_error__count` with `Netgen.LVS` |
-| 797 | S | `CheckAntennas.__summarize_antenna_report` has no regex for `Cumulative area ratio:`, so CAR/CSR violations carry a stale partial ratio and are mislabelled |
-| 812 | S | Write an aggregate `runtimes.csv` from `Flow.step_objects` |
+| 696 | — | **Blocked on the PDK-meta-config product decision (see E/697).** Not ready to implement. The metric "collision" was mis-triaged; there is none. See below |
 | 824 | M | `YosysSynthChecks` counts from `pre_synth_chk.rpt` but users grep `chk.rpt`; report the offending lines and the source path |
-| 889 | M | `error.log` / `warning.log` sinks filter by level only, so concurrent flows cross-contaminate. Needs a `flow_run` contextvar in the sink filters |
-| 910 | S | Warn when a macro's `.lib` has cells with no pins |
 | 917 | M | New `OpenROAD.AddBuffer` step (moves the Classic goldens) |
-| 924 | S | Propagate `COLUMNS` to subprocesses so rich tables are not clamped to 80 |
-| 993 | M | The Changelog overclaims this. Fixed for the Pydantic path, but `legacy.py`'s ordered union loop still coerces `'1'` to `True` for every `pdk=True` variable before Pydantic sees it |
-| 999 | M | Make `KLAYOUT_DEF_LAYER_MAP` optional (4 files) |
+| 993 | M | **Do not fix by "respecting declaration order" — that premise is false.** See below. Changelog corrected in `9c7683c` |
 | 599 / 600 / 669 | L | Replace `common.Path` with `pathlib.Path` (see below) |
-| 532, 558/560, 583, 611, 636, 967 | M | OpenConsole, RMP resynthesis, isosub, layout images, multi-corner STAMidPNR, ReplaceECOCells |
+| 532, 558/560, 583, 636, 967 | M | OpenConsole, RMP resynthesis, isosub, multi-corner STAMidPNR, ReplaceECOCells |
 
 `599` asks for "pathlib.Path **or a subclass of it**", so the direct route needs
 no subclassing and `requires-python = ">=3.10"` blocks nothing. An earlier
 revision of this file called it blocked on 3.12; that was wrong. Nothing has
-migrated yet: `common/types.py:39` still defines `class Path(UserString,
-os.PathLike)`, imported by 22 modules, 345 `Path` mentions across 52 files.
-
-The work, none of it blocking:
-
-- `common.Path` **is a string**, so it survives Tcl export, JSON state
-  serialization and `str` concatenation for free. `pathlib.Path` does not, so
-  every such site needs auditing.
-- `validate()` (the existence check) and the `GlobMatch` one-element collapse
-  live in the class's `__get_pydantic_core_schema__`. They move into an
-  `Annotated[pathlib.Path, ...]` alias, which is what pydantic is for.
-- `ScopedFile` is the only subclass and would compose rather than inherit.
-- `rel_if_child` becomes a free function over `Path.relative_to`.
+migrated yet.
 
 `600` (portable states, keeping `dir::` / `pdk_dir::` unresolved and resolving on
 access) is the feature `599` was meant to unlock. Also not done.
 
-Best next candidates: **797** (antenna violations are currently mislabelled) and
-**889** (concurrent flows cross-contaminate each other's `error.log`).
+**Status: audited, not implemented.** Deliberately deferred on merge topology,
+not on doubt — three siblings are editing `librelane/` in their own worktrees,
+and a refactor this wide landing alongside them would conflict out of all
+proportion to the work. The audit below is the preparation.
+
+#### Audit (2026-07-31), evidence-based
+
+**Correct the premise first.** This file has said, and I repeated, that
+`common.Path` "is a string". It is not. `UserString` is **not** a subclass of
+`str`, so `isinstance(common.Path("/tmp"), str)` is already `False` today.
+Measured:
+
+| expression | `common.Path` | `pathlib.Path` |
+|---|---|---|
+| `isinstance(x, str)` | **False** | False |
+| `is_string(x)` (UserString-aware) | **True** | **False** |
+| `x == "/tmp"` | **True** | **False** |
+| `x in {"/tmp"}` | **True** | **False** |
+| `hash(x) == hash("/tmp")` | True | True (equality still fails) |
+| iterable | **True** | False |
+| `x + "/y"` | `Path('/tmp/y')` | **TypeError** |
+
+So the break surface is *not* "everything that treats it as a str". It is
+precisely: `is_string()` gates, `==`/`in` against plain strings, iterability,
+and `+`. Bare `isinstance(x, str)` sites are **already** False for
+`common.Path` and are therefore not at risk — that rules out ~20 sites a naive
+sweep would flag.
+
+Scale, measured: **373** `Path`-mentioning lines in `librelane/` and **142** in
+`test/`; **33** modules in `librelane/` and **11** in `test/` import
+`common.Path` — more than the 22 previously recorded, because the `openroad/`
+package and `cli/run.py` use multi-line or qualified (`common.Path(...)`)
+imports that a single-line grep misses. Note four CLI modules
+(`cli/config.py`, `cli/options.py`, `cli/state.py`, `cli/metrics.py`) do
+`from pathlib import Path`, so a bare `Path` there is already the stdlib one.
+
+**Risk surface by category** (full list in the categories below; ranked worst
+first):
+
+1. `common/toolbox.py:93` — `filter_views` uses `if is_string(value):` to tell
+   one view from an iterable of views in `Mapping[str, Path | Iterable[Path]]`.
+   After the change a scalar path takes the `else` branch, `list(value)`, and
+   `pathlib.Path` is not iterable → **TypeError on the hot path** of every
+   timing-aware step. Reached from `steps/openroad/sta.py:168`,
+   `flows/flow.py:1062`, `steps/tclstep.py:135`, and `toolbox.py:354/376/395`.
+2. `cli/steps.py:306-307` — `.startswith` / `.replace` called on env values that
+   are `Path` objects (put there unstringified by `steps/tclstep.py:140`,
+   `steps/magic.py:439`, `steps/klayout/physical.py:83/126/268`) →
+   **AttributeError** in `--create-reproducible` replay.
+3. `common/types.py:96` — `not self == Path._dummy_path` compares against a
+   `str` sentinel; becomes permanently False, so `__librelane_dummy_path` stops
+   being exempt from existence validation. Same shape at `steps/tclstep.py:249`
+   (`env_out[key] == value`), which would re-write every path-valued env var
+   into `_env.tcl` instead of skipping it as unchanged.
+4. `is_string()` gates that currently permit a coercion and would start raising:
+   `config/legacy.py:611`, `:657`, `:663`, `:806`; `config/config.py:395`,
+   `:563`, `:598`; `config/preprocessor/legacy.py:196`, `:255`, `:263`, `:315`,
+   `:323`.
+5. `steps/step/reporting.py:299` returns `Path(f"pdk_dir::{...}")` — a path
+   object deliberately holding a *directive*, re-parsed at
+   `config/preprocessor/resolve.py:79`; and `:341` returns `Path(f"./{rel}")`,
+   where `pathlib` normalises `./x` to `x`. Both are asserted verbatim by
+   `test/steps/test_step.py:76/87/88`.
+6. Hash-identity: `frozenset`s of paths feed `lru_cache`d toolbox methods
+   (`steps/yosys.py:88/94`, `steps/pyosys.py:297/306`,
+   `steps/verilator.py:128/136`). Today those share a cache entry with the
+   pre-stringified spellings used at `steps/yosys.py:111`,
+   `steps/pyosys.py:352`, `steps/openroad/base.py:486`. They stop sharing.
+
+**Categories that turned out to be near-empty, contrary to the old note:**
+
+- *String concatenation*: **no** `Path + str` anywhere in the tree. Everything
+  goes through `os.path.join`, `pathlib` `/`, or an explicit `str()`.
+- *JSON serialization*: **safe as-is**. `common/generic_dict.py:43` already
+  dispatches `isinstance(o, os.PathLike)` *before* the `UserString` arm, and
+  `pathlib.Path` is `os.PathLike`. Every consumer inherits that. The
+  `UserString` arm just becomes dead.
+- *Tcl export*: `common/tcl.py:91` excludes `(str, UserString)` from the
+  iterable branch purely because `common.Path` is iterable; `pathlib.Path` is
+  not, so it falls through to `str(value)` and is correct — the guard merely
+  becomes vestigial. `steps/step/subprocess_exec.py:168` already accepts
+  `os.PathLike`.
+
+So the genuinely dangerous surface is **`is_string`, `==`/`in`, and
+iterability**, not serialization.
+
+**Pydantic (the acceptance check).** Measured on this branch, not inspected:
+
+- **347** distinct config variable names reachable from `Step.factory`
+  (370 including flow classes; 1276 with per-step duplicates). I could not
+  reproduce the figure of 389 — recording what I measured rather than
+  asserting the other number.
+- **40** of them fail `model_json_schema()` with `PydanticInvalidForJsonSchema`,
+  and **every one mentions `common.Path`**. 41 variables mention it; the one
+  that "passes" is `EXTRA_SPEFS: list[str | Path] | None`, and it passes only
+  because the `str` arm of the union gives pydantic a renderable branch — its
+  schema is silently incomplete rather than correct.
+- **Root cause identified exactly**: `common/types.py:69` returns
+  `core_schema.no_info_plain_validator_function(...)`, which is opaque —
+  pydantic cannot know the output type, so it refuses
+  (`Cannot generate a JsonSchema for core_schema.PlainValidatorFunctionSchema`).
+- **`pathlib.Path` alone closes it.** A bare `pathlib.Path` field yields
+  `{'type': 'string', 'format': 'path'}`.
+- **And the `Annotated` alias keeps it closed** — crucially, no explicit
+  `__get_pydantic_json_schema__` is needed. `Annotated[pathlib.Path,
+  BeforeValidator(collapse_and_validate)]` still yields
+  `{'type': 'string', 'format': 'path'}`, including nested inside `list[...]`,
+  because a `BeforeValidator` leaves the core output type visible. That is the
+  whole trick: swap the *plain* validator for a *before* validator over a real
+  type, and both `validate()` (existence) and the `GlobMatch` one-element
+  collapse survive with the schema intact.
+
+**`ScopedFile`.** Confirmed the only subclass — `Path.__subclasses__()` returns
+exactly `[ScopedFile]` at runtime. Note its real signature is keyword-only
+(`ScopedFile(*, contents="")`, `common/types.py:150`), not positional.
+Composition verified working: a plain class holding a `pathlib.Path` and
+implementing `__fspath__` is accepted by `open()`, by `pathlib.Path()`, and by
+`isinstance(x, os.PathLike)`, and the `weakref.finalize` cleanup still fires on
+garbage collection.
+
+**`rel_if_child` — the audit found a live bug.** It has **zero call sites and
+zero tests** in the whole tree (only its own definition at
+`common/types.py:109`), so this is latent, but the migration *fixes* rather than
+preserves it. It tests parentage with `str.startswith` on the abspath, which is
+a textual prefix test, not a path-component one. Measured against base
+`/tmp/claude-1000`:
+
+| target | current | `pathlib.is_relative_to` |
+|---|---|---|
+| `/tmp/claude-1000/a/b.txt` | `./a/b.txt` | True → `a/b.txt` |
+| `/tmp/claude-1000` | `./.` | True → `.` |
+| `/tmp/other/c.txt` | absolute (correct) | False |
+| `/tmp/claude-1000-sibling/d.txt` | **`./../claude-1000-sibling/d.txt`** | **False** |
+
+A sibling directory that merely shares a name prefix is wrongly classified as a
+child and returned as a `../` escape. `pathlib.is_relative_to` gets it right.
+So the answer to "do the semantics match at the boundaries" is **no, and
+pathlib's are the correct ones** — the free function should use
+`is_relative_to` and this deserves a regression test rather than a
+bug-for-bug port.
+
+**Order of work when it is handed over**, cheapest risk-reduction first:
+
+1. Land the `Annotated` alias and delete `__get_pydantic_core_schema__`; assert
+   `model_json_schema()` succeeds for all 347 as the acceptance gate.
+2. Fix `filter_views` to dispatch on `isinstance(value, (str, os.PathLike))`
+   instead of `is_string` — correct under *both* representations, so it can
+   land before the type change.
+3. Stringify at the env boundary (`steps/tclstep.py:140`, `steps/magic.py:439`,
+   `steps/klayout/physical.py:83/126/268`), which independently de-risks
+   `cli/steps.py:306`.
+4. Replace the `_dummy_path` `==` sentinel with an identity or explicit-`str()`
+   check.
+5. Only then swap the type, and fix the `is_string` gates in `config/` that the
+   swap turns into hard errors.
+6. `rel_if_child` and `ScopedFile` last; both are self-contained.
+
+### 696 — there is no collision today, and the feature is deliberately postponed
+
+Two findings.
+
+**1. The metric key is not a collision; it is the single-provider contract.**
+`lvs` is a **single-provider** stage (`stages/taxonomy.py:288-299`) with a
+stage-level contract `metrics=("design__lvs_error__count",)`. `drc` and
+`streamout` are `multi_provider=True`; `lvs` is not. So exactly one LVS provider
+runs, and its providers are *alternatives*. `Pegasus.LVS` reuses the same key on
+purpose, with the reason written at `steps/pegasus.py:158-161`: it "reuses that
+stage-level metric rather than inventing a Pegasus-specific name". `KLayout.LVS`
+doing the same is consistent, not a bug. Nothing can overwrite anything today:
+`KLayout.LVS` is registered in the step factory but appears in **no flow and no
+provider** (only hit is `test/steps/registry_snapshot.json:87`), so it and
+`Netgen.LVS` cannot both run.
+
+The tool-prefixed naming the triage expected (`klayout__lvs_error__count`,
+mirroring `klayout__drc_error__count`) is correct only under the *run-alongside*
+model — which is what the issue asks for and what would make `lvs`
+multi_provider. Which naming is right is therefore downstream of a design
+decision that is not made yet. Pinned by
+`test_providers_that_run_together_do_not_declare_the_same_metric` in
+`test/stages/test_providers.py`, which exempts single-provider stages and will
+fail loudly the moment `lvs` becomes multi_provider without the rename.
+
+**2. The participants explicitly asked not to rush it.** donn wants a PDK meta
+configuration variable to drive flow composition (which would also retire
+`PRIMARY_GDSII_STREAMOUT_TOOL`) plus derivative flows via #648; mole99's reply is
+"That's a lot to think about and it feels important to get this right. So let's
+better not rush this one :)". That is the same "PDK dictates flow defaults"
+redesign that already put **697** in section E.
+
+Implementing the `RUN_KLAYOUT_LVS` boolean as specced would also fight the
+architecture: adding `KLayout.LVS` to `Classic` as a plain step, emitting a
+stage-contracted metric outside any registration, is the exact anti-pattern
+`test_a_tool_specific_metric_is_checked_inside_its_own_registration` and
+`test_each_drc_provider_owns_its_own_checker` were written to condemn.
+
+**Status: blocked, not ready.** Making `lvs` multi_provider *is* the
+PDK-meta-config redesign already sitting in section E as a product decision
+(**697**), and donn and mole99 postponed it deliberately. This needs the
+maintainer to pick the model; it should be surfaced, not guessed at. Do not
+move it back to "ready to implement" without that decision.
+
+A note on the analogy that produced the original triage line: "a metric written
+by two steps is the same class of problem as a view written by two steps" is
+only true when both steps can actually run. That holds for the `gds` fan-in,
+where `Magic.StreamOut` and `KLayout.StreamOut` genuinely both run on a
+`multi_provider` stage. It does not hold on a single-provider stage, where the
+providers are alternatives. The structural check — `multi_provider` true or
+false — is what distinguishes the two cases, and it is now enforced by
+`test_providers_that_run_together_do_not_declare_the_same_metric` rather than
+left to judgement.
+
+### 611 — save_image aborts the process headlessly unless Qt is told otherwise
+
+`KLayout.Render` already existed but only ever runs at stream-out, because it
+needs a DEF or a GDS; it is registered in the `streamout`/klayout provider
+(`stages/providers.py:330`). The issue asks for images *throughout* the flow, so
+the new `OpenROAD.SaveImage` reads the **ODB** instead and can be inserted at
+any point. It deliberately declares no outputs, so several instances in one flow
+cannot collide over a single state view.
+
+The load-bearing detail: `save_image` drives Qt, and with no usable display it
+does **not** raise a Tcl error that a step could catch. It fails to load the
+`xcb` platform plugin and calls `abort()` — SIGABRT, whole OpenROAD process
+gone. Reproduced against OpenROAD `dcf3613` (built `+GUI`, `gui::supported`
+returns 1). Setting `QT_QPA_PLATFORM=offscreen` makes it work and produces a
+real render, so the step sets it unconditionally rather than letting the outcome
+depend on whether a `DISPLAY` happens to exist.
+
+Verified by running the exact Tcl the step generates against
+`gcd_nangate45.def`: a 1000x1000 PNG, and `-display_option` demonstrably
+changes the output. Note the display-control names are the GUI's own and an
+unknown one is a clean `GUI-0013` error, not a crash, so a typo fails loudly.
+
+### 999 — the empty-string route would have silently broken it
+
+The obvious implementation, passing `--lym ""` when the PDK has no `.map`, is
+wrong, and quietly so. Verified with the `klayout` Python module: a `.lyt` can
+embed the LEF/DEF mapping, `tech.load(lyt)` carries it into
+`load_layout_options.lefdef_config.map_file`, and assigning `""` over it turns
+it into `None` — destroying exactly the mapping asap7 relies on. So the flag has
+to be **absent**, not empty, which is why `get_cli_args` omits it rather than
+passing a blank value. Same change in all three pya scripts
+(`open_design.py`, `render.py`, `stream_out.py`), where `--lym` became
+`required=False, default=None` and the assignment is guarded.
+
+`KLAYOUT_TECH` and `KLAYOUT_PROPERTIES` stay required. Making the dead
+`if None in [lyp, lyt, lym]` check real again (it could never fire, since all
+three were non-optional `Path`s) means it now guards only those two.
+
+### 993 — the triage was wrong, and so was the Changelog
+
+Two separate findings, both reproduced.
+
+**1. The Changelog overclaimed it.** The line "Fixed lax union coercion choosing
+a less-specific scalar type (#993)" came from `e225d51`, the big configuration
+redesign. That redesign moved *Pydantic-validated* fields to Pydantic's own
+union handling. It did not touch `librelane/config/legacy.py:700-723`, the
+ordered union loop, which is still the live path for every `pdk=True` variable
+read from a PDK's `config.tcl` (`permissive_typing=True`). Corrected in the
+Changelog.
+
+**2. But the planned fix does not work either.** The plan was to make the loop
+respect the declared member order. Declaration order is not reliably
+recoverable. `typing.Union[X, Y]` and `Union[Y, X]` compare equal *and hash
+equal*, and `typing`'s `_tp_cache` is an `lru_cache` keyed on the arguments, so
+the nested `Optional[Union[...]]` form used throughout this codebase's variable
+declarations returns whichever equal union was built first in the process.
+Verified on Python 3.14.3:
+
+```
+Optional[Union[bool, int]]      args=(bool, int, NoneType)
+Optional[Union[int, bool]]      args=(bool, int, NoneType)   <- not as written
+Optional[Union[str, int, bool]] args=(str, int, bool, NoneType)
+Optional[Union[int, bool, str]] args=(str, int, bool, NoneType)   <- not as written
+```
+
+The direct three-argument form `Union[int, bool, None]` *does* keep its order;
+only the nested `Optional[Union[...]]` spelling collapses, and that is the
+spelling the variables use. So the order the loop sees depends on module import
+order, which is not something a fix can stand on.
+
+A correct fix has to rank candidate types by a fixed specificity order
+independent of what `get_args` reports, with `str` last as the fallback the
+issue asks for. That is a coercion *policy* decision: the issue is labelled a
+breaking change and donn explicitly floats "just not doing this and making PDKs
+use `meta.version = 2` YAML files" as the alternative. Left in D deliberately —
+it needs the maintainer to choose the policy, not a guess.
+
+Reproduction kept out of the tree; the four-line probe is
+`Optional[Union[bool, int]]` vs `Optional[Union[int, bool]]` through
+`typing.get_args`.
+
+Best next candidate: **696**, investigated, with the exact files and call sites
+recorded below. Note `KLayout.LVS` **already exists** at
+`librelane/steps/klayout/lvs.py:33`; it is registered but appears in no flow and
+no stage provider, and its `run` only does real work for `ihp-sg13g2` /
+`ihp-sg13cmos5l`. The metric collision is real and confirmed: `Netgen.LVS`
+writes `design__lvs_error__count` at `librelane/steps/netgen.py:97` and
+`KLayout.LVS` writes the same key at `librelane/steps/klayout/lvs.py:137`, while
+`librelane/stages/taxonomy.py:297` contracts that key for the `lvs` stage. State
+metrics are a flat dict, so whichever runs second wins and `Checker.LVS`
+(`librelane/steps/checker.py:329`) only ever sees the survivor.
+
+**692** was mis-scoped by the issue title. Uncommenting `target($gds_out, ...)`
+would *not* have worked: `target()` and `report()` both claim the single output
+channel `output` writes to, and the last call silently wins. Verified with
+KLayout 0.30.7 on a two-box test case: `target` after `report` gives a report
+database with zero categories and zero items; `report` after `target` gives an
+empty layout. `target()` also changes `output`'s signature -- under a layout
+target the first argument must be a `LayerInfo` or a layer number, so the
+script's `output(layer_info.to_s, description)` raises `TypeError: no implicit
+conversion of String into Integer`. The GDS is therefore built directly with
+`RBA::Layout` and written at the end, which keeps both outputs.
+
+While fixing **889** it turned out `ProcessStatsThread` is a bare
+`threading.Thread`, so its one `logger.warning` had no step or flow attribution
+at all and would have been dropped by every scoped sink. It now carries a
+`contextvars` copy taken on the constructing thread. Note Python 3.14 added
+`Thread(context=...)` and inherits the caller's context when
+`sys.flags.thread_inherit_context` is set, but that flag is **0** in this
+environment and the project supports 3.10+, so the explicit copy is
+load-bearing. Beware: `Thread` itself owns the attribute name `_context` on
+3.14, so the copy is stored as `_log_context`.
 
 ### Blocked on verification not possible headlessly
 
@@ -175,3 +485,62 @@ a triage line:
 4. **728**'s config key was right but the value format is not a boolean.
 5. The first **521** attempt was wrong about DRT being single-threaded; corrected
    in `311cff2`.
+6. **797** was under-stated. The stale ratio is only half of it: the old loop
+   also took `Required ratio:` from the *violating* CAR line while taking
+   `Partial area ratio:` from the *non-violating* PAR line above it, so the two
+   columns came from different checks. On a real IHP-shaped report that yields
+   `Partial=12.34, Required=3091.96, P/R=0.0040` where the truth is
+   `7298.29 / 3091.96 = 2.36`, which sorted the worst violation to the *bottom*
+   of a table sorted worst-first. The original code comment
+   (`Partial/Required: 2.36, Required: 3091.96, Partial: 7298.29`) is itself a
+   CAR pairing, so the author's own example was a case the code never parsed.
+   Ratio kind (`Gate area` / `Cumulative area` / `Side area` /
+   `Cumulative side area`) is now a column. Format confirmed against
+   `OpenROAD/src/ant/src/AntennaChecker.cc`, which emits the four checks in the
+   order PAR, CAR, then PSR, CSR on routing layers.
+
+## Test baseline
+
+**Verify with plain `uv run pytest`.** `pyproject.toml:117` sets
+`addopts = "--strict-markers -m 'not step_impl_test'"`, so the bare command is
+already the canonical selection: everything except the step implementation
+tests.
+
+The canonical baseline on `librelane-unstable` is
+**777 passed / 192 deselected / 1 xfailed**.
+
+Do **not** use `-m all`. It overrides the `addopts` marker expression rather
+than adding to it, so it selects a different and smaller set — the 732 passed /
+45 deselected figure an earlier revision of this file recorded as the baseline.
+Both numbers are real for their own command; only that command was the wrong one
+to measure against. `-m all` also silently drops tests that carry no `all`
+marker, which is how a real regression survived six commits here: adding
+`KLAYOUT_XOR_WRITE_GDS` for **692** broke the deliberate anti-shrinkage counter
+in `test/config/test_model_registry.py:45`, and no `-m all` run ever selected
+that test. Fixed in `610482d` (346 → 347).
+
+Two things make the numbers differ between the main checkout and a worktree:
+
+- `test/steps/all` is a **git submodule** (`librelane-step-unit-tests`, see
+  `.gitmodules`) and **a new worktree does not populate it** — `git worktree
+  add` does not check submodules out, so the directory is empty and
+  `git ls-tree HEAD test/steps/all` shows a bare `160000 commit` entry. The
+  fixture that reads it is `collect_step_tests()` in `test/steps/conftest.py`,
+  which globs `test/steps/all/by_id`; with the submodule checked out it finds
+  the step-impl directories and `addopts` deselects **192**, with it empty only
+  **1**. A worktree reporting "1 deselected" is therefore not a different tree
+  and not a marker-filter artefact — it is an unpopulated submodule, and
+  `git submodule update --init test/steps/all` is what closes the gap. Both
+  causes compound: the marker expression explains 777-vs-732, the submodule
+  explains 192-vs-1.
+- The passed count moves with the tests each slice adds.
+
+In this worktree after 797, 889, 692, 924, 812, 910, 696, 999 and 611:
+**803 passed / 1 deselected / 1 xfailed**, which reconciles exactly against the
+canonical baseline as 777 + 26 added tests. `ruff check` clean,
+`ruff format --check` clean over 246 files, `mypy` clean over 147 source files.
+
+The dummy PDK in `test/conftest.py` gained `KLAYOUT_TECH`,
+`KLAYOUT_PROPERTIES` and `KLAYOUT_DEF_LAYER_MAP` (and the three files they
+point at) in `f80dc33`. Without them no KLayout step could be constructed in a
+test at all, which is worth knowing before starting **999**.

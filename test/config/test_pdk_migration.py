@@ -279,22 +279,3 @@ def test_pdk_migration_basics():
             assert "/" in pdk_migrated[cell_variable], (
                 f"required variable {cell_variable} has invalid value: {pdk_migrated[cell_variable]}"
             )
-
-
-def test_isosub_layer_matches_the_pdk_tech_files():
-    """sky130A.tech maps `isosub` to CIF SUBCUT with `calma 81 53`, and
-    gf180mcuD.tech gives SUBCUT `calma SUBCUT 23 5`. KLayout has no equivalent
-    mapping to read, so the pairs are restated here."""
-    from librelane.config.pdk_compat import migrate_old_config
-
-    assert migrate_old_config(RAW_SKY130A_IN)["ISOSUB_LAYER"] == (81, 53)
-    assert migrate_old_config(RAW_GF180MCUC_IN)["ISOSUB_LAYER"] == (23, 5)
-
-
-def test_a_pdk_supplied_isosub_layer_wins():
-    from librelane.config.pdk_compat import migrate_old_config
-
-    supplied = dict(RAW_SKY130A_IN)
-    supplied["ISOSUB_LAYER"] = (12, 34)
-
-    assert migrate_old_config(supplied)["ISOSUB_LAYER"] == (12, 34)

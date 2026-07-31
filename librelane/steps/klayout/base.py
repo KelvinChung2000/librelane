@@ -18,7 +18,7 @@ import os
 import sys
 import site
 from os.path import abspath
-from typing import Any
+from typing import Any, Optional
 from collections.abc import Sequence
 
 from librelane.steps.step import Step, StepError, StepException
@@ -48,8 +48,9 @@ class KLayoutStep(Step):
             pdk=True,
         )
 
-        KLAYOUT_DEF_LAYER_MAP: Path = variable(
-            description="A path to the KLayout LEF/DEF layer mapping (.map) file.",
+        KLAYOUT_DEF_LAYER_MAP: Optional[Path] = variable(
+            None,
+            description="A path to the KLayout LEF/DEF layer mapping (.map) file. Optional: a PDK whose .lyt file already embeds the mapping, as asap7 does, should leave this unset so the embedded one is used.",
             pdk=True,
         )
 
@@ -82,14 +83,25 @@ class KLayoutStep(Step):
     ) -> list[str]:
         result = []
         if layer_info:
-            lyp = abspath(self.config.KLAYOUT_PROPERTIES)
-            lyt = abspath(self.config.KLAYOUT_TECH)
-            lym = abspath(self.config.KLAYOUT_DEF_LAYER_MAP)
-            if None in [lyp, lyt, lym]:
+            if (
+                self.config.KLAYOUT_PROPERTIES is None
+                or self.config.KLAYOUT_TECH is None
+            ):
                 raise StepError(
                     "Cannot open design in KLayout as the PDK does not appear to support KLayout."
                 )
-            result += ["--lyp", lyp, "--lyt", lyt, "--lym", lym]
+            result += [
+                "--lyp",
+                abspath(self.config.KLAYOUT_PROPERTIES),
+                "--lyt",
+                abspath(self.config.KLAYOUT_TECH),
+            ]
+            # Omitted entirely when the PDK has no separate .map file, so the
+            # mapping the .lyt embeds survives. Passing an empty --lym would
+            # not: assigning "" to lefdef_config.map_file clears the loaded
+            # technology's own setting.
+            if self.config.KLAYOUT_DEF_LAYER_MAP is not None:
+                result += ["--lym", abspath(self.config.KLAYOUT_DEF_LAYER_MAP)]
 
         if include_lefs:
             tech_lefs = self.toolbox.filter_views(self.config, self.config.TECH_LEFS)

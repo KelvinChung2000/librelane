@@ -1,7 +1,4 @@
 {
-  "RUN_RMP": [
-    "OpenROAD.RMP"
-  ],
   "RUN_TAP_ENDCAP_INSERTION": [
     "OpenROAD.TapEndcapInsertion"
   ],

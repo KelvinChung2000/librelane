@@ -42,7 +42,9 @@ def test_every_registered_variable_builds_a_model_field():
 
     # Anti-silent-shrinkage baseline for distinct fields reachable from the
     # registry. Update deliberately when adding/removing or changing fields.
-    assert len(declarations) == 353
+    # 347 since KLAYOUT_XOR_WRITE_GDS was added for issue 692, then 351 with
+    # the four SAVE_IMAGE_* variables of OpenROAD.SaveImage for issue 611.
+    assert len(declarations) == 351
 
     for index, legacy in enumerate(declarations.values()):
         model = variables_to_model(f"HarvestedConfig{index}", [legacy])

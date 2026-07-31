@@ -21,22 +21,3 @@ def test_write_lef_is_pinonly_by_default():
     from librelane.steps.magic import WriteLEF
 
     assert WriteLEF.Config.model_fields["MAGIC_WRITE_LEF_PINONLY"].default is True
-
-
-def test_isosub_is_off_by_default():
-    from librelane.steps.magic import StreamOut
-
-    assert StreamOut.Config.model_fields["MAGIC_ADD_ISOSUB"].default is False
-
-
-def test_mag_gds_reads_the_isosub_variable_it_is_gated_on():
-    """TclStep puts every config variable in the environment, so a rename on
-    either side is only caught by comparing the two."""
-    from importlib.resources import files
-
-    from librelane.steps.magic import StreamOut
-
-    script = files("librelane").joinpath("scripts", "magic", "def", "mag_gds.tcl")
-
-    assert "$::env(MAGIC_ADD_ISOSUB)" in script.read_text()
-    assert "MAGIC_ADD_ISOSUB" in StreamOut.Config.model_fields

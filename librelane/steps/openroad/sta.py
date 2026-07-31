@@ -230,6 +230,18 @@ class CheckMacroInstances(OpenSTAStep):
                     corners=self.config.STA_CORNERS,
                     label=f"Macro '{macro_name}' {view_label}",
                 )
+            self.toolbox.check_lib_pins(
+                sorted(
+                    {
+                        str(lib)
+                        for corner in self.config.STA_CORNERS
+                        for lib in self.toolbox.filter_views(
+                            self.config, data.lib, corner
+                        )
+                    }
+                ),
+                label=f"Macro '{macro_name}' LIB",
+            )
 
         env["_check_macro_instances"] = TclUtils.join(macro_instance_pairs)
 

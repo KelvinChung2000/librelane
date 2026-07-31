@@ -53,9 +53,9 @@ from librelane.steps.openroad.finishing import (
     WriteCDL,
     DEFtoODB,
     OpenGUI,
+    SaveImage,
     DumpRCValues,
 )
-from librelane.steps.openroad.restructure import RMP
 from librelane.steps.openroad.resizer import ResizerStep, CTS
 from librelane.steps.openroad.resizer_timing import (
     RepairDesignPostGPL,
@@ -96,7 +96,6 @@ _REEXPORTED_CLASSES = [
     IRDropReport,
     CutRows,
     WriteCDL,
-    RMP,
     ResizerStep,
     CTS,
     RepairDesignPostGPL,
