@@ -44,6 +44,7 @@ class Classic(StagedFlow):
         Stage.synthesis,
         Stage.pre_pnr_sta,
         Stage.floorplan,
+        OpenROAD.RMP,
         # A plain step rather than part of the floorplan stage, because it
         # hard-requires the Verilog header only Verilog synthesis emits. A flow
         # whose synthesis frontend cannot produce one omits this entry.
@@ -101,6 +102,11 @@ class Classic(StagedFlow):
             True,
             description="Enables the OpenROAD.TapEndcapInsertion step.",
             deprecated_names=["TAP_DECAP_INSERTION", "RUN_TAP_DECAP_INSERTION"],
+        )
+
+        RUN_RMP: bool = variable(
+            False,
+            description="Enables local resynthesis after floorplanning using the OpenROAD.RMP step. This is experimental and changes the netlist every later step works on.",
         )
 
         RUN_POST_GPL_DESIGN_REPAIR: bool = variable(
@@ -224,6 +230,7 @@ class Classic(StagedFlow):
     # is the gates that address one tool *inside* a multi_provider stage, or a
     # plain step that is not part of any stage.
     gating_config_vars = {
+        "OpenROAD.RMP": ["RUN_RMP"],
         "Odb.HeuristicDiodeInsertion": ["RUN_HEURISTIC_DIODE_INSERTION"],
         "Magic.StreamOut": ["RUN_MAGIC_STREAMOUT"],
         "KLayout.StreamOut": ["RUN_KLAYOUT_STREAMOUT"],
@@ -269,6 +276,7 @@ class VHDLClassic(Classic):
         Stage.synthesis.using("yosys_vhdl"),
         Stage.pre_pnr_sta,
         Stage.floorplan,
+        OpenROAD.RMP,
         Stage.macro_placement,
         OpenROAD.CutRows,
         Stage.tapcell_insertion,

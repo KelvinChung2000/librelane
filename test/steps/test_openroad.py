@@ -185,6 +185,85 @@ def test_repair_antennas_still_runs_diode_insertion():
     ]
 
 
+def _rmp_instance(mock_config, mocker, trimmed_libs, **overrides):
+    from librelane.state import State
+    from librelane.steps.openroad.restructure import RMP
+
+    instance = RMP(config=mock_config, state_in=State(), **overrides)
+
+    raw = instance.config.to_raw_dict()
+    raw.setdefault("LIB", {"*": ["/pdk/scl.lib"]})
+    raw.setdefault("EXTRA_EXCLUDED_CELLS", None)
+    # process_list_file opens these unconditionally, so they must be real.
+    with open("/cwd/excluded.txt", "w") as f:
+        f.write("")
+    raw.setdefault("SYNTH_EXCLUDED_CELL_FILE", "/cwd/excluded.txt")
+    raw.setdefault("PNR_EXCLUDED_CELL_FILE", "/cwd/excluded.txt")
+    instance.config = type(instance.config).model_construct(**raw)
+
+    instance.step_dir = "/cwd/rmp"
+
+    mocker.patch.object(instance, "toolbox", mocker.MagicMock())
+    instance.toolbox.filter_views.return_value = ["/pdk/scl.lib"]
+    instance.toolbox.remove_cells_from_lib.return_value = trimmed_libs
+
+    return instance
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_rmp_hands_abc_a_single_liberty_file(mock_config, mocker):
+    """restructure passes -liberty_file straight to one ABC read_lib."""
+    from librelane.state import State
+    from librelane.steps.openroad.base import OpenROADStep
+
+    instance = _rmp_instance(mock_config, mocker, ["/tmp/trimmed-scl.lib"])
+    captured: dict = {}
+    mocker.patch.object(
+        OpenROADStep,
+        "run",
+        lambda self, state_in, env, **kwargs: (captured.update(env), ({}, {}))[1],
+    )
+
+    instance.run(State())
+
+    assert captured["_RMP_LIB"] == "/tmp/trimmed-scl.lib"
+    assert captured["_RMP_ABC_LOG"] == "/cwd/rmp/abc.log"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+@pytest.mark.parametrize("trimmed_libs", [[], ["/tmp/a.lib", "/tmp/b.lib"]])
+def test_rmp_refuses_a_corner_without_exactly_one_liberty_file(
+    mock_config, mocker, trimmed_libs
+):
+    """A Tcl list would reach ABC as one filename, so it must not be built."""
+    from librelane.state import State
+    from librelane.steps.step import StepError
+
+    instance = _rmp_instance(mock_config, mocker, trimmed_libs)
+
+    with pytest.raises(StepError, match="exactly one liberty file"):
+        instance.run(State())
+
+
+def test_rmp_target_matches_what_openroad_accepts():
+    """OpenROAD's Restructure::setMode compares against "timing" and "area";
+    anything else only warns and silently restructures for area."""
+    from librelane.steps.openroad.restructure import RMP
+
+    annotation = RMP.Config.model_fields["RMP_TARGET"].annotation
+
+    assert set(annotation.__args__) == {"timing", "area"}
+
+
+def test_rmp_is_off_by_default_in_classic():
+    from librelane.flows.classic import Classic
+
+    assert Classic.Config.model_fields["RUN_RMP"].default is False
+    assert Classic.gating_config_vars["OpenROAD.RMP"] == ["RUN_RMP"]
+
+
 def test_pdn_cfg_can_come_from_the_pdk():
     """A PDK whose grid is better expressed as a script than as PDN_* variables
     needs to be able to supply the script itself."""
@@ -193,74 +272,3 @@ def test_pdn_cfg_can_come_from_the_pdk():
     extra = GeneratePDN.Config.model_fields["PDN_CFG"].json_schema_extra
 
     assert extra["pdk"] is True
-
-
-# Issue 532: launching tools interactively.
-
-
-def _console_instance(StepClass, mock_config):
-    from librelane.state import State
-
-    instance = StepClass(config=mock_config, state_in=State())
-    instance.step_dir = "/cwd/step"
-    return instance
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-def test_openroad_console_keeps_the_interpreter_alive(mock_config):
-    """-exit would run the script and quit, which is the opposite of a console."""
-    from librelane.steps.openroad import OpenConsole
-
-    argv = [
-        str(arg) for arg in _console_instance(OpenConsole, mock_config).get_command()
-    ]
-
-    assert "-exit" not in argv
-    assert "-gui" not in argv
-    assert argv[-1].endswith("gui.tcl")
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-def test_opensta_console_keeps_the_interpreter_alive(mock_config):
-    from librelane.steps.openroad import OpenSTAConsole
-
-    argv = [
-        str(arg) for arg in _console_instance(OpenSTAConsole, mock_config).get_command()
-    ]
-
-    assert argv[0] == "sta"
-    assert "-exit" not in argv
-    assert argv[-1].endswith("sta/console.tcl")
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-def test_consoles_hand_the_terminal_over(mock_config, mocker):
-    """A console the output processors read from is not a console: the user
-    needs the subprocess to inherit stdin, stdout and stderr."""
-    from librelane.state import State
-    from librelane.steps.openroad import OpenConsole, OpenSTAConsole
-
-    for StepClass in (OpenConsole, OpenSTAConsole):
-        instance = _console_instance(StepClass, mock_config)
-        popen = mocker.patch("subprocess.Popen")
-        popen.return_value.wait.return_value = 0
-        mocker.patch.object(instance, "prepare_env", side_effect=lambda env, state: env)
-        mocker.patch.object(
-            instance,
-            "_get_corner_files",
-            return_value=(
-                "nom_tt_025C_1v80",
-                OpenSTAConsole.CornerFileList(libs=(), netlists=(), spefs=()),
-            ),
-        )
-        run_subprocess = mocker.patch.object(instance, "run_subprocess")
-
-        instance.run(State())
-
-        assert popen.call_count == 1
-        assert not run_subprocess.called
-        for stream in ("stdin", "stdout", "stderr"):
-            assert stream not in popen.call_args.kwargs

@@ -101,6 +101,20 @@ import click
     default="RenameCell",
     help="Cell conflict resolution handling.",
 )
+@click.option(
+    "--isosub-layer",
+    "isosub_layer",
+    type=int,
+    default=None,
+    help="GDSII layer of the isolated substrate (subcut) layer. Given together with --isosub-datatype, a shape covering the top cell's bounding box is drawn on it.",
+)
+@click.option(
+    "--isosub-datatype",
+    "isosub_datatype",
+    type=int,
+    default=None,
+    help="GDSII datatype of the isolated substrate (subcut) layer.",
+)
 def stream_out(
     output: str,
     input_lefs: tuple[str, ...],
@@ -112,6 +126,8 @@ def stream_out(
     design_name: str,
     input: str,
     conflict_resolution: str,
+    isosub_layer: Optional[int],
+    isosub_datatype: Optional[int],
 ):  # Load technology file
     try:
         tech = pya.Technology()
@@ -194,6 +210,20 @@ def stream_out(
                         f"[INFO] Merging '{cell.name}' as child of '{top_cell.name}'…"
                     )
                     top.insert(pya.CellInstArray(cell.cell_index(), pya.Trans()))
+
+        if isosub_layer is not None:
+            if isosub_datatype is None:
+                raise Exception(
+                    "--isosub-layer requires --isosub-datatype, and vice-versa."
+                )
+            print(
+                f"[INFO] Drawing isolated substrate on {isosub_layer}/{isosub_datatype}…"
+            )
+            top_cell = top_only_layout.top_cell()
+            isosub = top_only_layout.layer(isosub_layer, isosub_datatype)
+            top_cell.shapes(isosub).insert(top_cell.bbox())
+        elif isosub_datatype is not None:
+            raise Exception("--isosub-datatype requires --isosub-layer.")
 
         # Write out the GDS
         print(f"[INFO] Writing out GDS '{output}'…")

@@ -64,6 +64,49 @@ def _json_header(mock_config, mocker, macro_libs=(), extra_libs=None):
 _SHARED_TRIMMED = ["/tmp/trimmed-scl.lib"]
 
 
+_CHECK_REPORT = """\
+
+370. Executing CHECK pass (checking for obvious problems).
+Checking module chip_top...
+Warning: Wire chip_top.\\padin_audio_r is used but has no driver.
+Warning: Wire chip_top.\\padin_audio_l is used but has no driver.
+Warning: found logic loop in module chip_top:
+    cell $auto$rtlil.cc:2497:Not$91 ($_NOT_)
+Found and reported 3 problems.
+"""
+
+
+def test_counted_synth_check_problems_are_logged_with_their_report(caplog, tmp_path):
+    """The count alone left users grepping chk.rpt, a different report.
+
+    https://github.com/librelane/librelane/issues/824
+    """
+    from librelane.steps.pyosys import _parse_yosys_check
+
+    report = tmp_path / "pre_synth_chk.rpt"
+    report.write_text(_CHECK_REPORT)
+
+    assert _parse_yosys_check(str(report)) == 3
+
+    assert "padin_audio_r" in caplog.text
+    assert "padin_audio_l" in caplog.text
+    assert "found logic loop in module chip_top" in caplog.text
+    assert str(report) in caplog.text
+
+
+def test_skipped_synth_check_problems_are_not_logged_as_problems(caplog, tmp_path):
+    """Problems the configuration declares acceptable must not be reported."""
+    from librelane.steps.pyosys import _parse_yosys_check
+
+    report = tmp_path / "pre_synth_chk.rpt"
+    report.write_text(_CHECK_REPORT)
+
+    assert _parse_yosys_check(str(report), elaborate_only=True) == 1
+
+    assert "padin_audio_r" not in caplog.text
+    assert "found logic loop in module chip_top" in caplog.text
+
+
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([step])
 def test_macro_lib_views_reach_the_synthesis_lib_set(mock_config, mocker):

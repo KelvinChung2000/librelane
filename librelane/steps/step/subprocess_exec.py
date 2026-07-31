@@ -18,7 +18,6 @@ from loguru import logger
 import os
 import json
 import psutil
-import signal
 import subprocess
 import pathlib
 from collections import deque
@@ -252,44 +251,6 @@ class SubprocessMixin:
             raise subprocess.CalledProcessError(returncode, process.args)
 
         return result
-
-    @protected
-    def run_interactive_subprocess(
-        self,
-        cmd: Sequence[str | os.PathLike],
-        env: dict[str, Any] | None = None,
-    ) -> int:
-        """
-        A helper function for :class:`Step` objects that hand a tool's own
-        prompt or window over to the user.
-
-        Unlike :meth:`run_subprocess`, the subprocess inherits the terminal's
-        standard input, output and error, so the user can interact with it. That
-        also means its output is neither logged nor processed.
-
-        Parameters
-        ----------
-        cmd : Sequence[str | os.PathLike]
-            A list of variables, representing a program and its arguments,
-            similar to how you would use it in a shell.
-        env : dict[str, Any] | None
-            The environment to run the command in.
-
-        Returns
-        -------
-        int
-            The exit code of the subprocess.
-        """
-        process = subprocess.Popen(
-            [str(arg) for arg in cmd],
-            env=env,
-            cwd=self.step_dir,
-        )
-        try:
-            return process.wait()
-        except KeyboardInterrupt:
-            process.send_signal(signal.SIGKILL)
-            return process.wait()
 
     @protected
     def extract_env(self, kwargs) -> tuple[dict, dict[str, str]]:

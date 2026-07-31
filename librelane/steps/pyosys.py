@@ -20,7 +20,6 @@ from loguru import logger
 from importlib.resources import files
 import os
 import re
-import io
 import sys
 import json
 import fnmatch
@@ -53,48 +52,64 @@ def _check_any_tristate(
 
 
 def _parse_yosys_check(
-    report: io.TextIOBase,
+    report_path: str,
     tristate_patterns: list[str] | None = None,
     tristate_okay: bool = False,
     elaborate_only: bool = False,
 ) -> int:
-    logger.log("VERBOSE", "Parsing synthesis checks…")
-    errors_encountered: int = 0
+    """
+    Counts the problems Yosys' ``check`` pass reported, skipping the classes of
+    problem the configuration declares acceptable.
+
+    Every problem that is counted is also logged, together with the report it
+    came from. Yosys writes two ``check`` reports per run and only the earlier
+    one, ``pre_synth_chk.rpt``, feeds this count, so a bare count sent readers
+    to the later ``chk.rpt``, which routinely says zero problems.
+
+    See https://github.com/librelane/librelane/issues/824.
+    """
+    logger.log("VERBOSE", f"Parsing synthesis checks from '{report_path}'…")
+    counted: list[str] = []
     last_warning = None
     current_warning = None
 
     tristate_patterns = tristate_patterns or []
 
-    for line in report:
-        if line.startswith("Warning:") or line.startswith("Found and reported"):
-            last_warning = current_warning
-            current_warning = line
-            if last_warning is None:
-                continue
+    with open(report_path) as report:
+        for line in report:
+            if line.startswith("Warning:") or line.startswith("Found and reported"):
+                last_warning = current_warning
+                current_warning = line
+                if last_warning is None:
+                    continue
 
-            cells = re.findall(yosys_cell_rx, last_warning)
+                cells = re.findall(yosys_cell_rx, last_warning)
 
-            if elaborate_only and "but has no driver" in last_warning:
-                logger.debug("Ignoring undriven cell in elaborate-only mode:")
-                logger.debug(last_warning)
-            elif tristate_okay and (
-                ("tribuf" in last_warning)
-                or _check_any_tristate(cells, tristate_patterns)
+                if elaborate_only and "but has no driver" in last_warning:
+                    logger.debug("Ignoring undriven cell in elaborate-only mode:")
+                    logger.debug(last_warning)
+                elif tristate_okay and (
+                    ("tribuf" in last_warning)
+                    or _check_any_tristate(cells, tristate_patterns)
+                ):
+                    logger.debug("Ignoring tristate-related error:")
+                    logger.debug(last_warning)
+                else:
+                    counted.append(last_warning)
+            elif (
+                starts_with_whitespace.match(line) is not None
+                and current_warning is not None
             ):
-                logger.debug("Ignoring tristate-related error:")
-                logger.debug(last_warning)
+                current_warning += line
             else:
-                logger.debug("Encountered check error:")
-                logger.debug(last_warning)
-                errors_encountered += 1
-        elif (
-            starts_with_whitespace.match(line) is not None
-            and current_warning is not None
-        ):
-            current_warning += line
-        else:
-            pass
-    return errors_encountered
+                pass
+
+    if counted:
+        logger.warning(f"Yosys reported {len(counted)} problem(s) in '{report_path}':")
+        for warning in counted:
+            logger.warning(warning.rstrip())
+
+    return len(counted)
 
 
 class VerilogRtlConfig(BaseConfigModel):
@@ -592,7 +607,7 @@ class SynthesisCommon(VerilogStep):
         metric_updates["synthesis__check_error__count"] = 0
         if os.path.exists(check_error_count_file):
             metric_updates["synthesis__check_error__count"] = _parse_yosys_check(
-                open(check_error_count_file),
+                check_error_count_file,
                 self.config.TRISTATE_CELLS,
                 self.config.SYNTH_CHECKS_ALLOW_TRISTATE,
                 self.config.SYNTH_ELABORATE_ONLY,

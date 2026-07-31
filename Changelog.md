@@ -112,6 +112,14 @@ Style Notes
     `OpenROAD.RepairAntennas`, but wrote its own `config.json` naming this ID,
     so a reproducible made from its directory could not be loaded (#920).
 
+* Created `OpenROAD.RMP`, which resynthesizes clouds of logic in place using
+  OpenROAD's `rmp` module and ABC (#558, ported from the unmerged upstream
+  #560). Added `RMP_TARGET`, `RMP_CORNER`, `RMP_SLACK_THRESHOLD`,
+  `RMP_DEPTH_THRESHOLD` and `RMP_REMOVE_BUFFERS`. The step raises rather than
+  restructuring against part of the standard cell library when the selected
+  corner resolves to more than one liberty file, because OpenROAD's
+  `restructure` hands its single `-liberty_file` to one ABC `read_lib`.
+
 * `OpenROAD.GeneratePDN`
 
   * `PDN_CFG` is now a PDK variable, so a PDK can ship its own PDN script
@@ -120,23 +128,22 @@ Style Notes
     corresponding `FP_MACRO_*_HALO`, which leaves standard cell rows in a band
     the macro power grid is suppressed in (#947).
 
-* `OpenROAD.OpenConsole`
-
-  * Created. Loads the ODB view, the LIBs, the SDC and, if available, the SPEF
-    for the current corner, then hands an interactive OpenROAD Tcl console over
-    to the user. Same views as `OpenROAD.OpenGUI`, no display required (#532).
-
-* `OpenROAD.OpenSTAConsole`
-
-  * Created. Loads the netlist, the timing models and, if available, the
-    parasitics for one corner, then hands an interactive OpenSTA console over to
-    the user, so timing paths can be reported by hand (#532).
-
 * `OpenROAD.CheckMacroInstances`
 
   * Warns when a macro's `lib` or `spef` covers only some timing corners, or
     resolves to the same view at all of them -- neither of which was reported
     before (#605).
+
+* `KLayout.StreamOut`, `Magic.StreamOut`
+
+  * Added `KLAYOUT_ADD_ISOSUB` and `MAGIC_ADD_ISOSUB`, which draw the isolated
+    substrate (subcut) layer over the design's bounding box on the way out.
+    Both default to `False`. For a design destined to be integrated into
+    another with multiple power domains (#531, #583).
+  * Added `ISOSUB_LAYER`, the GDSII layer and datatype pair KLayout draws that
+    shape on, supplied per PDK. `81/53` for sky130 and `23/5` for gf180mcu,
+    which is what those PDKs' Magic tech files give the CIF layer `SUBCUT` that
+    `isosub` maps to. Magic needs no such variable; it knows the layer by name.
 
 * `Magic.DRC`
 
@@ -174,6 +181,15 @@ Style Notes
     `dfflibmap` and ABC, not just the blackbox model list, so synthesis sees
     macro area and timing (#940).
 
+* `Yosys.Synthesis`, `Yosys.Resynthesis`, `Yosys.VHDLSynthesis`
+
+  * Every problem counted towards `synthesis__check_error__count` is now logged,
+    along with the path of the report it came from. Yosys writes two `check`
+    reports per run, the count only ever came from the earlier
+    `reports/pre_synth_chk.rpt`, and the problems were logged at a level no
+    default run displays, so a nonzero count sent readers to `reports/chk.rpt`,
+    which routinely says zero problems (#824).
+
 * `Verilator.Lint`
 
   * Fixed `LINTER_INCLUDE_PDK_MODELS` having no effect. It now gates
@@ -187,6 +203,12 @@ Style Notes
     `--no-timing` being the motivating case (#492).
 
 ## Flows
+
+* Added `RUN_RMP` to `Classic` and `VHDLClassic`, which enables the new
+  `OpenROAD.RMP` step after floorplanning. It defaults to `False`, because
+  local resynthesis rewrites the netlist every later step works on and the
+  upstream pull request it comes from moved critical metrics on twelve of the
+  CI designs (#558).
 
 * Sequential flows resume within an existing run tag. A step whose own
   configuration, the contents of every file that configuration names, and whose
@@ -388,10 +410,6 @@ Style Notes
 * `--reproducible` naming a step this configuration would never execute,
   because it is gated off or named by `--skip`, now raises rather than
   silently producing nothing.
-* Created `OpenInOpenROADConsole` and `OpenInOpenSTAConsole`, the mono-step
-  flows behind `OpenROAD.OpenConsole` and `OpenROAD.OpenSTAConsole`. They are
-  used the same way the GUI ones are, i.e.
-  `librelane --last-run --flow OpenInOpenSTAConsole` (#532).
 
 ## Tool Updates
 

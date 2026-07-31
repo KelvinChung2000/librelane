@@ -21,7 +21,9 @@ from importlib.resources import files
 import os
 import re
 import shutil
+import subprocess
 from os.path import abspath
+from signal import SIGKILL
 from decimal import Decimal
 from abc import abstractmethod
 from typing import Any, Literal, Optional
@@ -292,6 +294,11 @@ class StreamOut(MagicStep):
             True,
             description="A flag to disable writing Caltech Intermediate Format (CIF) hierarchy and subcell array information to the GDSII file.",
             deprecated_names=["MAGIC_DISABLE_HIER_GDS"],
+        )
+
+        MAGIC_ADD_ISOSUB: bool = variable(
+            False,
+            description="Draws the isolated substrate (subcut) layer over the design's bounding box. Useful when the design is to be integrated into another design with multiple power domains. The PDK's Magic tech file must define an `isosub` layer.",
         )
 
         MAGIC_MACRO_STD_CELL_SOURCE: Literal["PDK", "macro"] = variable(
@@ -696,7 +703,15 @@ class OpenGUI(MagicStep):
 
         # Not run_subprocess- need stdin, stdout, stderr to be accessible to the
         # user normally
-        self.run_interactive_subprocess(cmd, env=env)
+        magic = subprocess.Popen(
+            cmd,
+            env=env,
+            cwd=self.step_dir,
+        )
+        try:
+            magic.wait()
+        except KeyboardInterrupt:
+            magic.send_signal(SIGKILL)
 
         return {}, {}
 
