@@ -8,7 +8,13 @@
 
 **Architecture:** A flow document is a `FlowSpec` pydantic model holding a `dict[str, JobSpec]`. Validation happens in two tiers. Structural checks that need only the document itself run as pydantic model validators, so the Python API and the YAML path get identical errors. Semantic checks that need the stage and step registries run as a separate `validate_against_registry` pass, so the models stay unit-testable without a populated registry. Graph algorithms live in their own module because phase 4 needs `ancestors`/`descendants` for `--target` and `--invalidate`, and because the reachability and sink checks below need `descendants` too.
 
-The two-tier split is real and verified. `from librelane.config import Variable, universal_flow_config_variables` and `from librelane.common.errors import FlowError` leave `librelane.steps` and `librelane.stages` absent from `sys.modules`, so `spec.py` can validate conditions and reserved keys without a populated registry.
+The two-tier split is real in its logic and false in its imports, and the difference was measured after implementation rather than before.
+
+What holds: `spec.py` references no registry type. Its validators behave identically whether or not `Stage.factory`, `StageRegistry` and `Step.factory` are populated, which is the property the split exists for.
+
+What does not hold, as originally written here: that importing `spec.py` leaves `librelane.steps` and `librelane.stages` absent from `sys.modules`. Each import `spec.py` makes is clean in isolation, which is what was measured. But `spec.py` lives in the `librelane.flows` package, and importing any submodule executes `librelane/flows/__init__.py` first, which imports the shipped flows, which import both registries. `import librelane.flows` alone is enough to pull them in. Import isolation is therefore unreachable while these modules sit in this package, and lightening `flows/__init__.py` is forbidden by the Global Constraints above and out of scope for this phase.
+
+This is the failure mode this repository keeps hitting: a true general fact, that those particular imports are clean, carried one step further into a claim about this codebase that nobody checked. The claim was not load-bearing for any check in this phase, so nothing was built on it.
 
 **Tech Stack:** Python 3.11+, pydantic 2.13.4, `graphlib` from the standard library for cycle detection and topological order, pyyaml via the existing `librelane.config.loading.sources.read_source`, pytest with pytest-mock, uv for dependency management.
 
