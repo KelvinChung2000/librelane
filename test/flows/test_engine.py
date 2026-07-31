@@ -300,3 +300,133 @@ def test_a_deferred_error_is_not_replaced_by_a_contract_error(minimal_design, mo
     # deferred error is the real diagnosis and must be what surfaces.
     assert "the tool reported 3 violations" in str(exc_info.value)
     assert not isinstance(exc_info.value, JobContractError)
+
+
+@pytest.fixture
+def gds_writers():
+    """
+    Two steps that each write their own GDSII, so two leaves disagree on 'gds'.
+    """
+    import os
+    import pathlib
+
+    from librelane.state import DesignFormat
+    from librelane.steps import Step
+
+    # outputs = [] rather than [DesignFormat.gds]: 'gds' is what the step
+    # actually returns, not what it declares. Declaring it would make the two
+    # jobs' contracts collide, which phase 1's
+    # spec_validation._check_sink_join_is_unambiguous already catches at load
+    # time (correctly), and this fixture exists to exercise the run-time
+    # backstop instead.
+    #
+    # Not the streamout case, despite the resemblance. Magic.StreamOut and
+    # KLayout.StreamOut both declare 'gds' in their real outputs, and a job
+    # 'uses' either one also unions in Stage.streamout.provides, so two
+    # streamout leaves are caught at load time, not here. What this models is
+    # the narrower gap that makes the run-time check load-bearing at all:
+    # Step.start validates declared inputs only and nothing anywhere checks
+    # that a step's views_updates is a subset of its declared outputs, so a
+    # step can return a view its contract never mentioned.
+    @Step.factory.register()
+    class MagicLike(Step):
+        id = "Test.EngineMagicStreamOut"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            out = os.path.join(self.step_dir, "a.gds")
+            open(out, "w", encoding="utf8").write("magic")
+            return {DesignFormat.gds: pathlib.Path(out)}, {}
+
+    @Step.factory.register()
+    class KLayoutLike(Step):
+        id = "Test.EngineKLayoutStreamOut"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            out = os.path.join(self.step_dir, "a.gds")
+            open(out, "w", encoding="utf8").write("klayout")
+            return {DesignFormat.gds: pathlib.Path(out)}, {}
+
+    return MagicLike, KLayoutLike
+
+
+def _two_streamouts(final: str | None = None) -> dict:
+    document: dict = {
+        "name": "Streamout",
+        "jobs": {
+            "magic_streamout": {"steps": ["Test.EngineMagicStreamOut"]},
+            "klayout_streamout": {"steps": ["Test.EngineKLayoutStreamOut"]},
+        },
+    }
+    if final is not None:
+        document["final"] = final
+    return document
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, step_module])
+def test_the_final_state_is_the_join_of_the_leaves(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    # Two leaves whose metrics differ in name but not in value, so the join
+    # merges rather than conflicting and the result carries both.
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    final = Workflow(spec, minimal_design, **mock_pdk).start(tag="t")
+
+    assert final.metrics["first"] == 1
+    assert final.metrics["second"] == 1
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, step_module])
+def test_two_leaves_with_conflicting_views_are_a_run_time_conflict(
+    gds_writers, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.join import JoinConflictError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(_two_streamouts())
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(JoinConflictError) as exc_info:
+        flow.start(tag="t")
+
+    message = str(exc_info.value)
+    assert "gds" in message
+    assert "magic_streamout" in message
+    assert "klayout_streamout" in message
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, step_module])
+def test_final_names_the_job_whose_state_is_returned(
+    gds_writers, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+    from librelane.state import DesignFormat
+
+    spec = FlowSpec.model_validate(_two_streamouts(final="klayout_streamout"))
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    final = flow.start(tag="t")
+
+    assert str(final[DesignFormat.gds]).startswith(
+        str(flow.run_dir / "klayout_streamout")
+    )
