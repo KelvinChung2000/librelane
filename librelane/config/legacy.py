@@ -36,7 +36,14 @@ from typing import (
 )
 from collections.abc import Iterable, Mapping, Callable
 from librelane.state import DesignFormat, State
-from librelane.common import GenericDict, Path, TclUtils, is_string, Number, slugify
+from librelane.common import (
+    GenericDict,
+    Path,
+    TclUtils,
+    is_string_like,
+    Number,
+    slugify,
+)
 
 # Scalar = Union[Type[str], Type[Decimal], Type[Path], Type[bool]]
 # VType = Union[Scalar, List[Scalar]]
@@ -608,11 +615,14 @@ class Variable:
                     if any(isinstance(item, list) for item in raw):
                         Variable.__flatten_list(value)
                 pass  # do nothing, can be used as is
-            elif is_string(raw):
+            elif is_string_like(raw):
                 if not permissive_typing:
                     raise ValueError(
                         f"Refusing to automatically convert string at '{key_path}' to list"
                     )
+                # The splits below are str operations; a path reaching here has
+                # to be read as the text it names.
+                raw = str(raw)
                 if "," in raw:
                     raw = raw.split(",")
                 elif ";" in raw:
@@ -654,14 +664,14 @@ class Variable:
             key_type, value_type = type_args
             if isinstance(raw, dict):
                 pass
-            elif isinstance(raw, list) or is_string(raw):
+            elif isinstance(raw, list) or is_string_like(raw):
                 if not permissive_typing:
                     raise ValueError(
                         f"Refusing to automatically convert string at '{key_path}' to dict"
                     )
                 components = raw
-                if is_string(raw):
-                    components = TclUtils.split(raw)
+                if is_string_like(raw):
+                    components = TclUtils.split(str(raw))
                 assert isinstance(components, list)
                 # Assuming Tcl format:
                 if len(components) % 2 != 0:
@@ -803,7 +813,7 @@ class Variable:
                     f"Variable provided for variable '{key_path}' of enumerated type {validating_type.__name__} is invalid: '{value}'"
                 )
         elif issubclass(validating_type, str):
-            if not is_string(value):
+            if not is_string_like(value):
                 raise ValueError(
                     f"Refusing to automatically convert value at '{key_path}' to a string"
                 )

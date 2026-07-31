@@ -49,6 +49,7 @@ from librelane.common.types import (
     is_number,
     is_real_number,
     is_string,
+    is_string_like,
     Number,
     Path,
     AnyPath,

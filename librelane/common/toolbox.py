@@ -33,7 +33,7 @@ import libparse
 
 from librelane.common.misc import mkdirp, gzopen
 from librelane.common.types import Path
-from librelane.common.generic_dict import GenericImmutableDict, is_string
+from librelane.common.generic_dict import GenericImmutableDict
 from librelane.state import DesignFormat
 from librelane.common import Filter
 
@@ -90,7 +90,13 @@ class Toolbox(object):
 
         for key in Filter(views_by_corner).get_matching_wildcards(timing_corner):
             value = views_by_corner[key]
-            if is_string(value):
+            # "One view" rather than "an iterable of views". Asking whether the
+            # value is a path is the question actually being asked; asking
+            # whether it is string-like only happened to answer it, because
+            # ``common.Path`` subclasses ``UserString``. This spelling is
+            # correct for ``str``, for ``common.Path`` and for ``pathlib.Path``
+            # alike, none of which should be walked element by element.
+            if isinstance(value, (str, os.PathLike)):
                 result += [value]  # type: ignore
             else:
                 result += list(value)  # type: ignore

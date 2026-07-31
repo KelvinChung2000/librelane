@@ -94,18 +94,59 @@ connect), `39a8ada` (`SYNTH_BUFFER_CELL`), `e607def` + `415c7e2` (padring),
 | 599 / 600 / 669 | L | Replace `common.Path` with `pathlib.Path` (see below) |
 | 532, 558/560, 583, 636, 967 | M | OpenConsole, RMP resynthesis, isosub, multi-corner STAMidPNR, ReplaceECOCells |
 
-`599` asks for "pathlib.Path **or a subclass of it**", so the direct route needs
-no subclassing and `requires-python = ">=3.10"` blocks nothing. An earlier
-revision of this file called it blocked on 3.12; that was wrong. Nothing has
-migrated yet.
+`599` asks for "pathlib.Path **or a subclass of it**". The direct route needs no
+subclassing. An earlier revision of this file called the work blocked on 3.12;
+that was wrong — *nothing* is blocked. But one **hard design constraint** falls
+out of the version floor and governs the whole shape of the migration:
+
+> **`pathlib.Path` cannot be subclassed before Python 3.12, and
+> `requires-python = ">=3.10"`.** Subclassing it needs `_flavour`, which is
+> private and absent on 3.10/3.11.
+
+So anything that wants to *be* a path has to **compose** one and implement
+`os.PathLike`, not inherit. That is why `ScopedFile` was recomposed in
+`9fb0886` — a prerequisite, not tidying — and it is why the pydantic behaviour
+has to live in an `Annotated` alias rather than in a subclass's
+`__get_pydantic_core_schema__`. Anyone reaching for the obvious
+`class Path(pathlib.Path)` will get a `TypeError` on the supported floor and
+should stop rather than raise the floor to 3.12 to make it work.
 
 `600` (portable states, keeping `dir::` / `pdk_dir::` unresolved and resolving on
 access) is the feature `599` was meant to unlock. Also not done.
 
-**Status: audited, not implemented.** Deliberately deferred on merge topology,
-not on doubt — three siblings are editing `librelane/` in their own worktrees,
-and a refactor this wide landing alongside them would conflict out of all
-proportion to the work. The audit below is the preparation.
+**Status: the preparation is done; one mechanical step remains.**
+
+Read the audit below with that in mind. It describes the problem as it stood
+before any of it was fixed, and a reader who takes it at face value will
+over-estimate what is left — which is how this issue has survived three
+releases. What is actually outstanding is the **last** item on the list:
+
+> Retype the ~41 `common.Path` annotations to `pathlib.Path` (or an
+> `Annotated` alias), fix whatever the swap breaks, and delete the
+> `UserString` class.
+
+Everything that made that dangerous has already been dealt with, in
+`14874a6`, `4cf5d52`, `3c27a9a`, `e359348`, `7779364`, `c9e6243` and `9fb0886`:
+
+- the scalar-vs-iterable dispatch no longer depends on string-likeness
+- the ejected-environment string operations no longer depend on it
+- `rel_if_child` no longer depends on it, and its latent bug is fixed
+- **the JSON schema acceptance criterion is met** — 40 failures to 0
+- the `_dummy_path` sentinel and the `_env.tcl` skip compare as strings
+- the twelve `is_string` gates in `config/` ask about path-likeness
+- `ScopedFile` composes, so `Path` has **no subclasses left**
+
+The remaining swap is ~129 mechanical edits plus two genuine semantic decisions
+(`steps/step/reporting.py:299` and `:341`) and the `frozenset`/`lru_cache`
+identity sharing. It is measured and designed under "what the swap actually
+costs" below. The test residue turned out to be **empty**.
+
+It is not started. The window opened when the OpenROAD slice landed, but a
+129-edit refactor across 33 modules is more than could be completed and
+verified in the budget remaining, and a half-applied type migration is worse
+than none: the failure mode of stopping midway is a tree that imports but is
+silently wrong at the sites not yet reached. The measurements and the design
+below are the handover, so the next agent executes rather than re-derives.
 
 #### Audit (2026-07-31), evidence-based
 
@@ -245,19 +286,114 @@ bug-for-bug port.
 
 **Order of work when it is handed over**, cheapest risk-reduction first:
 
-1. Land the `Annotated` alias and delete `__get_pydantic_core_schema__`; assert
-   `model_json_schema()` succeeds for all 347 as the acceptance gate.
-2. Fix `filter_views` to dispatch on `isinstance(value, (str, os.PathLike))`
-   instead of `is_string` — correct under *both* representations, so it can
-   land before the type change.
-3. Stringify at the env boundary (`steps/tclstep.py:140`, `steps/magic.py:439`,
-   `steps/klayout/physical.py:83/126/268`), which independently de-risks
-   `cli/steps.py:306`.
-4. Replace the `_dummy_path` `==` sentinel with an identity or explicit-`str()`
-   check.
-5. Only then swap the type, and fix the `is_string` gates in `config/` that the
-   swap turns into hard errors.
-6. `rel_if_child` and `ScopedFile` last; both are self-contained.
+1. ~~Fix `filter_views` to dispatch on `isinstance(value, (str, os.PathLike))`~~
+   — **done, `14874a6`.** Correct under both representations, so it landed
+   ahead of the type change. Pinned for `str`, `common.Path` and
+   `pathlib.Path`; the pathlib case raises `TypeError` against the old
+   dispatch.
+2. ~~Stringify at the env boundary so `cli/steps.py:306` is safe~~ — **done,
+   `4cf5d52`.** Normalises with `os.fspath()` inside a new
+   `filter_env_for_script()` helper, which also makes the "already in the
+   ambient environment" skip the str-to-str comparison it always meant to be.
+   *Trap for the next editor:* that helper must stay **above** the
+   `@cli.command()` decorator belonging to `eject`, or typer adopts it as a
+   subcommand and dies on its `Mapping` parameters.
+3. ~~`rel_if_child`~~ — **done, `3c27a9a`.** Ported to `is_relative_to`; the
+   sibling-prefix case is a regression test, and the old `./../` output is
+   deliberately not preserved.
+4. ~~The pydantic schema acceptance gate~~ — **done, `e359348`. 40 → 0.**
+   Note the deviation: the `Annotated[pathlib.Path, BeforeValidator(...)]`
+   alias would have required retyping the 40 declarations, which live in
+   `librelane/steps/{klayout,magic,netgen}` — the held sweep. The same
+   criterion was met inside `common/types.py` alone by rebuilding
+   `__get_pydantic_core_schema__` *around* a `str_schema` instead of replacing
+   it with an opaque plain validator: collapse the glob and coerce to `str` on
+   the way in, construct and existence-check on the way out. The core type
+   stays visible so pydantic derives the schema itself — still **no**
+   `__get_pydantic_json_schema__`, which is what the audit predicted. Verified
+   0 failures at all three levels: 370 variables, 173 `Step.Config`, 6
+   `Flow.Config`. Pinned by two tests that *name* offenders rather than
+   counting them. The `Annotated` alias remains the shape to adopt when the
+   runtime type actually flips.
+5. ~~`_dummy_path` and the `steps/tclstep.py:249` twin~~ — **done, `7779364`.**
+6. ~~The `is_string` gates in `config/`~~ — **done, `c9e6243`.** New
+   `is_string_like()` (str, `UserString` or `os.PathLike`) asks what those
+   twelve sites actually mean; `str()` is now explicit where a real `str` is
+   needed. `is_string()` is unchanged and still correct where the question
+   really is "is this a string", notably `generic_dict.copy_recursive`.
+7. ~~`ScopedFile`~~ — **done, `9fb0886`.** Composes `.path` and implements
+   `os.PathLike`. `Path.__subclasses__()` is now empty, pinned by a test.
+   Breaking for anyone who relied on a `ScopedFile` being a `str`; zero call
+   sites in the tree.
+8. **Outstanding:** the annotation swap and deleting the `UserString` class.
+   Measured and designed below, not started — see "what the swap actually
+   costs".
+
+#### What the swap actually costs, measured
+
+Counted on this branch rather than estimated:
+
+| | count |
+|---|---|
+| `Path` in annotation position (`: Path`, `Optional[Path]`, `list[Path]`, …) | ~110 across 24 files |
+| `Path(` runtime constructor calls | 103 |
+| `isinstance(…, Path)` | ~26 across 10 files |
+| modules importing `common.Path` | 33 |
+
+**The design that minimises the diff.** `Path` cannot stay one name doing both
+jobs, because the pydantic behaviour has to live in an `Annotated` alias (see
+the 3.10 subclassing constraint above) and an `Annotated` alias is neither
+callable nor usable with `isinstance`. Two spellings are unavoidable. Which
+name keeps which job decides the size of the diff:
+
+- Keep `Path` as the **Annotated alias** → all ~110 annotation sites are
+  untouched; the 103 constructor calls become `pathlib.Path(...)` and the 26
+  `isinstance` sites become `isinstance(..., pathlib.Path)`. **~129 mechanical
+  edits, each greppable** (`\bPath\(` and `isinstance\(..., Path\)`).
+- Keep `Path` as `pathlib.Path` → constructors and `isinstance` are untouched,
+  but all ~110 annotations must change. Worse, and easy to miss one silently:
+  a missed annotation still *works*, it just quietly loses the existence check
+  and the `GlobMatch` collapse.
+
+Prefer the first: its failure mode is a loud `TypeError`, the second's is
+silent.
+
+Three things must move off the class before it goes:
+
+- `Path._dummy_path` → a module constant. Used at `common/toolbox.py:301` and
+  throughout `test/config/test_variable.py`.
+- `Path.validate()` → a free function. Called at `common/types.py:138` and
+  **`config/legacy.py:791`**, which the category sweep missed.
+- `rel_if_child` → free function. Already correct as of `3c27a9a`, still zero
+  call sites.
+
+**Corrections to the audit's categories 5 and 6.** Both were over-stated, and
+both were checked at runtime rather than read:
+
+- **"Tests that assert `Path == str` fail immediately" is wrong — that residue
+  is empty.** `State` does **not** coerce: given a plain `str` it stores and
+  returns a `builtins.str`, so every `assert state[DesignFormat.NETLIST] ==
+  "abc"` in `test/state/test_state.py` is `str == str` and is unaffected. The
+  reproducible assertions at `test/steps/test_step.py:76/87/88` read
+  `json.loads(...)`, so they are also `str == str`. The single test comparing
+  against a `Path(...)`, `test/steps/test_script_paths.py:41`, imports
+  `from pathlib import Path` — it is already stdlib-to-stdlib. **No test in the
+  tree compares a `common.Path` to a `str`.**
+- What those `test_step.py` assertions *do* pin is real and must survive: the
+  emitted `config.json` has to contain `./files/relative.v` and
+  `pdk_dir::tech.lef` verbatim. That is intent about what
+  `steps/step/reporting.py:341` and `:299` emit — the `./` prefix that
+  `pathlib` would normalise away, and the `pdk_dir::` directive that is not a
+  path at all. Those two lines are the genuine semantic decisions in the swap
+  and should be settled first; everything else is mechanical.
+- `to_raw_dict()` does **not** stringify — it returns the path object as-is, so
+  JSON output depends entirely on `common/generic_dict.py:43` dispatching
+  `os.PathLike` before `UserString`. It already does, so this survives.
+
+Steps 1–7 are landed. The remaining refactor is much smaller than the audit
+describes — every ranked risk site is already neutral to which path
+representation is in use, and the acceptance gate that blocked the JSON Schema
+work is met *today*, before the type change.
 
 ### 696 — there is no collision today, and the feature is deliberately postponed
 
@@ -499,6 +635,26 @@ a triage line:
    `OpenROAD/src/ant/src/AntennaChecker.cc`, which emits the four checks in the
    order PAR, CAR, then PSR, CSR on routing layers.
 
+## Shared counter and golden files
+
+Four worktrees regenerate these from trees lacking each other's commits, so a
+regeneration **replaces rather than adds** and whoever merges second silently
+reverts the first. Reconcile arithmetically, never by re-running a generator.
+
+What this branch moves, against `5d63684`:
+
+| File | From | To | Commits |
+|---|---|---|---|
+| `test/config/test_model_registry.py` (declaration count) | `346` | `351` | `610482d` (+1, `KLAYOUT_XOR_WRITE_GDS`, #692), `0ec2b9e` (+4, the `SAVE_IMAGE_*` group, #611) |
+| `test/steps/registry_snapshot.json` | 172 entries | 173 entries | `0ec2b9e` — one **addition**, `"OpenROAD.SaveImage"`, no removals |
+
+`test/flows/classic_gating.json` and its `GATING_VARIABLES` list: **not touched**.
+`classic_steps.json` / `vhdl_classic_steps.json`: **not touched**.
+
+So this branch's contribution is `+5` to the declaration count and `+1` line to
+the registry snapshot. Both are purely additive and can be merged by summing
+deltas rather than by regenerating.
+
 ## Test baseline
 
 **Verify with plain `uv run pytest`.** `pyproject.toml:117` sets
@@ -535,9 +691,10 @@ Two things make the numbers differ between the main checkout and a worktree:
   explains 192-vs-1.
 - The passed count moves with the tests each slice adds.
 
-In this worktree after 797, 889, 692, 924, 812, 910, 696, 999 and 611:
-**803 passed / 1 deselected / 1 xfailed**, which reconciles exactly against the
-canonical baseline as 777 + 26 added tests. `ruff check` clean,
+In this worktree after 797, 889, 692, 924, 812, 910, 696, 999, 611 and the
+599 preparation (steps 1-7):
+**823 passed / 1 deselected / 1 xfailed**, which reconciles exactly against the
+canonical baseline as 777 + 46 added tests. `ruff check` clean,
 `ruff format --check` clean over 246 files, `mypy` clean over 147 source files.
 
 The dummy PDK in `test/conftest.py` gained `KLAYOUT_TECH`,

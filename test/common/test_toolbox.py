@@ -1067,3 +1067,40 @@ def test_check_lib_pins_stays_quiet_when_every_cell_has_pins(mocker):
     Toolbox(".").check_lib_pins(["fine.lib"], label="Macro 'a' LIB")
 
     warning.assert_not_called()
+
+
+# --- filter_views scalar-vs-iterable dispatch (#599 prep) ---
+
+
+@pytest.mark.parametrize("spelling", ["str", "common.Path", "pathlib.Path"])
+def test_filter_views_treats_any_path_like_as_one_view(spelling, mock_macros_config):
+    """A scalar view must never be walked element by element.
+
+    The dispatch used to ask ``is_string()``, which answered the question only
+    by accident: ``common.Path`` subclasses ``UserString``. A ``pathlib.Path``
+    would have fallen through to ``list(value)`` and raised TypeError, so this
+    pins the property for all three spellings.
+    """
+    import pathlib
+
+    from librelane.common import Path, Toolbox
+
+    scalar = {
+        "str": "/macro/any.lib",
+        "common.Path": Path("/macro/any.lib"),
+        "pathlib.Path": pathlib.Path("/macro/any.lib"),
+    }[spelling]
+
+    result = Toolbox(".").filter_views(mock_macros_config, {"*": scalar})
+
+    assert result == [scalar]
+
+
+def test_filter_views_still_expands_a_list_of_views(mock_macros_config):
+    from librelane.common import Path, Toolbox
+
+    views = [Path("/macro/a.lib"), Path("/macro/b.lib")]
+
+    result = Toolbox(".").filter_views(mock_macros_config, {"*": views})
+
+    assert result == views
