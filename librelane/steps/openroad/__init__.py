@@ -14,6 +14,7 @@ from librelane.steps.openroad.base import (
 from librelane.steps.openroad.sta import (
     STAMidPNR,
     OpenSTAStep,
+    OpenSTAConsole,
     CheckMacroInstances,
     MultiCornerSTA,
     STAPrePNR,
@@ -52,7 +53,9 @@ from librelane.steps.openroad.finishing import (
     CutRows,
     WriteCDL,
     DEFtoODB,
+    OpenROADSession,
     OpenGUI,
+    OpenConsole,
     DumpRCValues,
 )
 from librelane.steps.openroad.resizer import ResizerStep, CTS
@@ -69,6 +72,7 @@ _REEXPORTED_CLASSES = [
     OpenROADStep,
     STAMidPNR,
     OpenSTAStep,
+    OpenSTAConsole,
     CheckMacroInstances,
     MultiCornerSTA,
     STAPrePNR,
@@ -103,7 +107,9 @@ _REEXPORTED_CLASSES = [
     ResizerTimingPostCTS,
     ResizerTimingPostGRT,
     DEFtoODB,
+    OpenROADSession,
     OpenGUI,
+    OpenConsole,
     DumpRCValues,
 ]
 for _class in _REEXPORTED_CLASSES:

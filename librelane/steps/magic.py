@@ -21,9 +21,7 @@ from importlib.resources import files
 import os
 import re
 import shutil
-import subprocess
 from os.path import abspath
-from signal import SIGKILL
 from decimal import Decimal
 from abc import abstractmethod
 from typing import Any, Literal, Optional
@@ -698,15 +696,7 @@ class OpenGUI(MagicStep):
 
         # Not run_subprocess- need stdin, stdout, stderr to be accessible to the
         # user normally
-        magic = subprocess.Popen(
-            cmd,
-            env=env,
-            cwd=self.step_dir,
-        )
-        try:
-            magic.wait()
-        except KeyboardInterrupt:
-            magic.send_signal(SIGKILL)
+        self.run_interactive_subprocess(cmd, env=env)
 
         return {}, {}
 

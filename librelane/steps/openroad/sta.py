@@ -188,6 +188,52 @@ class OpenSTAStep(OpenROADStep):
 
 
 @Step.factory.register()
+class OpenSTAConsole(OpenSTAStep):
+    """
+    Loads the netlist, the timing models and, if available, the parasitics for
+    one corner into an interactive OpenSTA console, so paths can be reported by
+    hand.
+
+    The corner is the PDK's default corner unless ``DEFAULT_CORNER`` says
+    otherwise.
+
+    The step ends when the console does, i.e., on ``exit`` or an end-of-file.
+    """
+
+    id = "OpenROAD.OpenSTAConsole"
+    name = "Open In OpenSTA Console"
+
+    inputs = [
+        DesignFormat.NETLIST,
+        DesignFormat.SPEF.mkOptional(),
+    ]
+    outputs = []
+
+    def get_script_path(self):
+        return files("librelane").joinpath("scripts", "openroad", "sta", "console.tcl")
+
+    def get_command(self) -> list[str]:
+        # No -exit: the point of the step is that OpenSTA keeps reading commands
+        # from the terminal once the script is done.
+        return ["sta", "-no_splash", str(self.get_script_path())]
+
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
+        kwargs, env = self.extract_env(kwargs)
+
+        corner_name, file_list = self._get_corner_files(prioritize_nl=True)
+        file_list.set_env(env)
+        env["_CURRENT_CORNER_NAME"] = corner_name
+
+        env = self.prepare_env(env, state_in)
+
+        # Not run_subprocess: the console needs the terminal's stdin, stdout
+        # and stderr, which the output processors would take away.
+        self.run_interactive_subprocess(self.get_command(), env=env)
+
+        return {}, {}
+
+
+@Step.factory.register()
 class CheckMacroInstances(OpenSTAStep):
     """
     Checks if all macro instances declared in the configuration are, in fact,

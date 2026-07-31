@@ -120,6 +120,18 @@ Style Notes
     corresponding `FP_MACRO_*_HALO`, which leaves standard cell rows in a band
     the macro power grid is suppressed in (#947).
 
+* `OpenROAD.OpenConsole`
+
+  * Created. Loads the ODB view, the LIBs, the SDC and, if available, the SPEF
+    for the current corner, then hands an interactive OpenROAD Tcl console over
+    to the user. Same views as `OpenROAD.OpenGUI`, no display required (#532).
+
+* `OpenROAD.OpenSTAConsole`
+
+  * Created. Loads the netlist, the timing models and, if available, the
+    parasitics for one corner, then hands an interactive OpenSTA console over to
+    the user, so timing paths can be reported by hand (#532).
+
 * `OpenROAD.CheckMacroInstances`
 
   * Warns when a macro's `lib` or `spef` covers only some timing corners, or
@@ -376,6 +388,10 @@ Style Notes
 * `--reproducible` naming a step this configuration would never execute,
   because it is gated off or named by `--skip`, now raises rather than
   silently producing nothing.
+* Created `OpenInOpenROADConsole` and `OpenInOpenSTAConsole`, the mono-step
+  flows behind `OpenROAD.OpenConsole` and `OpenROAD.OpenSTAConsole`. They are
+  used the same way the GUI ones are, i.e.
+  `librelane --last-run --flow OpenInOpenSTAConsole` (#532).
 
 ## Tool Updates
 

@@ -109,9 +109,10 @@ template. It is never written by hand.
 @dataclass(frozen=True)
 class Job:
     id: str                                 # the document's job key
+    full_name: str                          # from the template, or the id for an inline job
     needs: tuple[str, ...]                  # from the JobSpec
-    source: dict[str, str]                  # from the JobSpec, a view id or a metric name
-    conditions: tuple[str, ...]             # from the JobSpec, the parsed conjunction
+    source: dict[DesignFormat, str]         # from the JobSpec
+    condition: str | None                   # from the JobSpec
     requires: tuple[DesignFormat, ...]      # from the template
     provides: tuple[DesignFormat, ...]      # from the template
     metrics: tuple[str, ...]                # from the template
@@ -119,16 +120,9 @@ class Job:
     provider: str | None                    # None for an inline job
 ```
 
-The 27 templates are the same dataclass with `needs`, `source` and `conditions`
+The 27 templates are the same dataclass with `needs`, `source` and `condition`
 empty and `steps` unresolved, plus a `default_provider` consulted when `uses`
 names a stage without a provider.
-
-`conditions` is a tuple rather than a string because `if` takes a conjunction.
-An empty tuple means the job is unconditional, which is why the field is a tuple
-and not an optional one. There is no `full_name` on the resolved job. The
-templates carry one, but nothing reads it, and the two streamout jobs of a real
-document would share a template's full name while being distinct jobs, so it
-would mislead exactly where it looked most useful.
 
 In implementation these are two types rather than one, because a library entry
 and a bound instance are two things the way a class and an instance are. `Job`
@@ -269,19 +263,8 @@ every producer whose views it actually consumes. A conjunction is what expresses
 that, and a document declaring `needs` on a conditional producer without
 repeating that producer's condition is a load warning naming both.
 
-`source` resolves a fan-in conflict, mapping a view or a metric to the
-predecessor it comes from. It is keyed by name in both cases, since a metric key
-is an ordinary string and the join rule does not distinguish the two.
-
-Making fan-in explicit surfaces ambiguities that linear threading resolved by
-position, and some of them are latent defects. `Magic.StreamOut` and
-`KLayout.StreamOut` both write `gds`, and today the single threaded state means
-the last writer wins, so `Magic.DRC` runs against KLayout's GDS rather than
-Magic's. Under a join that is a genuine conflict and the document must name a
-producer. The shipped documents record the behaviour the flows have today rather
-than quietly correcting it, because a migration that changes results while
-claiming equivalence is a worse outcome than a wrong result that is finally
-written down in one reviewable line. Corrections are separate changes.
+`source` resolves a fan-in conflict, mapping a view to the predecessor it comes
+from.
 
 ### The programmatic API is the same document
 
@@ -368,35 +351,37 @@ before any other value is resolved, so a document setting `PDK` would override
 the `--pdk` argument rather than layer under it. A document naming one is a load
 error.
 
-A job takes a `with` block, and a variable may appear in one only if **every job
-that reads it also sets it**. Reach is the set of jobs that can read a variable,
-derived from the `config_vars` its steps declare plus the universal set, so the
-jobs naming a variable across their `with` blocks must be exactly its reach, no
-more and no fewer. That is statically checkable at load.
+A job takes a `with` block only for variables of **reach one**, meaning
+variables whose declaring steps appear in no other job. That is statically
+checkable, and it covers 217 of the 312 step-declared variables.
 
-The rule exists because reach is derived rather than declared, which makes a
-partial override invisible. `DIE_AREA` sits in `option_variables`, so
-`flow_common_variables` places it in every step's filtered configuration, and the
-KLayout sealring reads `self.config.DIE_AREA` directly, raising only when it is
-unset. A `with` block setting it on `floorplan` alone would floorplan one die and
-draw a sealring around another, silently and with no error anywhere. Requiring
-every reader to set it turns that silent divergence into a load error naming the
-jobs that left it out.
+The restriction exists because a value's reach is derived rather than declared.
+`DIE_AREA` sits in `option_variables`, so `flow_common_variables` places it in
+every step's filtered configuration, and the KLayout sealring reads
+`self.config.DIE_AREA` directly, raising only when it is unset. A per-job
+override on `floorplan` alone would floorplan one die and draw a sealring around
+another, silently and with no error anywhere. Reach one is exactly the condition
+under which that cannot happen.
 
-The rule is a covering condition, not a count. An earlier draft restricted `with`
-to variables of reach one, and that draft rejected the case it was written to
-serve. Two Yosys jobs with different `SYNTH_STRATEGY` are declarable today, and
-`SYNTH_STRATEGY` is declared by `Yosys.Synthesis` alone, but two jobs running
-that step both read it, so its reach is two and reach-one forbids it. Counting
-declaring steps and counting jobs are different measurements, and only the second
-one governs what a job can observe.
+The case this serves is two jobs of the same stage, which the schema already
+permits and which is not a matrix. Two Yosys jobs with different
+`SYNTH_STRATEGY` are declarable today and unconfigurable without this, since
+`SYNTH_STRATEGY` is declared by `Yosys.Synthesis` alone.
 
-The same rule covers a matrix with no special case. A matrix over an axis expands
-into one job per value, each setting the axis in its own `with`, so the jobs
-setting it are exactly its reach by construction. A matrix whose axis is also
-read by a job outside the expansion fails the same check, and that is the
-condition under which reducing the matrix would be meaningless anyway, since a
-join reduces state and not configuration.
+A matrix, when spec 3 adds one, supplies per-instance values structurally rather
+than through this key, because a matrix instance is a parallel copy of a whole
+subgraph and its scope is therefore correct by construction rather than by
+validation.
+
+The case that wants a locally overridden global is a matrix, and a matrix does
+not have this problem. A matrix instance is a parallel copy of a whole subgraph,
+so floorplan and streamout fall inside the same instance and observe the same
+value by construction. Scope becomes structural instead of declared. A
+hand-written per-job override is a manual encoding of what a matrix states
+structurally, which is the same category of defect as `gating_config_vars`
+encoding a graph edge across three Booleans. Per-job values therefore arrive
+with loops in spec 3 or not at all, and no reach validation is needed to keep
+intent and reach aligned.
 
 ### Reach is reportable
 
@@ -554,11 +539,10 @@ errors, and the graph checks are a model validator over the assembled document.
   is not itself a registered template id.
 - `if` that is not a conjunction of variable names, or naming a configuration
   variable the flow does not declare.
-- `source` naming a job that is not a direct predecessor.
-- `source` naming a direct predecessor whose branch cannot produce the key.
+- `source` naming a job that is not a predecessor.
 - A document-level `with` naming `PDK`, `SCL`, `PAD` or `meta`.
-- A job-level `with` naming a variable that some other job reads and does not
-  itself set. The error names the variable and the jobs that left it out.
+- A job-level `with` naming a variable of reach greater than one. The error
+  names the variable and the other jobs that read it.
 - `final` naming an undeclared job.
 - A conflicting sink join with no `final` declared. The error names the
   conflicting views and the leaf jobs that produced them.

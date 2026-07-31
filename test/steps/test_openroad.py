@@ -193,3 +193,74 @@ def test_pdn_cfg_can_come_from_the_pdk():
     extra = GeneratePDN.Config.model_fields["PDN_CFG"].json_schema_extra
 
     assert extra["pdk"] is True
+
+
+# Issue 532: launching tools interactively.
+
+
+def _console_instance(StepClass, mock_config):
+    from librelane.state import State
+
+    instance = StepClass(config=mock_config, state_in=State())
+    instance.step_dir = "/cwd/step"
+    return instance
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_openroad_console_keeps_the_interpreter_alive(mock_config):
+    """-exit would run the script and quit, which is the opposite of a console."""
+    from librelane.steps.openroad import OpenConsole
+
+    argv = [
+        str(arg) for arg in _console_instance(OpenConsole, mock_config).get_command()
+    ]
+
+    assert "-exit" not in argv
+    assert "-gui" not in argv
+    assert argv[-1].endswith("gui.tcl")
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_opensta_console_keeps_the_interpreter_alive(mock_config):
+    from librelane.steps.openroad import OpenSTAConsole
+
+    argv = [
+        str(arg) for arg in _console_instance(OpenSTAConsole, mock_config).get_command()
+    ]
+
+    assert argv[0] == "sta"
+    assert "-exit" not in argv
+    assert argv[-1].endswith("sta/console.tcl")
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_consoles_hand_the_terminal_over(mock_config, mocker):
+    """A console the output processors read from is not a console: the user
+    needs the subprocess to inherit stdin, stdout and stderr."""
+    from librelane.state import State
+    from librelane.steps.openroad import OpenConsole, OpenSTAConsole
+
+    for StepClass in (OpenConsole, OpenSTAConsole):
+        instance = _console_instance(StepClass, mock_config)
+        popen = mocker.patch("subprocess.Popen")
+        popen.return_value.wait.return_value = 0
+        mocker.patch.object(instance, "prepare_env", side_effect=lambda env, state: env)
+        mocker.patch.object(
+            instance,
+            "_get_corner_files",
+            return_value=(
+                "nom_tt_025C_1v80",
+                OpenSTAConsole.CornerFileList(libs=(), netlists=(), spefs=()),
+            ),
+        )
+        run_subprocess = mocker.patch.object(instance, "run_subprocess")
+
+        instance.run(State())
+
+        assert popen.call_count == 1
+        assert not run_subprocess.called
+        for stream in ("stdin", "stdout", "stderr"):
+            assert stream not in popen.call_args.kwargs

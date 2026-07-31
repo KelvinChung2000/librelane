@@ -406,16 +406,15 @@ class DEFtoODB(OpenROADStep):
         )
 
 
-@Step.factory.register()
-class OpenGUI(OpenSTAStep):
+class OpenROADSession(OpenSTAStep):
     """
-    Opens the ODB view in the OpenROAD GUI. Useful to inspect some parameters,
-    such as routing density, timing paths, clock tree and whatnot.
-    The LIBs are loaded by default and the SPEFs if available.
-    """
+    Common loading for the steps that hand an OpenROAD session over to the user:
+    the ODB view, the LIBs, the SDC and, if available, the SPEF for the current
+    corner.
 
-    id = "OpenROAD.OpenGUI"
-    name = "Open In GUI"
+    Subclasses decide what the session looks like by implementing
+    :meth:`get_command` and :meth:`hand_over`.
+    """
 
     inputs = [
         DesignFormat.ODB,
@@ -426,13 +425,18 @@ class OpenGUI(OpenSTAStep):
     def get_script_path(self) -> str:
         return str(files("librelane").joinpath("scripts", "openroad", "gui.tcl"))
 
-    def get_command(self) -> list[str]:
-        return [
-            "openroad",
-            "-no_splash",
-            "-gui",
-            self.get_script_path(),
-        ]
+    def hand_over(self, command: list[str], env: dict, **kwargs) -> None:
+        """
+        Runs the session and returns once the user is done with it.
+
+        Parameters
+        ----------
+        command : list[str]
+            The command from :meth:`get_command`
+        env : dict
+            The environment the command is run in
+        """
+        raise NotImplementedError()
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -443,14 +447,64 @@ class OpenGUI(OpenSTAStep):
 
         env = self.prepare_env(env, state_in)
 
-        command = self.get_command()
+        self.hand_over(self.get_command(), env, **kwargs)
+
+        return {}, {}
+
+
+@Step.factory.register()
+class OpenGUI(OpenROADSession):
+    """
+    Opens the ODB view in the OpenROAD GUI. Useful to inspect some parameters,
+    such as routing density, timing paths, clock tree and whatnot.
+    The LIBs are loaded by default and the SPEFs if available.
+    """
+
+    id = "OpenROAD.OpenGUI"
+    name = "Open In GUI"
+
+    def get_command(self) -> list[str]:
+        return [
+            self.get_openroad_path(),
+            "-no_splash",
+            "-gui",
+            self.get_script_path(),
+        ]
+
+    def hand_over(self, command: list[str], env: dict, **kwargs) -> None:
         self.run_subprocess(
             command,
             env=env,
             **kwargs,
         )
 
-        return {}, {}
+
+@Step.factory.register()
+class OpenConsole(OpenROADSession):
+    """
+    Opens the ODB view in an interactive OpenROAD Tcl console, with the same
+    views loaded as :class:`OpenGUI`. Useful to query the database or the timing
+    graph by hand on a machine with no display.
+
+    The step ends when the console does, i.e., on ``exit`` or an end-of-file.
+    """
+
+    id = "OpenROAD.OpenConsole"
+    name = "Open In Console"
+
+    def get_command(self) -> list[str]:
+        # No -exit: the point of the step is that OpenROAD keeps reading
+        # commands from the terminal once the script is done.
+        return [
+            self.get_openroad_path(),
+            "-no_splash",
+            self.get_script_path(),
+        ]
+
+    def hand_over(self, command: list[str], env: dict, **kwargs) -> None:
+        # Not run_subprocess: the console needs the terminal's stdin, stdout
+        # and stderr, which the output processors would take away.
+        self.run_interactive_subprocess(command, env=env)
 
 
 @Step.factory.register()
