@@ -19,7 +19,7 @@ Every reproducible LibreLane has ever generated invokes this in its
 this entry point outlives any one release.
 """
 
-from ..cli.steps import cli
+from librelane.cli.steps import cli
 
 
 if __name__ == "__main__":

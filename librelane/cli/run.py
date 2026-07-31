@@ -35,13 +35,13 @@ import traceback
 from loguru import logger
 import typer
 
-from .. import common
-from ..__version__ import __version__
-from ..config import Config, InvalidConfig, PassedDirectoryError
-from ..container import run_in_container
-from ..flows import Explanation, Flow, FlowError, FlowException, SequentialFlow
-from ..state import DesignFormat, State
-from .options import (
+from librelane import common
+from librelane.__version__ import __version__
+from librelane.config import Config, InvalidConfig, PassedDirectoryError
+from librelane.container import run_in_container
+from librelane.flows import Explanation, Flow, FlowError, FlowException, SequentialFlow
+from librelane.state import DesignFormat, State
+from librelane.cli.options import (
     CondensedOption,
     ConfigFilesArgument,
     ConfigOverridesOption,
@@ -74,7 +74,7 @@ from .options import (
     ToOption,
     UseCielOption,
 )
-from .runtime import (
+from librelane.cli.runtime import (
     DEFAULT_JOBS,
     ResolvedPdkOptions,
     apply_runtime_options,
@@ -179,8 +179,15 @@ def format_explanation(explanation: Explanation) -> str:
     """
     Renders an :class:`librelane.flows.Explanation` as a fixed-width table.
 
-    :param explanation: What the flow reported.
-    :returns: The table, without a trailing newline.
+    Parameters
+    ----------
+    explanation : Explanation
+        What the flow reported.
+
+    Returns
+    -------
+    str
+        The table, without a trailing newline.
     """
     width = max((len(d.step_id) for d in explanation.steps), default=0)
     lines = [f"{'STEP'.ljust(width)}  RUN  MECHANISM  REASON"]

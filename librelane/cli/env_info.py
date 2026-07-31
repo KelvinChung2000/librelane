@@ -21,7 +21,7 @@ exactly the situation the bug-report template asks users to run it in. This
 module only gives it a home inside :mod:`librelane.cli`.
 """
 
-from ..env_info import env_info_cli
+from librelane.env_info import env_info_cli
 
 
 def show_env_info() -> None:

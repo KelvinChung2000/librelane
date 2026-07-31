@@ -52,7 +52,7 @@ class Path(UserString, os.PathLike):
     def __get_pydantic_core_schema__(cls, source, handler):
         """Teach Pydantic LibreLane's scalar/glob path semantics."""
         from pydantic_core import core_schema
-        from ..config.preprocessor import GlobMatch
+        from librelane.config.preprocessor import GlobMatch
 
         def validate(value):
             if isinstance(value, GlobMatch):
@@ -142,7 +142,10 @@ class ScopedFile(Path):
 
     The object itself is a string pointing to that file path.
 
-    :param contents: The contents of the temporary file to create.
+    Parameters
+    ----------
+    contents
+        The contents of the temporary file to create.
     """
 
     def __init__(self, *, contents="") -> None:

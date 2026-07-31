@@ -22,11 +22,11 @@ from typing import Annotated
 
 import typer
 
-from ..config import Config
-from ..flows.flow import universal_flow_config_variables
-from ..steps.pyosys import verilog_rtl_cfg_vars
-from ._app import make_group
-from .options import (
+from librelane.config import Config
+from librelane.flows.flow import universal_flow_config_variables
+from librelane.steps.pyosys import verilog_rtl_cfg_vars
+from librelane.cli._app import make_group
+from librelane.cli.options import (
     CondensedOption,
     JobsOption,
     LogLevelOption,
@@ -37,7 +37,11 @@ from .options import (
     ShowProgressBarOption,
     UseCielOption,
 )
-from .runtime import DEFAULT_JOBS, apply_runtime_options, resolve_pdk_options
+from librelane.cli.runtime import (
+    DEFAULT_JOBS,
+    apply_runtime_options,
+    resolve_pdk_options,
+)
 
 
 cli = make_group(help="Create and inspect LibreLane design configurations.")

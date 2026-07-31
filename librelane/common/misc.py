@@ -38,15 +38,18 @@ from collections.abc import Generator, Iterable
 
 import httpx
 
-from ..__version__ import __version__
-from .types import AnyPath, Path
+from librelane.__version__ import __version__
+from librelane.common.types import AnyPath, Path
 
 T = TypeVar("T")
 
 
 def idem(obj: T, *args, **kwargs) -> T:
     """
-    :returns: the parameter ``obj`` unchanged. Useful for some lambdas.
+    Returns
+    -------
+    T
+        the parameter ``obj`` unchanged. Useful for some lambdas.
     """
     return obj
 
@@ -103,8 +106,15 @@ def slugify(value: str, lower: bool = False) -> str:
     """
     Adapted from Django slugify. In practice it works more like a kebabify…
 
-    :param value: Input string
-    :returns: The input string converted to lower case, with all characters
+    Parameters
+    ----------
+    value : str
+        Input string
+
+    Returns
+    -------
+    str
+        The input string converted to lower case, with all characters
         except alphanumerics, underscores and hyphens removed, and spaces and\
         dots converted into hyphens.
 
@@ -125,7 +135,10 @@ def protected(method):
     It dynamically adds a statement to the effect in the docstring as well
     as setting an attribute, ``protected``, to ``True``, but has no other effects.
 
-    :param f: Method to mark as protected
+    Parameters
+    ----------
+    f
+        Method to mark as protected
     """
     if method.__doc__ is None:
         method.__doc__ = ""
@@ -171,7 +184,10 @@ def mkdirp(path: str | os.PathLike):
     if it is unable to create any of the components and/or if the path
     already exists as a file.
 
-    :param path: A filesystem path for the directory
+    Parameters
+    ----------
+    path : str | os.PathLike
+        A filesystem path for the directory
     """
     return pathlib.Path(path).mkdir(parents=True, exist_ok=True)
 
@@ -199,8 +215,15 @@ def format_size(byte_count: int) -> str:
 
 def format_elapsed_time(elapsed_seconds: SupportsFloat) -> str:
     """
-    :param elapsed_seconds: Total time elapsed in seconds
-    :returns: A string in the format ``{hours}:{minutes}:{seconds}:{milliseconds}``
+    Parameters
+    ----------
+    elapsed_seconds : SupportsFloat
+        Total time elapsed in seconds
+
+    Returns
+    -------
+    str
+        A string in the format ``{hours}:{minutes}:{seconds}:{milliseconds}``
     """
     elapsed_seconds = float(elapsed_seconds)
 
@@ -220,7 +243,10 @@ class Filter(object):
     """
     Encapsulates commonly used wildcard-based filtering functions into an object.
 
-    :param filters: A list of a wildcards supporting the
+    Parameters
+    ----------
+    filters : Iterable[str]
+        A list of a wildcards supporting the
         `fnmatch spec <https://docs.python.org/3.10/library/fnmatch.html>`_.
 
         The wildcards will be split into an "allow" and "deny" list based on whether
@@ -238,8 +264,15 @@ class Filter(object):
 
     def get_matching_wildcards(self, input: str) -> Generator[str, Any, None]:
         """
-        :param input: An input to match wildcards against.
-        :returns: An iterable object for *all* wildcards in the allow list
+        Parameters
+        ----------
+        input : str
+            An input to match wildcards against.
+
+        Returns
+        -------
+        Generator[str, Any, None]
+            An iterable object for *all* wildcards in the allow list
             accepting ``input``, and *all* wildcards in the deny list rejecting
             ``input``.
         """
@@ -252,8 +285,15 @@ class Filter(object):
 
     def match(self, input: str) -> bool:
         """
-        :param input: An input string to either accept or reject
-        :returns: A boolean indicating whether the input:
+        Parameters
+        ----------
+        input : str
+            An input string to either accept or reject
+
+        Returns
+        -------
+        bool
+            A boolean indicating whether the input:
             * Has matched at least one wildcard in the allow list
             * Has matched exactly 0 inputs in the deny list
         """
@@ -273,8 +313,15 @@ class Filter(object):
         inputs: Iterable[str],
     ) -> Generator[str, Any, None]:
         """
-        :param inputs: A series of inputs to filter according to the wildcards.
-        :returns: An iterable object of any values in ``inputs`` that:
+        Parameters
+        ----------
+        inputs : Iterable[str]
+            A series of inputs to filter according to the wildcards.
+
+        Returns
+        -------
+        Generator[str, Any, None]
+            An iterable object of any values in ``inputs`` that:
             * Have matched at least one wildcard in the allow list
             * Have matched exactly 0 inputs in the deny list
         """
@@ -298,8 +345,12 @@ def recreate_tree(
     If the source and target are the same, the function returns early and does
     nothing.
 
-    :param source: The source file tree to replicate
-    :param target: The target path to recreate the file tree within
+    Parameters
+    ----------
+    source : AnyPath | Traversable
+        The source file tree to replicate
+    target : AnyPath
+        The target path to recreate the file tree within
     """
     target_path = pathlib.Path(target).resolve()
     if isinstance(source, Traversable) and not isinstance(source, os.PathLike):
@@ -326,9 +377,17 @@ def recreate_tree(
 
 def get_latest_file(in_path: str | os.PathLike, filename: str) -> Path | None:
     """
-    :param in_path: A directory to search in
-    :param filename: The final filename
-    :returns: The latest file matching the parameters, by modification time
+    Parameters
+    ----------
+    in_path : str | os.PathLike
+        A directory to search in
+    filename : str
+        The final filename
+
+    Returns
+    -------
+    Path | None
+        The latest file matching the parameters, by modification time
     """
     candidates = pathlib.Path(in_path).rglob(filename)
     latest = max(
@@ -342,9 +401,16 @@ def get_httpx_session(token: str | None = None) -> httpx.Client:
     Creates an ``httpx`` session client that follows redirects and has the
     User-Agent header set to ``librelane/{__version__}``.
 
-    :param token: If this parameter is non-None and not empty, another header,
+    Parameters
+    ----------
+    token : str | None
+        If this parameter is non-None and not empty, another header,
         Authorization: Bearer {token}, is included.
-    :returns: The created client
+
+    Returns
+    -------
+    httpx.Client
+        The created client
     """
     session = httpx.Client(follow_redirects=True)
     headers_raw = {"User-Agent": f"librelane/{__version__}"}
@@ -363,8 +429,15 @@ def process_list_file(from_file: AnyPath) -> list[str]:
     * A comment prefixed with ``#``
     * Blank
 
-    :param from_file: The input text file.
-    :returns: A list of the strings listed in the file, ignoring lines
+    Parameters
+    ----------
+    from_file : AnyPath
+        The input text file.
+
+    Returns
+    -------
+    list[str]
+        A list of the strings listed in the file, ignoring lines
         prefixed with a ``#`` and empty lines.
     """
     excluded_cells = []
@@ -394,10 +467,18 @@ def gzopen(filename: AnyPath, mode="rt") -> IO[Any]:
 
     gzip.open does not have this behavior.
 
-    :param filename: The full path to the uncompressed or gzipped file.
-    :param mode: "r", "rb", "w", "wb", "x", "xb", "a" or "ab" for
+    Parameters
+    ----------
+    filename : AnyPath
+        The full path to the uncompressed or gzipped file.
+    mode
+        "r", "rb", "w", "wb", "x", "xb", "a" or "ab" for
         binary mode, or "rt", "wt", "xt" or "at" for text mode.
-    :returns: An I/O wrapper that may very slightly based on the mode.
+
+    Returns
+    -------
+    IO[Any]
+        An I/O wrapper that may very slightly based on the mode.
     """
     try:
         g = gzip.open(filename, mode=mode)
@@ -419,9 +500,17 @@ def count_occurences(fp: io.TextIOWrapper, pattern: str = "") -> int:
 
     Equivalent to: ``grep -c 'pattern' <file>`` (but without regex support).
 
-    :param fp: the text stream
-    :param pattern: the substring to search for. if set to "", it will simply
+    Parameters
+    ----------
+    fp : io.TextIOWrapper
+        the text stream
+    pattern : str
+        the substring to search for. if set to "", it will simply
         count the lines in the file.
-    :returns: the number of matching lines
+
+    Returns
+    -------
+    int
+        the number of matching lines
     """
     return sum(pattern in line for line in fp)

@@ -11,27 +11,26 @@ either:
 * Permanently setting the default flow for your design in the configuration file
   as follows:
 
-  <table>
-    <tr><th>JSON</th><th>YAML</tr></tr>
-    <tr><td>
+  ::::{tab-set}
 
-    ```json
-    {
-        "meta": {
-            "flow": "VHDLClassic"
-        }
-    }
-    ```
+  :::{tab-item} JSON
+  ```json
+  {
+      "meta": {
+          "flow": "VHDLClassic"
+      }
+  }
+  ```
+  :::
 
-    </td><td>
+  :::{tab-item} YAML
+  ```yaml
+  meta:
+    flow: VHDLClassic
+  ```
+  :::
 
-    ```yaml
-    meta:
-      flow: VHDLClassic
-    ```
-
-    </td></tr>
-  </table>
+  ::::
 
 When using the `VHDLClassic` flow, you need to specify the variable
 `VHDL_FILES` instead of `VERILOG_FILES`. 

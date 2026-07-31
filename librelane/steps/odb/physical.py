@@ -20,17 +20,17 @@ from importlib.resources import files
 from decimal import Decimal
 from typing import Literal, Optional
 
-from ...common import Path
-from ...config import variable
-from ...state import State
+from librelane.common import Path
+from librelane.config import variable
+from librelane.state import State
 
-from ..step import (
+from librelane.steps.step import (
     MetricsUpdate,
     Step,
     ViewsUpdate,
 )
 
-from .base import OdbpyStep
+from librelane.steps.odb.base import OdbpyStep
 
 
 @Step.factory.register()

@@ -51,9 +51,9 @@ stubs (``librelane/scripts/calibre/drc.tcl``,
 each stub's header comment.
 """
 
-from ..state import DesignFormat
-from .vendor import VendorTclStep
-from .step import Step
+from librelane.state import DesignFormat
+from librelane.steps.vendor import VendorTclStep
+from librelane.steps.step import Step
 
 
 class CalibreStep(VendorTclStep):

@@ -34,7 +34,7 @@ from typing import (
 )
 
 
-from ...common import (
+from librelane.common import (
     Path,
     Filter,
     TclUtils,
@@ -42,10 +42,10 @@ from ...common import (
     aggregate_metrics,
     process_list_file,
 )
-from ...config import variable
-from ...config.flow import option_variables
-from ...state import DesignFormat, State
-from ..step import (
+from librelane.config import variable
+from librelane.config.flow import option_variables
+from librelane.state import DesignFormat, State
+from librelane.steps.step import (
     DefaultOutputProcessor,
     MetricsUpdate,
     OutputProcessor,
@@ -54,7 +54,7 @@ from ..step import (
     StepException,
     ViewsUpdate,
 )
-from ..tclstep import TclStep
+from librelane.steps.tclstep import TclStep
 
 openroad_alert_rx = re.compile(r"^\[(WARNING|ERROR)(?:\s+([A-Z]+\-\d+))?\]\s*(.+)")
 
@@ -85,8 +85,15 @@ class SupportsOpenROADAlerts(Protocol):
 
     def on_alert(self, alert: OpenROADAlert) -> OpenROADAlert:
         """
-        :param alert: The alert found in the processed line
-        :returns: The alert once again, modified at the step object's leisure
+        Parameters
+        ----------
+        alert : OpenROADAlert
+            The alert found in the processed line
+
+        Returns
+        -------
+        OpenROADAlert
+            The alert once again, modified at the step object's leisure
         """
         ...
 
@@ -115,9 +122,15 @@ class OpenROADOutputProcessor(OutputProcessor):
         If a line contains an OpenROAD error/warning, it is processed and handed
         over to the step's ``on_alert`` method.
 
-        :param line: The line in question
-        :returns: ``True`` if the line has alerts, ``False`` if the line has
-            no alerts
+        Parameters
+        ----------
+        line : str
+            The line in question
+
+        Returns
+        -------
+        ``True`` if the line has alerts, ``False`` if the line has
+        no alerts
         """
         if match := openroad_alert_rx.match(line):
             cls = match[1].lower()
@@ -135,7 +148,10 @@ class OpenROADOutputProcessor(OutputProcessor):
 
     def result(self) -> list[OpenROADAlert]:
         """
-        :returns: A list of OpenROAD alerts captured by this output processor
+        Returns
+        -------
+        list[OpenROADAlert]
+            A list of OpenROAD alerts captured by this output processor
         """
         return self.alerts
 
@@ -146,9 +162,13 @@ class OpenROADAlertMixin:
     ``[ERROR]``/``[WARNING]`` lines through :class:`OpenROADOutputProcessor`
     and echoes them to the logger.
 
-    :cvar ignored_alert_codes: Alert codes that are captured in :attr:`alerts`
+    Attributes
+    ----------
+    ignored_alert_codes : ClassVar[frozenset[str]]
+        Alert codes that are captured in :attr:`alerts`
         but not echoed to the logger, i.e., known-harmless noise.
-    :ivar alerts: The alerts emitted by the last subprocess run, or ``None`` if
+    alerts : list[OpenROADAlert] | None
+        The alerts emitted by the last subprocess run, or ``None`` if
         no subprocess has been run yet.
     """
 
@@ -162,8 +182,15 @@ class OpenROADAlertMixin:
 
     def on_alert(self, alert: OpenROADAlert) -> OpenROADAlert:
         """
-        :param alert: The alert found by :class:`OpenROADOutputProcessor`
-        :returns: The alert, unmodified
+        Parameters
+        ----------
+        alert : OpenROADAlert
+            The alert found by :class:`OpenROADOutputProcessor`
+
+        Returns
+        -------
+        OpenROADAlert
+            The alert, unmodified
         """
         if alert.code in self.ignored_alert_codes:
             return alert

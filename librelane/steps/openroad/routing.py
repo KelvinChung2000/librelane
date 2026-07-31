@@ -30,25 +30,25 @@ from typing import (
 import rich
 import rich.table
 
-from ...common import (
+from librelane.common import (
     DRC as DRCObject,
     mkdirp,
 )
-from ...config import variable
-from ...logging import console, options
-from ...state import DesignFormat, State
-from ..common_variables import (
+from librelane.config import variable
+from librelane.logging import console, options
+from librelane.state import DesignFormat, State
+from librelane.steps.common_variables import (
     DplConfig,
     GrtConfig,
 )
-from ..step import (
+from librelane.steps.step import (
     CompositeStep,
     MetricsUpdate,
     Step,
     ViewsUpdate,
 )
 
-from .base import OpenROADStep
+from librelane.steps.openroad.base import OpenROADStep
 
 
 @Step.factory.register()
@@ -270,15 +270,20 @@ class RepairAntennas(CompositeStep):
 @dataclass
 class NDR:
     """
-    :param spacing: The spacing of the non-default rule.
+    Parameters
+    ----------
+    spacing : list[str]
+        The spacing of the non-default rule.
         This can be a single value that applies to all layers, or 'layer' 'spacing' pairs.
         The single value can be given in µm or a as multiplier, such as `*3`, to multiply the default spacing by 3.
         Alternatively, pairs can be given as `spacing: [li1, 0.51, met1, 0.42, met2, 0.42, met3, 0.9, met4, 0.9, met5, 4.8]`.
-    :param width: The width of the non-default rule.
+    width : list[str]
+        The width of the non-default rule.
         This can be a single value that applies to all layers, or 'layer' 'width' pairs.
         The single value can be given in µm or a as multiplier, such as `*3`, to multiply the default width by 3.
         Alternatively, pairs can be given as `width: [li1, 0.51, met1, 0.42, met2, 0.42, met3, 0.9, met4, 0.9, met5, 4.8]`.
-    :param via: The allowed vias for the non-default rule. If not specified, the default vias will be used.
+    via : list[str] | None
+        The allowed vias for the non-default rule. If not specified, the default vias will be used.
         For example: `via: [L1M1_PR_R, M1M2_PR_R, M2M3_PR_R, M3M4_PR_R, M4M5_PR_R]`
     """
 

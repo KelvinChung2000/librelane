@@ -17,8 +17,8 @@ from pydantic import (
 )
 from pydantic.fields import FieldInfo, PydanticUndefined
 
-from .diagnostics import DiagnosticSet
-from .types import _shape
+from librelane.config.diagnostics import DiagnosticSet
+from librelane.config.types import _shape
 
 
 BaseConfigModelT = TypeVar("BaseConfigModelT", bound="BaseConfigModel")
@@ -234,9 +234,14 @@ def extend_model(
     """
     Derive a model from ``base`` with additional, dynamically named fields.
 
-    :param name: The name of the generated model.
-    :param base: The model to derive from.
-    :param fields: Field names mapped to ``(annotation, field)`` pairs, in the
+    Parameters
+    ----------
+    name : str
+        The name of the generated model.
+    base : type[BaseConfigModel]
+        The model to derive from.
+    fields : Mapping[str, tuple[Any, Any]]
+        Field names mapped to ``(annotation, field)`` pairs, in the
         same shape Pydantic's ``create_model`` expects.
     """
     # create_model's overloads describe fields as keyword arguments written out
@@ -264,7 +269,7 @@ def model_to_variables(
     *,
     include_inherited: bool = True,
 ) -> list[Any]:
-    from .legacy import Variable
+    from librelane.config.legacy import Variable
 
     result = []
     for name, field in model.model_fields.items():

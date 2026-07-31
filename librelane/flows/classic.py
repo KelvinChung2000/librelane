@@ -11,15 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .flow import Flow
-from .staged import StagedFlow
-from ..config import variable
-from ..stages import Stage
+from librelane.flows.flow import Flow
+from librelane.flows.staged import StagedFlow
+from librelane.config import variable
+from librelane.stages import Stage
 
 # Netgen, Verilator and Yosys no longer appear here: their steps are named by
 # the provider registrations in librelane/stages/providers.py, which is what
 # makes them substitutable from configuration.
-from ..steps import (
+from librelane.steps import (
     OpenROAD,
     Magic,
     KLayout,

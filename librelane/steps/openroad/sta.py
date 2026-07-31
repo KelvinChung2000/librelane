@@ -33,7 +33,7 @@ from typing import (
 import rich
 import rich.table
 
-from ...common import (
+from librelane.common import (
     Path,
     TclUtils,
     _get_process_limit,
@@ -41,18 +41,18 @@ from ...common import (
     aggregate_metrics,
     mkdirp,
 )
-from ...config import Macro, variable
-from ...logging import console, options
-from ...state import DesignFormat, State
-from ..step import (
+from librelane.config import Macro, variable
+from librelane.logging import console, options
+from librelane.state import DesignFormat, State
+from librelane.steps.step import (
     MetricsUpdate,
     Step,
     StepException,
     ViewsUpdate,
 )
-from ..tclstep import TclStep
+from librelane.steps.tclstep import TclStep
 
-from .base import OpenROADStep
+from librelane.steps.openroad.base import OpenROADStep
 
 
 @Step.factory.register()

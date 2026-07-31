@@ -40,17 +40,25 @@ class DesignFormat(metaclass=DFMetaclass):
 
     For example, ``DesignFormat.nl`` has the metadata for Netlist views.
 
-    :param id: A lowercase alphanumeric/underscore identifier for the design
+    Parameters
+    ----------
+    id : str
+        A lowercase alphanumeric/underscore identifier for the design
         format.
-    :param extension: The file extension for designs saved in this format.
-    :param full_name: A human-readable name for this design format.
-    :param alts: A list of alternate ids used to access the DesignFormat by
+    extension : str
+        The file extension for designs saved in this format.
+    full_name : str
+        A human-readable name for this design format.
+    alts : list[str]
+        A list of alternate ids used to access the DesignFormat by
         the subscript operator. Includes its OpenLane <3.0.0 enumeration name
         for limited backwards compatibility.
-    :param folder_override: The subdirectory when
+    folder_override : str | None
+        The subdirectory when
         :meth:`librelane.state.State.save_snapshot` is called on a state. If
         unset, the value for ``id`` will be used.
-    :param multiple: Whether this view may have multiple files (typically, files
+    multiple : bool
+        Whether this view may have multiple files (typically, files
         that are different across multiple corners or similar.)
     """
 
@@ -109,14 +117,20 @@ class DesignFormat(metaclass=DFMetaclass):
             Retrieves a DesignFormat type from the registry using a lookup
             string.
 
-            :param name: The registered name of the Step. Case-insensitive.
+            Parameters
+            ----------
+            name : str
+                The registered name of the Step. Case-insensitive.
             """
             return Self._registry.get(name)
 
         @classmethod
         def list(Self) -> builtins.list[str]:
             """
-            :returns: A list of IDs of all registered DesignFormat.
+            Returns
+            -------
+            builtins.list[str]
+                A list of IDs of all registered DesignFormat.
             """
             return [cls.id for cls in Self._registry.values()]
 

@@ -28,12 +28,12 @@ from importlib.resources import files
 
 import typer
 
-from ..steps.step import Step, StepError, StepException
-from ..__version__ import __version__
-from ..common import mkdirp, recreate_tree, Toolbox
-from ._app import make_group
-from .options import CondensedOption, LogLevelOption, ShowProgressBarOption
-from .runtime import apply_runtime_options
+from librelane.steps.step import Step, StepError, StepException
+from librelane.__version__ import __version__
+from librelane.common import mkdirp, recreate_tree, Toolbox
+from librelane.cli._app import make_group
+from librelane.cli.options import CondensedOption, LogLevelOption, ShowProgressBarOption
+from librelane.cli.runtime import apply_runtime_options
 
 
 def load_step_from_inputs(

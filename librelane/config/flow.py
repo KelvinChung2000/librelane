@@ -21,9 +21,9 @@ from decimal import Decimal
 from typing import Optional, Union
 from collections.abc import Sequence
 
-from .legacy import Macro
-from .model import BaseConfigModel, model_to_variables, variable
-from ..common import Path
+from librelane.config.legacy import Macro
+from librelane.config.model import BaseConfigModel, model_to_variables, variable
+from librelane.common import Path
 
 
 def _prefix_to_wildcard(prefixes_raw: str | Sequence[str]):

@@ -30,7 +30,7 @@ from typing import (
 
 
 if TYPE_CHECKING:
-    from .core import Step
+    from librelane.steps.step.core import Step
 
 VT = TypeVar("VT")
 
@@ -46,12 +46,21 @@ class OutputProcessor(ABC, Generic[VT]):
     :meth:`librelane.steps.Step.run_subprocess`
     and append a resultant key/value pair to its returned dictionary.
 
-    :param step: The step object instantiating this output processor
-    :param report_dir: The report directory for this instantiation of
+    Parameters
+    ----------
+    step : Step
+        The step object instantiating this output processor
+    report_dir : str | os.PathLike[str]
+        The report directory for this instantiation of
         ``run_subprocess``.
-    :param silent: Whether the ``run_subprocess`` was called with ``silent`` or
+    silent : bool
+        Whether the ``run_subprocess`` was called with ``silent`` or
         not.
-    :cvar key: The fixed key to be added to the return value of
+
+    Attributes
+    ----------
+    key : ClassVar[str]
+        The fixed key to be added to the return value of
         ``run_subprocess``. Must be implemented by subclasses.
     """
 
@@ -74,8 +83,15 @@ class OutputProcessor(ABC, Generic[VT]):
         :meth:`librelane.steps.Step.run_subprocess`. Subclasses may do any
         arbitrary processing here.
 
-        :param line: The line emitted by the subprocess
-        :returns: ``True`` if the line is "consumed", i.e. other output
+        Parameters
+        ----------
+        line : str
+            The line emitted by the subprocess
+
+        Returns
+        -------
+        bool
+            ``True`` if the line is "consumed", i.e. other output
             processors are skipped. ``False`` if the line is to be passed on
             to later output processors.
         """
@@ -84,7 +100,10 @@ class OutputProcessor(ABC, Generic[VT]):
     @abstractmethod
     def result(self) -> VT:
         """
-        :returns: The result of all previous ``process_line`` calls.
+        Returns
+        -------
+        VT
+            The result of all previous ``process_line`` calls.
         """
         pass
 

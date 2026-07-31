@@ -48,6 +48,7 @@ third_party_extensions = [
     "myst_parser",
     "sphinx.ext.todo",
     "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
     "sphinx.ext.graphviz",
     "sphinx.ext.mathjax",
     "sphinxcontrib.bibtex",
@@ -76,7 +77,6 @@ except ImportError:
 
 source_suffix = {
     ".md": "markdown",
-    ".rst": "restructuredtext",
 }
 
 root_doc = "index"

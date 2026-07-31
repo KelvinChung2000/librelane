@@ -34,6 +34,6 @@ using their module name as follows:
         the module version as a version.
 """
 
-from . import logging as _logging
-from .plugins import discovered_plugins
-from .__version__ import __version__
+from librelane import logging as _logging
+from librelane.plugins import discovered_plugins
+from librelane.__version__ import __version__

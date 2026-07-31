@@ -32,24 +32,28 @@ from typing import (
 
 import yaml
 
-from ...common import (
+from librelane.common import (
     Path,
     aggregate_metrics,
 )
-from ...config import Variable, variable
-from ...state import DesignFormat, State
-from ..common_variables import (
+from librelane.config import Variable, variable
+from librelane.state import DesignFormat, State
+from librelane.steps.common_variables import (
     IoLayerConfig,
     PdnConfig,
 )
-from ..step import (
+from librelane.steps.step import (
     MetricsUpdate,
     Step,
     StepException,
     ViewsUpdate,
 )
 
-from .base import OpenROADStep, old_to_new_tracks, pdn_macro_migrator
+from librelane.steps.openroad.base import (
+    OpenROADStep,
+    old_to_new_tracks,
+    pdn_macro_migrator,
+)
 
 
 @Step.factory.register()

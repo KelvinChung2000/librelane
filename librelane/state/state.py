@@ -26,11 +26,11 @@ from decimal import Decimal
 from typing import Union, Any
 from collections.abc import Callable, Mapping
 
-from .design_format import (
+from librelane.state.design_format import (
     DesignFormat,
 )
 
-from ..common import (
+from librelane.common import (
     Path,
     GenericImmutableDict,
     copy_recursive,
@@ -69,11 +69,16 @@ class State(GenericImmutableDict[str, StateElement]):
     own: after executing a Step, you only return your deltas and then the Flow
     is responsible for the creation of a new Step object.
 
-    :param copying: A mutable or immutable mapping to use as the starting
+    Parameters
+    ----------
+    copying : Mapping[str, StateElement] | Mapping[DesignFormat, StateElement] | None
+        A mutable or immutable mapping to use as the starting
         value for this State.
-    :param overrides: A mutable or immutable mapping to override the starting
+    overrides : Mapping[str, StateElement] | Mapping[DesignFormat, StateElement] | None
+        A mutable or immutable mapping to override the starting
         values with.
-    :param metrics: A dictionary that carries statistics about the design: area,
+    metrics : Mapping[str, Any] | None
+        A dictionary that carries statistics about the design: area,
         wire length, et cetera, but also miscellaneous data, for example, whether
         it passed a certain check or not.
     """
@@ -199,7 +204,10 @@ class State(GenericImmutableDict[str, StateElement]):
         Validates the current state then saves all views to a folder by
         design format, including the metrics.
 
-        :param path: The folder that would contain other folders.
+        Parameters
+        ----------
+        path : str | os.PathLike
+            The folder that would contain other folders.
         """
 
         def visitor(key, value, top_key, save_directory, depth):

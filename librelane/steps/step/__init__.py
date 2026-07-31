@@ -1,14 +1,14 @@
 """Core step interfaces and execution support."""
 
-from ...config import universal_flow_config_variables
-from .exceptions import (
+from librelane.config import universal_flow_config_variables
+from librelane.steps.step.exceptions import (
     StepError,
     DeferredStepError,
     StepException,
     StepSignalled,
     StepNotFound,
 )
-from .output_processor import (
+from librelane.steps.step.output_processor import (
     VT,
     REPORT_START_LOCUS,
     REPORT_END_LOCUS,
@@ -16,15 +16,15 @@ from .output_processor import (
     OutputProcessor,
     DefaultOutputProcessor,
 )
-from .process_stats import ProcessStatsThread
-from .factory import StepFactory
-from .core import (
+from librelane.steps.step.process_stats import ProcessStatsThread
+from librelane.steps.step.factory import StepFactory
+from librelane.steps.step.core import (
     GlobalToolbox,
     ViewsUpdate,
     MetricsUpdate,
     Step,
 )
-from .composite import CompositeStep
+from librelane.steps.step.composite import CompositeStep
 
 _REEXPORTED_CLASSES = [
     StepError,

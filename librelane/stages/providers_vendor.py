@@ -48,7 +48,7 @@ than duplicating the shape here, is what let each tool's own module stay the
 single owner of what it registers.
 """
 
-from ..steps import (
+from librelane.steps import (
     calibre,
     conformal,
     dc,
@@ -67,7 +67,7 @@ from ..steps import (
     voltus,
 )
 
-from .registry import StageRegistry
+from librelane.stages.registry import StageRegistry
 
 #: One module per commercial tool, each exporting its own ``REGISTRATIONS``.
 #: Order is alphabetical by module name and carries no other meaning.

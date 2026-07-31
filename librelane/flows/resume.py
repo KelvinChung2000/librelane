@@ -29,11 +29,11 @@ from collections.abc import Mapping
 
 from loguru import logger
 
-from ..__version__ import __version__
-from ..common import Fingerprinter, Path
-from ..common.generic_dict import GenericDictEncoder
-from ..state import InvalidState, State
-from ..steps import Step
+from librelane.__version__ import __version__
+from librelane.common import Fingerprinter, Path
+from librelane.common.generic_dict import GenericDictEncoder
+from librelane.state import InvalidState, State
+from librelane.steps import Step
 
 #: Written into a step directory once the step has completed successfully. Its
 #: presence is the completion marker: a directory left half written by an
@@ -60,9 +60,16 @@ def _substitute_paths(value, fingerprinter: Fingerprinter):
     ``list[Path]`` and ``dict[str, list[Path]]`` fields. Skipping them would let
     an edited macro view go unnoticed.
 
-    :param value: Any value from a configuration or state.
-    :param fingerprinter: Supplies content identity for referenced files.
-    :returns: ``value`` with every path replaced by its content identity.
+    Parameters
+    ----------
+    value
+        Any value from a configuration or state.
+    fingerprinter : Fingerprinter
+        Supplies content identity for referenced files.
+
+    Returns
+    -------
+    ``value`` with every path replaced by its content identity.
     """
     if isinstance(value, Path):
         return fingerprinter.of_path(value)
@@ -83,12 +90,21 @@ def _substitute_paths(value, fingerprinter: Fingerprinter):
 
 def resume_key(step: Step, state_in: State, fingerprinter: Fingerprinter) -> str:
     """
-    :param step: An instantiated step. Its ``config`` is already filtered to the
+    Parameters
+    ----------
+    step : Step
+        An instantiated step. Its ``config`` is already filtered to the
         step's own variables plus the universal flow variables, so the key covers
         exactly what the step can read.
-    :param state_in: The state the step would receive.
-    :param fingerprinter: Supplies content identity for referenced files.
-    :returns: A hex digest identifying this step's work.
+    state_in : State
+        The state the step would receive.
+    fingerprinter : Fingerprinter
+        Supplies content identity for referenced files.
+
+    Returns
+    -------
+    str
+        A hex digest identifying this step's work.
     """
     document = {
         "schema": RESUME_SCHEMA_VERSION,
@@ -116,9 +132,14 @@ def write_entry(step_dir: str | os.PathLike[str], step: Step, key: str) -> None:
     ``librelane_version`` are recorded for diagnosis; only ``schema`` and ``key``
     take part in the decision.
 
-    :param step_dir: The step's directory within the run directory.
-    :param step: The step that just completed.
-    :param key: The key it completed with.
+    Parameters
+    ----------
+    step_dir : str | os.PathLike[str]
+        The step's directory within the run directory.
+    step : Step
+        The step that just completed.
+    key : str
+        The key it completed with.
     """
     entry = {
         "schema": RESUME_SCHEMA_VERSION,
@@ -137,10 +158,19 @@ def reusable_state(
     fingerprinter: Fingerprinter,
 ) -> State | None:
     """
-    :param step_dir: The step's directory within the run directory.
-    :param key: The key the step would complete with now.
-    :param fingerprinter: Supplies content identity for referenced files.
-    :returns: The output state to reuse, or ``None`` if this step must run.
+    Parameters
+    ----------
+    step_dir : str | os.PathLike[str]
+        The step's directory within the run directory.
+    key : str
+        The key the step would complete with now.
+    fingerprinter : Fingerprinter
+        Supplies content identity for referenced files.
+
+    Returns
+    -------
+    State | None
+        The output state to reuse, or ``None`` if this step must run.
 
     ``None`` covers every way a hit cannot be proven: no entry, an unreadable or
     truncated entry, a schema this version does not speak, a different key, an
@@ -192,8 +222,15 @@ def reusable_state(
 
 def _missing_views(state: State) -> list[str]:
     """
-    :param state: A state loaded from a step directory.
-    :returns: Paths in ``state`` that no longer exist.
+    Parameters
+    ----------
+    state : State
+        A state loaded from a step directory.
+
+    Returns
+    -------
+    list[str]
+        Paths in ``state`` that no longer exist.
 
     Existence only. The key already attests to the content, and re-hashing a
     multi-gigabyte GDS to confirm what the entry asserts would cost more than the

@@ -23,10 +23,10 @@ from typing import (
 )
 from collections.abc import Sequence
 
-from .step import ViewsUpdate, MetricsUpdate, Step, StepException
+from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step, StepException
 
-from ..state import State, DesignFormat
-from ..common import (
+from librelane.state import State, DesignFormat
+from librelane.common import (
     Path,
     TclUtils,
     protected,
@@ -55,7 +55,10 @@ class TclStep(Step):
     A TclStep Step should ideally correspond to running one Tcl script with such
     a utility.
 
-    :cvar reproducibles_allowed: Whether this class can generate reproducibles.
+    Attributes
+    ----------
+    reproducibles_allowed : ClassVar[bool]
+        Whether this class can generate reproducibles.
     """
 
     reproducibles_allowed: ClassVar[bool] = True
@@ -71,7 +74,10 @@ class TclStep(Step):
     @abstractmethod
     def get_script_path(self) -> str:
         """
-        :returns: A path to the Tcl script to be run by this step.
+        Returns
+        -------
+        str
+            A path to the Tcl script to be run by this step.
         """
         pass
 
@@ -82,7 +88,10 @@ class TclStep(Step):
         command incorporating the  appropriate tool: e.g. ``openroad``,
         ``yosys``, et cetera.
 
-        :returns: A list of strings representing the command used to run the script,
+        Returns
+        -------
+        list[str]
+            A list of strings representing the command used to run the script,
             including the result of :meth:`get_script_path`.
         """
         return ["tclsh", self.get_script_path()]
@@ -104,9 +113,17 @@ class TclStep(Step):
 
         The values are converted to strings as per :meth:`value_to_tcl`.
 
-        :param env: The input environment dictionary
-        :param state: The input state
-        :returns: a copy of the environment dictionary where ``self.config`` variables
+        Parameters
+        ----------
+        env : dict
+            The input environment dictionary
+        state : State
+            The input state
+
+        Returns
+        -------
+        dict
+            a copy of the environment dictionary where ``self.config`` variables
         """
         env = env.copy()
 
@@ -166,10 +183,18 @@ class TclStep(Step):
         This will allow you to add further custom environment variables to a call
         while still respecting an ``env`` argument further up the call-stack.
 
-        :param state_in: See superclass.
-        :param \\*\\*kwargs: Passed on to subprocess execution: useful if you want to
+        Parameters
+        ----------
+        state_in : State
+            See superclass.
+        **kwargs
+            Passed on to subprocess execution: useful if you want to
             redirect stdin, stdout, etc.
-        :returns: see superclass
+
+        Returns
+        -------
+        tuple[ViewsUpdate, MetricsUpdate]
+            see superclass
         """
         command = self.get_command()
 

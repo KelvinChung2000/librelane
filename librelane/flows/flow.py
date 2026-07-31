@@ -47,7 +47,7 @@ from rich.text import Text
 import rich.console
 from librelane.common.types import Path
 
-from ..config import (
+from librelane.config import (
     AnyConfigs,
     BaseConfigModel,
     Config,
@@ -55,16 +55,16 @@ from ..config import (
     model_to_variables,
     universal_flow_config_variables,
 )
-from ..state import State, DesignFormat
-from ..steps import Step
-from ..logging import (
+from librelane.state import State, DesignFormat
+from librelane.steps import Step
+from librelane.logging import (
     LiveLog,
     additional_sink,
     console as default_console,
     live as default_live,
     options,
 )
-from ..common import (
+from librelane.common import (
     get_tpe,
     mkdirp,
     protected,
@@ -79,7 +79,7 @@ import builtins
 # Defined in ``common.errors`` so that ``stages`` can derive from them without
 # importing the ``flows`` package, which depends on ``stages``. Re-exported here
 # because this is their documented import site.
-from ..common.errors import FlowError, FlowException  # noqa: E402, F401
+from librelane.common.errors import FlowError, FlowException  # noqa: E402, F401
 
 
 T = TypeVar("T", bound=Callable)
@@ -93,7 +93,10 @@ def ensure_progress_started(method: T) -> Callable:
 
     The docstring will also be amended to reflect that fact.
 
-    :param method: The method of :class:`FlowProgressBar` in question.
+    Parameters
+    ----------
+    method : T
+        The method of :class:`FlowProgressBar` in question.
     """
 
     @wraps(method)
@@ -216,7 +219,10 @@ class FlowProgressBar(object):
     @property
     def started(self) -> bool:
         """
-        :returns: If the progress bar has started or not
+        Returns
+        -------
+        bool
+            If the progress bar has started or not
         """
         return self.__task_id != TaskID(-1)
 
@@ -226,7 +232,10 @@ class FlowProgressBar(object):
         A helper function, used to set the total number of stages the progress
         bar is expected to keep tally of.
 
-        :param count: The total number of stages.
+        Parameters
+        ----------
+        count : int
+            The total number of stages.
         """
         self.__max_stage = count
         self.__progress.update(self.__task_id, total=count)
@@ -236,7 +245,10 @@ class FlowProgressBar(object):
         """
         Starts a new stage, updating the progress bar appropriately.
 
-        :param name: The name of the stage.
+        Parameters
+        ----------
+        name : str
+            The name of the stage.
         """
         self.__progress.update(
             self.__task_id,
@@ -248,7 +260,10 @@ class FlowProgressBar(object):
         """
         Ends the current stage, updating the progress bar appropriately.
 
-        :param increment_ordinal: Increment the step ordinal, which is used in the creation of step directories.
+        Parameters
+        ----------
+        increment_ordinal : bool
+            Increment the step ordinal, which is used in the creation of step directories.
 
             You may want to set this to ``False`` if the stage is being skipped.
 
@@ -263,7 +278,10 @@ class FlowProgressBar(object):
     @ensure_progress_started
     def get_ordinal_prefix(self) -> str:
         """
-        :returns: A string with the current step ordinal, which can be
+        Returns
+        -------
+        str
+            A string with the current step ordinal, which can be
             used to create a step directory.
         """
         max_stage_digits = len(str(self.__max_stage))
@@ -282,24 +300,34 @@ class Flow(ABC):
     progress bar at the bottom of the terminal, which shows what stage the flow
     is currently in and the remaining stages.
 
-    :param config: Either a resolved :class:`librelane.config.Config` object, or an
+    Parameters
+    ----------
+    config : AnyConfigs
+        Either a resolved :class:`librelane.config.Config` object, or an
         input to :meth:`librelane.config.Config.load`.
-
-    :param name: An optional string name for the Flow itself, and not a run of it.
+    name : str | None
+        An optional string name for the Flow itself, and not a run of it.
 
         If not provided, there are two fallbacks:
 
         * The value of the ``name`` property (``NotImplemented`` by default)
         * The name of the concrete ``Flow`` class
+    config_override_strings : Sequence[str] | None
+        See :meth:`librelane.config.Config.load`
+    pdk : str | None
+        See :meth:`librelane.config.Config.load`
+    pdk_root : str | None
+        See :meth:`librelane.config.Config.load`
+    scl : str | None
+        See :meth:`librelane.config.Config.load`
+    pad : str | None
+        See :meth:`librelane.config.Config.load`
+    design_dir : str | None
+        See :meth:`librelane.config.Config.load`
 
-    :param config_override_strings: See :meth:`librelane.config.Config.load`
-    :param pdk: See :meth:`librelane.config.Config.load`
-    :param pdk_root: See :meth:`librelane.config.Config.load`
-    :param scl: See :meth:`librelane.config.Config.load`
-    :param pad: See :meth:`librelane.config.Config.load`
-    :param design_dir: See :meth:`librelane.config.Config.load`
-
-    :cvar Steps:
+    Attributes
+    ----------
+    Steps : list[type[Step]]
         A list of :class:`Step` **types** used by the Flow (not Step objects.)
 
         Subclasses of :class:`Flow` are expected to override the default value
@@ -308,29 +336,24 @@ class Flow(ABC):
 
         :class:`Flow` subclasses without the ``Steps`` class property declared
         are considered abstract and cannot be initialized.
-
-    :cvar config_vars:
+    config_vars : list[Variable]
         A list of **flow-specific** configuration variables. These configuration
         variables are used entirely within the logic of the flow itself and
         are not exposed to ``Step``\\(s).
-
-    :ivar step_objects:
+    step_objects : list[Step] | None
         A list of :class:`Step` **objects** from the last run of the flow,
         if it exists.
 
         If :meth:`start` is called again, the reference is destroyed.
-
-    :ivar run_dir:
+    run_dir : pathlib.Path | None
         The directory of the last run of the flow, if it exists.
 
         If :meth:`start` is called again, the reference is destroyed.
-
-    :ivar toolbox:
+    toolbox : Toolbox | None
         The :class:`Toolbox` of the last run of the flow, if it exists.
 
         If :meth:`start` is called again, the reference is destroyed.
-
-    :ivar config_resolved_path:
+    config_resolved_path : pathlib.Path | None
         The path to the serialization of the resolved configuration for the
         last run of the flow.
 
@@ -357,7 +380,10 @@ class Flow(ABC):
 
             def locate(self) -> str:
                 """
-                :returns: A ``path:line`` pointer into the step log, or the bare
+                Returns
+                -------
+                str
+                    A ``path:line`` pointer into the step log, or the bare
                     path when the message cannot be found in it.
                 """
                 if self.step_log is None:
@@ -481,7 +507,10 @@ class Flow(ABC):
     @classmethod
     def get_help_md(Self, myst_anchors: bool = False) -> str:  # pragma: no cover
         """
-        :returns: rendered Markdown help for this Flow
+        Returns
+        -------
+        str
+            rendered Markdown help for this Flow
         """
         doc_string = ""
         if Self.__doc__:
@@ -567,7 +596,10 @@ class Flow(ABC):
 
     def get_all_config_variables(self) -> list[Variable]:
         """
-        :returns: All configuration variables for this Flow, including
+        Returns
+        -------
+        list[Variable]
+            All configuration variables for this Flow, including
             universal configuration variables, flow-specific configuration
             variables and step-specific configuration variables.
         """
@@ -616,30 +648,38 @@ class Flow(ABC):
         """
         The entry point for a flow.
 
-        :param with_initial_state: An optional initial state object to use.
+        Parameters
+        ----------
+        with_initial_state : State | None
+            An optional initial state object to use.
             If not provided, an empty state object is created.
 
             Resuming a run does not seed this. Each step resolves its own input
             from the step before it, and reuses its own previous result when
             that input and its configuration are unchanged.
-
-        :param tag: A name for this invocation of the flow. If not provided,
+        tag : str | None
+            A name for this invocation of the flow. If not provided,
             one based on a date string will be created.
 
             This tag is used to create the "run directory", which will be placed
             under the directory ``runs/`` in the design directory.
-        :param last_run: Use the latest run (by modification time) as the tag.
+        last_run : bool
+            Use the latest run (by modification time) as the tag.
 
             If no runs exist, a :class:`FlowException` will be raised.
 
             If ``last_run`` and ``tag`` are both set, a :class:`FlowException` will
             also be raised.
-        :param overwrite: If true and a run with the desired tag was found, its
+        overwrite : bool
+            If true and a run with the desired tag was found, its
             contents are deleted and the flow starts clean. If false, the run is
             resumed: every step whose configuration and input are unchanged
             reuses its previous result.
 
-        :returns: ``(success, state_list)``
+        Returns
+        -------
+        State
+            ``(success, state_list)``
         """
 
         if last_run and tag is not None:
@@ -792,8 +832,15 @@ class Flow(ABC):
         The core of the Flow. Subclasses of flow are expected to override this
         method.
 
-        :param initial_state: An initial state object to use.
-        :returns: A tuple of states and instantiated step objects for inspection.
+        Parameters
+        ----------
+        initial_state : State
+            An initial state object to use.
+
+        Returns
+        -------
+        tuple[State, list[Step]]
+            A tuple of states and instantiated step objects for inspection.
         """
         pass
 
@@ -803,15 +850,23 @@ class Flow(ABC):
         May only be called while :attr:`run_dir` is not None, i.e., the flow
         has started. Otherwise, a :class:`FlowException` is raised.
 
-        :param step: The step to name a directory for.
-        :param position: The step's index in :attr:`Steps`, if the flow has a
+        Parameters
+        ----------
+        step : Step
+            The step to name a directory for.
+        position : int | None
+            The step's index in :attr:`Steps`, if the flow has a
             fixed step list. Passing it makes the directory depend on the step's
             position rather than on how many earlier steps happened to run, which
             is what lets a resumed run find its own prior output.
 
             A flow that builds its steps in a data-dependent loop has no fixed
             position for a step, so it omits this and keeps the running counter.
-        :returns: A directory within the run directory for a specific step.
+
+        Returns
+        -------
+        pathlib.Path
+            A directory within the run directory for a specific step.
         """
         if self.run_dir is None:
             raise FlowException(
@@ -846,9 +901,14 @@ class Flow(ABC):
 
         See :meth:`Step.start` for more info.
 
-        :param step: The step object to run
-        :param args: Arguments to `step.start`
-        :param kwargs: Keyword arguments to `step.start`
+        Parameters
+        ----------
+        step : Step
+            The step object to run
+        args
+            Arguments to `step.start`
+        kwargs
+            Keyword arguments to `step.start`
         """
 
         kwargs["toolbox"] = self.toolbox
@@ -866,10 +926,19 @@ class Flow(ABC):
         """
         An asynchronous equivalent to :meth:`start_step`.
 
-        :param step: The step object to run
-        :param args: Arguments to `step.start`
-        :param kwargs: Keyword arguments to `step.start`
-        :returns: A ``Future`` encapsulating a State object, which can be used
+        Parameters
+        ----------
+        step : Step
+            The step object to run
+        args
+            Arguments to `step.start`
+        kwargs
+            Keyword arguments to `step.start`
+
+        Returns
+        -------
+        Future[State]
+            A ``Future`` encapsulating a State object, which can be used
             as an input to the next step (where the next step will wait for the
             ``Future`` to be realized before calling :meth:`Step.run`)
         """
@@ -1070,7 +1139,10 @@ class Flow(ABC):
             """
             A decorator that adds a flow type to the registry.
 
-            :param registered_name: An optional registered name for the flow.
+            Parameters
+            ----------
+            registered_name : str | None
+                An optional registered name for the flow.
 
                 If not specified, the flow will be referred to by its Python
                 class name.
@@ -1090,14 +1162,20 @@ class Flow(ABC):
             """
             Retrieves a Flow type from the registry using a lookup string.
 
-            :param name: The registered name of the Flow. Case-sensitive.
+            Parameters
+            ----------
+            name : str
+                The registered name of the Flow. Case-sensitive.
             """
             return Self.__registry.get(name)
 
         @classmethod
         def list(Self) -> builtins.list[str]:
             """
-            :returns: A list of strings representing all registered flows.
+            Returns
+            -------
+            builtins.list[str]
+                A list of strings representing all registered flows.
             """
             return list(Self.__registry.keys())
 

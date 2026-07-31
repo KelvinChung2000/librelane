@@ -47,7 +47,7 @@ follows:
 
 * Undocumented classes are defined as classes without a top-level string **AND**
   no documented methods.
-* Undocumented functions and methods are defined as ``defs``s (including those
+* Undocumented functions and methods are defined as `def`s (including those
   with the `@property` decorator to make them "dynamic properties") without a
   docstring.
 * Undocumented properties are defined as properties within undocumented classes

@@ -20,11 +20,17 @@ from typing import ClassVar
 from decimal import Decimal
 from typing import Optional
 
-from .step import ViewsUpdate, MetricsUpdate, Step, StepError, DeferredStepError
+from librelane.steps.step import (
+    ViewsUpdate,
+    MetricsUpdate,
+    Step,
+    StepError,
+    DeferredStepError,
+)
 
-from ..config import extend_model, variable
-from ..common import Filter, parse_metric_modifiers
-from ..state import DesignFormat, State
+from librelane.config import extend_model, variable
+from librelane.common import Filter, parse_metric_modifiers
+from librelane.state import DesignFormat, State
 
 
 @Step.factory.register()
@@ -512,13 +518,13 @@ class TimingViolations(MetricChecker):
     with a name based on `violation_type`. The default value is `[""]` which
     indicates matching no corners. This can be overriden by `corner_override`
 
-    :cvar violation_type:
+    Attributes
+    ----------
+    violation_type : str
         Type of the timing violation. Used in log messages.
-
-    :cvar corner_override:
+    corner_override : list[str] | None
         Overrides the subclass's `*_VIOLATION_CORNERS` variable.
-
-    :cvar match_none_wildcard:
+    match_none_wildcard
         Wildcard used to match no corners.
     """
 

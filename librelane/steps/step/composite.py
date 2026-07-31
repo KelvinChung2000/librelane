@@ -18,16 +18,16 @@ from typing import (
 )
 
 
-from ...config import (
+from librelane.config import (
     variables_to_model,
 )
-from ...state import DesignFormat, State
-from ...common import (
+from librelane.state import DesignFormat, State
+from librelane.common import (
     slugify,
 )
 
-from .composition import compose_step_sequence
-from .core import MetricsUpdate, Step, ViewsUpdate
+from librelane.steps.step.composition import compose_step_sequence
+from librelane.steps.step.core import MetricsUpdate, Step, ViewsUpdate
 
 VT = TypeVar("VT")
 

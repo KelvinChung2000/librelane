@@ -26,12 +26,12 @@ from decimal import Decimal
 from abc import abstractmethod
 from typing import Optional
 
-from .step import ViewsUpdate, MetricsUpdate, Step
-from .tclstep import TclStep
+from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
+from librelane.steps.tclstep import TclStep
 
-from ..common import Path, mkdirp, TclUtils
-from ..config import variable
-from ..state import DesignFormat, State
+from librelane.common import Path, mkdirp, TclUtils
+from librelane.config import variable
+from librelane.state import DesignFormat, State
 
 
 def get_metrics(stats: dict) -> dict:

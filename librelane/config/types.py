@@ -9,9 +9,9 @@ from typing import Any, Union, get_args, get_origin
 from pydantic import TypeAdapter
 from pydantic_core import core_schema
 
-from ..common import Path, TclUtils
-from .legacy import Instance, Macro, Orientation
-from .preprocessor import GlobMatch
+from librelane.common import Path, TclUtils
+from librelane.config.legacy import Instance, Macro, Orientation
+from librelane.config.preprocessor import GlobMatch
 
 
 class ByNameEnum(Enum):

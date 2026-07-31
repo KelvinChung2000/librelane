@@ -20,7 +20,7 @@ from collections.abc import Iterator, Mapping
 import rich.console
 from loguru import logger as _logger
 
-from .live import LiveLog, StepDisplay
+from librelane.logging.live import LiveLog, StepDisplay
 
 #: The levels LibreLane adds to Loguru's built-in registry, which already
 #: defines DEBUG=10, INFO=20, SUCCESS=25, WARNING=30, ERROR=40 and CRITICAL=50.
@@ -170,10 +170,15 @@ def step_context(
     :class:`librelane.common.ContextPropagatingThreadPoolExecutor` carries the
     attribution into worker threads too.
 
-    :param step_id: The step's ID, used to attribute records.
-    :param title: Human-readable name for the step's block header. Defaults to
+    Parameters
+    ----------
+    step_id : str
+        The step's ID, used to attribute records.
+    title : str | None
+        Human-readable name for the step's block header. Defaults to
         ``step_id``.
-    :param log_path: Where to write this step's own log. Unlike the terminal,
+    log_path : str | os.PathLike | None
+        Where to write this step's own log. Unlike the terminal,
         which is a live view, this file is the durable record for the step --
         greppable after the fact and tailable while a parallel run is in
         flight.
@@ -258,9 +263,16 @@ def set_log_level(lv: str | int) -> None:
     """
     Sets the minimum severity emitted by LibreLane sinks.
 
-    :param lv: A level number, or the name of a level registered with Loguru --
+    Parameters
+    ----------
+    lv : str | int
+        A level number, or the name of a level registered with Loguru --
         its built-ins plus the ones in :data:`_ADDED_LEVELS`.
-    :raises ValueError: If ``lv`` names a level Loguru does not know.
+
+    Raises
+    ------
+    ValueError
+        If ``lv`` names a level Loguru does not know.
     """
     global _log_level
 

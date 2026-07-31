@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .flow import Flow
-from .classic import Classic
-from ..stages import Stage
-from ..steps import (
+from librelane.flows.flow import Flow
+from librelane.flows.classic import Classic
+from librelane.stages import Stage
+from librelane.steps import (
     OpenROAD,
     KLayout,
     Odb,

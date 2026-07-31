@@ -20,12 +20,12 @@ from collections.abc import Iterable
 
 from rapidfuzz import process, fuzz, utils
 
-from .explanation import Explanation, StepDisposition
-from .flow import Flow, FlowException, FlowError
-from .resume import resume_key, reusable_state, write_entry
-from ..common import Filter
-from ..state import State
-from ..steps import (
+from librelane.flows.explanation import Explanation, StepDisposition
+from librelane.flows.flow import Flow, FlowException, FlowError
+from librelane.flows.resume import resume_key, reusable_state, write_entry
+from librelane.common import Filter
+from librelane.state import State
+from librelane.steps import (
     Step,
     StepError,
     StepException,
@@ -47,10 +47,17 @@ class SequentialFlow(Flow):
     set the ID to the previous step's ID with a suffix: i.e. the second instance
     of ``Test.MyStep`` will have an ID of ``Test.MyStep1``, and so on.
 
-    :param args: Arguments for :class:`Flow`.
-    :param kwargs: Keyword arguments for :class:`Flow`.
+    Parameters
+    ----------
+    args
+        Arguments for :class:`Flow`.
+    kwargs
+        Keyword arguments for :class:`Flow`.
 
-    :cvar gating_config_vars: A mapping from step ID (wildcards) to lists of
+    Attributes
+    ----------
+    gating_config_vars : dict[str, list[str]]
+        A mapping from step ID (wildcards) to lists of
         Boolean variable names. All Boolean variables must be True for a step with
         a specific ID to execute.
     """
@@ -135,7 +142,10 @@ class SequentialFlow(Flow):
         preflight can never evaluate a different set of gates than the run it
         is meant to predict.
 
-        :raises FlowException: If a gating key matches no step in ``step_ids``.
+        Raises
+        ------
+        FlowException
+            If a gating key matches no step in ``step_ids``.
         """
         step_id_list = list(step_ids)
         expanded: dict[str, list[str]] = {}
@@ -205,7 +215,10 @@ class SequentialFlow(Flow):
 
     def _step_ids_by_lowercase(self) -> dict[str, str]:
         """
-        :returns: A mapping from each step's lowercased ID to the real one.
+        Returns
+        -------
+        dict[str, str]
+            A mapping from each step's lowercased ID to the real one.
             Built in reverse so that the first step wins any collision, which
             duplicate-ID normalization should already have made impossible.
         """
@@ -221,11 +234,23 @@ class SequentialFlow(Flow):
         argument against this flow's step list. Matching is case-insensitive
         and accepts wildcards.
 
-        :param matchable: The argument, or ``None``.
-        :param multiple_ok: Whether a key matching several steps is legal, as
+        Parameters
+        ----------
+        matchable : str | None
+            The argument, or ``None``.
+        multiple_ok : bool
+            Whether a key matching several steps is legal, as
             it is for ``--skip``.
-        :returns: ``None``, a step ID, or a list of them when ``multiple_ok``.
-        :raises FlowException: If the argument matches no step, or matches
+
+        Returns
+        -------
+        str | list[str] | None
+            ``None``, a step ID, or a list of them when ``multiple_ok``.
+
+        Raises
+        ------
+        FlowException
+            If the argument matches no step, or matches
             several when ``multiple_ok`` is false. A near miss above the fuzzy
             score cutoff is named in the message as a suggestion, and is not
             acted on: a flow that ran a step the user did not name is worse
@@ -266,10 +291,19 @@ class SequentialFlow(Flow):
         skip: Iterable[str] | None = None,
     ) -> Explanation:
         """
-        :param frm: As :meth:`run`.
-        :param to: As :meth:`run`.
-        :param skip: As :meth:`run`.
-        :returns: One entry per step in this flow's resolved step list, in
+        Parameters
+        ----------
+        frm : str | None
+            As :meth:`run`.
+        to : str | None
+            As :meth:`run`.
+        skip : Iterable[str] | None
+            As :meth:`run`.
+
+        Returns
+        -------
+        Explanation
+            One entry per step in this flow's resolved step list, in
             execution order, stating whether the step will run under this
             configuration and these flow-control arguments, and if not, which
             mechanism excluded it, together with the stages that contributed no
@@ -348,8 +382,12 @@ class SequentialFlow(Flow):
         Runs the flow's steps in order, reusing each step whose configuration
         and input state are unchanged from a previous run of the same tag.
 
-        :param initial_state: The state handed to the first step.
-        :param frm: Force re-execution from this step onward, ignoring any
+        Parameters
+        ----------
+        initial_state : State
+            The state handed to the first step.
+        frm : str | None
+            Force re-execution from this step onward, ignoring any
             reusable result for it and every step after it.
 
             Steps before it are taken from their previous results. If any of them
@@ -364,16 +402,24 @@ class SequentialFlow(Flow):
             When ``initial_state_given`` is set, the steps before it are skipped
             instead, because the caller has supplied what they would have
             produced.
-        :param to: Stop after this step.
-        :param skip: Step IDs to skip. A skipped step changes what the steps
+        to : str | None
+            Stop after this step.
+        skip : Iterable[str] | None
+            Step IDs to skip. A skipped step changes what the steps
             after it receive, so they cannot be reused either.
-        :param reproducible: Create a reproducible for this step instead of
+        reproducible : str | None
+            Create a reproducible for this step instead of
             running the rest of the flow.
-        :param initial_state_given: Whether ``initial_state`` was supplied by the
+        initial_state_given : bool
+            Whether ``initial_state`` was supplied by the
             caller rather than being the empty state a run starts from. It is
             what stands in for the steps before ``frm``, so they are neither
             re-run nor resolved from their previous results.
-        :returns: ``(final_state, steps_run)``
+
+        Returns
+        -------
+        tuple[State, list[Step]]
+            ``(final_state, steps_run)``
         """
         logger.debug(f"Starting run ▶ '{self.run_dir}'")
         skipped_ids: list[str] = []

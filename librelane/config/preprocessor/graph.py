@@ -2,7 +2,7 @@
 from typing import Any
 from collections.abc import Mapping
 
-from .resolve import parse_directive, resolve_directive
+from librelane.config.preprocessor.resolve import parse_directive, resolve_directive
 
 
 class SymbolCycleError(ValueError):

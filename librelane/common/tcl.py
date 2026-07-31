@@ -34,15 +34,25 @@ class TclUtils(object):
     @staticmethod
     def escape(s: str) -> str:
         """
-        :returns: The input string serialized as one Tcl list element.
+        Returns
+        -------
+        str
+            The input string serialized as one Tcl list element.
         """
         return TclUtils.join([s])
 
     @staticmethod
     def join(ss: Iterable[str]) -> str:
         """
-        :param ss: Input list
-        :returns: The input list converted to a Tcl-compatible list where each
+        Parameters
+        ----------
+        ss : Iterable[str]
+            Input list
+
+        Returns
+        -------
+        str
+            The input list converted to a Tcl-compatible list where each
             element is interpreted by Tcl as a single element.
         """
         interpreter = tkinter.Tcl()
@@ -52,7 +62,10 @@ class TclUtils(object):
     @staticmethod
     def split(s: str) -> list[str]:
         """
-        :returns: The input Tcl-compatible list string split into its elements.
+        Returns
+        -------
+        list[str]
+            The input Tcl-compatible list string split into its elements.
         """
         interpreter = tkinter.Tcl()
         try:
@@ -63,7 +76,10 @@ class TclUtils(object):
     @staticmethod
     def to_tcl(value: Any) -> str:
         """
-        :returns: A Python value serialized as a Tcl scalar, list, or dictionary.
+        Returns
+        -------
+        str
+            A Python value serialized as a Tcl scalar, list, or dictionary.
         """
         if not isinstance(value, type) and is_dataclass(value):
             return TclUtils.to_tcl(asdict(value))  # type: ignore[arg-type]

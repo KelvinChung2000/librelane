@@ -33,15 +33,15 @@ from collections.abc import Callable, Sequence
 
 from rich.markup import escape
 
-from ...common import slugify, protected
-from ...logging import options
+from librelane.common import slugify, protected
+from librelane.logging import options
 
-from .exceptions import StepException
-from .output_processor import OutputProcessor
-from .process_stats import ProcessStatsThread
+from librelane.steps.step.exceptions import StepException
+from librelane.steps.step.output_processor import OutputProcessor
+from librelane.steps.step.process_stats import ProcessStatsThread
 
 if TYPE_CHECKING:
-    from .core import Step
+    from librelane.steps.step.core import Step
 
 VT = TypeVar("VT")
 
@@ -55,7 +55,10 @@ class SubprocessMixin:
     @protected
     def get_log_path(self) -> str:
         """
-        :returns: the default value for :meth:`run_subprocess`'s "log_to"
+        Returns
+        -------
+        str
+            the default value for :meth:`run_subprocess`'s "log_to"
             parameter.
 
             Override it to change the default log path.
@@ -82,24 +85,36 @@ class SubprocessMixin:
         The output from the subprocess is processed line-by-line by instances
         of output processor classes.
 
-        :param cmd: A list of variables, representing a program and its arguments,
+        Parameters
+        ----------
+        cmd : Sequence[str | os.PathLike]
+            A list of variables, representing a program and its arguments,
             similar to how you would use it in a shell.
-        :param log_to: An optional override for the log path from
+        log_to : str | os.PathLike | None
+            An optional override for the log path from
             :meth:`get_log_path`\\. Useful for if you run multiple subprocesses
             within one step.
-        :param silent: If specified, the subprocess does not print anything to
+        silent : bool
+            If specified, the subprocess does not print anything to
             the terminal. Useful when running multiple processes simultaneously.
-        :param report_dir: An optional override for where reports by output
+        report_dir : str | os.PathLike | None
+            An optional override for where reports by output
             processors
-
-        :param check: Whether to raise ``subprocess.CalledProcessError`` in
+        check : bool
+            Whether to raise ``subprocess.CalledProcessError`` in
             the event of a non-zero exit code. Set to ``False`` if you'd like
             to do further processing on the output(s).
-        :param output_processing: An override for the class's list of
+        output_processing : Sequence[type[OutputProcessor]] | None
+            An override for the class's list of
             :class:`librelane.steps.OutputProcessor` classes.
-        :param \\*\\*kwargs: Passed on to subprocess execution: useful if you want to
+        **kwargs
+            Passed on to subprocess execution: useful if you want to
             redirect stdin, stdout, etc.
-        :returns: A dictionary of output processor results.
+
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary of output processor results.
 
             These key/value pairs are included in all cases:
             * ``returncode``: Exit code for the subprocess
@@ -108,7 +123,11 @@ class SubprocessMixin:
             The other key value pairs depend on the ``key`` class variables
             and :meth:`librelane.steps.OutputProcessor.result` methods of the
             output processors.
-        :raises subprocess.CalledProcessError: If the process has a non-zero
+
+        Raises
+        ------
+        subprocess.CalledProcessError
+            If the process has a non-zero
             exit, and ``check`` is True, this exception will be raised.
         """
         if report_dir is None:
@@ -243,8 +262,15 @@ class SubprocessMixin:
             * If the kwargs object has no "env" variable, a new "env" dictionary
                 is created based on the current environment.
 
-        :param kwargs: A Python keyword arguments object.
-        :returns (kwargs, env): A kwargs without an ``env`` object, and an isolated ``env`` object.
+        Parameters
+        ----------
+        kwargs
+            A Python keyword arguments object.
+
+        Returns
+        -------
+        tuple[dict, dict[str, str]]
+            A kwargs without an ``env`` object, and an isolated ``env`` object.
         """
         env = kwargs.get("env")
         if env is None:

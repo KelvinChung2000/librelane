@@ -37,14 +37,14 @@ def _announce(old: str, new: str) -> None:
 
 def steps() -> None:
     _announce("librelane.steps", "librelane steps")
-    from .steps import cli
+    from librelane.cli.steps import cli
 
     cli()
 
 
 def config() -> None:
     _announce("librelane.config", "librelane config")
-    from .config import cli
+    from librelane.cli.config import cli
 
     # The subcommand dropped the redundant `-config` suffix when it moved under
     # `librelane config`; the old spelling is translated rather than kept.
@@ -56,21 +56,21 @@ def config() -> None:
 
 def state() -> None:
     _announce("librelane.state", "librelane state")
-    from .state import cli
+    from librelane.cli.state import cli
 
     cli()
 
 
 def help() -> None:
     _announce("librelane.help", "librelane help")
-    from .help import cli
+    from librelane.cli.help import cli
 
     cli()
 
 
 def env_info() -> None:
     _announce("librelane.env_info", "librelane env-info")
-    from .env_info import cli
+    from librelane.cli.env_info import cli
 
     cli()
 

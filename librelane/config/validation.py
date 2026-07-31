@@ -4,9 +4,9 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import ValidationError
 
-from .diagnostics import Diagnostic, DiagnosticSet, Severity
-from .legacy import Variable
-from .model import variables_to_model
+from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
+from librelane.config.legacy import Variable
+from librelane.config.model import variables_to_model
 
 
 def _prepare_deprecated_names(

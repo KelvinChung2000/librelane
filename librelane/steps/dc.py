@@ -30,9 +30,9 @@ section 1.
 
 from typing import ClassVar
 
-from .step import Step
-from .vendor import VendorTclStep
-from ..state import DesignFormat
+from librelane.steps.step import Step
+from librelane.steps.vendor import VendorTclStep
+from librelane.state import DesignFormat
 
 
 class DCStep(VendorTclStep):

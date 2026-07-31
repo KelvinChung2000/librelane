@@ -1,6 +1,6 @@
 """OpenROAD-based steps."""
 
-from .base import (
+from librelane.steps.openroad.base import (
     EXAMPLE_INPUT,
     CheckSDCFiles,
     OpenROADAlert,
@@ -11,7 +11,7 @@ from .base import (
     old_to_new_tracks,
     pdn_macro_migrator,
 )
-from .sta import (
+from librelane.steps.openroad.sta import (
     STAMidPNR,
     OpenSTAStep,
     CheckMacroInstances,
@@ -19,7 +19,7 @@ from .sta import (
     STAPrePNR,
     STAPostPNR,
 )
-from .floorplan import (
+from librelane.steps.openroad.floorplan import (
     PPLMode,
     _validate_io_ppl_mode,
     Floorplan,
@@ -30,13 +30,13 @@ from .floorplan import (
     get_psm_error_count,
     GeneratePDN,
 )
-from .placement import (
+from librelane.steps.openroad.placement import (
     _GlobalPlacement,
     GlobalPlacement,
     GlobalPlacementSkipIO,
     DetailedPlacement,
 )
-from .routing import (
+from librelane.steps.openroad.routing import (
     CheckAntennas,
     GlobalRouting,
     _DiodeInsertion,
@@ -44,7 +44,7 @@ from .routing import (
     NDR,
     DetailedRouting,
 )
-from .finishing import (
+from librelane.steps.openroad.finishing import (
     LayoutSTA,
     FillInsertion,
     RCX,
@@ -55,8 +55,8 @@ from .finishing import (
     OpenGUI,
     DumpRCValues,
 )
-from .resizer import ResizerStep, CTS
-from .resizer_timing import (
+from librelane.steps.openroad.resizer import ResizerStep, CTS
+from librelane.steps.openroad.resizer_timing import (
     RepairDesignPostGPL,
     RepairDesign,
     RepairDesignPostGRT,

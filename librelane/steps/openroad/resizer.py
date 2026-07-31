@@ -25,23 +25,23 @@ from typing import (
 )
 
 
-from ...common import (
+from librelane.common import (
     TclUtils,
 )
-from ...config import variable
-from ...state import State
-from ..common_variables import (
+from librelane.config import variable
+from librelane.state import State
+from librelane.steps.common_variables import (
     DplConfig,
     GrtConfig,
     RszConfig,
 )
-from ..step import (
+from librelane.steps.step import (
     MetricsUpdate,
     Step,
     ViewsUpdate,
 )
 
-from .base import OpenROADStep
+from librelane.steps.openroad.base import OpenROADStep
 
 
 class ResizerStep(OpenROADStep):

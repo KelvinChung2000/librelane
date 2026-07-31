@@ -28,9 +28,9 @@ from collections.abc import Sequence
 import httpx
 import typer
 
-from ..common.metrics.util import MetricDiff, TableVerbosity
-from ..common.misc import Filter, get_httpx_session, mkdirp
-from ._app import make_group
+from librelane.common.metrics.util import MetricDiff, TableVerbosity
+from librelane.common.misc import Filter, get_httpx_session, mkdirp
+from librelane.cli._app import make_group
 
 default_filter_set = [
     "design__*__area",

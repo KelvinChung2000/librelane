@@ -40,9 +40,9 @@ section 12.
 
 from typing import ClassVar
 
-from .step import Step
-from .vendor import VendorTclStep
-from ..state import DesignFormat
+from librelane.steps.step import Step
+from librelane.steps.vendor import VendorTclStep
+from librelane.state import DesignFormat
 
 # Mirrors PNR_IN_PLACE_REQUIRES / PNR_IN_PLACE_PROVIDES in
 # librelane/stages/stage.py: the view contract shared by every in-place

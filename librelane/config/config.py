@@ -30,16 +30,26 @@ from typing import (
 )
 from collections.abc import Mapping, Sequence
 
-from .legacy import Variable, MissingRequiredVariable
-from .diagnostics import Diagnostic, DiagnosticSet, Severity
-from .loading import ConfigSource, OpenLaneYAMLLoader, layer_mappings, read_source
-from .removals import removed_variables
-from .flow import pdk_variables, scl_variables, pad_variables, flow_common_variables
-from .pdk_compat import migrate_old_config
-from .preprocessor import preprocess_dict, Keys as SpecialKeys
-from .validation import translate_deprecated_names, validate_mapping
-from ..__version__ import __version__
-from ..common import (
+from librelane.config.legacy import Variable, MissingRequiredVariable
+from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
+from librelane.config.loading import (
+    ConfigSource,
+    OpenLaneYAMLLoader,
+    layer_mappings,
+    read_source,
+)
+from librelane.config.removals import removed_variables
+from librelane.config.flow import (
+    pdk_variables,
+    scl_variables,
+    pad_variables,
+    flow_common_variables,
+)
+from librelane.config.pdk_compat import migrate_old_config
+from librelane.config.preprocessor import preprocess_dict, Keys as SpecialKeys
+from librelane.config.validation import translate_deprecated_names, validate_mapping
+from librelane.__version__ import __version__
+from librelane.common import (
     GenericDict,
     GenericImmutableDict,
     TclUtils,
@@ -101,17 +111,25 @@ class InvalidConfig(ValueError):
     """
     An error raised when a configuration under resolution is invalid.
 
-    :param config: A human-readable name for the particular configuration file
+    Parameters
+    ----------
+    config : str
+        A human-readable name for the particular configuration file
         causing this exception, i.e. whether it's a PDK configuration file or a
         user configuration file.
-    :param warnings: A list of warnings generated during the loading of this
+    warnings : list[str]
+        A list of warnings generated during the loading of this
         configuration file.
-    :param errors: A list of errors generated during the loading of this
+    errors : list[str]
+        A list of errors generated during the loading of this
         configuration file.
-    :param args: Further arguments to be passed onto the constructor of
+    args
+        Further arguments to be passed onto the constructor of
         :class:`ValueError`.
-    :param message: An optional override for the Exception message.
-    :param kwargs: Further keyword arguments to be passed onto the constructor of
+    message : str | None
+        An optional override for the Exception message.
+    kwargs
+        Further keyword arguments to be passed onto the constructor of
         :class:`ValueError`.
     """
 
@@ -165,13 +183,16 @@ class Config(GenericImmutableDict[str, Any]):
     It is recommended that you use :meth:`load` to create new, validated
     configurations from dictionaries or files.
 
-    :param meta: The :class:`Meta` object for this configuration. If ``None`` is
+    Parameters
+    ----------
+    meta : Meta | None
+        The :class:`Meta` object for this configuration. If ``None`` is
         passed, the default Meta object will be assigned.
-    :param final: Whether the configuration is final (i.e. has been
+    final
+        Whether the configuration is final (i.e. has been
         pre-assembled for an entire flow) or may be incremented per-step.
 
         Final configurations may not be adjusted or incremented.
-
     """
 
     current_interactive: ClassVar[Optional["Config"]] = None
@@ -196,7 +217,10 @@ class Config(GenericImmutableDict[str, Any]):
         """
         Produces a *shallow* copy of the configuration object.
 
-        :param overrides: A series of configuration overrides as key-value pairs.
+        Parameters
+        ----------
+        overrides
+            A series of configuration overrides as key-value pairs.
             These values are NOT validated and you should not be overriding these
             haphazardly.
         """
@@ -209,8 +233,15 @@ class Config(GenericImmutableDict[str, Any]):
 
     def to_raw_dict(self, include_meta: bool = True) -> dict[str, Any]:
         """
-        :param include_meta: Whether to include the "meta" object or not
-        :returns: A raw dictionary representation including the ``meta`` object.
+        Parameters
+        ----------
+        include_meta : bool
+            Whether to include the "meta" object or not
+
+        Returns
+        -------
+        dict[str, Any]
+            A raw dictionary representation including the ``meta`` object.
         """
         final = super().to_raw_dict()
         if include_meta:
@@ -219,10 +250,18 @@ class Config(GenericImmutableDict[str, Any]):
 
     def dumps(self, include_meta: bool = True, **kwargs) -> str:
         """
-        :param include_meta: Whether to include the ``meta`` object in the
+        Parameters
+        ----------
+        include_meta : bool
+            Whether to include the ``meta`` object in the
             serialized string.
-        :param kwargs: Passed to ``json.dumps``.
-        :returns: A JSON string representing the the GenericDict object.
+        kwargs
+            Passed to ``json.dumps``.
+
+        Returns
+        -------
+        str
+            A JSON string representing the the GenericDict object.
         """
         if "indent" not in kwargs:
             kwargs["indent"] = 4
@@ -239,14 +278,22 @@ class Config(GenericImmutableDict[str, Any]):
         Creates a new copy of the configuration object, but only with the
         configuration variables defined by the parameter.
 
-        :param config_vars: A list of configuration variables to include in
+        Parameters
+        ----------
+        config_vars : Sequence[Variable]
+            A list of configuration variables to include in
             the filtered copy.
-        :param include_flow_variables: Whether to include the common flow
+        include_flow_variables : bool
+            Whether to include the common flow
             variables in the copy or not.
 
             This parameter is deprecated as of LibreLane 2.0.0b5 and should be
             set to ``False`` by callers.
-        :returns: The new copy
+
+        Returns
+        -------
+        Config
+            The new copy
         """
         variables: set[str] = set([variable.name for variable in config_vars])
         if include_flow_variables:
@@ -278,10 +325,18 @@ class Config(GenericImmutableDict[str, Any]):
         All values, including those in the base ``Config`` object and in
         ``other_inputs``, will be re-validated.
 
-        :param config_vars: A list of configuration variables to include and
+        Parameters
+        ----------
+        config_vars : Sequence[Variable]
+            A list of configuration variables to include and
             validate.
-        :param other_inputs: A mapping of other inputs.
-        :returns: The new ``Config`` object
+        other_inputs : Mapping[str, Any]
+            A mapping of other inputs.
+
+        Returns
+        -------
+        Config
+            The new ``Config`` object
         """
         incremental_pdk_vars = [variable for variable in config_vars if variable.pdk]
 
@@ -325,8 +380,15 @@ class Config(GenericImmutableDict[str, Any]):
         """
         Returns the Meta object of a configuration dictionary or file.
 
-        :param config_in: A configuration object or file.
-        :returns: Either a Meta object, or if the file is invalid, None.
+        Parameters
+        ----------
+        config_in : AnyConfig
+            A configuration object or file.
+
+        Returns
+        -------
+        Meta
+            Either a Meta object, or if the file is invalid, None.
         """
         default_meta_version = 2
 
@@ -376,18 +438,25 @@ class Config(GenericImmutableDict[str, Any]):
         pleasant, however, it is not as resilient as the pure mode and should not
         be used in production code.
 
-        :param DESIGN_NAME: The name of the design to be used.
-        :param PDK: The name of the PDK.
-        :param STD_CELL_LIBRARY: The name of the standard cell library.
-        :param PAD_CELL_LIBRARY: The name of the pad cell library.
+        Parameters
+        ----------
+        DESIGN_NAME : str
+            The name of the design to be used.
+        PDK : str
+            The name of the PDK.
+        STD_CELL_LIBRARY : str | None
+            The name of the standard cell library.
+        PAD_CELL_LIBRARY : str | None
+            The name of the pad cell library.
 
             If not specified, the PDK's default SCL will be used.
-        :param PDK_ROOT: Required if Volare is not installed.
+        PDK_ROOT : str | None
+            Required if Volare is not installed.
 
             If Volare is installed, this value can be used to optionally override
             Volare's default.
-
-        :param kwargs: Any overrides to PDK values and/or common flow default variables
+        kwargs
+            Any overrides to PDK values and/or common flow default variables
             can be passed as keyword arguments to this function.
 
             Useful examples are CLOCK_PORT, CLOCK_PERIOD, et cetera, which while
@@ -449,39 +518,45 @@ class Config(GenericImmutableDict[str, Any]):
 
         The returned config object is locked and cannot be modified.
 
-        :param config_in: Either a file path to a JSON file or a Python
+        Parameters
+        ----------
+        config_in : AnyConfigs
+            Either a file path to a JSON file or a Python
             Mapping object (such as ``dict``) representing an unprocessed
             LibreLane configuration object.
 
             Tcl files are also supported, but are deprecated and will be removed
             in the future.
-
-        :param config_override_strings: A list of "overrides" in the form of
+        config_override_strings : Sequence[str] | None
+            A list of "overrides" in the form of
             NAME=VALUE strings. These are primarily for running LibreLane from
             the command-line and strictly speaking should not be used in the API.
-
-        :param design_dir: The design directory for said configuration(s).
+        design_dir : str | None
+            The design directory for said configuration(s).
 
             If not explicitly provided, the design directory will be the
             directory holding the last file in the list.
 
             If no files are provided, this argument is required.
-
-        :param pdk: A process design kit to use. Required unless specified via the
+        pdk : str | None
+            A process design kit to use. Required unless specified via the
             "PDK" key in a configuration object.
-
-        :param pdk_root: Required if Volare is not installed.
+        pdk_root : str | None
+            Required if Volare is not installed.
 
             If Volare is installed, this value can be used to optionally override
             Volare's default.
-
-        :param scl: A standard cell library to use. If not specified, the PDK's
+        scl : str | None
+            A standard cell library to use. If not specified, the PDK's
             default standard cell library will be used instead.
-
-        :param pad: A pad cell library to use. If not specified, the PDK's
+        pad : str | None
+            A pad cell library to use. If not specified, the PDK's
             pad standard cell library will be used instead (if it exists).
 
-        :returns: A tuple containing a Config object and the design directory.
+        Returns
+        -------
+        tuple[Config, str]
+            A tuple containing a Config object and the design directory.
         """
         if isinstance(config_in, Mapping):
             config_in = [config_in]
@@ -898,7 +973,10 @@ class Config(GenericImmutableDict[str, Any]):
         full_pdk_warnings: bool | None = False,
     ) -> tuple[GenericDict[str, Any], str, str, str | None]:
         """
-        :returns: A tuple of the PDK configuration, the PDK path, the SCL and the PAD.
+        Returns
+        -------
+        tuple[GenericDict[str, Any], str, str, str | None]
+            A tuple of the PDK configuration, the PDK path, the SCL and the PAD.
         """
 
         frozen, pdkpath, scl, pad = Config.__get_pdk_raw(pdk_root, pdk, scl, pad)
@@ -942,11 +1020,20 @@ class Config(GenericImmutableDict[str, Any]):
         Verifies a configuration object against a list of variables, returning
         an object with the variables normalized according to their types.
 
-        :param config: The input, raw configuration object.
-        :param variables: A sequence or some other iterable of variables.
-        :param removed: A dictionary of variables that may have existed at a point in
+        Parameters
+        ----------
+        config
+            The input, raw configuration object.
+        variables : Sequence["Variable"]
+            A sequence or some other iterable of variables.
+        removed : Mapping[str, str] | None
+            A dictionary of variables that may have existed at a point in
             time, but then have gotten removed. Useful to give feedback to the user.
-        :returns: A tuple of:
+
+        Returns
+        -------
+        tuple[GenericDict[str, Any], list[str], list[str]]
+            A tuple of:
             [0] A final, processed configuration.
             [1] A list of warnings.
             [2] A list of errors.

@@ -24,9 +24,9 @@ from abc import abstractmethod
 from typing import Any, Literal, Optional
 from collections.abc import Mapping
 
-from .tclstep import TclStep
-from .step import ViewsUpdate, MetricsUpdate, Step, StepException
-from .pyosys import (
+from librelane.steps.tclstep import TclStep
+from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step, StepException
+from librelane.steps.pyosys import (
     PyosysStep,
     JsonHeader,
     VerilogRtlConfig,
@@ -34,9 +34,9 @@ from .pyosys import (
     VHDLSynthesis,
 )
 
-from ..config import variable
-from ..state import State, DesignFormat
-from ..common import Path, Toolbox, TclUtils, process_list_file
+from librelane.config import variable
+from librelane.state import State, DesignFormat
+from librelane.common import Path, Toolbox, TclUtils, process_list_file
 
 # Re-export for back-compat
 JsonHeader

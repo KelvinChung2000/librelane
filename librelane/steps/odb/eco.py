@@ -22,26 +22,31 @@ from decimal import Decimal
 from dataclasses import dataclass
 from typing import Optional
 
-from ...config import variable
-from ...state import State
+from librelane.config import variable
+from librelane.state import State
 
-from ..common_variables import DplConfig, GrtConfig
-from ..step import (
+from librelane.steps.common_variables import DplConfig, GrtConfig
+from librelane.steps.step import (
     MetricsUpdate,
     Step,
     ViewsUpdate,
 )
 
-from .base import OdbpyStep
+from librelane.steps.odb.base import OdbpyStep
 
 
 @dataclass
 class ECOBuffer:
     """
-    :param target: The driver to insert an ECO buffer after or sink to insert an
+    Parameters
+    ----------
+    target : str
+        The driver to insert an ECO buffer after or sink to insert an
         ECO buffer before, in the format instance_name/pin_name.
-    :param buffer: The kind of buffer cell to use.
-    :param placement: The coarse placement for this buffer (to be legalized.)
+    buffer : str
+        The kind of buffer cell to use.
+    placement : tuple[Decimal, Decimal] | None
+        The coarse placement for this buffer (to be legalized.)
         If unset, depending on whether the target is a driver or a sink:
 
         - Driver: The placement will be the average of the driver and all sinks.
@@ -99,9 +104,13 @@ class InsertECOBuffers(OdbpyStep):
 @dataclass
 class ECODiode:
     """
-    :param target: The sink whose net gets a diode connected, in the format
+    Parameters
+    ----------
+    target : str
+        The sink whose net gets a diode connected, in the format
         instance_name/pin_name.
-    :param placement: The coarse placement for this diode (to be legalized.)
+    placement : tuple[Decimal, Decimal] | None
+        The coarse placement for this diode (to be legalized.)
         If unset, the diode is placed at the same location as the target
         instance, with legalization later moving it to a valid location.
     """

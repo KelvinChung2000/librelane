@@ -31,11 +31,11 @@ from collections.abc import Iterable, Mapping, Sequence
 import libparse
 
 
-from .misc import mkdirp, gzopen
-from .types import Path
-from .generic_dict import GenericImmutableDict, is_string
-from ..state import DesignFormat
-from ..common import Filter
+from librelane.common.misc import mkdirp, gzopen
+from librelane.common.types import Path
+from librelane.common.generic_dict import GenericImmutableDict, is_string
+from librelane.state import DesignFormat
+from librelane.common import Filter
 
 
 class Toolbox(object):
@@ -65,13 +65,22 @@ class Toolbox(object):
         enumerates all views matching either the default timing corner or
         an explicitly-provided override.
 
-        :param config: The configuration. Used solely to extract the default
+        Parameters
+        ----------
+        config : Mapping[str, Any]
+            The configuration. Used solely to extract the default
             corner.
-        :param views_by_corner: The mapping from (wild cards) of corner names to
+        views_by_corner : Mapping[str, Path | Iterable[Path]]
+            The mapping from (wild cards) of corner names to
             views.
-        :param timing_corner: An explicit override for the default corner. Must be a
+        timing_corner : str | None
+            An explicit override for the default corner. Must be a
             fully qualified IPVT corner.
-        :returns: The created list
+
+        Returns
+        -------
+        list[Path]
+            The created list
         """
         timing_corner = timing_corner or config["DEFAULT_CORNER"]
         result: list[Path] = []
@@ -101,10 +110,16 @@ class Toolbox(object):
         timing: the resizer and STA then see one set of numbers where they
         should see several.
 
-        :param config: The configuration, used to resolve the default corner.
-        :param views_by_corner: The mapping from corner wildcards to views.
-        :param corners: The corners the mapping is expected to cover.
-        :param label: How to name the mapping in the warning.
+        Parameters
+        ----------
+        config : Mapping[str, Any]
+            The configuration, used to resolve the default corner.
+        views_by_corner : Mapping[str, Path | Iterable[Path]]
+            The mapping from corner wildcards to views.
+        corners : Sequence[str]
+            The corners the mapping is expected to cover.
+        label : str
+            How to name the mapping in the warning.
         """
         if not views_by_corner or len(corners) < 2:
             return
@@ -146,22 +161,33 @@ class Toolbox(object):
         :class:`DesignFormat` for either the default timing corner or an
         explicitly-provided override.
 
-        :param config: The configuration.
-        :param view: The design format to return views of.
-        :param timing_corner: An explicit override for the default corner set
+        Parameters
+        ----------
+        config : Mapping[str, Any]
+            The configuration.
+        view : DesignFormat
+            The design format to return views of.
+        timing_corner : str | None
+            An explicit override for the default corner set
             by the configuration.
-        :param corner: An explicit override for the default corner. Must be a
+        corner
+            An explicit override for the default corner. Must be a
             fully qualified IPVT corner.
-        :param unless_exist: If a Macro also has a view for these
+        unless_exist : None | DesignFormat | Sequence[DesignFormat]
+            If a Macro also has a view for these
             ``DesignFormat``\\s, do not return a result for the requested
             ``DesignFormat``\\.
 
             Useful for if you want to return say, Netlists if reliable LIB files
             do not exist.
-        :returns: A list of the Macro views matched by the process described
+
+        Returns
+        -------
+        list[Path]
+            A list of the Macro views matched by the process described
             above.
         """
-        from ..config import Macro
+        from librelane.config import Macro
 
         timing_corner = timing_corner or config["DEFAULT_CORNER"]
         macros = config["MACROS"]
@@ -237,24 +263,31 @@ class Toolbox(object):
         """
         Returns the lib files for a given configuration and timing corner.
 
-        :param config: A configuration object or a similar mapping.
-        :param timing_corner:
+        Parameters
+        ----------
+        config : Mapping[str, Any]
+            A configuration object or a similar mapping.
+        timing_corner : str | None
             A fully qualified IPVT corner to get SCL libs for.
 
             If not specified, the value for ``DEFAULT_CORNER`` from the SCL will
             be used.
-        :param prioritize_nl:
+        prioritize_nl : bool
             Do not return lib files for macros that have gate-Level Netlists and
             SPEF views.
 
             If set to ``false``\\, only lib files are returned.
-        :returns: A tuple of:
+
+        Returns
+        -------
+        tuple[str, list[Path], list[Path], list[tuple[str, Path]]]
+            A tuple of:
             * The name of the timing corner
             * A list of lib files
             * A list of netlists
             * A list of tuples of instances and SPEFs
         """
-        from ..config import Macro
+        from librelane.config import Macro
 
         timing_corner = timing_corner or config["DEFAULT_CORNER"]
 
@@ -324,18 +357,25 @@ class Toolbox(object):
         """
         Returns the lib files for a given configuration and timing corner.
 
-        :param config: A configuration object or a similar mapping.
-        :param timing_corner:
+        Parameters
+        ----------
+        config : Mapping[str, Any]
+            A configuration object or a similar mapping.
+        timing_corner : str | None
             A fully qualified IPVT corner to get SCL libs for.
 
             If not specified, the value for ``DEFAULT_CORNER`` from the SCL will
             be used.
-        :param prioritize_nl:
+        prioritize_nl : bool
             Do not return lib files for macros that have gate-Level Netlists and
             SPEF views.
 
             If set to ``false``\\, only lib files are returned.
-        :returns: A tuple of:
+
+        Returns
+        -------
+        tuple[str, list[str]]
+            A tuple of:
 
             * The name of the timing corner
             * A heterogeneous list of files composed of: Lib files are returned as-is,
@@ -362,9 +402,9 @@ class Toolbox(object):
         state_in: GenericImmutableDict[str, Any],
     ) -> bytes | None:  # pragma: no cover
         try:
-            from ..steps import KLayout, StepError
-            from ..config import BaseConfigModel, Config, InvalidConfig
-            from ..state import State
+            from librelane.steps import KLayout, StepError
+            from librelane.config import BaseConfigModel, Config, InvalidConfig
+            from librelane.state import State
 
             # I'm too damn tired to figure out a way to forward-declare those two,
             # have fun if you want to
@@ -406,10 +446,18 @@ class Toolbox(object):
         This function is memoized, i.e., results are cached for a specific set
         of inputs.
 
-        :param input_lib_files: A `frozenset` of input lib files.
-        :param excluded_cells: A `frozenset` of wildcards of cells to remove
+        Parameters
+        ----------
+        input_lib_files : frozenset[str]
+            A `frozenset` of input lib files.
+        excluded_cells : frozenset[str]
+            A `frozenset` of wildcards of cells to remove
             from the files.
-        :returns: A path to the lib file with the removed cells.
+
+        Returns
+        -------
+        list[str]
+            A path to the lib file with the removed cells.
         """
         mkdirp(self.tmp_dir)
 
@@ -557,8 +605,15 @@ class Toolbox(object):
         produced here have no body: they are enough to resolve an
         instantiation, not to simulate one.
 
-        :param input_libs: The liberty files to read.
-        :returns: A path to the generated Verilog file.
+        Parameters
+        ----------
+        input_libs : frozenset[str] | tuple[str, ...]
+            The liberty files to read.
+
+        Returns
+        -------
+        str
+            A path to the generated Verilog file.
         """
         mkdirp(self.tmp_dir)
         out_path = os.path.join(self.tmp_dir, f"{uuid.uuid4().hex}.lib.bb.v")
@@ -651,8 +706,15 @@ class Toolbox(object):
         does not exist and the number of operating conditions enumerated is not
         exactly 1 (one).
 
-        :param input_lib: The lib file in question
-        :returns: The voltage in question
+        Parameters
+        ----------
+        input_lib : str
+            The lib file in question
+
+        Returns
+        -------
+        Decimal | None
+            The voltage in question
         """
         parser = libparse.LibertyParser(open(input_lib, encoding="utf8"))
         ast = parser.ast

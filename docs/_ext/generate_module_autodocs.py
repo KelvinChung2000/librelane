@@ -74,7 +74,7 @@ def generate_docs_for_module(
 
     module_doc_dir = os.path.abspath(os.path.join(build_path, module_file_rel))
     module_doc_path = os.path.join(module_doc_dir, "index")
-    module_rst_path = os.path.join(module_doc_dir, "index.rst")
+    module_md_path = os.path.join(module_doc_dir, "index.md")
 
     submodules = []
     # Process Submodules
@@ -150,8 +150,8 @@ def generate_docs_for_module(
         "include_imported_members": include_imported_members,
     }
 
-    mkdirp(os.path.dirname(module_rst_path))
-    with open(module_rst_path, "w") as f:
+    mkdirp(os.path.dirname(module_md_path))
+    with open(module_md_path, "w") as f:
         f.write(template.render(**kwargs))
 
     return module_doc_path
@@ -185,7 +185,7 @@ def generate_module_docs(app: Sphinx, conf: Config):
             loader=lookup,
         )
 
-        templates = {k: env.get_template(f"{k}.rst") for k in ["module"]}
+        templates = {k: env.get_template(f"{k}.md") for k in ["module"]}
         for module_name, build_path in generate_module_autodocs_conf:
             rimraf(build_path)
 

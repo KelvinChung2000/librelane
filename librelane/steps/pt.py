@@ -42,9 +42,9 @@ equivalent of an existing PrimeTime Tcl command through ``snps.cmd``, is
 solving a problem PrimeTime's Python API was never shown to support.
 """
 
-from ..state import DesignFormat
-from .vendor import VendorPythonStep
-from .step import Step
+from librelane.state import DesignFormat
+from librelane.steps.vendor import VendorPythonStep
+from librelane.steps.step import Step
 
 
 class PrimeTimeStep(VendorPythonStep):

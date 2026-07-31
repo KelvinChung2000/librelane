@@ -23,8 +23,8 @@ from typing import (
 )
 from collections.abc import Callable, Hashable, ItemsView, Iterator, Mapping, Sequence
 
-from .misc import idem
-from .types import is_string
+from librelane.common.misc import idem
+from librelane.common.types import is_string
 
 
 class GenericDictEncoder(json.JSONEncoder):
@@ -62,8 +62,12 @@ class GenericDict(Mapping[KT, VT]):
     """
     A dictionary with generic keys and values that is compatible with Python 3.8.1.
 
-    :param copying: A base Mapping object to copy values from.
-    :param overrides: Another mapping object to override the value from `copying`
+    Parameters
+    ----------
+    copying : Mapping[KT, VT] | None
+        A base Mapping object to copy values from.
+    overrides : Mapping[KT, VT] | None
+        Another mapping object to override the value from `copying`
         with.
     """
 
@@ -125,8 +129,15 @@ class GenericDict(Mapping[KT, VT]):
 
     def pop(self, key: KT, /) -> VT:
         """
-        :param key: The key to pop the value for.
-        :returns: The value for key. Raises ``IndexError`` if the key does not
+        Parameters
+        ----------
+        key : KT
+            The key to pop the value for.
+
+        Returns
+        -------
+        VT
+            The value for key. Raises ``IndexError`` if the key does not
             exist. The key/value pair is then deleted from the dictionary.
         """
         value = self[key]
@@ -140,44 +151,67 @@ class GenericDict(Mapping[KT, VT]):
         Convenience replacement for `object.__class__(object)`, which would
         create a copy of the ``GenericDict`` object.
 
-        :returns: The copy
+        Returns
+        -------
+        T
+            The copy
         """
         return self.__class__(self)
 
     def to_raw_dict(self) -> dict:
         """
-        :returns: A copy of the underlying Python built-in ``dict`` for this class.
+        Returns
+        -------
+        dict
+            A copy of the underlying Python built-in ``dict`` for this class.
         """
         return self.__data.copy()
 
     def get_encoder(self) -> type[GenericDictEncoder]:
         """
-        :returns: A JSON encoder handling GenericDict objects.
+        Returns
+        -------
+        type[GenericDictEncoder]
+            A JSON encoder handling GenericDict objects.
         """
         return GenericDictEncoder
 
     def keys(self):
         """
-        :returns: A set-like object providing a view of the keys of the GenericDict object.
+        Returns
+        -------
+        A set-like object providing a view of the keys of the GenericDict object.
         """
         return self.__data.keys()
 
     def values(self):
         """
-        :returns: A set-like object providing a view of the values of the GenericDict object.
+        Returns
+        -------
+        A set-like object providing a view of the values of the GenericDict object.
         """
         return self.__data.values()
 
     def items(self) -> ItemsView[KT, VT]:
         """
-        :returns: A set-like object providing a view of the GenericDict object as (key, value) tuples.
+        Returns
+        -------
+        ItemsView[KT, VT]
+            A set-like object providing a view of the GenericDict object as (key, value) tuples.
         """
         return self.__data.items()
 
     def dumps(self, **kwargs) -> str:
         """
-        :param kwargs: Passed to ``json.dumps``.
-        :returns: A JSON string representing the the GenericDict object.
+        Parameters
+        ----------
+        **kwargs
+            Passed to ``json.dumps``.
+
+        Returns
+        -------
+        str
+            A JSON string representing the the GenericDict object.
         """
         if "indent" not in kwargs:
             kwargs["indent"] = 4
@@ -187,8 +221,15 @@ class GenericDict(Mapping[KT, VT]):
         """
         Checks if a key exists and returns a tuple in the form ``(key, value)``.
 
-        :param key: The key in question
-        :returns: If the key does not exist, the value of ``key`` will be ``None`` and so will
+        Parameters
+        ----------
+        key : KT
+            The key in question
+
+        Returns
+        -------
+        tuple[KT | None, VT | None]
+            If the key does not exist, the value of ``key`` will be ``None`` and so will
             ``value``. If the key exists, ``key`` will be the key being checked for
             existence and ``value`` will be the value assigned to said key in the
             GenericDict object.
@@ -203,7 +244,11 @@ class GenericDict(Mapping[KT, VT]):
         """
         A convenience function to update multiple values in the GenericDict object
         at the same time.
-        :param incoming: The values to update
+
+        Parameters
+        ----------
+        incoming : Mapping[KT, VT]
+            The values to update
         """
         for key, value in incoming.items():
             self[key] = value
@@ -214,7 +259,10 @@ class GenericDict(Mapping[KT, VT]):
         at the same time. Pre-existing keys are deleted first so the values in
         incoming are emplaced at the end of the dictionary.
 
-        :param incoming: The values to update
+        Parameters
+        ----------
+        incoming : Mapping[KT, VT]
+            The values to update
         """
         for key, value in incoming.items():
             if key in self:
@@ -268,12 +316,19 @@ def copy_recursive(input, translator: Callable = idem):
     """
     Copies any arbitrarily-deep nested structure of Mappings and/or Sequences.
 
-    :param input: The input nested structure
-    :param translator: Before an object is appended, this function will be
+    Parameters
+    ----------
+    input
+        The input nested structure
+    translator : Callable
+        Before an object is appended, this function will be
         called to process the value.
 
         By default, :func:`idem` is called.
-    :returns: The copy.
+
+    Returns
+    -------
+    The copy.
 
         All sequences will become built-in ``list``\\(s) and all mappings will
         become built-in ``dict``\\(s).

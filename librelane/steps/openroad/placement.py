@@ -24,24 +24,24 @@ from typing import (
 )
 
 
-from ...common import (
+from librelane.common import (
     Path,
 )
-from ...config import variable
-from ...state import State
-from ..common_variables import (
+from librelane.config import variable
+from librelane.state import State
+from librelane.steps.common_variables import (
     DplConfig,
     RoutingLayerConfig,
     RszConfig,
 )
-from ..step import (
+from librelane.steps.step import (
     MetricsUpdate,
     Step,
     ViewsUpdate,
 )
 
-from .base import OpenROADStep
-from .floorplan import PPLMode, _validate_io_ppl_mode
+from librelane.steps.openroad.base import OpenROADStep
+from librelane.steps.openroad.floorplan import PPLMode, _validate_io_ppl_mode
 
 
 class _GlobalPlacement(OpenROADStep):

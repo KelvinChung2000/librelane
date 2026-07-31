@@ -13,9 +13,9 @@
 # limitations under the License.
 from __future__ import annotations
 
-from .flow import Flow
-from .sequential import SequentialFlow
-from ..steps import KLayout, OpenROAD, Magic
+from librelane.flows.flow import Flow
+from librelane.flows.sequential import SequentialFlow
+from librelane.steps import KLayout, OpenROAD, Magic
 
 
 @Flow.factory.register()

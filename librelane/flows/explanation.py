@@ -21,10 +21,16 @@ class StepDisposition:
     """
     Why one step will or will not run, for one prospective invocation.
 
-    :param step_id: The step's ID, as it appears in the resolved step list.
-    :param will_run: Whether this invocation would execute the step.
-    :param reason: A sentence naming the cause, suitable for printing.
-    :param mechanism: ``None`` when :attr:`will_run` is true, and otherwise
+    Parameters
+    ----------
+    step_id : str
+        The step's ID, as it appears in the resolved step list.
+    will_run : bool
+        Whether this invocation would execute the step.
+    reason : str
+        A sentence naming the cause, suitable for printing.
+    mechanism : str | None
+        ``None`` when :attr:`will_run` is true, and otherwise
         one of ``gate``, ``skip`` or ``window``.
 
         Those three are the only values a step entry can carry, because they
@@ -45,9 +51,13 @@ class Explanation:
     """
     What a prospective invocation of this flow would do.
 
-    :param steps: One entry per step in the resolved step list, in execution
+    Parameters
+    ----------
+    steps : tuple[StepDisposition, ...]
+        One entry per step in the resolved step list, in execution
         order.
-    :param unselected_stages: Stages that contributed no steps, because
+    unselected_stages : tuple[str, ...]
+        Stages that contributed no steps, because
         ``TOOLS`` left them out or because their default provider is ``None``.
         These cannot be step entries, having no steps. Always empty for a flow
         that declares ``Steps`` directly and so has no stages.

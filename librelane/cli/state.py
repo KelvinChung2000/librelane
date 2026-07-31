@@ -19,8 +19,8 @@ from typing import Annotated
 
 import typer
 
-from ..common import get_latest_file
-from ._app import make_group
+from librelane.common import get_latest_file
+from librelane.cli._app import make_group
 
 
 cli = make_group(help="Inspect state files produced by LibreLane runs.")

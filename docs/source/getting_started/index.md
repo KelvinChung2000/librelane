@@ -1,20 +1,22 @@
 # Getting Started
 
 Before we get started, please pick one of these two options…
-<br />
-<br />
 
-<div style="text-align: center;">
+```{button-ref} newcomers/index
+:ref-type: doc
+:class: link-button
+:align: center
 
-<p><a href="./newcomers/index.html" class="link-button">
 I am new to LibreLane
-</a></p>
+```
 
-<p><a href="./migrants/index.html" class="link-button">
+```{button-ref} migrants/index
+:ref-type: doc
+:class: link-button
+:align: center
+
 I have previously used OpenLane
-</a></p>
-
-</div>
+```
 
 ```{toctree}
 :hidden:

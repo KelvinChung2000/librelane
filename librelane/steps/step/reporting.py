@@ -30,21 +30,21 @@ from typing import (
 from collections.abc import Callable
 
 
-from ...config import (
+from librelane.config import (
     Variable,
 )
-from ...config.flow import OptionConfig
-from ...state import DesignFormat, State
-from ...common import (
+from librelane.config.flow import OptionConfig
+from librelane.state import DesignFormat, State
+from librelane.common import (
     GenericDict,
     GenericDictEncoder,
     Path,
     slugify,
     copy_recursive,
 )
-from ...__version__ import __version__
+from librelane.__version__ import __version__
 
-from .exceptions import StepException
+from librelane.steps.step.exceptions import StepException
 
 VT = TypeVar("VT")
 
@@ -173,7 +173,7 @@ class ReportingMixin:
 
             IPython.display.display(IPython.display.Markdown(Self.get_help_md()))
         except NameError:
-            from ...logging import console
+            from librelane.logging import console
             from rich.markdown import Markdown
 
             console.log(Markdown(Self.get_help_md()))
@@ -219,7 +219,10 @@ class ReportingMixin:
 
     def layout_preview(self) -> str | None:  # pragma: no cover
         """
-        :returns: An HTML tag that could act as a preview for a specific stage
+        Returns
+        -------
+        str | None
+            An HTML tag that could act as a preview for a specific stage
             or ``None`` if a preview is unavailable for this step.
         """
         return None
@@ -248,11 +251,16 @@ class ReportingMixin:
             form an indirect dependency on many `.mag` files or similar that
             cannot be enumerated by LibreLane.
 
-        :param target_dir: The directory in which to create the reproducible
-        :param include_pdk: Include PDK files. If set to false, Path pointing
+        Parameters
+        ----------
+        target_dir : str | os.PathLike[str]
+            The directory in which to create the reproducible
+        include_pdk : bool
+            Include PDK files. If set to false, Path pointing
             to PDK files will be prefixed with ``pdk_dir::`` instead of being
             copied.
-        :param flatten: Creates a reproducible with a flat (single-directory)
+        flatten : bool
+            Creates a reproducible with a flat (single-directory)
             file structure, except for the PDK which will maintain its internal
             folder structure (as it is sensitive to it.)
         """

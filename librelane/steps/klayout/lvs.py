@@ -21,13 +21,13 @@ from os.path import abspath
 from tempfile import NamedTemporaryFile
 from typing import Optional
 
-from ..step import ViewsUpdate, MetricsUpdate, Step
+from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
 
-from ...config import variable
-from ...state import DesignFormat, State
-from ...common import Path, mkdirp
+from librelane.config import variable
+from librelane.state import DesignFormat, State
+from librelane.common import Path, mkdirp
 
-from .base import KLayoutStep
+from librelane.steps.klayout.base import KLayoutStep
 
 
 @Step.factory.register()

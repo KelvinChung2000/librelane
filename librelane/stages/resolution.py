@@ -19,11 +19,11 @@ from typing import Union
 
 from rapidfuzz import fuzz, process, utils
 
-from ..state import DesignFormat
-from ..steps import Step
+from librelane.state import DesignFormat
+from librelane.steps import Step
 
-from .registry import Registration, StageRegistry
-from .stage import Stage, StageResolutionError
+from librelane.stages.registry import Registration, StageRegistry
+from librelane.stages.stage import Stage, StageResolutionError
 
 #: An entry in a flow's ``Stages`` list: either a stage to be expanded, or a
 #: plain step that sits at a stage boundary.
@@ -58,10 +58,15 @@ class ResolvedSpan:
     One stage, bound to the providers chosen for it and to the contract that
     must hold when it completes.
 
-    :param provides: The views the *stage* owes once it completes, which its
+    Parameters
+    ----------
+    provides : tuple[DesignFormat, ...]
+        The views the *stage* owes once it completes, which its
         selected providers satisfy jointly.
-    :param metrics: Likewise for metrics.
-    :param providers: One entry per selected provider, in the order their step
+    metrics : tuple[str, ...]
+        Likewise for metrics.
+    providers : tuple[ProviderContract, ...]
+        One entry per selected provider, in the order their step
         sequences were concatenated, carrying what that provider owes alone.
     """
 
@@ -74,15 +79,25 @@ class ResolvedSpan:
     @property
     def provider(self) -> str:
         """
-        :returns: The selected provider names as one string, joined by ``+`` for
+        Returns
+        -------
+        str
+            The selected provider names as one string, joined by ``+`` for
             a multi-provider stage.
         """
         return "+".join(contract.provider for contract in self.providers)
 
     def contract_for(self, provider: str) -> ProviderContract:
         """
-        :returns: The named provider's own contract.
-        :raises StageResolutionError: If this resolution did not select that
+        Returns
+        -------
+        ProviderContract
+            The named provider's own contract.
+
+        Raises
+        ------
+        StageResolutionError
+            If this resolution did not select that
             provider, which means the step tags and the resolution disagree.
         """
         for contract in self.providers:
@@ -108,7 +123,10 @@ def _selection_for(
     tools: Mapping[str, ToolSelection],
 ) -> tuple[str, ...] | None:
     """
-    :returns: The provider names chosen for this stage, or ``None`` if the
+    Returns
+    -------
+    tuple[str, ...] | None
+        The provider names chosen for this stage, or ``None`` if the
         stage is unselected.
     """
     if stage.id not in tools:
@@ -176,10 +194,18 @@ def resolve(
     choosing a provider per stage from ``tools`` and falling back to each
     stage's ``default_provider`` where ``tools`` is silent.
 
-    :param entries: The flow's ``Stages`` list: ``Stage`` objects interleaved
+    Parameters
+    ----------
+    entries : Sequence[StageEntry]
+        The flow's ``Stages`` list: ``Stage`` objects interleaved
         with plain ``Step`` classes.
-    :param tools: The resolved ``TOOLS`` mapping.
-    :raises StageResolutionError: On any unknown stage key, unknown provider,
+    tools : Mapping[str, ToolSelection]
+        The resolved ``TOOLS`` mapping.
+
+    Raises
+    ------
+    StageResolutionError
+        On any unknown stage key, unknown provider,
         or misuse of a list value.
     """
     stage_ids = [entry.id for entry in entries if isinstance(entry, Stage)]

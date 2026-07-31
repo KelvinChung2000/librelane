@@ -32,14 +32,14 @@ from typing import Any
 
 from loguru import logger
 
-from ..config.loading import (
+from librelane.config.loading import (
     ConfigSource,
     OpenLaneYAMLLoader,
     layer_mappings,
     read_source,
 )
 
-from .stage import StageResolutionError
+from librelane.stages.stage import StageResolutionError
 
 TOOLS_KEY = "TOOLS"
 
@@ -108,11 +108,19 @@ def extract_tools(
     therefore contributes no ``TOOLS`` entries, and this is reported so it is
     never mistaken for the file having been read and found empty.
 
-    :param config_in: The same sequence :meth:`librelane.config.Config.load`
+    Parameters
+    ----------
+    config_in : Sequence[Mapping[str, Any] | str | os.PathLike]
+        The same sequence :meth:`librelane.config.Config.load`
         receives.
-    :param config_override_strings: ``NAME=VALUE`` strings from the command
+    config_override_strings : Sequence[str] | None
+        ``NAME=VALUE`` strings from the command
         line. A ``TOOLS=`` override must be a JSON object.
-    :raises StageResolutionError: If ``TOOLS`` is present but malformed.
+
+    Raises
+    ------
+    StageResolutionError
+        If ``TOOLS`` is present but malformed.
     """
     sources: list[ConfigSource] = []
     for entry in config_in:

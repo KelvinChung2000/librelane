@@ -3,10 +3,14 @@ from types import SimpleNamespace
 from typing import Any
 from collections.abc import Mapping
 
-from .graph import SymbolCycleError, resolve_symbols
-from .legacy import Expr
-from .overlay import apply_overlays
-from .resolve import GlobMatch, parse_directive, resolve_directive
+from librelane.config.preprocessor.graph import SymbolCycleError, resolve_symbols
+from librelane.config.preprocessor.legacy import Expr
+from librelane.config.preprocessor.overlay import apply_overlays
+from librelane.config.preprocessor.resolve import (
+    GlobMatch,
+    parse_directive,
+    resolve_directive,
+)
 
 
 Keys = SimpleNamespace(
@@ -23,7 +27,9 @@ PROCESS_INFO_ALLOWLIST = [Keys.pdk, Keys.scl, Keys.pad, f"{Keys.scl}_OPT"]
 def process_string(value: str, symbols: Mapping[str, Any]) -> Any:
     # Keep the directly-callable compatibility facade's historical exception
     # wording and zero-glob fallback. The staged loader uses the AST resolver.
-    from .legacy import process_string as legacy_process_string
+    from librelane.config.preprocessor.legacy import (
+        process_string as legacy_process_string,
+    )
 
     return legacy_process_string(value, symbols)
 

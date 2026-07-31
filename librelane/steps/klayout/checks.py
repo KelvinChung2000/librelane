@@ -21,13 +21,13 @@ import os
 from os.path import abspath
 from typing import Optional
 
-from ..step import ViewsUpdate, MetricsUpdate, Step
+from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
 
-from ...config import variable
-from ...state import DesignFormat, State
-from ...common import Path, mkdirp, _get_process_limit
+from librelane.config import variable
+from librelane.state import DesignFormat, State
+from librelane.common import Path, mkdirp, _get_process_limit
 
-from .base import KLayoutStep
+from librelane.steps.klayout.base import KLayoutStep
 
 
 @Step.factory.register()

@@ -16,10 +16,10 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ...config import Variable
-from ...state import DesignFormat
+from librelane.config import Variable
+from librelane.state import DesignFormat
 
-from .core import Step
+from librelane.steps.step.core import Step
 
 
 @dataclass(frozen=True)
@@ -28,10 +28,15 @@ class StepSequenceUnion:
     The aggregate view and configuration contract of an ordered sequence of
     steps, treated as if it ran as a unit.
 
-    :param unmet_inputs: Views the sequence consumes that no earlier step in
+    Parameters
+    ----------
+    unmet_inputs : list[DesignFormat]
+        Views the sequence consumes that no earlier step in
         the sequence produces, in order of first appearance.
-    :param outputs: Every view any step in the sequence produces.
-    :param config_vars: Every configuration variable any step in the sequence
+    outputs : list[DesignFormat]
+        Every view any step in the sequence produces.
+    config_vars : list[Variable]
+        Every configuration variable any step in the sequence
         declares, deduplicated, in order of first appearance.
     """
 
@@ -46,8 +51,15 @@ def compose_step_sequence(steps: Sequence[type[Step]]) -> StepSequenceUnion:
     outside, the views it produces, and the configuration variables it
     declares.
 
-    :param steps: The ordered step sequence.
-    :raises TypeError: If two steps declare a variable of the same name with
+    Parameters
+    ----------
+    steps : Sequence[type[Step]]
+        The ordered step sequence.
+
+    Raises
+    ------
+    TypeError
+        If two steps declare a variable of the same name with
         differing definitions.
     """
     available: set[DesignFormat] = set()

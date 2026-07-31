@@ -43,10 +43,10 @@ from typing import ClassVar
 
 from importlib.resources import files
 
-from .step import Step, ViewsUpdate, MetricsUpdate
-from .tclstep import TclStep
-from ..common import protected
-from ..state import State
+from librelane.steps.step import Step, ViewsUpdate, MetricsUpdate
+from librelane.steps.tclstep import TclStep
+from librelane.common import protected
+from librelane.state import State
 
 
 class VendorTclStep(TclStep):
@@ -58,15 +58,20 @@ class VendorTclStep(TclStep):
     :class:`~librelane.steps.magic.MagicStep` drives ``magic``). This class
     holds what is common to all of them and nothing more.
 
-    :cvar binary: The tool's invocation binary, e.g. ``"dc_shell"`` for Design
+    Attributes
+    ----------
+    binary : ClassVar[str | None]
+        The tool's invocation binary, e.g. ``"dc_shell"`` for Design
         Compiler. Defaults to ``None``, meaning no public source establishes
         it. Seven of the nineteen tools are in that state; leaving ``binary``
         unset is how a subclass represents that gap honestly rather than
         guessing a plausible-looking name.
-    :cvar script_dir: The subdirectory of ``librelane/scripts`` this tool's
+    script_dir : ClassVar[str]
+        The subdirectory of ``librelane/scripts`` this tool's
         scripts live in, e.g. ``"innovus"``. Not implemented by default; a
         concrete per-tool step must set it.
-    :cvar script_filename: The filename of the Tcl script this step runs
+    script_filename : ClassVar[str]
+        The filename of the Tcl script this step runs
         within ``script_dir``, e.g. ``"floorplan.tcl"``. Not implemented by
         default; a concrete per-tool step must set it.
 
@@ -128,7 +133,10 @@ class VendorTclStep(TclStep):
         that the command syntax is unestablished, rather than omitting the
         override.
 
-        :returns: A list of strings representing the command used to run
+        Returns
+        -------
+        list[str]
+            A list of strings representing the command used to run
             this tool against the script returned by :meth:`get_script_path`.
         """
         pass

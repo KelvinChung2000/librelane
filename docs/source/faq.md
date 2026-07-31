@@ -73,6 +73,9 @@ shuttles since 3.5 and a number of internal tape-outs at Efabless Corporation.
 
 ### Why should I use LibreLane over other open-source RTL-to-GDS-II flows?
 
+% The `<br />` in the "Pre-built Binaries" row below is kept as raw HTML
+% because GFM table cells are single-line; Markdown has no native way to
+% force a line break inside a cell.
 | Point of Comparison | [OpenROAD Flow Scripts](https://github.com/The-OpenROAD-Project/OpenROAD-Flow-Scripts) | [SiliconCompiler](https://github.com/siliconcompiler/siliconcompiler) | [OpenLane](https://github.com/The-OpenROAD-Project/OpenLane) | LibreLane |
 | - | - | - | - | - |
 | Architecture | Monolithic | Plugin-based | Monolithic | Plugin-based |

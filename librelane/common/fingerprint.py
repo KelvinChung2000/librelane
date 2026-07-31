@@ -54,8 +54,15 @@ class Fingerprinter:
         Separate from :meth:`of_path` so tests can assert the memo prevented a
         read rather than infer it from timing.
 
-        :param path: An absolute path to a regular file.
-        :returns: A 128-bit BLAKE2b digest, hex encoded.
+        Parameters
+        ----------
+        path : str
+            An absolute path to a regular file.
+
+        Returns
+        -------
+        str
+            A 128-bit BLAKE2b digest, hex encoded.
         """
         digest = hashlib.blake2b(digest_size=16)
         with open(path, "rb") as file:
@@ -65,8 +72,15 @@ class Fingerprinter:
 
     def of_path(self, path: str | os.PathLike[str]) -> str:
         """
-        :param path: Any path, existing or not, file or directory.
-        :returns: An identity string, one of:
+        Parameters
+        ----------
+        path : str | os.PathLike[str]
+            Any path, existing or not, file or directory.
+
+        Returns
+        -------
+        str
+            An identity string, one of:
 
             * ``file:<digest>`` for a regular file
             * ``dir:<abspath>`` for a directory, whose contents are deliberately

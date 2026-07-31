@@ -8,7 +8,7 @@ from typing import Any, cast
 from lark import Lark, Token, Transformer
 from lark.exceptions import VisitError
 
-from .ast import (
+from librelane.config.preprocessor.ast import (
     Binary,
     Directive,
     ExprDirective,

@@ -19,8 +19,8 @@ An API for implementing new flows using the LibreLane infrastructure, as well
 as a number of built-in flows.
 """
 
-from .flow import FlowError, FlowException, FlowProgressBar, Flow
-from .explanation import Explanation, StepDisposition
-from .sequential import SequentialFlow
-from .staged import Boundary, StagedFlow
-from . import builtins
+from librelane.flows.flow import FlowError, FlowException, FlowProgressBar, Flow
+from librelane.flows.explanation import Explanation, StepDisposition
+from librelane.flows.sequential import SequentialFlow
+from librelane.flows.staged import Boundary, StagedFlow
+from librelane.flows import builtins

@@ -18,8 +18,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import ClassVar
 
-from ..common.errors import FlowError
-from ..state import DesignFormat
+from librelane.common.errors import FlowError
+from librelane.state import DesignFormat
 
 
 class StageError(RuntimeError):
@@ -59,29 +59,40 @@ class Stage(metaclass=StageMetaclass):
     independent gating. It never executes anything: a provider registration
     binds it to a sequence of concrete steps.
 
-    :param id: A lowercase alphanumeric/underscore identifier, for example
+    Parameters
+    ----------
+    id : str
+        A lowercase alphanumeric/underscore identifier, for example
         ``detailed_routing``. This is what appears in the ``TOOLS``
         configuration key. It is not accepted by ``--from``/``--to``, which
         resolve concrete step IDs only; re-entering a flow at a stage is not
         implemented.
-    :param full_name: A human-readable name.
-    :param default_provider: The provider used when ``TOOLS`` does not name
+    full_name : str
+        A human-readable name.
+    default_provider : str | tuple[str, ...] | None
+        The provider used when ``TOOLS`` does not name
         one. A tuple of provider names is legal only for a
         :attr:`multi_provider` stage. ``None`` is legal only when
         :attr:`optional` is ``True``, in which case the stage is unselected and
         contributes no steps.
-    :param requires: The neutral views the stage consumes at its boundary.
+    requires : tuple[DesignFormat, ...]
+        The neutral views the stage consumes at its boundary.
         A provider may additionally consume its own native views, declared on
         the registration.
-    :param provides: The neutral views every provider of this stage must have
+    provides : tuple[DesignFormat, ...]
+        The neutral views every provider of this stage must have
         produced by the time the stage completes. Enforced at runtime.
-    :param metrics: The metric names every provider of this stage must have
+    metrics : tuple[str, ...]
+        The metric names every provider of this stage must have
         produced by the time it completes. Enforced at runtime.
-    :param gating_config_var: A Boolean flow configuration variable that, when
+    gating_config_var : str | None
+        A Boolean flow configuration variable that, when
         false, skips every step of this stage.
-    :param multi_provider: Whether ``TOOLS`` may name a list of providers for
+    multi_provider : bool
+        Whether ``TOOLS`` may name a list of providers for
         this stage, whose sequences are concatenated in listed order.
-    :param optional: Whether the stage may be left unselected. Only legal for
+    optional : bool
+        Whether the stage may be left unselected. Only legal for
         stages whose :attr:`provides` no later stage requires.
     """
 
@@ -104,7 +115,10 @@ class Stage(metaclass=StageMetaclass):
     @property
     def default_providers(self) -> tuple[str, ...]:
         """
-        :returns: :attr:`default_provider` normalized to a tuple. Empty when
+        Returns
+        -------
+        tuple[str, ...]
+            :attr:`default_provider` normalized to a tuple. Empty when
             the stage is unselected by default.
         """
         if self.default_provider is None:
@@ -119,15 +133,26 @@ class Stage(metaclass=StageMetaclass):
 
             Stages = [..., Stage.synthesis.using("yosys_vhdl"), ...]
 
-        :param provider: The provider name, or several for a
+        Parameters
+        ----------
+        provider : str | Sequence[str]
+            The provider name, or several for a
             :attr:`multi_provider` stage, whose sequences are concatenated in
             listed order.
-        :returns: A copy of this stage whose :attr:`default_provider` is
+
+        Returns
+        -------
+        Stage
+            A copy of this stage whose :attr:`default_provider` is
             ``provider``. The copy is deliberately *not* registered: it keeps
             this stage's ``id``, so a ``TOOLS`` entry naming that id still
             overrides the pin, because resolution consults ``TOOLS`` before
             ``default_provider``. A pin is a flow's default, not a lock.
-        :raises StageError: If several providers are named for a stage that runs
+
+        Raises
+        ------
+        StageError
+            If several providers are named for a stage that runs
             exactly one tool, or if no provider is named at all.
 
         Naming a list is the multi-provider idiom, and is how a flow pins several

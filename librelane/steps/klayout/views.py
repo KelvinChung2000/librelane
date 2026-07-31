@@ -24,13 +24,13 @@ from os.path import abspath
 from base64 import b64encode
 from typing import Optional, Literal
 
-from ..step import ViewsUpdate, MetricsUpdate, Step
+from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
 
-from ...config import variable
-from ...state import DesignFormat, State
-from ...common import Path
+from librelane.config import variable
+from librelane.state import DesignFormat, State
+from librelane.common import Path
 
-from .base import KLayoutStep
+from librelane.steps.klayout.base import KLayoutStep
 
 
 @Step.factory.register()

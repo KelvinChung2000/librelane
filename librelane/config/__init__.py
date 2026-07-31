@@ -19,18 +19,18 @@ This modules includes various functions for importing and/or generating LibreLan
 configuration objects. Configuration objects are the primary input to a flow.
 """
 
-from .preprocessor import Keys
-from .diagnostics import Diagnostic, DiagnosticSet, Severity
-from .legacy import Variable
-from .model import (
+from librelane.config.preprocessor import Keys
+from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
+from librelane.config.legacy import Variable
+from librelane.config.model import (
     BaseConfigModel,
     extend_model,
     model_to_variables,
     variable,
     variables_to_model,
 )
-from .types import Instance, Macro, Orientation
-from .config import (
+from librelane.config.types import Instance, Macro, Orientation
+from librelane.config.config import (
     Meta,
     Config,
     InvalidConfig,
@@ -39,4 +39,6 @@ from .config import (
     PassedDirectoryError,
     UnknownExtensionError,
 )
-from .flow import flow_common_variables as universal_flow_config_variables
+from librelane.config.flow import (
+    flow_common_variables as universal_flow_config_variables,
+)

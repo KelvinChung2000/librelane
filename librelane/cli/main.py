@@ -28,17 +28,17 @@ from textwrap import dedent
 
 import typer
 
-from ..__version__ import __version__
-from ..plugins import discovered_plugins
-from ._app import DefaultToRunGroup, make_app
-from .config import cli as config_cli
-from .env_info import show_env_info
-from .help import show_help
-from .metrics import cli as metrics_cli
-from .options import BareVersionOption, VersionOption
-from .run import run
-from .state import cli as state_cli
-from .steps import cli as steps_cli
+from librelane.__version__ import __version__
+from librelane.plugins import discovered_plugins
+from librelane.cli._app import DefaultToRunGroup, make_app
+from librelane.cli.config import cli as config_cli
+from librelane.cli.env_info import show_env_info
+from librelane.cli.help import show_help
+from librelane.cli.metrics import cli as metrics_cli
+from librelane.cli.options import BareVersionOption, VersionOption
+from librelane.cli.run import run
+from librelane.cli.state import cli as state_cli
+from librelane.cli.steps import cli as steps_cli
 
 
 def version_message() -> str:

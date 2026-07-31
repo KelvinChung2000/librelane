@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .misc import _get_process_limit
+from librelane.common.misc import _get_process_limit
 
 import contextvars
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -58,7 +58,10 @@ def set_tpe(tpe: ThreadPoolExecutor):
     It will be used inside steps, so use different TPEs inside steps to avoid
     a deadlock.
 
-    :param tpe: The replacement ThreadPoolExecutor
+    Parameters
+    ----------
+    tpe : ThreadPoolExecutor
+        The replacement ThreadPoolExecutor
     """
     global TPE
     TPE = tpe
@@ -66,7 +69,10 @@ def set_tpe(tpe: ThreadPoolExecutor):
 
 def get_tpe() -> ThreadPoolExecutor:
     """
-    :returns: LibreLane's global ``ThreadPoolExecutor``. This is used to run
+    Returns
+    -------
+    ThreadPoolExecutor
+        LibreLane's global ``ThreadPoolExecutor``. This is used to run
         steps, so do not use them inside steps to avoid a deadlock.
     """
     global TPE

@@ -28,8 +28,8 @@ from collections.abc import Sequence
 import httpx
 import semver
 
-from .common import mkdirp
-from .env_info import ContainerInfo, OSInfo
+from librelane.common import mkdirp
+from librelane.env_info import ContainerInfo, OSInfo
 
 
 def permission_args(osinfo: OSInfo) -> list[str]:
@@ -137,7 +137,11 @@ dos_path_sep = re.compile(r"\\")
 
 def sanitize_path(path: Union[str, os.PathLike]) -> tuple[str, str]:
     """
-    :returns: A tuple of:
+    Returns
+    -------
+    tuple[str, str]
+        A tuple of:
+
         - The host path, processed ``abspath``
         - The target path, on UNIX-like operating systems it's identical to the
           host path, but on Windows, the path is translated to a valid UNIX path

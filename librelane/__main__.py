@@ -20,7 +20,7 @@ documentation. All three pass configuration files without naming a subcommand,
 which :class:`librelane.cli._app.DefaultToRunGroup` resolves to ``run``.
 """
 
-from .cli.main import cli
+from librelane.cli.main import cli
 
 
 if __name__ == "__main__":

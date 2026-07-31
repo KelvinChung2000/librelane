@@ -18,7 +18,7 @@ from typing import Any, ClassVar
 from collections.abc import Callable, Iterable, Mapping
 
 
-from ..types import Number, is_number, is_real_number
+from librelane.common.types import Number, is_number, is_real_number
 
 MetricAggregator = tuple[Number, Callable[[Iterable[Number]], Number]]
 
@@ -30,20 +30,28 @@ max_aggregator: MetricAggregator = (-inf, max)
 @dataclass
 class MetricComparisonResult:
     """
-    :param metric_name: The name of the metric that has been compared
-    :param gold: The "gold" value being compared against
-    :param new: The new value being evaluated
-    :param delta: ``None`` if and only if ``before`` - ``after`` is an invalid number.
+    Parameters
+    ----------
+    metric_name : str
+        The name of the metric that has been compared
+    gold : Any
+        The "gold" value being compared against
+    new : Any
+        The new value being evaluated
+    delta : Number | None
+        ``None`` if and only if ``before`` - ``after`` is an invalid number.
         Evaluates to ``after - before``\\.
-    :param delta_pct: ``None`` if ``delta`` is None or before is zero.
+    delta_pct : Number | None
+        ``None`` if ``delta`` is None or before is zero.
         Otherwise, evaluates to ``delta / before * 100``\\.
-    :param better: Whether the change in the value is considered a good thing or
+    better : bool | None
+        Whether the change in the value is considered a good thing or
         not. ``None`` if ``delta`` is None or has no value set for
         ``Metric.higher_is_better``\\.
-    :param critical: Whether this change of value very likely results in a dead
+    critical : bool
+        Whether this change of value very likely results in a dead
         chip, i.e., an increase in DRC values, or an inexplicable change in
         the number of I/O pins.
-
     """
 
     metric_name: str
@@ -86,8 +94,12 @@ class Metric(object):
     """
     An object storing data about a metric as defined in METRICS2.1.
 
-    :param name: The string name of the metric.
-    :param aggregator: A tuple of:
+    Parameters
+    ----------
+    name : str
+        The string name of the metric.
+    aggregator : MetricAggregator | None
+        A tuple of:
         - A starting value for an accumulator
         - A reduction function
 
@@ -98,11 +110,12 @@ class Metric(object):
         - ``timing__hold_vio__count__corner:B``
 
         Would be summed up to generate the value for ``timing__hold_vio__count``.
-    :param higher_is_better: At a high level, whether a higher numeric value for
+    higher_is_better : bool | None
+        At a high level, whether a higher numeric value for
         this metric is considered "good" (such as: better utilization) or "bad"
         (such as: more antenna violations.)
-    :param critical: A critical metric is always watched for any change.
-
+    critical : bool
+        A critical metric is always watched for any change.
     """
 
     name: str
@@ -118,8 +131,15 @@ class Metric(object):
 
     def modified_name(self, modifiers: Mapping[str, str]) -> str:
         """
-        :param modifiers: Modifiers of a metric (i.e. the elements postfixed to the metric in the format {key}:{value})
-        :returns: The name with the modifiers added
+        Parameters
+        ----------
+        modifiers : Mapping[str, str]
+            Modifiers of a metric (i.e. the elements postfixed to the metric in the format {key}:{value})
+
+        Returns
+        -------
+        str
+            The name with the modifiers added
         """
         return "__".join([self.name] + [f"{k}:{v}" for k, v in modifiers.items()])
 
@@ -131,12 +151,21 @@ class Metric(object):
         modifiers: Mapping[str, str] | None = None,
     ) -> MetricComparisonResult:
         """
-        :param gold: The "gold-standard" value for this metric to compare against
-        :param new: The new value for this metric being evaluated
-        :param modifier: The modifiers that were parsed from the metric name
+        Parameters
+        ----------
+        gold : Any
+            The "gold-standard" value for this metric to compare against
+        new : Any
+            The new value for this metric being evaluated
+        modifier : Mapping[str, str] | None
+            The modifiers that were parsed from the metric name
             (if applicable)- used to set the ``metric_name`` property of
             :class:`MetricComparisonResult`.
-        :returns: The result of comparing two values for this metric.
+
+        Returns
+        -------
+        MetricComparisonResult
+            The result of comparing two values for this metric.
         """
         is_better = None
         is_critical = self.critical and (gold != new)

@@ -19,7 +19,7 @@ reach it. ``.github/scripts/compare_metrics.js`` invokes it that way and
 quotes the same command back into pull-request comments.
 """
 
-from ...cli.metrics import cli
+from librelane.cli.metrics import cli
 
 
 if __name__ == "__main__":

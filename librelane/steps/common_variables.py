@@ -18,7 +18,7 @@
 from decimal import Decimal
 from typing import Optional, Literal
 
-from ..config import BaseConfigModel, model_to_variables, variable
+from librelane.config import BaseConfigModel, model_to_variables, variable
 
 
 class IoLayerConfig(BaseConfigModel):

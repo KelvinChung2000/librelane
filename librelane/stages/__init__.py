@@ -18,7 +18,7 @@ See ``docs/source/usage/swapping_tools.md`` for user documentation and
 ``docs/source/usage/writing_tool_backends.md`` for the provider contract.
 """
 
-from .stage import (
+from librelane.stages.stage import (
     Stage,
     StageError,
     StageContractError,
@@ -26,11 +26,11 @@ from .stage import (
     PNR_IN_PLACE_REQUIRES,
     PNR_IN_PLACE_PROVIDES,
 )
-from .registry import Registration, StageRegistry
-from . import taxonomy as taxonomy  # noqa: F401  (registration side effects)
-from .taxonomy import STAGE_ORDER
-from . import providers as providers  # noqa: F401  (registration side effects)
-from .tools import extract_tools
+from librelane.stages.registry import Registration, StageRegistry
+from librelane.stages import taxonomy as taxonomy  # noqa: F401  (registration side effects)
+from librelane.stages.taxonomy import STAGE_ORDER
+from librelane.stages import providers as providers  # noqa: F401  (registration side effects)
+from librelane.stages.tools import extract_tools
 
 __all__ = [
     "Stage",

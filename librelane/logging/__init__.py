@@ -19,8 +19,8 @@ This module initializes Loguru and owns LibreLane's logging settings and sinks.
 Application code logs through :data:`loguru.logger` directly.
 """
 
-from .live import LiveLog, StepDisplay
-from .logger import (
+from librelane.logging.live import LiveLog, StepDisplay
+from librelane.logging.logger import (
     options,
     console,
     live,

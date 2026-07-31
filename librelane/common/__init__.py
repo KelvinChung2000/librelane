@@ -20,16 +20,16 @@ A number of common utility functions and classes used throughout the codebase.
 
 import os
 
-from .tcl import TclUtils
-from .metrics import parse_metric_modifiers, aggregate_metrics
-from . import metrics
-from .generic_dict import (
+from librelane.common.tcl import TclUtils
+from librelane.common.metrics import parse_metric_modifiers, aggregate_metrics
+from librelane.common import metrics
+from librelane.common.generic_dict import (
     GenericDictEncoder,
     GenericDict,
     GenericImmutableDict,
     copy_recursive,
 )
-from .misc import (
+from librelane.common.misc import (
     idem,
     get_pdk_hash,
     slugify,
@@ -45,7 +45,7 @@ from .misc import (
     count_occurences,
     _get_process_limit,
 )
-from .types import (
+from librelane.common.types import (
     is_number,
     is_real_number,
     is_string,
@@ -54,7 +54,7 @@ from .types import (
     AnyPath,
     ScopedFile,
 )
-from .toolbox import Toolbox
-from .fingerprint import Fingerprinter
-from .drc import DRC, Violation, BoundingBox
-from .tpe import get_tpe, set_tpe, ContextPropagatingThreadPoolExecutor
+from librelane.common.toolbox import Toolbox
+from librelane.common.fingerprint import Fingerprinter
+from librelane.common.drc import DRC, Violation, BoundingBox
+from librelane.common.tpe import get_tpe, set_tpe, ContextPropagatingThreadPoolExecutor

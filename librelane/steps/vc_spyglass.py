@@ -27,8 +27,8 @@ than returning a guessed command line, per the contract
 situation.
 """
 
-from .vendor import VendorTclStep
-from .step import Step
+from librelane.steps.vendor import VendorTclStep
+from librelane.steps.step import Step
 
 
 class VCSpyGlassStep(VendorTclStep):

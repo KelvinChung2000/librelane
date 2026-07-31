@@ -26,9 +26,9 @@ step-level.
 implementation plan for how they were derived.
 """
 
-from ..state import DesignFormat
+from librelane.state import DesignFormat
 
-from .stage import Stage, PNR_IN_PLACE_PROVIDES, PNR_IN_PLACE_REQUIRES
+from librelane.stages.stage import Stage, PNR_IN_PLACE_PROVIDES, PNR_IN_PLACE_REQUIRES
 
 _NO_VIEWS: tuple[DesignFormat, ...] = ()
 

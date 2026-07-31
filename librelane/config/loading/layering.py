@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 from collections.abc import Iterable
 
-from .sources import ConfigSource
+from librelane.config.loading.sources import ConfigSource
 
 
 @dataclass(frozen=True)

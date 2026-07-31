@@ -20,7 +20,7 @@ This modules includes various functions for importing and/or generating LibreLan
 configuration objects. Configuration objects are the primary input to a flow.
 """
 
-from .step import (
+from librelane.steps.step import (
     StepError,
     DeferredStepError,
     StepException,
@@ -31,16 +31,16 @@ from .step import (
     MetricsUpdate,
     ViewsUpdate,
 )
-from .tclstep import TclStep
-from . import checker as Checker
+from librelane.steps.tclstep import TclStep
+from librelane.steps import checker as Checker
 
 # You'll notice some TclStep subclasses are exposed separately-
 # this is for documentation.
-from . import yosys as Yosys
-from .yosys import YosysStep
+from librelane.steps import yosys as Yosys
+from librelane.steps.yosys import YosysStep
 
-from . import openroad as OpenROAD
-from .openroad import (
+from librelane.steps import openroad as OpenROAD
+from librelane.steps.openroad import (
     OpenROADAlert,
     OpenROADAlertMixin,
     OpenROADOutputProcessor,
@@ -48,71 +48,71 @@ from .openroad import (
     SupportsOpenROADAlerts,
 )
 
-from . import odb as Odb
-from .odb import OdbpyStep, ECOBuffer, ECODiode
+from librelane.steps import odb as Odb
+from librelane.steps.odb import OdbpyStep, ECOBuffer, ECODiode
 
-from . import magic as Magic
-from .magic import MagicStep
+from librelane.steps import magic as Magic
+from librelane.steps.magic import MagicStep
 
-from . import netgen as Netgen
-from .netgen import NetgenStep
+from librelane.steps import netgen as Netgen
+from librelane.steps.netgen import NetgenStep
 
-from . import klayout as KLayout
-from . import misc as Misc
-from . import verilator as Verilator
+from librelane.steps import klayout as KLayout
+from librelane.steps import misc as Misc
+from librelane.steps import verilator as Verilator
 
 # Commercial ("vendor") CAD tool provider scaffolds. See librelane/steps/
 # vendor.py for what these are (and are not): every step built on them
 # raises NotImplementedError from run() until someone with access to the
 # actual tool fills in the corresponding script or API calls.
-from . import pt as PrimeTime
-from .pt import PrimeTimeStep
+from librelane.steps import pt as PrimeTime
+from librelane.steps.pt import PrimeTimeStep
 
-from . import starrc as StarRC
-from .starrc import StarRCStep
+from librelane.steps import starrc as StarRC
+from librelane.steps.starrc import StarRCStep
 
-from . import icv as ICValidator
-from .icv import ICValidatorStep
+from librelane.steps import icv as ICValidator
+from librelane.steps.icv import ICValidatorStep
 
-from . import fm as Formality
-from .fm import FormalityStep
+from librelane.steps import fm as Formality
+from librelane.steps.fm import FormalityStep
 
-from . import vc_spyglass as VCSpyGlass
-from .vc_spyglass import VCSpyGlassStep
+from librelane.steps import vc_spyglass as VCSpyGlass
+from librelane.steps.vc_spyglass import VCSpyGlassStep
 
-from . import calibre as Calibre
-from .calibre import CalibreStep
+from librelane.steps import calibre as Calibre
+from librelane.steps.calibre import CalibreStep
 
 # Commercial ("vendor") tool scaffolds. Every step registers in Step.factory
 # by being imported here, exactly like the open-source tool modules above;
 # none of them is opted into any Stage by this module, which happens instead
 # at the provider-registration layer.
-from . import dc as DC
-from .dc import DCStep
+from librelane.steps import dc as DC
+from librelane.steps.dc import DCStep
 
-from . import fc as FC
-from .fc import FCStep
+from librelane.steps import fc as FC
+from librelane.steps.fc import FCStep
 
-from . import icc2 as ICC2
-from .icc2 import ICC2Step
+from librelane.steps import icc2 as ICC2
+from librelane.steps.icc2 import ICC2Step
 
-from . import genus as Genus
-from .genus import GenusStep
+from librelane.steps import genus as Genus
+from librelane.steps.genus import GenusStep
 
-from . import innovus as Innovus
-from .innovus import InnovusStep
+from librelane.steps import innovus as Innovus
+from librelane.steps.innovus import InnovusStep
 
-from . import tempus as Tempus
-from .tempus import TempusStep
+from librelane.steps import tempus as Tempus
+from librelane.steps.tempus import TempusStep
 
-from . import quantus as Quantus
-from .quantus import QuantusStep
+from librelane.steps import quantus as Quantus
+from librelane.steps.quantus import QuantusStep
 
-from . import voltus as Voltus
-from .voltus import VoltusStep
+from librelane.steps import voltus as Voltus
+from librelane.steps.voltus import VoltusStep
 
-from . import pegasus as Pegasus
-from .pegasus import PegasusStep
+from librelane.steps import pegasus as Pegasus
+from librelane.steps.pegasus import PegasusStep
 
-from . import conformal as Conformal
-from .conformal import ConformalStep
+from librelane.steps import conformal as Conformal
+from librelane.steps.conformal import ConformalStep

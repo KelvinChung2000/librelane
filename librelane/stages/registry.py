@@ -18,12 +18,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
-from ..config.flow import flow_common_variables
-from ..state import DesignFormat
-from ..steps import Step
-from ..steps.step.composition import compose_step_sequence
+from librelane.config.flow import flow_common_variables
+from librelane.state import DesignFormat
+from librelane.steps import Step
+from librelane.steps.step.composition import compose_step_sequence
 
-from .stage import Stage, StageError
+from librelane.stages.stage import Stage, StageError
 
 _COMMON_VARIABLE_NAMES = frozenset(variable.name for variable in flow_common_variables)
 
@@ -34,22 +34,31 @@ class Registration:
     Binds a span of one or more consecutive stages, plus one provider, to an
     ordered sequence of concrete steps.
 
-    :param stage: The stage id this registration implements. Exactly one. A
+    Parameters
+    ----------
+    stage : str
+        The stage id this registration implements. Exactly one. A
         provider that cannot decompose a span of stages has no way to say so,
         deliberately: gating, contract checking and provider selection are all
         per-stage.
-    :param provider: The tool name, for example ``openroad``. Not a vendor
+    provider : str
+        The tool name, for example ``openroad``. Not a vendor
         name.
-    :param steps: The ordered step sequence that implements the span.
-    :param namespaces: Accepted configuration variable prefixes for steps in
+    steps : tuple[type[Step], ...]
+        The ordered step sequence that implements the span.
+    namespaces : tuple[str, ...]
+        Accepted configuration variable prefixes for steps in
         this sequence. New providers declare exactly one, tool-named prefix;
         the ``openroad`` provider declares the several legacy prefixes that
         predate this design.
-    :param provides: Views this provider guarantees beyond the stage's own
+    provides : tuple[DesignFormat, ...]
+        Views this provider guarantees beyond the stage's own
         ``provides``.
-    :param metrics: Metric names this provider guarantees beyond the stage's
+    metrics : tuple[str, ...]
+        Metric names this provider guarantees beyond the stage's
         own ``metrics``.
-    :param native_views: Tool-native views this provider carries across stage
+    native_views : tuple[DesignFormat, ...]
+        Tool-native views this provider carries across stage
         boundaries itself, for example OpenROAD's ``odb``. Exempt from the
         registration-time view check; validated instead by the static view
         availability check at resolution.
@@ -209,7 +218,10 @@ class StageRegistry(object):
     @classmethod
     def providers(Self, stage: str) -> builtins.list[str]:
         """
-        :returns: Provider names registered for this stage, in registration
+        Returns
+        -------
+        builtins.list[str]
+            Provider names registered for this stage, in registration
             order.
         """
         return [

@@ -19,27 +19,27 @@ from typing import Optional, Union
 
 from loguru import logger
 
-from ..common import Filter, parse_metric_modifiers
-from ..config import Config as ResolvedConfig, variable
-from ..stages.registry import StageRegistry
-from ..stages.resolution import (
+from librelane.common import Filter, parse_metric_modifiers
+from librelane.config import Config as ResolvedConfig, variable
+from librelane.stages.registry import StageRegistry
+from librelane.stages.resolution import (
     Resolution,
     ResolvedSpan,
     StageEntry,
     ToolSelection,
     resolve,
 )
-from ..stages.stage import (
+from librelane.stages.stage import (
     Stage,
     StageContractError,
     StageResolutionError,
 )
-from ..stages.tools import extract_tools
-from ..state import DesignFormat, State
-from ..steps import Step
+from librelane.stages.tools import extract_tools
+from librelane.state import DesignFormat, State
+from librelane.steps import Step
 
-from .explanation import Explanation
-from .sequential import SequentialFlow
+from librelane.flows.explanation import Explanation
+from librelane.flows.sequential import SequentialFlow
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,10 @@ class Boundary:
     A contiguous run of resolved steps belonging to one stage, and the contract
     that must hold once its last step completes.
 
-    :param provider: The provider whose obligation this boundary carries. A
+    Parameters
+    ----------
+    provider : str
+        The provider whose obligation this boundary carries. A
         single name for a boundary covering one provider's steps, and the
         selected names joined by ``+`` for one covering a whole
         ``multi_provider`` stage.
@@ -71,7 +74,10 @@ class StagedFlow(SequentialFlow):
     :class:`librelane.stages.Stage` objects, so the tool used for each phase
     can be chosen from configuration rather than by subclassing the flow.
 
-    :cvar Stages: The flow in stage terms. Entries are either ``Stage``
+    Attributes
+    ----------
+    Stages : list[StageEntry]
+        The flow in stage terms. Entries are either ``Stage``
         objects, which expand to whichever provider is selected, or plain
         ``Step`` classes, which are provider-neutral utilities and boundary
         observations. A plain step entry is only meaningful at a stage
@@ -240,7 +246,10 @@ class StagedFlow(SequentialFlow):
     @staticmethod
     def __how_to_produce(view: DesignFormat) -> str:
         """
-        :returns: The remedial half of a preflight error: which registered
+        Returns
+        -------
+        str
+            The remedial half of a preflight error: which registered
             provider declares this view, so the reader is not left working out
             for themselves which tool they dropped.
 
@@ -283,7 +292,10 @@ class StagedFlow(SequentialFlow):
 
     def __gates_by_step_id(self) -> dict[str, list[str]]:
         """
-        :returns: The gating variables in force for each step ID, expanded by
+        Returns
+        -------
+        dict[str, list[str]]
+            The gating variables in force for each step ID, expanded by
             the same :meth:`SequentialFlow._expand_gating_config_vars` helper
             :meth:`SequentialFlow.run` uses.
 
@@ -337,8 +349,15 @@ class StagedFlow(SequentialFlow):
     @staticmethod
     def _span_for(target, boundary: Boundary) -> ResolvedSpan:
         """
-        :returns: The resolved span the steps of ``boundary`` were expanded from.
-        :raises StageResolutionError: If the resolution does not cover that
+        Returns
+        -------
+        ResolvedSpan
+            The resolved span the steps of ``boundary`` were expanded from.
+
+        Raises
+        ------
+        StageResolutionError
+            If the resolution does not cover that
             stage, which means the step tags and the resolution disagree.
 
         Every tagged step in a ``StagedFlow``'s ``Steps`` came out of that flow's
@@ -412,7 +431,10 @@ class StagedFlow(SequentialFlow):
         config_override_strings: Sequence[str] | None,
     ) -> Mapping[str, ToolSelection]:
         """
-        :returns: The ``TOOLS`` mapping, read from raw sources by the pre-pass
+        Returns
+        -------
+        Mapping[str, ToolSelection]
+            The ``TOOLS`` mapping, read from raw sources by the pre-pass
             or taken directly from an already-resolved configuration.
         """
         if isinstance(config, ResolvedConfig):
@@ -507,7 +529,10 @@ class StagedFlow(SequentialFlow):
     @classmethod
     def describe_stages(Self) -> list[tuple[str, Optional[str]]]:
         """
-        :returns: One entry per stage in ``Stages``, in flow order, pairing the
+        Returns
+        -------
+        list[tuple[str, Optional[str]]]
+            One entry per stage in ``Stages``, in flow order, pairing the
             stage id with the provider selected for it by default. The
             provider is ``None`` for an unselected optional stage, and several
             names joined by ``", "`` for a multi-provider stage.

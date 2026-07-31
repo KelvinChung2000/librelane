@@ -19,9 +19,9 @@ import rich.console
 import rich.markdown
 import typer
 
-from ..flows import Flow
-from ..steps import Step
-from ._app import make_app
+from librelane.flows import Flow
+from librelane.steps import Step
+from librelane.cli._app import make_app
 
 
 def show_help(

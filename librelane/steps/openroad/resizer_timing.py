@@ -22,12 +22,12 @@ from typing import (
 )
 
 
-from ...config import variable
-from ..step import (
+from librelane.config import variable
+from librelane.steps.step import (
     Step,
 )
 
-from .resizer import ResizerStep
+from librelane.steps.openroad.resizer import ResizerStep
 
 
 @Step.factory.register()

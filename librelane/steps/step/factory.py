@@ -23,13 +23,13 @@ from typing import (
 from collections.abc import Callable
 
 
-from ...config import (
+from librelane.config import (
     Config,
 )
 import builtins
 
 if TYPE_CHECKING:
-    from .core import Step
+    from librelane.steps.step.core import Step
 
 VT = TypeVar("VT")
 
@@ -82,13 +82,19 @@ class StepFactory(object):
         """
         Retrieves a Step type from the registry using a lookup string.
 
-        :param name: The registered name of the Step. Case-insensitive.
+        Parameters
+        ----------
+        name : str
+            The registered name of the Step. Case-insensitive.
         """
         return Self.__registry.get(name.lower())
 
     @classmethod
     def list(Self) -> builtins.list[str]:
         """
-        :returns: A list of IDs of all registered names.
+        Returns
+        -------
+        builtins.list[str]
+            A list of IDs of all registered names.
         """
         return [cls.id for cls in Self.__registry.values()]

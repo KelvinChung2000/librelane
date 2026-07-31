@@ -24,8 +24,8 @@ the module. Keeping them as data is what let the ``namespaces`` and
 declarations rather than guessed.
 """
 
-from ..state import DesignFormat
-from ..steps import (
+from librelane.state import DesignFormat
+from librelane.steps import (
     Checker,
     KLayout,
     Magic,
@@ -36,7 +36,7 @@ from ..steps import (
     Yosys,
 )
 
-from .registry import StageRegistry
+from librelane.stages.registry import StageRegistry
 
 #: Accepted configuration variable prefixes and names for the OpenROAD step
 #: family. The prefixes predate this design and are not renamed by it; the bare

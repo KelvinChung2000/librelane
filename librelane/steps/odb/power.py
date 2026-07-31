@@ -20,17 +20,17 @@ from importlib.resources import files
 import os
 from typing import Optional
 
-from ...common import Path
-from ...config import variable
-from ...state import DesignFormat, State
+from librelane.common import Path
+from librelane.config import variable
+from librelane.state import DesignFormat, State
 
-from ..step import (
+from librelane.steps.step import (
     MetricsUpdate,
     Step,
     ViewsUpdate,
 )
 
-from .base import OdbpyStep
+from librelane.steps.odb.base import OdbpyStep
 
 
 @Step.factory.register()

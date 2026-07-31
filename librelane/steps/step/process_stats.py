@@ -24,7 +24,7 @@ from typing import (
 )
 
 
-from ...common import (
+from librelane.common import (
     format_size,
     format_elapsed_time,
 )

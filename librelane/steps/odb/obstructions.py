@@ -20,16 +20,16 @@ from importlib.resources import files
 from decimal import Decimal
 from typing import ClassVar, Optional
 
-from ...config import variable
-from ...state import State
+from librelane.config import variable
+from librelane.state import State
 
-from ..step import (
+from librelane.steps.step import (
     MetricsUpdate,
     Step,
     ViewsUpdate,
 )
 
-from .base import OdbpyStep
+from librelane.steps.odb.base import OdbpyStep
 
 
 class ObstructionStep(OdbpyStep):

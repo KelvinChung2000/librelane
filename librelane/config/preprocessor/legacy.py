@@ -23,7 +23,7 @@ from collections.abc import Mapping, Sequence
 from lark import Lark, Token, Transformer
 from lark.exceptions import UnexpectedCharacters, UnexpectedToken, VisitError
 
-from ...common import is_string
+from librelane.common import is_string
 
 Keys = SimpleNamespace(
     pdk_root="PDK_ROOT",

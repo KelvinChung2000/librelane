@@ -28,23 +28,23 @@ from typing import (
 )
 
 
-from ...common import (
+from librelane.common import (
     Path,
     _get_process_limit,
     ContextPropagatingThreadPoolExecutor,
     mkdirp,
 )
-from ...config import variable
-from ...state import DesignFormat, State
-from ..step import (
+from librelane.config import variable
+from librelane.state import DesignFormat, State
+from librelane.steps.step import (
     MetricsUpdate,
     Step,
     StepException,
     ViewsUpdate,
 )
 
-from .base import OpenROADStep
-from .sta import OpenSTAStep
+from librelane.steps.openroad.base import OpenROADStep
+from librelane.steps.openroad.sta import OpenSTAStep
 
 
 @Step.factory.register()

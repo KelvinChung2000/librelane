@@ -75,9 +75,13 @@ class LiveLog:
         autostart: bool = True,
     ) -> None:
         """
-        :param interval: Seconds between drains. Matches Rich's default refresh
+        Parameters
+        ----------
+        interval : float
+            Seconds between drains. Matches Rich's default refresh
             rate, so the terminal updates at the same cadence as the bar.
-        :param autostart: Whether to start the pump on first use. Tests set this
+        autostart : bool
+            Whether to start the pump on first use. Tests set this
             to ``False`` so drains happen only where they say they do.
         """
         self._console = console
@@ -167,7 +171,12 @@ class LiveLog:
             return self._steps.get(step_id)
 
     def snapshot(self) -> list[StepDisplay]:
-        """:returns: The currently live steps, for the progress bar to render."""
+        """
+        Returns
+        -------
+        list[StepDisplay]
+            The currently live steps, for the progress bar to render.
+        """
         with self._lock:
             return list(self._steps.values())
 
@@ -182,7 +191,10 @@ class LiveLog:
         Buffers one record. This is the producer path and must stay cheap: it
         appends and returns, never blocking and never dropping.
 
-        :param markup: Whether ``text`` carries Rich markup. LibreLane's own
+        Parameters
+        ----------
+        markup : bool
+            Whether ``text`` carries Rich markup. LibreLane's own
             messages do; raw subprocess output must not, or a stray ``[`` in
             tool output would be eaten as a tag.
         """

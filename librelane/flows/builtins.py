@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # flake8: noqa
-from .classic import Classic, VHDLClassic
-from .chip import Chip
-from .misc import OpenInKLayout, OpenInOpenROAD
+from librelane.flows.classic import Classic, VHDLClassic
+from librelane.flows.chip import Chip
+from librelane.flows.misc import OpenInKLayout, OpenInOpenROAD

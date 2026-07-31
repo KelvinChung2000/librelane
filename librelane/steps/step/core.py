@@ -36,16 +36,16 @@ from typing import (
 from collections.abc import Callable, Sequence
 
 
-from ...config import (
+from librelane.config import (
     BaseConfigModel,
     Config as ConfigMap,
     Variable,
     model_to_variables,
     variables_to_model,
 )
-from ...config.flow import OptionConfig, PadConfig, PdkConfig, SclConfig
-from ...state import DesignFormat, State, InvalidState, StateElement
-from ...common import (
+from librelane.config.flow import OptionConfig, PadConfig, PdkConfig, SclConfig
+from librelane.state import DesignFormat, State, InvalidState, StateElement
+from librelane.common import (
     GenericImmutableDict,
     GenericDictEncoder,
     Toolbox,
@@ -54,14 +54,22 @@ from ...common import (
     protected,
     format_elapsed_time,
 )
-from ...logging import step_context
-from ...__version__ import __version__
+from librelane.logging import step_context
+from librelane.__version__ import __version__
 
-from .exceptions import StepError, StepException, StepNotFound, StepSignalled
-from .factory import StepFactory
-from .output_processor import DefaultOutputProcessor, OutputProcessor
-from .reporting import ReportingMixin
-from .subprocess_exec import SubprocessMixin
+from librelane.steps.step.exceptions import (
+    StepError,
+    StepException,
+    StepNotFound,
+    StepSignalled,
+)
+from librelane.steps.step.factory import StepFactory
+from librelane.steps.step.output_processor import (
+    DefaultOutputProcessor,
+    OutputProcessor,
+)
+from librelane.steps.step.reporting import ReportingMixin
+from librelane.steps.step.subprocess_exec import SubprocessMixin
 
 VT = TypeVar("VT")
 
@@ -87,12 +95,15 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     thread and then, if you're using a Flow object, use ``start_step_async``, or
     if you're not, you may use ``start`` in another thread. That part's fine.
 
-    :param config: A configuration object.
+    Parameters
+    ----------
+    config : ConfigMap | BaseConfigModel | None
+        A configuration object.
 
         If running in interactive mode, you can set this to ``None``, but it is
         otherwise required.
-
-    :param state_in: The state object this step will use as an input.
+    state_in : State | None | Future[State]
+        The state object this step will use as an input.
 
         The state may also be a ``Future[State]``, in which case,
         the ``start()`` call will block until that Future is realized.
@@ -102,12 +113,12 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
 
         If running in interactive mode, you can set this to ``None``, where it
         will use the last generated state, but it is otherwise required.
-
-    :param step_dir: A "scratch directory" for the step. Required.
+    step_dir
+        A "scratch directory" for the step. Required.
 
         You may omit this argument as ``None`` if "flow" is specified.
-
-    :param id: A string ID for the Step. The convention is f"{a}.{b}", where the
+    id : str | None
+        A string ID for the Step. The convention is f"{a}.{b}", where the
         first is common between all Steps using the same tools.
 
         The ID should be in ``UpperCamelCase``.
@@ -118,66 +129,64 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
 
         :class:`Step` subclasses without the ``id`` class property declared
         are considered abstract and cannot be initialized or used in a :class:`Flow`.
-
-    :param name: A short name for the Step, used in progress bars and
+    name : str | None
+        A short name for the Step, used in progress bars and
         the like.
 
         While this is technically an instance variable, it is expected for every
         subclass to override this variable and instances are only to change it
         to disambiguate when the same step is used multiple times in a flow.
-
-    :param long_name: A longer descriptive for the Step, used to delimit
+    long_name : str | None
+        A longer descriptive for the Step, used to delimit
         logs.
 
         While this is technically an instance variable, it is expected for every
         subclass to override this variable and instances are only to change it
         to disambiguate when the same step is used multiple times in a flow.
+    flow : Any | None
+        Deprecated: the parent flow. Ignored if passed.
 
-    :param flow: Deprecated: the parent flow. Ignored if passed.
-
-    :cvar inputs: A list of :class:`librelane.state.DesignFormat` objects that
+    Attributes
+    ----------
+    inputs : ClassVar[list[DesignFormat]]
+        A list of :class:`librelane.state.DesignFormat` objects that
         are required for this step. These will be validated by the :meth:`start`
         method.
 
         :class:`Step` subclasses without the ``inputs`` class property declared
         are considered abstract and cannot be initialized or used in a :class:`Flow`.
-
-    :cvar outputs: A list of :class:`librelane.state.DesignFormat` objects that
+    outputs : ClassVar[list[DesignFormat]]
+        A list of :class:`librelane.state.DesignFormat` objects that
         may be emitted by this step. A step is not allowed to modify design
         formats not declared in ``outputs``.
 
         :class:`Step` subclasses without the ``outputs`` class property declared
         are considered abstract and cannot be initialized or used in a :class:`Flow`.
-
-    :cvar config_vars: A list of configuration :class:`librelane.config.Variable` objects
+    config_vars : ClassVar[list[Variable]]
+        A list of configuration :class:`librelane.config.Variable` objects
         to be used to alter the behavior of this Step.
-
-    :cvar output_processors: A default set of
+    output_processors : ClassVar[list[type[OutputProcessor]]]
+        A default set of
         :class:`librelane.steps.OutputProcessor` classes for use with
         :meth:`run_subprocess`.
-
-    :ivar state_out:
+    state_out : State | None
         The last output state from running this step object, if it exists.
 
         If :meth:`start` is called again, the reference is destroyed.
-
-    :ivar start_time:
+    start_time : float | None
         The last starting time from running this step object, if it exists.
 
         If :meth:`start` is called again, the reference is destroyed.
-
-    :ivar end_time:
+    end_time : float | None
         The last ending time from running this step object, if it exists.
 
         If :meth:`start` is called again, the reference is destroyed.
-
-    :ivar config_path:
+    config_path : pathlib.Path | None
         Path to the last step-specific `config.json` generated while running
         this step object, if it exists.
 
         If :meth:`start` is called again, the path will be replaced.
-
-    :ivar toolbox:
+    toolbox : Toolbox
         The last :class:`Toolbox` used while running this step object, if it
         exists.
 
@@ -349,7 +358,10 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         type checker to see. Installing it dynamically keeps ``Config`` usable
         as a base class everywhere else.
 
-        :param model: The generated model, which must derive from the
+        Parameters
+        ----------
+        model : type[BaseConfigModel]
+            The generated model, which must derive from the
             ``Config`` of the step being specialized.
         """
         setattr(Self, "Config", model)
@@ -392,7 +404,10 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
 
         If the class is not concrete, a ``NotImplementedError`` is raised.
 
-        :param action: The action to be attempted, to be included in the
+        Parameters
+        ----------
+        action : str
+            The action to be attempted, to be included in the
             ``NotImplementedError`` message.
         """
         if isabstract(Self):
@@ -432,16 +447,24 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
 
         Useful for re-running steps that have already run.
 
-        :param config:
+        Parameters
+        ----------
+        config : str | os.PathLike | ConfigMap
             (Path to) a **Step-filtered** configuration
 
             The step will not tolerate variables unrelated to this specific step.
-        :param state: (Path to) a valid input state
-        :param pdk_root: The PDK root, which is needed for some utilities.
+        state
+            (Path to) a valid input state
+        pdk_root : str | None
+            The PDK root, which is needed for some utilities.
 
             If your utility doesn't require it, just keep the default value
             as-is.
-        :returns: The created step object
+
+        Returns
+        -------
+        Step
+            The created step object
         """
         if Self.id == NotImplemented:  # If abstract
             id, Target = Step.factory.from_step_config(config)
@@ -507,7 +530,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         # the historical module-level API intact, this lets callers patch the
         # variable list on ``librelane.steps.step`` as they could before this
         # module became a package.
-        from . import universal_flow_config_variables
+        from librelane.steps.step import universal_flow_config_variables
 
         variables_by_name: dict[str, Variable] = {
             variable.name: variable for variable in universal_flow_config_variables
@@ -536,18 +559,24 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
 
         This method is final and should not be subclassed.
 
-        :param toolbox: The flow's :class:`Toolbox` object, required.
+        Parameters
+        ----------
+        toolbox : Toolbox | None
+            The flow's :class:`Toolbox` object, required.
 
             If running in interactive mode, you may omit this argument as ``None``\\,
             where a global toolbox will be used instead.
 
             If running inside a flow, you may also omit this argument as ``None``\\,
             where the flow's toolbox will used to be instead.
-
-        :param \\*\\*kwargs: Passed on to subprocess execution: useful if you want to
+        **kwargs
+            Passed on to subprocess execution: useful if you want to
             redirect stdin, stdout, etc.
 
-        :returns: An altered State object.
+        Returns
+        -------
+        State
+            An altered State object.
         """
 
         if step_dir is None:
@@ -677,15 +706,18 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         called anywhere outside of the same object's :meth:`start`\\, its behavior
         is undefined.
 
-        :param state_in: The input state.
+        Parameters
+        ----------
+        state_in : State
+            The input state.
 
             Note that ``self.state_in`` is stored as a future and would need to be
             resolved before use first otherwise.
 
             For reference, ``start()`` is responsible for resolving it
             for ``.run()``\\.
-
-        :param \\*\\*kwargs: Passed on to subprocess execution: useful if you want to
+        **kwargs
+            Passed on to subprocess execution: useful if you want to
             redirect stdin, stdout, etc.
         """
         pass
