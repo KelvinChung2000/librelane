@@ -53,6 +53,18 @@ def test_a_bare_uses_takes_the_stage_default_provider():
     assert bare["floorplan"].provider == "openroad"
 
 
+def test_a_bare_uses_on_a_multi_provider_stage_concatenates_every_default():
+    # 'streamout' is multi_provider with default_providers ('magic', 'klayout'),
+    # so a bare 'uses' means both, in order. Taking only the first would drop
+    # KLayout.StreamOut and with it the klayout_gds view the XOR job reads.
+    bare = resolve_jobs(_spec({"streamout": {"uses": "streamout"}}))["streamout"]
+
+    assert bare.steps == tuple(StageRegistry.get("streamout", "magic").steps) + tuple(
+        StageRegistry.get("streamout", "klayout").steps
+    )
+    assert bare.provider == "magic+klayout"
+
+
 def test_a_uses_job_inherits_the_stage_contract():
     jobs = resolve_jobs(_spec({"synthesis": {"uses": "synthesis/yosys"}}))
     job = jobs["synthesis"]
