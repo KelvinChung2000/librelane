@@ -18,6 +18,7 @@ import textwrap
 from unittest import mock
 
 import pytest
+import pathlib
 from pyfakefs.fake_filesystem_unittest import Patcher
 
 pytestmark = pytest.mark.all
@@ -419,12 +420,11 @@ def model_blackboxing():
     ],
 )
 def test_filter_views(corner, expected, mock_macros_config):
-    from librelane.common import Path
     from librelane.common import Toolbox
 
     toolbox = Toolbox(".")
     views_by_corner = {
-        k: Path(v)
+        k: pathlib.Path(v)
         for k, v in {
             "nom_*": "file1.spef",
             "*_tt_*": "typical.whatever",
@@ -435,9 +435,10 @@ def test_filter_views(corner, expected, mock_macros_config):
         }.items()
     }
 
-    assert (
-        toolbox.filter_views(mock_macros_config, views_by_corner, corner) == expected
-    ), "test_filter_views returned unexpected set of views"
+    assert [
+        str(view)
+        for view in toolbox.filter_views(mock_macros_config, views_by_corner, corner)
+    ] == expected, "test_filter_views returned unexpected set of views"
 
 
 def gmv_parameters(f):
@@ -878,14 +879,14 @@ def test_voltage_lib_get(sample_lib_files, caplog: pytest.LogCaptureFixture):
 def test_check_corner_granularity(
     views_by_corner, expected, mock_macros_config, mocker
 ):
-    from librelane.common import Path, Toolbox
+    from librelane.common import Toolbox
 
     warning = mocker.patch("librelane.common.toolbox.logger").warning
     toolbox = Toolbox(".")
 
     toolbox.check_corner_granularity(
         mock_macros_config,
-        {k: [Path(p) for p in v] for k, v in views_by_corner.items()},
+        {k: [pathlib.Path(p) for p in v] for k, v in views_by_corner.items()},
         corners=["nom_tt_025C_1v80", "nom_ss_n40C_1v80"],
         label="Macro 'a' LIB",
     )
@@ -901,12 +902,12 @@ def test_check_corner_granularity_stays_quiet_for_one_corner(
     mock_macros_config, mocker
 ):
     """With a single corner there is no granularity to be missing."""
-    from librelane.common import Path, Toolbox
+    from librelane.common import Toolbox
 
     warning = mocker.patch("librelane.common.toolbox.logger").warning
     Toolbox(".").check_corner_granularity(
         mock_macros_config,
-        {"*": [Path("/macro/any.lib")]},
+        {"*": [pathlib.Path("/macro/any.lib")]},
         corners=["nom_tt_025C_1v80"],
         label="Macro 'a' LIB",
     )
@@ -1001,3 +1002,105 @@ def test_create_blackbox_model_from_libs_is_lintable(tmp_path):
 
     assert "Cannot find file containing module" not in result.stdout + result.stderr
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+_PINLESS_LIB = """
+library (pinless) {
+  cell (has_pins) {
+    pin (A) { direction : input; }
+    pin (Y) { direction : output; }
+  }
+  cell (physical_only) {
+    area : 12.0;
+  }
+  cell (also_physical_only) {
+    area : 4.0;
+  }
+  cell (has_a_bus) {
+    bus (D) { bus_type : bus8; direction : input; }
+  }
+}
+"""
+
+
+@pytest.mark.usefixtures("_chdir_tmp")
+def test_find_pinless_cells_names_only_the_pinless_ones():
+    """Issue 910: a lib cell with no pins carries no timing and nothing can
+    connect to it, but it was accepted silently."""
+    from librelane.common import Toolbox
+
+    with open("pinless.lib", "w", encoding="utf8") as f:
+        f.write(_PINLESS_LIB)
+
+    assert Toolbox(".").find_pinless_cells("pinless.lib") == (
+        "physical_only",
+        "also_physical_only",
+    )
+
+
+@pytest.mark.usefixtures("_chdir_tmp")
+def test_check_lib_pins_warns_once_per_offending_lib(mocker):
+    from librelane.common import Toolbox
+
+    with open("pinless.lib", "w", encoding="utf8") as f:
+        f.write(_PINLESS_LIB)
+
+    warning = mocker.patch("librelane.common.toolbox.logger").warning
+    Toolbox(".").check_lib_pins(["pinless.lib"], label="Macro 'a' LIB")
+
+    messages = [str(call.args[0]) for call in warning.call_args_list]
+    assert len(messages) == 1
+    assert "Macro 'a' LIB" in messages[0]
+    assert "2 cell(s) with no pins" in messages[0]
+    assert "physical_only" in messages[0]
+    # A cell that does have pins must not be named.
+    assert "has_pins" not in messages[0]
+
+
+@pytest.mark.usefixtures("_chdir_tmp")
+def test_check_lib_pins_stays_quiet_when_every_cell_has_pins(mocker):
+    from librelane.common import Toolbox
+
+    with open("fine.lib", "w", encoding="utf8") as f:
+        f.write("library (fine) {\n  cell (a) { pin (A) { direction : input; } }\n}\n")
+
+    warning = mocker.patch("librelane.common.toolbox.logger").warning
+    Toolbox(".").check_lib_pins(["fine.lib"], label="Macro 'a' LIB")
+
+    warning.assert_not_called()
+
+
+# --- filter_views scalar-vs-iterable dispatch (#599 prep) ---
+
+
+@pytest.mark.parametrize("spelling", ["str", "pathlib.Path"])
+def test_filter_views_treats_any_path_like_as_one_view(spelling, mock_macros_config):
+    """A scalar view must never be walked element by element.
+
+    The dispatch used to ask ``is_string()``, which answered the question only
+    by accident, while the path type subclassed ``UserString``. A
+    ``pathlib.Path`` would have fallen through to ``list(value)`` and raised
+    TypeError, so this pins the property for both spellings.
+    """
+    import pathlib
+
+    from librelane.common import Toolbox
+
+    scalar = {
+        "str": "/macro/any.lib",
+        "pathlib.Path": pathlib.Path("/macro/any.lib"),
+    }[spelling]
+
+    result = Toolbox(".").filter_views(mock_macros_config, {"*": scalar})
+
+    assert result == [scalar]
+
+
+def test_filter_views_still_expands_a_list_of_views(mock_macros_config):
+    from librelane.common import Toolbox
+
+    views = [pathlib.Path("/macro/a.lib"), pathlib.Path("/macro/b.lib")]
+
+    result = Toolbox(".").filter_views(mock_macros_config, {"*": views})
+
+    assert result == views

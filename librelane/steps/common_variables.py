@@ -230,6 +230,12 @@ class PdnConfig(BaseConfigModel):
         pdk=True,
     )
 
+    PDN_CORE_RING_CONNECT_TO_PAD_LAYERS: Optional[list[str]] = variable(
+        None,
+        description="Restricts the connection between the core ring and the pad pins to these layers. Only applicable when `PDN_CORE_RING_CONNECT_TO_PADS` is enabled. If unset, every layer a pad pin appears on is eligible.",
+        pdk=True,
+    )
+
     PDN_CORE_RING_ALLOW_OUT_OF_DIE: bool = variable(
         True,
         description="If specified, the ring shapes are allowed to be outside the die boundary.",

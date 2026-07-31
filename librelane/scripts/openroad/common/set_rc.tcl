@@ -23,6 +23,34 @@ proc log_cmd_rc {cmd args} {
     }
 }
 
+# LAYERS_RC and VIAS_R are always given in LibreLane's standard units, kOhm/um
+# and pF/um for routing layers and kOhm per cut for vias, whatever units the
+# PDK's liberty files happen to declare.
+#
+# set_layer_rc reads its arguments in the units currently active in the
+# embedded OpenSTA. The signoff scripts under scripts/openroad/sta/ pin those
+# with set_cmd_units, but the PnR scripts that source this file do not call it
+# at all, so there they are whatever the first liberty file declared. The three
+# procs below convert a standard-unit value into the active one.
+#
+# The resistance factor is exactly 1.0 when the liberty already declares kohm,
+# as sky130's does. The other two are 1.0 only to about nine digits, because
+# OpenSTA holds pF and um at single precision and reports them as
+# 9.999999960041972e-13 and 9.999999974752427e-7. That is well below the
+# resolution of OpenROAD's layer RC store, which is a float, so the value that
+# lands in it is unchanged either way.
+proc rc_resistance_factor {} {
+    return [expr {1e3 / [sta::unit_scale resistance]}]
+}
+
+proc rc_capacitance_factor {} {
+    return [expr {1e-12 / [sta::unit_scale capacitance]}]
+}
+
+proc rc_distance_factor {} {
+    return [expr {[sta::unit_scale distance] / 1e-6}]
+}
+
 proc set_layers_custom_rc {args} {
     # Returns: All corner names for which RC values were found
     set i "0"
@@ -32,8 +60,8 @@ proc set_layers_custom_rc {args} {
         # [$corner] + [layer] + [str(round(res, 8))] + [str(round(cap, 8))]
         set corner_name [lindex $::env($tc_key) 0]
         set layer_name [lindex $::env($tc_key) 1]
-        set res_value [lindex $::env($tc_key) 2]
-        set cap_value [lindex $::env($tc_key) 3]
+        set res_value [expr {[lindex $::env($tc_key) 2] * [rc_resistance_factor] * [rc_distance_factor]}]
+        set cap_value [expr {[lindex $::env($tc_key) 3] * [rc_capacitance_factor] * [rc_distance_factor]}]
         log_cmd_rc set_layer_rc \
             -layer $layer_name\
             -capacitance $cap_value\
@@ -55,7 +83,7 @@ proc set_via_custom_r {args} {
     while { [info exists ::env($tc_key)] } {
         set corner_name [lindex $::env($tc_key) 0]
         set via_name [lindex $::env($tc_key) 1]
-        set res_value [lindex $::env($tc_key) 2]
+        set res_value [expr {[lindex $::env($tc_key) 2] * [rc_resistance_factor]}]
         log_cmd_rc set_layer_rc \
             -via $via_name\
             -resistance $res_value\

@@ -15,7 +15,6 @@ mock_variables = pytest.mock_variables
 
 @pytest.fixture
 def KeyStep():
-    from librelane.common import Path
     from librelane.state import DesignFormat, State
     from librelane.steps import Step
 
@@ -30,7 +29,7 @@ def KeyStep():
         def run(self, state_in: State, **kwargs):
             out_file = pathlib.Path(self.step_dir) / "whatever.json"
             out_file.write_text("{}")
-            return {DesignFormat.JSON_HEADER: Path(out_file)}, {}
+            return {DesignFormat.JSON_HEADER: pathlib.Path(out_file)}, {}
 
     return KeyStep
 
@@ -130,17 +129,18 @@ def test_a_path_is_not_walked_as_a_sequence(KeyStep):
     paths with identical contents must collide; per-character walking would
     make them differ.
     """
-    from librelane.common import Path
     from librelane.flows.resume import _substitute_paths
 
     fingerprinter = Fingerprinter()
     pathlib.Path("/cwd/src/a.v").write_text("same")
     pathlib.Path("/cwd/src/b.v").write_text("same")
 
-    assert _substitute_paths(Path("/cwd/src/a.v"), fingerprinter) == _substitute_paths(
-        Path("/cwd/src/b.v"), fingerprinter
+    assert _substitute_paths(
+        pathlib.Path("/cwd/src/a.v"), fingerprinter
+    ) == _substitute_paths(pathlib.Path("/cwd/src/b.v"), fingerprinter)
+    assert isinstance(
+        _substitute_paths(pathlib.Path("/cwd/src/a.v"), fingerprinter), str
     )
-    assert isinstance(_substitute_paths(Path("/cwd/src/a.v"), fingerprinter), str)
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -150,13 +150,14 @@ def test_paths_inside_a_dataclass_are_fingerprinted():
     MACROS is dict[str, Macro] and Macro is a dataclass of Path lists. A walk
     that skips dataclasses would let a macro's GDS change go unnoticed.
     """
-    from librelane.common import Path
     from librelane.config.legacy import Macro
     from librelane.flows.resume import _substitute_paths
 
     pathlib.Path("/cwd/src/m.gds").write_text("gds-one")
     pathlib.Path("/cwd/src/m.lef").write_text("lef")
-    macro = Macro(gds=[Path("/cwd/src/m.gds")], lef=[Path("/cwd/src/m.lef")])
+    macro = Macro(
+        gds=[pathlib.Path("/cwd/src/m.gds")], lef=[pathlib.Path("/cwd/src/m.lef")]
+    )
 
     before = _substitute_paths({"m": macro}, Fingerprinter())
     pathlib.Path("/cwd/src/m.gds").write_text("gds-two")

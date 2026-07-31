@@ -17,6 +17,7 @@
 from loguru import logger
 
 import os
+import pathlib
 from os.path import abspath
 from tempfile import NamedTemporaryFile
 from typing import Optional
@@ -65,7 +66,7 @@ class LVS(KLayoutStep):
             pdk=True,
         )
 
-        KLAYOUT_LVS_OPTIONS: Optional[dict[str, bool | int | str]] = variable(
+        KLAYOUT_LVS_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
             None,
             description="Options passed directly to the KLayout LVS script. They vary from one PDK to another.",
             pdk=True,
@@ -86,8 +87,8 @@ class LVS(KLayoutStep):
 
         input_view_gds = state_in[DesignFormat.GDS]
         input_view_cdl = state_in[DesignFormat.CDL]
-        assert isinstance(input_view_gds, Path)
-        assert isinstance(input_view_cdl, Path)
+        assert isinstance(input_view_gds, pathlib.Path)
+        assert isinstance(input_view_cdl, pathlib.Path)
 
         output_spice = os.path.join(
             self.step_dir,
@@ -148,7 +149,7 @@ class LVS(KLayoutStep):
                     ok = False
 
         views_updates: ViewsUpdate = {
-            DesignFormat.SPICE: Path(output_spice),
+            DesignFormat.SPICE: pathlib.Path(output_spice),
         }
         metrics_updates: MetricsUpdate = {
             "design__lvs_error__count": 0 if ok else 1,

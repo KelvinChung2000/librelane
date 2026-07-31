@@ -487,6 +487,223 @@ def test_the_port_buffering_variables_live_on_the_step_that_uses_them():
         assert name not in RepairDesignPostGPL.Config.model_fields
 
 
+# Upstream PR 961: left to itself, OpenROAD picks any buffer it likes for port
+# buffering, and on gf180mcu that is sometimes a delay buffer.
+
+
+def test_port_buffering_names_the_pdk_buffer_cell():
+    import re
+
+    script = _script_text("OpenROAD.AddBuffer")
+
+    # OpenROAD's -buffer_cell takes a lib cell name, and SYNTH_BUFFER_CELL is
+    # '{cell}/{input_port}/{output_port}', so only the head is the cell.
+    assert 'set buffer_cell [lindex [split $::env(SYNTH_BUFFER_CELL) "/"] 0]' in script
+
+    invocations = re.findall(r"^\s*log_cmd buffer_ports .*$", script, re.MULTILINE)
+    assert len(invocations) == 2
+
+    for invocation in invocations:
+        assert "-buffer_cell $buffer_cell" in invocation
+
+
+# Upstream PR 925: pad rings on PDKs whose pad cells need rotating, and whose
+# core ring must reach the pads on only some layers.
+
+
+def _pad_cfg_text() -> str:
+    from importlib.resources import files
+
+    return (
+        files("librelane")
+        .joinpath("scripts", "openroad", "common", "pad_cfg.tcl")
+        .read_text()
+    )
+
+
+def test_pad_rows_are_built_with_the_pdk_rotations():
+    """A PDK whose pad cells are drawn for a different orientation gets a ring
+    of pads facing the wrong way without these."""
+    script = _pad_cfg_text()
+
+    sites = script[script.index("make_io_sites") :].split("\n\n")[0]
+    for axis in ("horizontal", "vertical", "corner"):
+        assert f"-rotation_{axis} $::env(PAD_ROTATION_{axis.upper()})" in sites
+
+
+def test_the_pad_rotations_default_to_no_rotation():
+    """R0 is what OpenROAD's make_io_sites assumes when the flag is absent, so
+    a PDK that says nothing keeps the ring it had."""
+    from librelane.config.flow import PadConfig
+
+    for axis in ("HORIZONTAL", "VERTICAL", "CORNER"):
+        field = PadConfig.model_fields[f"PAD_ROTATION_{axis}"]
+        assert field.default == "R0"
+        assert field.json_schema_extra["pdk"] is True
+
+
+def test_a_missing_pad_instance_is_reported_by_name():
+    """The error path read a variable that was never set, so a padring naming
+    an instance that does not exist died with a Tcl error about the error
+    handler rather than about the instance."""
+    script = _pad_cfg_text()
+
+    assert "$instance_name" not in script
+    assert script.count("No instance $inst_name found.") == 4
+
+
+def test_the_core_ring_can_be_restricted_to_some_pad_layers():
+    from importlib.resources import files
+
+    from librelane.steps.openroad import GeneratePDN
+
+    script = (
+        files("librelane")
+        .joinpath("scripts", "openroad", "common", "pdn_cfg.tcl")
+        .read_text()
+    )
+
+    assert (
+        "append_if_exists_argument arg_list PDN_CORE_RING_CONNECT_TO_PAD_LAYERS -connect_to_pad_layers"
+        in script
+    )
+    assert "PDN_CORE_RING_CONNECT_TO_PAD_LAYERS" in GeneratePDN.Config.model_fields
+
+
+# Upstream PR 965: configurable pad spacing, and pad rings with fewer than four
+# populated sides.
+
+
+def test_pad_spacing_defaults_to_the_pad_site_width():
+    """That is the narrowest filler that can occupy the gap, and it is what the
+    spacing was rounded to before the variable existed."""
+    script = _pad_cfg_text()
+
+    assert "set spacing_multiple $pad_site_width" in script
+    assert (
+        "set space_between_pads_multiple [round_um_nm [expr floor($space_between_pads / $spacing_multiple) * $spacing_multiple]]"
+        in script
+    )
+    assert "$space_between_pads_multiple + $width" in script
+
+
+def test_the_leftover_side_space_is_still_checked_against_the_site_width():
+    """The gap between pads is the user's to choose, but what is left at the
+    ends still has to be a whole number of filler cells."""
+    script = _pad_cfg_text()
+
+    assert (
+        "if { $space_side != [round_um_nm [expr floor($space_side / $pad_site_width) * $pad_site_width]] } {"
+        in script
+    )
+
+
+def test_trimming_rows_skips_the_fill_on_every_empty_side():
+    script = _pad_cfg_text()
+
+    for side in ("NORTH", "SOUTH", "WEST", "EAST"):
+        assert (
+            f'if {{!$::env(PAD_TRIM_ROWS) || ($::env(PAD_{side}) ne "")}} {{ place_io_fill -row IO_{side} {{*}}$::env(PAD_FILLERS) }}'
+            in script
+        )
+
+
+def test_trimming_rows_deletes_only_the_corners_between_two_empty_sides():
+    """A corner between one populated and one empty side still carries the ring
+    signals around, so deleting it would break the abutment."""
+    script = _pad_cfg_text()
+
+    for vertical, horizontal in (
+        ("NORTH", "WEST"),
+        ("NORTH", "EAST"),
+        ("SOUTH", "WEST"),
+        ("SOUTH", "EAST"),
+    ):
+        # The instance name is OpenROAD's: the corner row names are
+        # IO_CORNER_<V>_<H> and pad::place_corner suffixes them with _INST.
+        assert (
+            f'if {{$::env(PAD_TRIM_ROWS) && ($::env(PAD_{vertical}) eq "") '
+            f'&& ($::env(PAD_{horizontal}) eq "")}} '
+            f"{{ odb::dbInst_destroy "
+            f"[$block findInst IO_CORNER_{vertical}_{horizontal}_INST] }}" in script
+        )
+
+
+def test_the_pad_spacing_variables_live_on_the_padring_step():
+    from librelane.steps.openroad import PadRing
+
+    for name in ("PAD_SPACING_MULTIPLE", "PAD_TRIM_ROWS"):
+        assert name in PadRing.Config.model_fields
+
+
+# Upstream PR 985: OpenROAD.GlobalPlacement can capture the placement's
+# evolution as a gif, which OpenROAD only renders from its GUI.
+
+
+def _gpl_argv(monkeypatch, tmp_path, generate_gif, openroad_gui="0"):
+    from librelane.steps.openroad import GlobalPlacement
+
+    monkeypatch.setenv("_OPENROAD_GUI", openroad_gui)
+
+    instance = object.__new__(GlobalPlacement)
+    instance.config = SimpleNamespace(
+        OPENROAD_THREADS=1,
+        PL_GENERATE_GIF=generate_gif,
+    )
+    instance.step_dir = str(tmp_path)
+
+    return [str(arg) for arg in instance.get_command()]
+
+
+def test_global_placement_does_not_open_a_gui_by_default(monkeypatch, tmp_path):
+    argv = _gpl_argv(monkeypatch, tmp_path, generate_gif=False)
+
+    assert "-gui" not in argv
+    assert "-exit" in argv
+
+
+def test_generating_a_gif_forces_the_gui_open(monkeypatch, tmp_path):
+    """global_placement_debug renders through the GUI, so a headless -exit run
+    would capture nothing."""
+    argv = _gpl_argv(monkeypatch, tmp_path, generate_gif=True)
+
+    assert argv[1] == "-gui"
+    # -exit has to survive, or the run never ends on its own.
+    assert "-exit" in argv
+
+
+def test_generating_a_gif_under_an_interactive_run_adds_no_second_gui(
+    monkeypatch, tmp_path
+):
+    """_OPENROAD_GUI=1 already puts -gui in the command."""
+    argv = _gpl_argv(monkeypatch, tmp_path, generate_gif=True, openroad_gui="1")
+
+    assert argv.count("-gui") == 1
+
+
+def test_gpl_script_captures_renders_only_when_asked():
+    script = _script_text("OpenROAD.GlobalPlacement")
+
+    assert "if { $::env(PL_GENERATE_GIF) } {" in script
+    debug = script[script.index("PL_GENERATE_GIF") :].split("\n}")[0]
+    assert "global_placement_debug" in debug
+    assert "-pause $::env(PL_GENERATE_GIF_PAUSE)" in debug
+    assert "-generate_images" in debug
+    assert "-images_path" in debug
+    # The debug renderer has to be armed before the placement it observes.
+    assert script.index("global_placement_debug") < script.index(
+        "log_cmd global_placement {*}$arg_list"
+    )
+
+
+def test_the_gif_variables_live_on_the_global_placement_steps():
+    from librelane.steps.openroad import GlobalPlacement, GlobalPlacementSkipIO
+
+    for step_class in (GlobalPlacement, GlobalPlacementSkipIO):
+        for name in ("PL_GENERATE_GIF", "PL_GENERATE_GIF_PAUSE"):
+            assert name in step_class.Config.model_fields
+
+
 # Issue 636: mid-PnR STA reported one corner while the resizer steps around it
 # optimized against all of them.
 
@@ -557,3 +774,170 @@ def test_multi_corner_sta_reports_land_where_they_always_have():
     source = inspect.getsource(MultiCornerSTA.run_corner)
 
     assert "report_dir=self.step_dir" in source
+
+
+# OpenROAD's ``check_antennas -verbose`` emits, per net/pin/layer, a
+# calculated/required pair for each of PAR (Gate area), CAR (Cumulative area),
+# PSR (Side area) and CSR (Cumulative side area). The ``(VIOLATED)`` marker sits
+# on the ``Required ratio:`` line, and the calculated value is always the line
+# immediately above it.
+_CAR_VIOLATION_REPORT = """\
+Net: net384
+  Pin:   _22354_/A (sky130_fd_sc_hd__inv_2)
+    Layer: met5
+      Partial area ratio:   12.34
+      Required ratio:  400.00 (Gate area)
+      Cumulative area ratio: 7298.29
+      Required ratio: 3091.96 (Cumulative area) (VIOLATED)
+      Partial area ratio:    5.00
+      Required ratio:  100.00 (Side area)
+      Cumulative area ratio:   45.67
+      Required ratio:  200.00 (Cumulative side area)
+
+"""
+
+
+def _parse(tmp_path, text):
+    from librelane.steps.openroad.routing import parse_antenna_report
+
+    report = tmp_path / "antenna.rpt"
+    report.write_text(text, encoding="utf8")
+    return parse_antenna_report(str(report))
+
+
+def test_antenna_summary_reports_the_cumulative_ratio_that_violated(tmp_path):
+    """Issue 797: with no regex for ``Cumulative area ratio:``, a CAR violation
+    carried the partial ratio left over from the PAR check above it, so the
+    reported ratio and its P/R column were both wrong."""
+    violations = _parse(tmp_path, _CAR_VIOLATION_REPORT)
+
+    assert len(violations) == 1
+    violation = violations[0]
+    assert violation.calculated_ratio == 7298.29
+    assert violation.required_ratio == 3091.96
+    assert violation.check == "Cumulative area"
+    assert violation.net == "net384"
+    assert violation.layer == "met5"
+
+
+def test_antenna_summary_still_reports_partial_area_violations(tmp_path):
+    report = _CAR_VIOLATION_REPORT.replace(
+        "Required ratio:  400.00 (Gate area)",
+        "Required ratio:  400.00 (Gate area) (VIOLATED)",
+    ).replace(
+        "Required ratio: 3091.96 (Cumulative area) (VIOLATED)",
+        "Required ratio: 3091.96 (Cumulative area)",
+    )
+
+    violations = _parse(tmp_path, report)
+
+    assert len(violations) == 1
+    assert violations[0].calculated_ratio == 12.34
+    assert violations[0].required_ratio == 400.00
+    assert violations[0].check == "Gate area"
+
+
+def test_antenna_summary_sorts_the_worst_violation_first(tmp_path):
+    report = _CAR_VIOLATION_REPORT + _CAR_VIOLATION_REPORT.replace(
+        "Cumulative area ratio: 7298.29", "Cumulative area ratio: 4000.00"
+    ).replace("Net: net384", "Net: net999")
+
+    violations = _parse(tmp_path, report)
+
+    assert [v.net for v in violations] == ["net384", "net999"]
+    assert violations[0].calculated_to_required > violations[1].calculated_to_required
+
+
+def test_antenna_summary_rejects_a_report_it_cannot_attribute(tmp_path):
+    """A VIOLATED marker with no calculated ratio above it means the report
+    format changed; guessing a number would silently mislabel a violation."""
+    import pytest
+
+    with pytest.raises(ValueError, match="antenna report"):
+        _parse(
+            tmp_path,
+            "Net: net384\n  Pin:   a/A (cell)\n    Layer: met5\n"
+            "      Required ratio: 3091.96 (Cumulative area) (VIOLATED)\n",
+        )
+
+
+def _save_image_env(mocker, mock_config, **overrides):
+    """Runs OpenROAD.SaveImage with the OpenROAD invocation stubbed, returns env."""
+    from librelane.state import State
+    from librelane.steps.openroad.base import OpenROADStep
+    from librelane.steps.openroad.finishing import SaveImage
+
+    instance = SaveImage(config=mock_config, state_in=State(), **overrides)
+    instance.step_dir = "/cwd/step"
+
+    parent = mocker.patch.object(OpenROADStep, "run", return_value=({}, {}))
+    instance.run(State())
+
+    return parent.call_args.kwargs["env"]
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_forces_the_offscreen_qt_platform(mocker, mock_config):
+    """Issue 611: with no usable display, save_image does not raise a catchable
+    Tcl error. It fails to load the "xcb" Qt platform plugin and aborts the
+    whole OpenROAD process with SIGABRT, taking the step with it. Verified
+    against OpenROAD dcf3613, which is built +GUI."""
+    env = _save_image_env(mocker, mock_config)
+
+    assert env["QT_QPA_PLATFORM"] == "offscreen"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_writes_a_png_into_its_own_step_dir(mocker, mock_config):
+    """Several instances in one flow must not fight over one path."""
+    env = _save_image_env(mocker, mock_config)
+
+    assert env["_SAVE_IMAGE_OUTPUT"] == "/cwd/step/whatever.png"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_passes_display_options_as_tcl_pairs(mocker, mock_config):
+    """save_image takes -display_option repeatedly, each a {control value}
+    two-element list."""
+    env = _save_image_env(
+        mocker,
+        mock_config,
+        SAVE_IMAGE_DISPLAY_OPTIONS={"Nets/Power": False, "Nets/Ground": True},
+    )
+
+    assert env["_SAVE_IMAGE_DISPLAY_OPTIONS"] == "{Nets/Power false} {Nets/Ground true}"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_leaves_optional_knobs_empty_when_unset(mocker, mock_config):
+    """The Tcl only appends -resolution and -area when non-empty, so an unset
+    variable must not become the string "None"."""
+    env = _save_image_env(mocker, mock_config)
+
+    assert env["_SAVE_IMAGE_RESOLUTION"] == ""
+    assert env["_SAVE_IMAGE_AREA"] == ""
+    assert env["_SAVE_IMAGE_DISPLAY_OPTIONS"] == ""
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_save_image_rejects_an_area_that_is_not_four_numbers(mocker, mock_config):
+    from librelane.steps.step import StepException
+
+    with pytest.raises(StepException, match="four elements"):
+        _save_image_env(mocker, mock_config, SAVE_IMAGE_AREA=[0, 0, 10])
+
+
+def test_save_image_reads_the_odb_so_it_can_run_anywhere():
+    """KLayout.Render needs a DEF or GDS and so only runs after stream-out.
+    Reading the ODB is what lets this one sit mid-flow."""
+    from librelane.state import DesignFormat
+    from librelane.steps.openroad.finishing import SaveImage
+
+    assert SaveImage.inputs == [DesignFormat.ODB]
+    # It must not claim a view, or two instances would collide in the state.
+    assert SaveImage.outputs == []

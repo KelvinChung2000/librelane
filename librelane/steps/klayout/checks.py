@@ -18,6 +18,7 @@ from loguru import logger
 
 from importlib.resources import files
 import os
+import pathlib
 from os.path import abspath
 from typing import Optional
 
@@ -66,6 +67,11 @@ class XOR(KLayoutStep):
             units="µm",
         )
 
+        KLAYOUT_XOR_WRITE_GDS: bool = variable(
+            False,
+            description="Also write the XOR differences to 'xor.gds' in the step directory, so they can be opened as a layout rather than only as a marker database.",
+        )
+
     config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
@@ -86,14 +92,21 @@ class XOR(KLayoutStep):
             )
             return {}, {}
 
-        assert isinstance(layout_a, Path)
-        assert isinstance(layout_b, Path)
+        assert isinstance(layout_a, pathlib.Path)
+        assert isinstance(layout_b, pathlib.Path)
 
         kwargs, env = self.extract_env(kwargs)
 
         tile_size_options = []
         if tile_size := self.config.KLAYOUT_XOR_TILE_SIZE:
             tile_size_options += ["--tile-size", str(tile_size)]
+
+        gds_options = []
+        if self.config.KLAYOUT_XOR_WRITE_GDS:
+            gds_options += [
+                "--gds-output",
+                abspath(os.path.join(self.step_dir, "xor.gds")),
+            ]
 
         thread_count = self.config.KLAYOUT_XOR_THREADS or _get_process_limit()
         logger.info(f"Running XOR with {thread_count} threads…")
@@ -117,7 +130,8 @@ class XOR(KLayoutStep):
                 abspath(layout_a),
                 abspath(layout_b),
             ]
-            + tile_size_options,
+            + tile_size_options
+            + gds_options,
             env=env,
         )
 
@@ -143,7 +157,7 @@ class Density(KLayoutStep):
             pdk=True,
         )
 
-        KLAYOUT_DENSITY_OPTIONS: Optional[dict[str, bool | int | str]] = variable(
+        KLAYOUT_DENSITY_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
             None,
             description="Options passed directly to the KLayout density runset. They vary from one PDK to another.",
             pdk=True,
@@ -175,7 +189,7 @@ class Density(KLayoutStep):
             return {}
 
         input_gds = state_in[DesignFormat.GDS]
-        assert isinstance(input_gds, Path)
+        assert isinstance(input_gds, pathlib.Path)
 
         script = self.config.KLAYOUT_DENSITY_RUNSET
 
@@ -261,7 +275,7 @@ class Antenna(KLayoutStep):
             pdk=True,
         )
 
-        KLAYOUT_ANTENNA_OPTIONS: Optional[dict[str, bool | int | str]] = variable(
+        KLAYOUT_ANTENNA_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
             None,
             description="Options passed directly to the KLayout density runset. They vary from one PDK to another.",
             pdk=True,
@@ -287,7 +301,7 @@ class Antenna(KLayoutStep):
             return {}
 
         input_gds = state_in[DesignFormat.GDS]
-        assert isinstance(input_gds, Path)
+        assert isinstance(input_gds, pathlib.Path)
 
         script = self.config.KLAYOUT_ANTENNA_RUNSET
 

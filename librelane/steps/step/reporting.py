@@ -38,7 +38,6 @@ from librelane.state import DesignFormat, State
 from librelane.common import (
     GenericDict,
     GenericDictEncoder,
-    Path,
     slugify,
     copy_recursive,
 )
@@ -282,7 +281,7 @@ class ReportingMixin:
         pdk_path = (pathlib.Path(str(self.config.PDK_ROOT)) / self.config.PDK).resolve()
 
         def visitor(x: Any) -> Any:
-            if not isinstance(x, Path):
+            if not isinstance(x, pathlib.Path):
                 return x
 
             source_path = pathlib.Path(str(x))
@@ -296,7 +295,12 @@ class ReportingMixin:
 
             if not include_pdk and in_pdk:
                 assert pdk_relative is not None
-                return Path(f"pdk_dir::{pdk_relative}")
+                # A ``str``, not a path: ``pdk_dir::`` is a preprocessor
+                # directive naming a file the reproducible does not carry, and
+                # resolving it is the reader's job. Round-tripping it through
+                # pathlib would assert it is a path relative to the
+                # reproducible, which it is not.
+                return f"pdk_dir::{pdk_relative}"
 
             source_relative = source_path
             if source_path.is_absolute():
@@ -338,7 +342,10 @@ class ReportingMixin:
                 if hasattr(os, "chmod"):
                     target_abspath.chmod(0o755)
 
-            return Path(f"./{target_relpath}")
+            # Also a ``str``. The emitted config is read from inside the
+            # reproducible directory, and the leading "./" is what says so;
+            # pathlib.Path normalises it away and cannot carry it back.
+            return f"./{target_relpath}"
 
         # 1. Config
         dumpable_config: dict = copy_recursive(self.config, translator=visitor)

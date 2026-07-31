@@ -42,7 +42,7 @@ def test_every_registered_variable_builds_a_model_field():
 
     # Anti-silent-shrinkage baseline for distinct fields reachable from the
     # registry. Update deliberately when adding/removing or changing fields.
-    assert len(declarations) == 357
+    assert len(declarations) == 367
 
     for index, legacy in enumerate(declarations.values()):
         model = variables_to_model(f"HarvestedConfig{index}", [legacy])
@@ -50,6 +50,67 @@ def test_every_registered_variable_builds_a_model_field():
         assert round_tripped.name == legacy.name
         assert round_tripped.type == legacy.type
         assert round_tripped.default == legacy.default
+
+
+def test_every_registered_variable_has_a_json_schema():
+    """Acceptance gate for issue 599.
+
+    A JSON Schema for the configuration is blocked behind this: 40 of the
+    path-typed variables used to raise ``PydanticInvalidForJsonSchema``,
+    because ``common.Path`` described itself with an opaque plain validator
+    that told Pydantic nothing about the resulting type. Naming the offenders
+    rather than counting them, so a regression says which variable broke.
+    """
+    import librelane.steps  # noqa: F401
+    from librelane.config import variables_to_model
+    from librelane.flows import Flow
+    from librelane.steps import Step
+
+    variables = {}
+    for step_id in Step.factory.list():
+        for variable in Step.factory.get(step_id).config_vars:
+            variables.setdefault(variable.name, variable)
+    for flow_id in Flow.factory.list():
+        for variable in Flow.factory.get(flow_id).config_vars:
+            variables.setdefault(variable.name, variable)
+
+    assert len(variables) > 300, "enumeration collapsed; the gate would be vacuous"
+
+    failed = {}
+    for name, variable in sorted(variables.items()):
+        try:
+            variables_to_model(
+                f"JSONSchemaProbe_{name}", [variable]
+            ).model_json_schema()
+        except Exception as e:
+            failed[name] = f"{type(e).__name__}: {str(e).splitlines()[0]}"
+
+    assert failed == {}, (
+        f"{len(failed)} of {len(variables)} variables cannot produce a JSON "
+        f"schema: {failed}"
+    )
+
+
+def test_every_step_and_flow_config_model_has_a_json_schema():
+    """The per-variable gate above would not catch a model whose *combination*
+    of fields is undescribable."""
+    import librelane.steps  # noqa: F401
+    from librelane.flows import Flow
+    from librelane.steps import Step
+
+    failed = {}
+    for step_id in Step.factory.list():
+        try:
+            Step.factory.get(step_id).Config.model_json_schema()
+        except Exception as e:
+            failed[step_id] = f"{type(e).__name__}: {str(e).splitlines()[0]}"
+    for flow_id in Flow.factory.list():
+        try:
+            Flow.factory.get(flow_id).Config.model_json_schema()
+        except Exception as e:
+            failed[flow_id] = f"{type(e).__name__}: {str(e).splitlines()[0]}"
+
+    assert failed == {}, f"config models without a JSON schema: {failed}"
 
 
 def test_registered_variable_defaults_match_legacy_compiler():

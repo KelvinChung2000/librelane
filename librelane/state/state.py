@@ -47,7 +47,7 @@ StateElement = Union[Path, list[Path], dict[str, Path | list[Path]], None]
 class State(GenericImmutableDict[str, StateElement]):
     """
     Basically, a dictionary from :class:`DesignFormat`\\s and values
-    of (nested dictionaries of) :class:`librelane.common.Path`\\.
+    of (nested dictionaries of) :class:`pathlib.Path`\\.
 
     The state is the only thing that can be altered by steps other than the
     filesystem.
@@ -211,7 +211,7 @@ class State(GenericImmutableDict[str, StateElement]):
         """
 
         def visitor(key, value, top_key, save_directory, depth):
-            if not isinstance(value, Path):
+            if not isinstance(value, pathlib.Path):
                 return
             save_directory.mkdir(parents=True, exist_ok=True)
             target_path = save_directory / pathlib.Path(value).name
@@ -253,7 +253,7 @@ class State(GenericImmutableDict[str, StateElement]):
             if value is None:
                 return
             if not (
-                isinstance(value, Path)
+                isinstance(value, pathlib.Path)
                 or isinstance(value, dict)
                 or isinstance(value, list)
             ):
@@ -263,12 +263,51 @@ class State(GenericImmutableDict[str, StateElement]):
 
         self._walk(self.to_raw_dict(metrics=False), "", visit=visitor)
 
+    @staticmethod
+    def __resolve_directive(
+        value: Any,
+        symbols: Mapping[str, Any],
+        key_path: str,
+    ) -> Any:
+        """Resolve a preprocessor directive stored in place of a path.
+
+        :meth:`librelane.steps.Step.create_reproducible` writes
+        ``pdk_dir::<relative>`` for a view that lives inside the PDK, because a
+        reproducible does not carry the PDK with it. Where the PDK is, is
+        something only the reader knows, so the directive is left unresolved in
+        the file and resolved here, against symbols the reader supplies.
+        """
+        # librelane.config imports librelane.state, so the preprocessor cannot
+        # be imported at module scope.
+        from librelane.config.preprocessor import (
+            GlobMatch,
+            parse_directive,
+            resolve_directive,
+        )
+
+        if not isinstance(value, str):
+            return value
+        directive = parse_directive(value)
+        if directive is None:
+            return value
+
+        resolved = resolve_directive(directive, lambda name: symbols[name])
+        if not isinstance(resolved, GlobMatch):
+            return resolved
+        if len(resolved) != 1:
+            raise ValueError(
+                f"Directive '{value}' for design format '{key_path}' matched "
+                f"{len(resolved)} files: a view names exactly one."
+            )
+        return resolved[0]
+
     @classmethod
     def __load_recursive(
         Self,
         views: dict,
         validate_path: bool = True,
         key_path: str = "",
+        symbols: Mapping[str, Any] | None = None,
     ) -> dict:
         target: dict = {}
         for key, value in views.items():
@@ -282,34 +321,65 @@ class State(GenericImmutableDict[str, StateElement]):
                     value,
                     validate_path,
                     key_path=current_key_path,
+                    symbols=symbols,
                 )
             elif isinstance(value, list):
                 target[key] = []
                 for entry in value:
+                    if symbols is not None:
+                        entry = Self.__resolve_directive(
+                            entry, symbols, current_key_path
+                        )
                     if validate_path and not pathlib.Path(entry).exists():
                         raise ValueError(
                             f"Provided path '{entry}' to design format '{current_key_path}' does not exist."
                         )
-                    target[key].append(Path(entry))
+                    target[key].append(pathlib.Path(entry))
             else:
+                if symbols is not None:
+                    value = Self.__resolve_directive(value, symbols, current_key_path)
                 if validate_path and not pathlib.Path(value).exists():
                     raise ValueError(
                         f"Provided path '{value}' to design format '{current_key_path}' does not exist."
                     )
-                target[key] = Path(value)
+                target[key] = pathlib.Path(value)
         return target
 
     @classmethod
-    def load(Self, dict_in: dict, validate_path: bool = True) -> "State":
+    def load(
+        Self,
+        dict_in: dict,
+        validate_path: bool = True,
+        symbols: Mapping[str, Any] | None = None,
+    ) -> "State":
+        """
+        Parameters
+        ----------
+        dict_in : dict
+            The raw state, as read from JSON.
+        validate_path : bool
+            Whether to check that every path named by the state exists.
+        symbols : Mapping[str, Any] | None
+            Values for the configuration variables a stored preprocessor
+            directive may name, chiefly ``PDKPATH`` for ``pdk_dir::`` and
+            ``DESIGN_DIR`` for ``dir::``. Without it, a directive is read as
+            the literal path it is not, which is what makes a state specific
+            to the filesystem it was written on.
+        """
         metrics = dict_in.get("metrics")
         if metrics is not None:
             del dict_in["metrics"]
 
-        views = Self.__load_recursive(dict_in, validate_path)
+        views = Self.__load_recursive(dict_in, validate_path, symbols=symbols)
         return Self(views, metrics=metrics)
 
     @classmethod
-    def loads(Self, json_in: str, validate_path: bool = True) -> "State":
+    def loads(
+        Self,
+        json_in: str,
+        validate_path: bool = True,
+        symbols: Mapping[str, Any] | None = None,
+    ) -> "State":
         try:
             raw = json.loads(json_in, parse_float=Decimal)
         except json.JSONDecodeError as e:
@@ -318,7 +388,7 @@ class State(GenericImmutableDict[str, StateElement]):
         if not isinstance(raw, dict):
             raise InvalidState("Failed to load state: JSON result is not a dictionary")
 
-        return Self.load(raw, validate_path=validate_path)
+        return Self.load(raw, validate_path=validate_path, symbols=symbols)
 
     def __mapping_to_html_rec(
         self,
@@ -348,7 +418,7 @@ class State(GenericImmutableDict[str, StateElement]):
             value_content = str(value)
             if isinstance(value, Mapping):
                 value_content = self.__mapping_to_html_rec(value)
-            elif isinstance(value, Path):
+            elif isinstance(value, pathlib.Path):
                 value_rel = os.path.relpath(value, ".")
 
                 value_content = f'<a href="{value_rel}">{value_rel}</a>'

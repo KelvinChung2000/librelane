@@ -39,7 +39,7 @@ from collections.abc import Generator, Iterable
 import httpx
 
 from librelane.__version__ import __version__
-from librelane.common.types import AnyPath, Path
+from librelane.common.types import AnyPath
 
 T = TypeVar("T")
 
@@ -375,7 +375,7 @@ def recreate_tree(
         resolved_target.write_bytes(resolved.read_bytes())
 
 
-def get_latest_file(in_path: str | os.PathLike, filename: str) -> Path | None:
+def get_latest_file(in_path: str | os.PathLike, filename: str) -> pathlib.Path | None:
     """
     Parameters
     ----------
@@ -386,14 +386,17 @@ def get_latest_file(in_path: str | os.PathLike, filename: str) -> Path | None:
 
     Returns
     -------
-    Path | None
+    pathlib.Path | None
         The latest file matching the parameters, by modification time
+
+    Not the configuration ``Path``: nothing here is a configuration variable,
+    and that alias now carries a glob collapse and an existence check that have
+    no business on a filesystem helper.
     """
     candidates = pathlib.Path(in_path).rglob(filename)
-    latest = max(
+    return max(
         candidates, key=lambda candidate: candidate.stat().st_mtime, default=None
     )
-    return Path(latest) if latest is not None else None
 
 
 def get_httpx_session(token: str | None = None) -> httpx.Client:

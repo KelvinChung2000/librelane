@@ -56,6 +56,7 @@ from librelane.steps.openroad.finishing import (
     OpenROADSession,
     OpenGUI,
     OpenConsole,
+    SaveImage,
     DumpRCValues,
 )
 from librelane.steps.openroad.restructure import RMP

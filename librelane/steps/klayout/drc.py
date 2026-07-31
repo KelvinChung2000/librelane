@@ -18,6 +18,7 @@ from loguru import logger
 
 from importlib.resources import files
 import os
+import pathlib
 from os.path import abspath
 from typing import Optional
 
@@ -57,7 +58,7 @@ class DRC(KLayoutStep):
             deprecated_names=["KLAYOUT_DRC_TECH_SCRIPT"],
         )
 
-        KLAYOUT_DRC_OPTIONS: Optional[dict[str, bool | int | str]] = variable(
+        KLAYOUT_DRC_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
             None,
             description="Options passed directly to the KLayout DRC runset. They vary from one PDK to another.",
             pdk=True,
@@ -101,7 +102,7 @@ class DRC(KLayoutStep):
         json_report = os.path.join(reports_dir, "drc.klayout.json")
 
         input_view = state_in[DesignFormat.GDS]
-        assert isinstance(input_view, Path)
+        assert isinstance(input_view, pathlib.Path)
 
         opts = []
         if self.config.KLAYOUT_DRC_OPTIONS:
@@ -182,7 +183,7 @@ class DRC(KLayoutStep):
         logger.info(f"Running KLayout DRC with {threads} threads…")
 
         input_view = state_in[DesignFormat.GDS]
-        assert isinstance(input_view, Path)
+        assert isinstance(input_view, pathlib.Path)
 
         # Not pya script - DRC script is not part of LibreLane
         self.run_subprocess(
@@ -248,7 +249,7 @@ class DRC(KLayoutStep):
         json_report = os.path.join(reports_dir, "drc.klayout.json")
 
         input_view = state_in[DesignFormat.GDS]
-        assert isinstance(input_view, Path)
+        assert isinstance(input_view, pathlib.Path)
 
         opts = []
         if self.config.KLAYOUT_DRC_OPTIONS:
@@ -317,7 +318,7 @@ class DRC(KLayoutStep):
         json_report = os.path.join(reports_dir, "drc.klayout.json")
 
         input_view = state_in[DesignFormat.GDS]
-        assert isinstance(input_view, Path)
+        assert isinstance(input_view, pathlib.Path)
 
         opts = []
         if self.config.KLAYOUT_DRC_OPTIONS:

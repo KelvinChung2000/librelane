@@ -35,7 +35,7 @@ from collections.abc import Callable, Sequence
 from rich.markup import escape
 
 from librelane.common import slugify, protected
-from librelane.logging import options
+from librelane.logging import console, options
 
 from librelane.steps.step.exceptions import StepException
 from librelane.steps.step.output_processor import OutputProcessor
@@ -154,6 +154,16 @@ class SubprocessMixin:
 
         if env is None:
             env = os.environ.copy()
+
+        # A subprocess writes to a pipe, not a terminal, so Rich inside it can
+        # only fall back to its 80-column default and clamps every table it
+        # prints -- the cell frequency and disconnected pin tables among them.
+        # Only the parent knows the real width. ``console.width`` already
+        # honours a COLUMNS the user exported, and ``setdefault`` leaves a
+        # caller that set one explicitly alone.
+        env = dict(env)
+        env.setdefault("COLUMNS", str(console.width))
+
         for key, value in env.items():
             if not (
                 isinstance(value, str)

@@ -24,6 +24,7 @@ from dataclasses import (
 )
 import types
 import textwrap
+import pathlib
 from itertools import chain, repeat
 from typing import (
     ClassVar,
@@ -36,7 +37,17 @@ from typing import (
 )
 from collections.abc import Iterable, Mapping, Callable
 from librelane.state import DesignFormat, State
-from librelane.common import GenericDict, Path, TclUtils, is_string, Number, slugify
+from librelane.common import (
+    GenericDict,
+    Path,
+    TclUtils,
+    is_path_annotation,
+    is_string_like,
+    Number,
+    slugify,
+    unwrap_annotated,
+    validate_path,
+)
 
 # Scalar = Union[Type[str], Type[Decimal], Type[Path], Type[bool]]
 # VType = Union[Scalar, List[Scalar]]
@@ -317,12 +328,14 @@ class Macro:
 
 
 def is_optional(t: type[Any]) -> bool:
+    t = unwrap_annotated(t)
     type_args = get_args(t)
     origin = get_origin(t)
     return (origin is Union or origin is types.UnionType) and type(None) in type_args
 
 
 def some_of(t: type[Any]) -> type[Any]:
+    t = unwrap_annotated(t)
     if not is_optional(t):
         return t
 
@@ -348,8 +361,11 @@ def some_of(t: type[Any]) -> type[Any]:
 
 
 def repr_type(t: type[Any], for_document: bool = False) -> str:  # pragma: no cover
+    # Annotated metadata is an implementation detail of Path, not something to
+    # render; without this the alias prints as ``Path[Path, _PathAnnotation]``.
+    t = unwrap_annotated(t)
     optional = is_optional(t)
-    some = some_of(t)
+    some = unwrap_annotated(some_of(t))
 
     if hasattr(some, "__name__"):  # Python 3.10+
         type_string = some.__name__
@@ -406,7 +422,7 @@ class Variable:
         - ``decimal.Decimal``
         - ``bool``
         - ``str``
-        - :class:`Path`
+        - :data:`librelane.common.Path` (i.e. :class:`pathlib.Path`)
 
         Supported products:
 
@@ -654,6 +670,12 @@ class Variable:
         permissive_typing: bool = False,
         depth: int = 0,
     ):
+        # Path is an Annotated alias and Pydantic hands back both spellings --
+        # stripped at the top level of a field, intact inside list[...] and
+        # Optional[...] -- so normalise once and let everything below compare
+        # against pathlib.Path.
+        validating_type = unwrap_annotated(validating_type)
+
         if value is None:
             if explicitly_specified:
                 # User explicitly specified "null" for this value: only error if
@@ -683,7 +705,7 @@ class Variable:
                     return None
 
         if is_optional(validating_type):
-            validating_type = some_of(validating_type)
+            validating_type = unwrap_annotated(some_of(validating_type))
 
         type_origin = get_origin(validating_type)
         type_args = get_args(validating_type)
@@ -693,15 +715,22 @@ class Variable:
             raw = value
             if isinstance(raw, list) or isinstance(raw, tuple):
                 # HACK: Allow multiple globs within Path variables
-                if type_origin is list and type_args == (Path,):
+                if (
+                    type_origin is list
+                    and len(type_args) == 1
+                    and is_path_annotation(type_args[0])
+                ):
                     if any(isinstance(item, list) for item in raw):
                         Variable.__flatten_list(value)
                 pass  # do nothing, can be used as is
-            elif is_string(raw):
+            elif is_string_like(raw):
                 if not permissive_typing:
                     raise ValueError(
                         f"Refusing to automatically convert string at '{key_path}' to list"
                     )
+                # The splits below are str operations; a path reaching here has
+                # to be read as the text it names.
+                raw = str(raw)
                 if "," in raw:
                     raw = raw.split(",")
                 elif ";" in raw:
@@ -743,14 +772,14 @@ class Variable:
             key_type, value_type = type_args
             if isinstance(raw, dict):
                 pass
-            elif isinstance(raw, list) or is_string(raw):
+            elif isinstance(raw, list) or is_string_like(raw):
                 if not permissive_typing:
                     raise ValueError(
                         f"Refusing to automatically convert string at '{key_path}' to dict"
                     )
                 components = raw
-                if is_string(raw):
-                    components = TclUtils.split(raw)
+                if is_string_like(raw):
+                    components = TclUtils.split(str(raw))
                 assert isinstance(components, list)
                 # Assuming Tcl format:
                 if len(components) % 2 != 0:
@@ -862,13 +891,16 @@ class Variable:
                     f"One or more keys unrecognized for dataclass {dataclass_type.__qualname__}: {' '.join(raw.keys())}"
                 )
             return dataclass_type(**kwargs_dict)
-        elif validating_type == Path:
+        elif is_path_annotation(validating_type):
             # Handle one-file globs
             if isinstance(value, list) and len(value) == 1:
                 value = value[0]
-            result = Path(value)
-            result.validate(f"Path provided for variable '{key_path}' is invalid")
-            return result
+            # Validated as text, before pathlib normalises it: os.path.exists("")
+            # is False, but pathlib.Path("") is ".", which exists.
+            validate_path(
+                str(value), f"Path provided for variable '{key_path}' is invalid"
+            )
+            return pathlib.Path(value)
         elif validating_type is bool:
             if not permissive_typing and not isinstance(value, bool):
                 raise ValueError(
@@ -892,12 +924,21 @@ class Variable:
                     f"Variable provided for variable '{key_path}' of enumerated type {validating_type.__name__} is invalid: '{value}'"
                 )
         elif issubclass(validating_type, str):
-            if not is_string(value):
+            if not is_string_like(value):
                 raise ValueError(
                     f"Refusing to automatically convert value at '{key_path}' to a string"
                 )
             return str(value)
         elif issubclass(validating_type, Decimal) or issubclass(validating_type, int):
+            # Booleans are ints in Python, but a boolean is never a quantity.
+            # Without this, ``int(True)`` is 1 and a numeric member of a union
+            # silently swallows every boolean ahead of the boolean member.
+            # ``config/types.py``'s ``_shape`` states the same rule for the
+            # Pydantic path.
+            if isinstance(value, bool):
+                raise ValueError(
+                    f"Refusing to convert the Boolean at '{key_path}' to a {validating_type.__name__}"
+                )
             try:
                 final = validating_type(value)
             except (InvalidOperation, TypeError):

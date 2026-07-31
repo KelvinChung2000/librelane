@@ -14,9 +14,9 @@
 from loguru import logger
 
 import os
+import pathlib
 
 from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
-from librelane.common import Path
 from librelane.state import State, DesignFormat
 from librelane.steps import Netgen, Magic, KLayout, OpenROAD
 from librelane.logging import options
@@ -49,7 +49,7 @@ class LoadBaseSDC(Step):
             for line in open(path, "r", encoding="utf8"):
                 out.write(line)
 
-        return {DesignFormat.SDC: Path(target)}, {}
+        return {DesignFormat.SDC: pathlib.Path(target)}, {}
 
 
 @Step.factory.register()

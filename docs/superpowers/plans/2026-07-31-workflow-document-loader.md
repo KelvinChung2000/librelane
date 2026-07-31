@@ -52,7 +52,7 @@ Every number and name below was produced by running the real registries in this 
 | `Stage.floorplan` (see the note below) | requires `(nl,)`, provides `(def, nl, sdc)`, providers `['openroad']` |
 | `Stage.streamout` | requires `(def, nl, sdc)`, provides `(gds,)`, default providers `('magic', 'klayout')` |
 | `Stage.drc` | requires `(def, gds)`, provides `()`, default providers `('magic', 'klayout')` |
-| `Stage.lvs` | requires `(def, gds, pnl)`, provides `()`, metrics `('design__lvs_error__count',)`, providers `['netgen']` |
+| `Stage.lvs` | requires `(def, gds, pnl)`, provides `()`, metrics `('design__lvs_error__count',)`, providers `['netgen']`, becoming `['netgen', 'klayout']` (see the note below) |
 | `Stage.cts` | requires `(def, nl, sdc)`, provides `(def, nl, sdc)`, providers `['openroad']` |
 | `StageRegistry.get("streamout", "magic").provides` | `(mag_gds,)` |
 | `StageRegistry.get("streamout", "klayout").provides` | `(klayout_gds,)` |
@@ -67,7 +67,18 @@ Every number and name below was produced by running the real registries in this 
 | `universal_flow_config_variables` | 78 entries, containing `DIE_AREA` and `PDK` but **not** `SCL`, `PAD` or `meta`, and containing **no** variable of type `bool` |
 | `DIE_AREA` | universal, and additionally declared by `Magic.StreamOut` |
 
-**The one unmerged dependency.** The `Stage.floorplan` row records `requires (nl,)`. That is the value on branch `worktree-agent-a2dad013ce988e29b`, not the value on `librelane-unstable` today, where the stage still declares `(nl, sdc)`. That branch fixes a taxonomy bug that stopped `Classic` from completing a run. `MultiCornerSTA.outputs` claimed an SDC that nothing in the class writes, `Stage.pre_pnr_sta.provides` was derived from that claim, and the stage contract check failed at run time. The fix sets `Stage.pre_pnr_sta.provides` to the empty tuple and `Stage.floorplan.requires` to `(DesignFormat.nl,)`, which is what the provider always declared. `OpenROAD.Floorplan` has `inputs = [DesignFormat.NETLIST]` and its `outputs` are `odb`, `def`, `sdc`, `nl` and `pnl`, verified in this checkout. Floorplan writes the SDC, it never read one. The sweep branches merge before any of this plan is implemented, so the plan is written against the post-fix values. Every other row in the table was executed against the registries here. Two places in this document depend on that fix landing, this row and the reachability argument in Task 6, and both go stale together if it is reverted.
+**A second unmerged dependency, on the `lvs` row.** Branch
+`worktree-agent-a3d55fc98368cf973` registers `klayout` as a second provider of
+the `lvs` stage, so `StageRegistry.providers("lvs")` becomes
+`['netgen', 'klayout']`. That order is registration order, not alphabetical:
+`providers()` filters `Self._all` in the order entries were appended, and
+netgen's entry comes first in `librelane/stages/providers.py`. The stage stays
+`multi_provider=False`, so exactly one of the two runs and the stage's
+contracted `design__lvs_error__count` still has exactly one writer per run. Any
+count this document states for the `lvs` stage must move from one provider to
+two when that branch merges; nothing else about the row changes.
+
+**The load-bearing unmerged dependency.** The `Stage.floorplan` row records `requires (nl,)`. That is the value on branch `worktree-agent-a2dad013ce988e29b`, not the value on `librelane-unstable` today, where the stage still declares `(nl, sdc)`. That branch fixes a taxonomy bug that stopped `Classic` from completing a run. `MultiCornerSTA.outputs` claimed an SDC that nothing in the class writes, `Stage.pre_pnr_sta.provides` was derived from that claim, and the stage contract check failed at run time. The fix sets `Stage.pre_pnr_sta.provides` to the empty tuple and `Stage.floorplan.requires` to `(DesignFormat.nl,)`, which is what the provider always declared. `OpenROAD.Floorplan` has `inputs = [DesignFormat.NETLIST]` and its `outputs` are `odb`, `def`, `sdc`, `nl` and `pnl`, verified in this checkout. Floorplan writes the SDC, it never read one. The sweep branches merge before any of this plan is implemented, so the plan is written against the post-fix values. Every other row in the table was executed against the registries here. Two places in this document depend on that fix landing, this row and the reachability argument in Task 6, and both go stale together if it is reverted.
 
 Two consequences fall straight out of that table and are load-bearing below.
 

@@ -154,6 +154,7 @@
   "OpenROAD.RepairDesignPostGRT",
   "OpenROAD.ResizerTimingPostCTS",
   "OpenROAD.ResizerTimingPostGRT",
+  "OpenROAD.SaveImage",
   "OpenROAD.STAMidPNR",
   "OpenROAD.STAPostPNR",
   "OpenROAD.STAPrePNR",

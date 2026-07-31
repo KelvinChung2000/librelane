@@ -18,7 +18,6 @@ def ResumeSteps():
     Three steps that record how many times each has executed, so a test can
     assert reuse directly rather than inferring it.
     """
-    from librelane.common import Path
     from librelane.state import DesignFormat, State
     from librelane.steps import Step
 
@@ -48,7 +47,7 @@ def ResumeSteps():
             out_file.write_text(
                 json.dumps({"produced_by": self.id, "from": self.payload(state_in)})
             )
-            return {DesignFormat.JSON_HEADER: Path(out_file)}, {}
+            return {DesignFormat.JSON_HEADER: pathlib.Path(out_file)}, {}
 
     class First(Base):
         id = "Test.First"

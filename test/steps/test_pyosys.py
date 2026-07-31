@@ -13,6 +13,7 @@
 # limitations under the License.
 import json
 import os
+import pathlib
 
 import pytest
 
@@ -124,8 +125,12 @@ def test_a_custom_abc_strategy_script_reaches_the_synthesis_script(mock_config):
         SYNTH_ABC_STRATEGY_SCRIPT="/cwd/custom.abc",
     )
 
-    assert (
-        instance.config.to_raw_dict()["SYNTH_ABC_STRATEGY_SCRIPT"] == "/cwd/custom.abc"
+    # A path variable holds a pathlib.Path, and to_raw_dict unwraps the model
+    # rather than serializing it. This compared equal to the string while the
+    # type was a UserString; it does not now, and asserting against the string
+    # would only pass by accident of a type that no longer exists.
+    assert instance.config.to_raw_dict()["SYNTH_ABC_STRATEGY_SCRIPT"] == pathlib.Path(
+        "/cwd/custom.abc"
     )
 
 

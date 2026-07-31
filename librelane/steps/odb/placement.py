@@ -19,6 +19,7 @@ from loguru import logger
 from importlib.resources import files
 import os
 import shutil
+import pathlib
 from typing import Literal, Optional
 
 from librelane.common import Path
@@ -73,7 +74,7 @@ class ManualMacroPlacement(OdbpyStep):
         ]
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        cfg_file = Path(os.path.join(self.step_dir, "placement.cfg"))
+        cfg_file = pathlib.Path(os.path.join(self.step_dir, "placement.cfg"))
         if cfg_ref := self.config.get("MACRO_PLACEMENT_CFG"):
             logger.bind(step=self.id).warning(
                 "Using 'MACRO_PLACEMENT_CFG' is deprecated. It is recommended to use the new 'MACROS' configuration variable."

@@ -15,10 +15,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import pathlib
 from importlib.resources import files
 
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 from collections.abc import Sequence
 
 from librelane.config.legacy import Macro
@@ -393,13 +394,17 @@ class OptionConfig(BaseConfigModel):
     )
 
     FALLBACK_SDC: Path = variable(
-        Path(str(files("librelane").joinpath("scripts", "base.sdc"))),
+        pathlib.Path(str(files("librelane").joinpath("scripts", "base.sdc"))),
         description="A fallback SDC file for when a step-specific SDC file is not defined.",
         deprecated_names=["FALLBACK_SDC_FILE", "BASE_SDC_FILE", "SDC_FILE"],
     )
 
 
 option_variables = model_to_variables(OptionConfig)
+
+
+#: The eight LEF orientations, as OpenROAD's ``make_io_sites`` names them.
+PadRotation = Literal["R0", "MY", "R90", "MXR90", "R180", "MX", "R270", "MYR90"]
 
 
 class PadConfig(BaseConfigModel):
@@ -508,6 +513,24 @@ class PadConfig(BaseConfigModel):
         0,
         description="Distance from the padring to the die boundary. Used to account for the sealring when placing the pads.",
         units="µm",
+        pdk=True,
+    )
+
+    PAD_ROTATION_HORIZONTAL: PadRotation = variable(
+        "R0",
+        description="Rotation to apply to the horizontal pad sites so the pad cells are placed the right way up.",
+        pdk=True,
+    )
+
+    PAD_ROTATION_VERTICAL: PadRotation = variable(
+        "R0",
+        description="Rotation to apply to the vertical pad sites so the pad cells are placed the right way up.",
+        pdk=True,
+    )
+
+    PAD_ROTATION_CORNER: PadRotation = variable(
+        "R0",
+        description="Rotation to apply to the corner pad sites so the corner cells are placed the right way up.",
         pdk=True,
     )
 

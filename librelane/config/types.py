@@ -9,7 +9,7 @@ from typing import Any, Union, get_args, get_origin
 from pydantic import TypeAdapter
 from pydantic_core import core_schema
 
-from librelane.common import Path, TclUtils
+from librelane.common import Path, TclUtils, is_path_annotation, unwrap_annotated
 from librelane.config.legacy import Instance, InstanceArray, Macro, Orientation
 from librelane.config.preprocessor import GlobMatch
 
@@ -37,6 +37,7 @@ class ByNameEnum(Enum):
 
 
 def _unwrap_optional(annotation: Any) -> Any:
+    annotation = unwrap_annotated(annotation)
     origin = get_origin(annotation)
     args = get_args(annotation)
     if origin in (Union, types.UnionType) and type(None) in args:
@@ -70,7 +71,7 @@ def _shape(value: Any, annotation: Any, split_strings: bool) -> Any:
             if value and value[-1] == "":
                 value.pop()
         if isinstance(value, (list, tuple)):
-            if args and args[0] is Path:
+            if args and is_path_annotation(args[0]):
                 value = [
                     item
                     for entry in value

@@ -483,7 +483,17 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         if not isinstance(config, ConfigMap):
             config = Self._load_config_from_file(config, pdk_root)
         if not isinstance(state_in, State):
-            state_in = State.loads(pathlib.Path(state_in).read_text())
+            state_in = State.loads(
+                pathlib.Path(state_in).read_text(),
+                # A reproducible created without the PDK stores a view that
+                # lives inside it as 'pdk_dir::<relative>'. These are the same
+                # two symbols _load_config_from_file resolves the
+                # configuration's own directives against.
+                symbols={
+                    "PDKPATH": os.path.join(pdk_root, str(config["PDK"])),
+                    "DESIGN_DIR": ".",
+                },
+            )
         return Self(
             config=config,
             state_in=state_in,

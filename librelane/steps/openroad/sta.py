@@ -33,6 +33,7 @@ from typing import (
 
 import rich
 import rich.table
+import pathlib
 
 from librelane.common import (
     Path,
@@ -142,7 +143,10 @@ class OpenSTAStep(OpenROADStep):
         name = timing_corner
         current_corner_spef = None
         input_spef_dict = state_in.get(DesignFormat.SPEF)
-        if input_spef_dict is not None and len(input_spef_dict):
+        # Truthiness rather than len(): the view may be a path, and a path is
+        # not a Sized thing to measure. None and an empty mapping are both
+        # falsy, so this asks the same question the length did.
+        if input_spef_dict:
             if not isinstance(input_spef_dict, dict):
                 raise StepException(
                     "Malformed input state: value for 'spef' is not a dictionary"
@@ -296,6 +300,18 @@ class CheckMacroInstances(OpenSTAStep):
                     corners=self.config.STA_CORNERS,
                     label=f"Macro '{macro_name}' {view_label}",
                 )
+            self.toolbox.check_lib_pins(
+                sorted(
+                    {
+                        str(lib)
+                        for corner in self.config.STA_CORNERS
+                        for lib in self.toolbox.filter_views(
+                            self.config, data.lib, corner
+                        )
+                    }
+                ),
+                label=f"Macro '{macro_name}' LIB",
+            )
 
         env["_check_macro_instances"] = TclUtils.join(macro_instance_pairs)
 
@@ -579,7 +595,7 @@ class STAPrePNR(MultiCornerSTA):
                 self.step_dir, corner, f"{self.config.DESIGN_NAME}__{corner}.sdf"
             )
             if os.path.isfile(sdf):
-                sdf_dict[corner] = Path(sdf)
+                sdf_dict[corner] = pathlib.Path(sdf)
 
         views_updates[DesignFormat.SDF] = sdf_dict
 
@@ -721,7 +737,7 @@ class STAPostPNR(STAPrePNR):
             lib = os.path.join(
                 self.step_dir, corner, f"{self.config.DESIGN_NAME}__{corner}.lib"
             )
-            lib_dict[corner] = Path(lib)
+            lib_dict[corner] = pathlib.Path(lib)
 
         views_updates[DesignFormat.LIB] = lib_dict
         return views_updates, metrics_updates

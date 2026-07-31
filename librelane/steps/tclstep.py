@@ -27,7 +27,6 @@ from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step, StepException
 
 from librelane.state import State, DesignFormat
 from librelane.common import (
-    Path,
     TclUtils,
     protected,
 )
@@ -213,7 +212,7 @@ class TclStep(Step):
             if output.multiple:
                 # Too step-specific.
                 continue
-            path = Path(env[f"SAVE_{output.id.upper()}"])
+            path = pathlib.Path(env[f"SAVE_{output.id.upper()}"])
             if not path.exists():
                 continue
             overrides[output] = path
@@ -246,7 +245,11 @@ class TclStep(Step):
         env_out = os.environ.copy()
         with env_in_file.open("w", encoding="utf8") as f:
             for key, value in env.items():
-                if key in env_out and env_out[key] == value:
+                # os.environ holds str, and ``value`` may be a path object, so
+                # compare as strings. A path type that does not compare equal
+                # to a str would make this skip never fire and re-emit every
+                # path-valued variable into _env.tcl.
+                if key in env_out and env_out[key] == str(value):
                     continue
                 if key in _ENV_ALLOWLIST or key.startswith("_"):
                     env_out[key] = value

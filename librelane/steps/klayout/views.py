@@ -20,15 +20,17 @@ import sys
 import shlex
 import shutil
 import subprocess
+import pathlib
 from os.path import abspath
 from base64 import b64encode
 from typing import Optional, Literal
+
+from loguru import logger
 
 from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step, StepError
 
 from librelane.config import variable
 from librelane.state import DesignFormat, State
-from librelane.common import Path
 
 from librelane.steps.klayout.base import KLayoutStep
 
@@ -38,14 +40,14 @@ class Render(KLayoutStep):
     """
     Renders a PNG of the layout using KLayout.
 
-    DEF is required as an input, but if a GDS-II view
-    exists in the input state, it will be used instead.
+    Either a DEF or a GDS-II view will do, and if both are in the input state
+    the GDS-II is preferred. With neither, the step does nothing.
     """
 
     id = "KLayout.Render"
     name = "Render Image (w/ KLayout)"
 
-    inputs = [DesignFormat.DEF]
+    inputs = [DesignFormat.DEF.mkOptional(), DesignFormat.GDS.mkOptional()]
     outputs = []
 
     class Config(KLayoutStep.Config):
@@ -84,11 +86,21 @@ class Render(KLayoutStep):
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates: ViewsUpdate = {}
 
-        input_view = state_in[DesignFormat.DEF]
+        input_view = state_in.get(DesignFormat.DEF)
         if gds := state_in.get(DesignFormat.GDS):
             input_view = gds
 
-        assert isinstance(input_view, Path)
+        if input_view is None:
+            # Both inputs are declared optional, so their absence is legal and
+            # cannot be an error.
+            logger.bind(step=self.id).warning(
+                f"{self.id} was given neither of its optional inputs. Nothing to render."
+            )
+            return {}, {}
+
+        # pathlib.Path, not the common.Path alias: that is now an Annotated
+        # form whose isinstance() raises rather than answering.
+        assert isinstance(input_view, pathlib.Path)
 
         klayout_render = os.path.join(
             self.step_dir,
@@ -98,28 +110,31 @@ class Render(KLayoutStep):
         self.run_pya_script(
             [
                 sys.executable,
-                files("librelane").joinpath("scripts", "klayout", "render.py"),
+                str(files("librelane").joinpath("scripts", "klayout", "render.py")),
                 abspath(input_view),
                 "--output",
                 abspath(klayout_render),
+                # These are bools and ints; run_subprocess stringifies the
+                # whole command anyway, so say so here rather than handing an
+                # argument list a type it does not accept.
                 "--grid-visible",
-                self.config.KLAYOUT_RENDER_GRID_VISBLE,
+                str(self.config.KLAYOUT_RENDER_GRID_VISBLE),
                 "--grid-show-ruler",
-                self.config.KLAYOUT_RENDER_SHOW_RULER,
+                str(self.config.KLAYOUT_RENDER_SHOW_RULER),
                 "--text-visible",
-                self.config.KLAYOUT_RENDER_TEXT_VISIBLE,
+                str(self.config.KLAYOUT_RENDER_TEXT_VISIBLE),
                 "--background-color",
-                self.config.KLAYOUT_RENDER_BACKGROUND_COLOR,
+                str(self.config.KLAYOUT_RENDER_BACKGROUND_COLOR),
                 "--resolution",
-                self.config.KLAYOUT_RENDER_RESOLUTION,
+                str(self.config.KLAYOUT_RENDER_RESOLUTION),
                 "--oversampling",
-                self.config.KLAYOUT_RENDER_OVERSAMPLING,
+                str(self.config.KLAYOUT_RENDER_OVERSAMPLING),
             ]
             + self.get_cli_args(include_lefs=True),
             silent=True,
         )
 
-        views_updates[DesignFormat.KLAYOUT_RENDER] = Path(klayout_render)
+        views_updates[DesignFormat.KLAYOUT_RENDER] = pathlib.Path(klayout_render)
 
         return views_updates, {}
 
@@ -168,7 +183,7 @@ class StreamOut(KLayoutStep):
         kwargs, env = self.extract_env(kwargs)
 
         input_def = state_in[DesignFormat.DEF.id]
-        assert isinstance(input_def, Path)
+        assert isinstance(input_def, pathlib.Path)
 
         conflict_resolution = self.config.KLAYOUT_CONFLICT_RESOLUTION
         assert conflict_resolution is not None, (
@@ -212,7 +227,7 @@ class StreamOut(KLayoutStep):
             env=env,
         )
 
-        views_updates[DesignFormat.KLAYOUT_GDS] = Path(klayout_gds_out)
+        views_updates[DesignFormat.KLAYOUT_GDS] = pathlib.Path(klayout_gds_out)
 
         # The primary tool always writes the neutral view, overwriting a
         # non-primary tool's. A non-primary tool writes it only when nothing
@@ -224,7 +239,7 @@ class StreamOut(KLayoutStep):
         ):
             gds_path = os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.gds")
             shutil.copy(klayout_gds_out, gds_path)
-            views_updates[DesignFormat.GDS] = Path(gds_path)
+            views_updates[DesignFormat.GDS] = pathlib.Path(gds_path)
 
         return views_updates, {}
 
@@ -277,7 +292,7 @@ class OpenGUI(KLayoutStep):
         if self.config.KLAYOUT_GUI_USE_GDS:
             if gds := state_in.get(DesignFormat.GDS):
                 layout = gds
-        assert isinstance(layout, Path)
+        assert isinstance(layout, pathlib.Path)
 
         env["KLAYOUT_ARGV"] = shlex.join(
             [

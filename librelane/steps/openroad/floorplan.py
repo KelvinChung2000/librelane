@@ -240,6 +240,17 @@ class PadRing(OpenROADStep):
             description="The pad instance names for the west pad row.",
         )
 
+        PAD_SPACING_MULTIPLE: Optional[Decimal] = variable(
+            None,
+            description="The gap between two pad cells is rounded down to a multiple of this value. If unset, the pad site width is used, which is the narrowest filler cell that can occupy the gap. The space left at the ends of each side must be divisible by the pad site width either way.",
+            units="µm",
+        )
+
+        PAD_TRIM_ROWS: bool = variable(
+            False,
+            description="Skips the I/O filler for whichever of `PAD_SOUTH`, `PAD_EAST`, `PAD_NORTH` and `PAD_WEST` is empty, and deletes each corner cell whose two neighbouring rows are both empty. For pad rings with fewer than four populated sides.",
+        )
+
     config: Config
 
     def get_script_path(self):

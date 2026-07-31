@@ -33,7 +33,6 @@ def variable():
 
 @pytest.fixture
 def MockStepTuple(variable: Variable):
-    from librelane.common import Path
     from librelane.steps import Step
     from librelane.state import DesignFormat, State
 
@@ -58,7 +57,7 @@ def MockStepTuple(variable: Variable):
             )
 
             return {
-                DesignFormat.JSON_HEADER: Path(out_file),
+                DesignFormat.JSON_HEADER: pathlib.Path(out_file),
             }, {"step": state_in.metrics.get("step", -1) + 1}
 
     class StepB(Step):
@@ -80,7 +79,7 @@ def MockStepTuple(variable: Variable):
                 open(out_file, "w", encoding="utf8"),
             )
             return {
-                DesignFormat.JSON_HEADER: Path(out_file),
+                DesignFormat.JSON_HEADER: pathlib.Path(out_file),
             }, {"step": state_in.metrics.get("step", -1) + 1}
 
     class StepC(Step):
@@ -103,7 +102,7 @@ def MockStepTuple(variable: Variable):
                 open(out_file, "w", encoding="utf8"),
             )
             return {
-                DesignFormat.JSON_HEADER: Path(out_file),
+                DesignFormat.JSON_HEADER: pathlib.Path(out_file),
             }, {"step": state_in.metrics.get("step", -1) + 1}
 
     return (StepA, StepB, StepC)

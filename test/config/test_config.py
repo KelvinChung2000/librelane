@@ -14,9 +14,9 @@
 from decimal import Decimal
 
 import pytest
+import pathlib
 
 from librelane.config import config
-from librelane.common import Path
 
 pytestmark = pytest.mark.all
 
@@ -39,19 +39,22 @@ def test_dict_config():
 
     assert_cfg = Config(
         {
-            "DESIGN_DIR": "/cwd",
+            "DESIGN_DIR": pathlib.Path("/cwd"),
             "DESIGN_NAME": "whatever",
             "PDK_ROOT": "/pdk",
             "PDK": "dummy",
             "STD_CELL_LIBRARY": "dummy_scl",
-            "VERILOG_FILES": ["/cwd/src/a.v", "/cwd/src/b.v"],
+            "VERILOG_FILES": [
+                pathlib.Path("/cwd/src/a.v"),
+                pathlib.Path("/cwd/src/b.v"),
+            ],
             "EXAMPLE_PDK_VAR": Decimal("10"),
             "GRT_REPAIR_ANTENNAS": True,
             "RUN_HEURISTIC_DIODE_INSERTION": False,
             "DIODE_ON_PORTS": "none",
             "MACROS": None,
             "TECH_LEFS": {
-                "nom_*": Path(
+                "nom_*": pathlib.Path(
                     "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
                 )
             },
@@ -92,19 +95,22 @@ def test_json_config():
 
     assert cfg == Config(
         {
-            "DESIGN_DIR": "/cwd",
+            "DESIGN_DIR": pathlib.Path("/cwd"),
             "DESIGN_NAME": "whatever",
             "PDK_ROOT": "/pdk",
             "PDK": "dummy",
             "STD_CELL_LIBRARY": "dummy_scl",
-            "VERILOG_FILES": ["/cwd/src/a.v", "/cwd/src/b.v"],
+            "VERILOG_FILES": [
+                pathlib.Path("/cwd/src/a.v"),
+                pathlib.Path("/cwd/src/b.v"),
+            ],
             "EXAMPLE_PDK_VAR": Decimal("10"),
             "GRT_REPAIR_ANTENNAS": True,
             "RUN_HEURISTIC_DIODE_INSERTION": False,
             "DIODE_ON_PORTS": "none",
             "MACROS": None,
             "TECH_LEFS": {
-                "nom_*": Path(
+                "nom_*": pathlib.Path(
                     "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
                 )
             },
@@ -145,19 +151,22 @@ def test_yaml_config():
 
     assert cfg == Config(
         {
-            "DESIGN_DIR": "/cwd",
+            "DESIGN_DIR": pathlib.Path("/cwd"),
             "DESIGN_NAME": "whatever",
             "PDK_ROOT": "/pdk",
             "PDK": "dummy",
             "STD_CELL_LIBRARY": "dummy_scl",
-            "VERILOG_FILES": ["/cwd/src/a.v", "/cwd/src/b.v"],
+            "VERILOG_FILES": [
+                pathlib.Path("/cwd/src/a.v"),
+                pathlib.Path("/cwd/src/b.v"),
+            ],
             "EXAMPLE_PDK_VAR": Decimal("10"),
             "GRT_REPAIR_ANTENNAS": True,
             "RUN_HEURISTIC_DIODE_INSERTION": False,
             "DIODE_ON_PORTS": "none",
             "MACROS": None,
             "TECH_LEFS": {
-                "nom_*": Path(
+                "nom_*": pathlib.Path(
                     "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
                 )
             },
@@ -202,19 +211,22 @@ def test_tcl_config():
 
     assert cfg == Config(
         {
-            "DESIGN_DIR": "/cwd",
+            "DESIGN_DIR": pathlib.Path("/cwd"),
             "DESIGN_NAME": "whatever",
             "PDK_ROOT": "/pdk",
             "PDK": "dummy",
             "STD_CELL_LIBRARY": "dummy_scl",
-            "VERILOG_FILES": ["/cwd/src/a.v", "/cwd/src/b.v"],
+            "VERILOG_FILES": [
+                pathlib.Path("/cwd/src/a.v"),
+                pathlib.Path("/cwd/src/b.v"),
+            ],
             "EXAMPLE_PDK_VAR": Decimal("10"),
             "GRT_REPAIR_ANTENNAS": True,
             "RUN_HEURISTIC_DIODE_INSERTION": False,
             "DIODE_ON_PORTS": "none",
             "MACROS": None,
             "TECH_LEFS": {
-                "nom_*": Path(
+                "nom_*": pathlib.Path(
                     "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
                 )
             },
@@ -263,19 +275,22 @@ def test_multiconf():
 
     assert cfg == Config(
         {
-            "DESIGN_DIR": "/cwd",
+            "DESIGN_DIR": pathlib.Path("/cwd"),
             "DESIGN_NAME": "spm",
             "PDK_ROOT": "/pdk",
             "PDK": "dummy",
             "STD_CELL_LIBRARY": "dummy_scl",
-            "VERILOG_FILES": ["/cwd/src/a.v", "/cwd/src/b.v"],
+            "VERILOG_FILES": [
+                pathlib.Path("/cwd/src/a.v"),
+                pathlib.Path("/cwd/src/b.v"),
+            ],
             "EXAMPLE_PDK_VAR": Decimal("10"),
             "GRT_REPAIR_ANTENNAS": False,
             "RUN_HEURISTIC_DIODE_INSERTION": False,
             "DIODE_ON_PORTS": "none",
             "MACROS": None,
             "TECH_LEFS": {
-                "nom_*": Path(
+                "nom_*": pathlib.Path(
                     "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
                 )
             },
@@ -386,19 +401,22 @@ def test_mixed_configs():
 
     assert cfg == Config(
         {
-            "DESIGN_DIR": "/cwd",
+            "DESIGN_DIR": pathlib.Path("/cwd"),
             "DESIGN_NAME": "whatever",
             "PDK_ROOT": "/pdk",
             "PDK": "dummy",
             "STD_CELL_LIBRARY": "dummy_scl",
-            "VERILOG_FILES": ["/cwd/src/a.v", "/cwd/src/b.v"],
+            "VERILOG_FILES": [
+                pathlib.Path("/cwd/src/a.v"),
+                pathlib.Path("/cwd/src/b.v"),
+            ],
             "EXAMPLE_PDK_VAR": Decimal("30"),
             "GRT_REPAIR_ANTENNAS": True,
             "RUN_HEURISTIC_DIODE_INSERTION": False,
             "DIODE_ON_PORTS": "none",
             "MACROS": None,
             "TECH_LEFS": {
-                "nom_*": Path(
+                "nom_*": pathlib.Path(
                     "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
                 )
             },
@@ -518,7 +536,7 @@ def test_automatic_conversion():
         pdk_root="/pdk",
     )
 
-    assert cfg["VERILOG_FILES"] == [
+    assert [str(path) for path in cfg["VERILOG_FILES"]] == [
         "/cwd/src/a.v",
         "/cwd/src/b.v",
     ], "automatic conversion of tcl-style list failed for json file"
@@ -886,8 +904,8 @@ def test_macro_array_config():
 
     assert cfg["MACROS"] == {
         "sram": Macro(
-            gds=[Path("/cwd")],
-            lef=[Path("/cwd")],
+            gds=[pathlib.Path("/cwd")],
+            lef=[pathlib.Path("/cwd")],
             instances={
                 "sram_inst_0_0": Instance(
                     location=(Decimal("100"), Decimal("100")),

@@ -155,7 +155,7 @@ def test_dataclass_mappings_are_shaped_into_instances(tmp_path):
     }
     model = Example.model_validate(raw, strict=True)
     assert isinstance(model.MACROS["spm"], Macro)
-    assert model.MACROS["spm"].lef == [str(lef)]
+    assert [str(view) for view in model.MACROS["spm"].lef] == [str(lef)]
 
     round_tripped = Example.model_validate(model.to_raw_dict(), strict=True)
     assert isinstance(round_tripped.MACROS["spm"], Macro)

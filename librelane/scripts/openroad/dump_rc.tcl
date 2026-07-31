@@ -98,11 +98,12 @@ puts "%OL_END_REPORT"
 
 source $::env(SCRIPTS_DIR)/openroad/common/set_rc.tcl
 
-puts "%OL_CREATE_REPORT layer_values_after.rpt"
-report_units
-dblayer_rc_values "== Layer Values (After Set RC) =="
-puts "%OL_END_REPORT"
-
+# There is deliberately no second dblayer_rc_values report here. set_layer_rc
+# writes the odb layer store only when -corner is absent, and set_rc.tcl always
+# passes -corner, so odb still holds the technology LEF values printed above.
+# The report that used to sit here read odb again and was therefore identical
+# to tlef_values.rpt while claiming to show the values after set_rc. Everything
+# set_rc.tcl applied is per-corner, and is in the report below.
 puts "%OL_CREATE_REPORT resizer_values_after.rpt"
 report_units
 resizer_rc_values "== Resizer RC Values (After Set RC) =="

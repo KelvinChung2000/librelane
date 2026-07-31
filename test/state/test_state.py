@@ -14,6 +14,7 @@
 import os
 
 import pytest
+import pathlib
 from pyfakefs.fake_filesystem_unittest import Patcher
 
 pytestmark = pytest.mark.all
@@ -152,7 +153,7 @@ def test_path_fail_exists():
 # def test_path_fail_extension():
 #    from .state import State, InvalidState
 #
-#    test_dict = {"nl": Path("./state.py")}
+#    test_dict = {"nl": pathlib.Path("./state.py")}
 #    test_metrics = {"metric": "a"}
 #    state = State(test_dict, metrics=test_metrics)
 #
@@ -163,13 +164,12 @@ def test_path_fail_exists():
 @pytest.mark.usefixtures("_mock_fs")
 def test_path_success():
     from librelane.state import State
-    from librelane.common import Path
 
     test_file = "test.nl.v"
     with open(test_file, "w") as f:
         f.write("\n")
 
-    test_dict = {"nl": Path(test_file)}
+    test_dict = {"nl": pathlib.Path(test_file)}
     test_metrics = {"metric": "a"}
     state = State(test_dict, metrics=test_metrics)
 
@@ -180,19 +180,23 @@ def test_path_success():
 def test_save():
     import json
     from librelane.state import State
-    from librelane.common import Path
 
     test_file = "test.nl.v"
     test_file_contents = "test\n"
     with open(test_file, "w") as f:
         f.write(test_file_contents)
 
-    test_dict = {"spef": {"nom": Path(test_file)}, "nl": Path(test_file)}
+    test_dict = {
+        "spef": {"nom": pathlib.Path(test_file)},
+        "nl": pathlib.Path(test_file),
+    }
     test_metrics = {
         "metric": "a",
         "metric1": 1,
         "metric2": True,
-        "metric3": Path("path"),
+        # A plain str: metrics are serialised to JSON, and a path in a
+        # metric comes back as the text it was written as.
+        "metric3": "path",
     }
     state = State(test_dict, metrics=test_metrics)
 
@@ -225,7 +229,6 @@ def test_save():
 
 @pytest.mark.usefixtures("_mock_fs")
 def test_loads():
-    import json
     from librelane.state import State
 
     test_file = "test.nl.v"
@@ -233,11 +236,14 @@ def test_loads():
     with open(test_file, "w") as f:
         f.write(test_file_contents)
 
-    test_dict = {"nl": test_file}
+    # A path object, not the bare str: State stores what it is given, and
+    # loads() always produces paths, so a str here would only round-trip while
+    # the path type compared equal to one.
+    test_dict = {"nl": pathlib.Path(test_file)}
     test_metrics = {"metric": "a", "metric1": 1, "metric2": True, "metric3": "path"}
     state = State(test_dict, metrics=test_metrics)
 
-    new_state = State.loads(json.dumps(state.to_raw_dict()))
+    new_state = State.loads(state.dumps())
     assert new_state.to_raw_dict() == state.to_raw_dict()
 
 
@@ -251,3 +257,69 @@ def test_removed_design_format_accessors():
     assert not hasattr(DesignFormat.GDS, "value")
     assert not hasattr(DesignFormat.GDS, "name")
     assert not hasattr(DesignFormat, "by_id")
+
+
+def test_load_resolves_a_pdk_dir_directive(tmp_path):
+    """Issue 600.
+
+    ``create_reproducible`` writes ``pdk_dir::<relative>`` for a view that
+    lives inside the PDK, because a reproducible does not carry the PDK. Only
+    the reader knows where the PDK is, so the directive stays unresolved in
+    the file and is resolved against symbols supplied on load.
+    """
+    from librelane.state import State
+
+    pdk_path = tmp_path / "pdks" / "dummy"
+    pdk_path.mkdir(parents=True)
+    view = pdk_path / "cells.gds"
+    view.write_text("gds\n")
+
+    state = State.loads(
+        '{"gds": "pdk_dir::cells.gds", "metrics": {}}',
+        symbols={"PDKPATH": str(pdk_path)},
+    )
+
+    assert state["gds"] == pathlib.Path(view)
+
+
+def test_load_resolves_a_dir_directive(tmp_path):
+    from librelane.state import State
+
+    view = tmp_path / "sub" / "design.nl.v"
+    view.parent.mkdir()
+    view.write_text("module design; endmodule\n")
+
+    state = State.loads(
+        '{"nl": "dir::sub/design.nl.v", "metrics": {}}',
+        symbols={"DESIGN_DIR": str(tmp_path)},
+    )
+
+    assert state["nl"] == pathlib.Path(view)
+
+
+def test_load_rejects_a_directive_with_no_symbols():
+    """Without a resolution context there is nothing to resolve against."""
+    from librelane.state import State
+
+    with pytest.raises(ValueError, match="pdk_dir::cells.gds"):
+        State.loads('{"gds": "pdk_dir::cells.gds", "metrics": {}}')
+
+
+def test_load_rejects_a_directive_naming_an_unknown_symbol():
+    from librelane.state import State
+
+    with pytest.raises(KeyError, match="PDKPATH"):
+        State.loads(
+            '{"gds": "pdk_dir::cells.gds", "metrics": {}}',
+            symbols={"DESIGN_DIR": "."},
+        )
+
+
+def test_load_rejects_a_directive_matching_no_file(tmp_path):
+    from librelane.state import State
+
+    with pytest.raises(ValueError, match="matched 0 files"):
+        State.loads(
+            '{"gds": "pdk_dir::absent.gds", "metrics": {}}',
+            symbols={"PDKPATH": str(tmp_path)},
+        )

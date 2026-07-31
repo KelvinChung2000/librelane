@@ -135,6 +135,22 @@ Style Notes
   `STA_EXTRA_CORNER_TCL_FILE` feature reaches Tcl under its own name and is
   unaffected.
 
+* `KLayout.Render`
+
+  * `def` and `gds` are now both declared as optional inputs. The step renders
+    whichever of the two it is given, preferring `gds`, so requiring `def`
+    aborted flows that could have rendered from the `gds` alone. Ported from
+    upstream by Leo Moser (librelane/librelane#964).
+  * Given neither of its optional inputs, the step now warns and does nothing
+    instead of raising. Declaring an input optional and then erring out on its
+    absence contradicts the declaration. Ported from upstream by Mohamed Gaber
+    (librelane/librelane#973).
+  * `Toolbox.render_png` now reads the rendered image out of the step's output
+    state instead of a fixed path inside its temporary directory, and returns
+    `None` when the step rendered nothing. The fixed path would otherwise raise
+    an uncaught `FileNotFoundError` on the case the two changes above make
+    reachable.
+
 * `KLayout.StreamOut`, `Magic.StreamOut`
 
   * A stream-out that is not the PDK's `PRIMARY_GDSII_STREAMOUT_TOOL` now
@@ -149,6 +165,17 @@ Style Notes
     `OpenROAD.RepairAntennas`, but wrote its own `config.json` naming this ID,
     so a reproducible made from its directory could not be loaded (#920).
 
+* `OpenROAD.DumpRCValues`
+
+  * Removed the `layer_values_after.rpt` report. It read the odb layer store a
+    second time after sourcing `common/set_rc.tcl`, but `set_layer_rc` writes
+    that store only when `-corner` is absent and `set_rc.tcl` always passes
+    `-corner`, so the report was identical to `tlef_values.rpt` while its title
+    claimed to show the values after set_rc. Anyone comparing the two while
+    debugging RC estimation, which is exactly what the step is for, was being
+    told the overrides had not been applied. `resizer_values_after.rpt` is the
+    report that shows them, per corner, and is unchanged.
+
 * Created `OpenROAD.RMP`, which resynthesizes clouds of logic in place using
   OpenROAD's `rmp` module and ABC (#558, ported from the unmerged upstream
   #560). Added `RMP_TARGET`, `RMP_CORNER`, `RMP_SLACK_THRESHOLD`,
@@ -156,6 +183,49 @@ Style Notes
   restructuring against part of the standard cell library when the selected
   corner resolves to more than one liberty file, because OpenROAD's
   `restructure` hands its single `-liberty_file` to one ABC `read_lib`.
+
+* `OpenROAD.PadRing`
+
+  * Added `PAD_ROTATION_HORIZONTAL`, `PAD_ROTATION_VERTICAL` and
+    `PAD_ROTATION_CORNER`, the orientations `make_io_sites` applies to each kind
+    of pad site, for PDKs whose pad cells are not drawn for the side they sit
+    on. All three default to `R0`, which is what OpenROAD assumes when the flag
+    is absent, so a PDK that says nothing gets the ring it already had. Ported
+    from upstream by Leo Moser (librelane/librelane#925).
+  * Fixed the "no instance found" error path reading `$instance_name`, a
+    variable never set, so a padring naming an instance that does not exist
+    died with a Tcl error about the error handler rather than naming the
+    instance.
+  * Added `PAD_SPACING_MULTIPLE`, the granularity the gap between two pad cells
+    is rounded down to. Unset means the pad site width, which is the narrowest
+    filler cell that can occupy the gap and is what the spacing was rounded to
+    before. Upstream instead defaults it to 1 µm, which silently re-spaces the
+    ring on any PDK whose pad site is not 1 µm wide. The space left at the ends
+    of each side must still be divisible by the pad site width. Ported from
+    upstream by Leo Moser (librelane/librelane#965).
+  * Added `PAD_TRIM_ROWS`, which skips the I/O filler for whichever of
+    `PAD_SOUTH`, `PAD_EAST`, `PAD_NORTH` and `PAD_WEST` is empty and deletes
+    each corner cell whose two neighbouring rows are both empty, so a ring can
+    populate fewer than four sides. Defaults to off. Ported from upstream by
+    Leo Moser (librelane/librelane#965).
+
+* `OpenROAD.GeneratePDN`, `OpenROAD.PadRing`
+
+  * Added `PDN_CORE_RING_CONNECT_TO_PAD_LAYERS`, which restricts the core
+    ring's connection to the pad pins to a named set of layers. Unset means
+    every layer a pad pin appears on is eligible, which is the previous
+    behaviour. Ported from upstream by Leo Moser (librelane/librelane#925).
+
+* `OpenROAD.GlobalPlacement`, `OpenROAD.GlobalPlacementSkipIO`
+
+  * Added `PL_GENERATE_GIF`, which captures the floorplan at every global
+    placement iteration into the step's `renders` directory for OpenROAD to
+    combine into a gif animation, and `PL_GENERATE_GIF_PAUSE`, the number of
+    iterations to run before pausing for inspection. Both default to off and to
+    a pause count high enough never to pause. OpenROAD renders these from its
+    GUI, so enabling the first forces `-gui` into the OpenROAD command line and
+    the run then requires a display. Ported from upstream by Julia Desmazes
+    (librelane/librelane#985).
 
 * `OpenROAD.GeneratePDN`
 
@@ -178,6 +248,11 @@ Style Notes
     **Behaviour change:** a custom flow that runs
     `OpenROAD.RepairDesignPostGPL` without `OpenROAD.AddBuffer` gets no port
     buffering at all.
+  * Fixed port buffering letting OpenROAD choose the buffer. The cell named by
+    `SYNTH_BUFFER_CELL` is now passed to `buffer_ports` explicitly, because
+    OpenROAD would otherwise pick any cell it considers a buffer, which on
+    gf180mcu can be a delay buffer. Ported from upstream by Leo Moser
+    (librelane/librelane#961).
 
 * `Odb.ReplaceECOCells`
 
@@ -187,6 +262,15 @@ Style Notes
     `REPLACE_ECO_CELLS` list variable, whose entries are `instance`,
     `replace_with` and the optional `current_cell`. A rule matching no instance
     is an error rather than a silent no-op (#967).
+
+* `Odb.SetPowerConnections`
+
+  * Fixed an instance that connects only some of its power and ground ports
+    aborting the step. Yosys writes an empty bit list for a port the Verilog
+    leaves explicitly open, such as `.VGND()`, and that was reported as
+    "more than one bit connected" and treated as fatal. Such a port is now
+    skipped and the connected ones are still hooked up. Ported from upstream
+    by Leo Moser (librelane/librelane#991).
 
 * `OpenROAD.OpenConsole`
 
@@ -262,6 +346,18 @@ Style Notes
     upstream #937).
   * Deprecated `DRT_THREADS` in favour of `OPENROAD_THREADS`. The old name is
     still accepted.
+  * Fixed `LAYERS_RC` and `VIAS_R` meaning different things under signoff STA
+    and under PnR. `set_layer_rc` reads its arguments in whatever units the
+    embedded OpenSTA is in, `set_cmd_units` is called only by the three scripts
+    under `scripts/openroad/sta/`, and the other fifteen places that source
+    `common/set_rc.tcl` are PnR scripts that leave the units at whatever the
+    first liberty file declared. The values are now converted into the active
+    units before being applied, as the technology LEF fallback beside them
+    already was, and both variables are documented as kΩ/µm, pF/µm and kΩ per
+    cut whatever the liberty declares. A PDK whose liberty is already in kOhm
+    and pF, sky130 among them, is unaffected. gf180mcu's liberty declares ohm,
+    so its resistances were a thousand times too small everywhere except
+    signoff (#996).
 
 * `OpenROAD.STAPrePNR`, `OpenROAD.STAMidPNR`, `OpenROAD.STAPostPNR`
 
@@ -641,9 +737,31 @@ Style Notes
 * Fixed reproducibles created from composite steps failing to run: the
   constituent steps re-read the PDK configuration, which a reproducible's
   copied file tree does not contain (#621).
+* Fixed a reproducible created without the PDK being unreadable when its input
+  state names a view that lives inside the PDK (#600). The writer stores such a
+  view as the unresolved directive `pdk_dir::<relative>`, since a reproducible
+  does not carry the PDK, but `State.load` read it as a literal path and
+  rejected it as missing. `State.load` and `State.loads` take an optional
+  `symbols` mapping and resolve `dir::` and `pdk_dir::` against it through the
+  configuration preprocessor, and `Step.load` supplies the same `PDKPATH` and
+  `DESIGN_DIR` it resolves the configuration's own directives against. Without
+  `symbols` a stored directive is still an error rather than a literal path.
 * Fixed later configuration sources not being able to select
   `STD_CELL_LIBRARY` (#827).
-* Fixed lax union coercion choosing a less-specific scalar type (#993).
+* Improved lax union coercion for fields validated by Pydantic.
+* Fixed lax union coercion picking a less specific member for `pdk=True`
+  variables read from a PDK's `config.tcl`, which is still resolved by the
+  legacy Tcl path in `config/legacy.py` rather than by Pydantic (#993).
+  * The legacy path refuses to read a Boolean as a quantity. `bool` is a
+    subclass of `int`, so `int(True)` was 1 and a numeric union member
+    swallowed every Boolean declared after it. `config/types.py` already
+    stated the same rule for the Pydantic path.
+  * The five `KLAYOUT_*_OPTIONS` variables now declare their value type as
+    `int | bool | str` rather than `bool | int | str`. Every value in a PDK's
+    `config.tcl` is a string, and with `bool` first the strings `1` and `0`
+    became `True` and `False` instead of the numbers they are written as.
+    Ordering the members by how much they accept, narrowest first and `str`
+    last, is right for every string a PDK can write.
 * Fixed multiple globs supplied to a `list[Path]` field (#712).
 * Fixed strict validation rejecting whole numbers for `Decimal` fields,
   sequences for tuple fields, and mappings for dataclass fields such as
@@ -679,6 +797,18 @@ Style Notes
 
 ## API Breaks
 
+* `KLAYOUT_DENSITY_OPTIONS`, `KLAYOUT_ANTENNA_OPTIONS`, `KLAYOUT_DRC_OPTIONS`,
+  `KLAYOUT_LVS_OPTIONS` and `KLAYOUT_FILLER_OPTIONS` read a `1` or a `0`
+  written in a PDK's `config.tcl` as the number rather than as `True` or
+  `False`, so a step that formats an option into a KLayout `-rd` argument now
+  passes `feol=1` where it passed `feol=true` (#993). Of the PDKs ciel
+  distributes, only sky130A and sky130B write numeric options, and the
+  `sky130A_mr.drc` runset that consumes them tests each against `"0"` and
+  `"false"`, so both spellings select the same rule groups. A runset that
+  tests an option against the literal word `true`, as ihp-sg13g2's does, must
+  be given `true` in the PDK's `config.tcl`, which is what ihp-sg13g2 writes.
+* A Boolean supplied for an `int` or `Decimal` variable is rejected rather
+  than read as 1 or 0.
 * `Flow.start` passes `initial_state_given` to `Flow.run` alongside
   `initial_state` and `starting_ordinal`. A `run` override that accepts
   `**kwargs`, as the abstract signature declares, is unaffected.

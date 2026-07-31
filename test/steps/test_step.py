@@ -29,7 +29,6 @@ mock_variables = pytest.mock_variables
 def test_create_reproducible_uses_portable_paths(tmp_path, monkeypatch):
     from concurrent.futures import Future
 
-    from librelane.common import Path
     from librelane.config import BaseConfigModel
     from librelane.state import State
     from librelane.steps.step.reporting import ReportingMixin
@@ -45,26 +44,31 @@ def test_create_reproducible_uses_portable_paths(tmp_path, monkeypatch):
     pdk_file.parent.mkdir(parents=True)
     pdk_file.write_text("VERSION 5.8 ;\n")
 
+    from librelane.state import DesignFormat
+
+    pdk_view = pdk_root / "dummy" / "cells.gds"
+    pdk_view.write_text("gds\n")
+
     class ReproducibleStep(ReportingMixin):
-        inputs = []
+        inputs = [DesignFormat.GDS]
 
         @classmethod
         def get_implementation_id(cls):
             return "Test.Reproducible"
 
     state_in: Future[State] = Future()
-    state_in.set_result(State({}))
+    state_in.set_result(State({DesignFormat.GDS: pathlib.Path(pdk_view)}))
     target = ReproducibleStep()
     target.state_in = state_in
     target.config = BaseConfigModel.model_validate(
         {
-            "DESIGN_DIR": Path(tmp_path),
+            "DESIGN_DIR": pathlib.Path(tmp_path),
             "DESIGN_NAME": "design",
             "PDK": "dummy",
-            "PDK_ROOT": Path(pdk_root),
-            "DESIGN_FILE": Path(design_file),
-            "RELATIVE_FILE": Path("relative.v"),
-            "TECH_FILE": Path(pdk_file),
+            "PDK_ROOT": pathlib.Path(pdk_root),
+            "DESIGN_FILE": pathlib.Path(design_file),
+            "RELATIVE_FILE": pathlib.Path("relative.v"),
+            "TECH_FILE": pathlib.Path(pdk_file),
         }
     )
 
@@ -88,6 +92,16 @@ def test_create_reproducible_uses_portable_paths(tmp_path, monkeypatch):
     assert flat_config["TECH_FILE"] == "pdk_dir::tech.lef"
     assert (flat_output / "design.v").read_text() == design_file.read_text()
     assert not (flat_output / "pdk").exists()
+
+    # The same visitor writes the state, so a view inside the PDK is left
+    # unresolved there too, and the reader has to be able to resolve it
+    # (issue 600).
+    flat_state = json.loads((flat_output / "state_in.json").read_text())
+    assert flat_state["gds"] == "pdk_dir::cells.gds"
+    assert State.loads(
+        (flat_output / "state_in.json").read_text(),
+        symbols={"PDKPATH": str(pdk_root / "dummy")},
+    )["gds"] == pathlib.Path(pdk_view)
 
 
 @pytest.fixture
@@ -233,7 +247,6 @@ def test_step_typed_config_model(mock_run, mock_config):
 def test_step_optional_inputs(mock_run, mock_config):
     from librelane.steps import Step, StepException
     from librelane.state import DesignFormat, State
-    from librelane.common import Path
 
     class TestStep(Step):
         inputs = [DesignFormat.NETLIST, DesignFormat.DEF.mkOptional()]
@@ -249,7 +262,7 @@ def test_step_optional_inputs(mock_run, mock_config):
         id="TestStep",
         long_name="longname",
         config=mock_config,
-        state_in=State({DesignFormat.NETLIST: Path(test_file)}),
+        state_in=State({DesignFormat.NETLIST: pathlib.Path(test_file)}),
     )
     assert step.id == "TestStep", "Wrong step id"
     assert step.long_name == "longname", "Wrong step longname"
@@ -262,7 +275,7 @@ def test_step_optional_inputs(mock_run, mock_config):
             id="TestStep",
             long_name="longname",
             config=mock_config,
-            state_in=State({DesignFormat.DEF: Path(test_file)}),
+            state_in=State({DesignFormat.DEF: pathlib.Path(test_file)}),
         ).start(step_dir=".")
 
 
@@ -346,7 +359,6 @@ def test_step_start_invalid_state(mock_run, mock_config):
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([step])
 def test_step_start(mock_config):
-    from librelane.common import Path
     from librelane.common import Toolbox
     from librelane.state import DesignFormat, State
     from librelane.steps import Step, MetricsUpdate, ViewsUpdate
@@ -360,7 +372,7 @@ def test_step_start(mock_config):
         f.write("\n")
 
     new_metric: MetricsUpdate = {"new_metric": "abc"}
-    new_view: ViewsUpdate = {DesignFormat.NETLIST: Path(test_file_out)}
+    new_view: ViewsUpdate = {DesignFormat.NETLIST: pathlib.Path(test_file_out)}
 
     class TestStep(Step):
         inputs = []
@@ -371,7 +383,9 @@ def test_step_start(mock_config):
             return new_view, new_metric
 
     metrics_in = {"metric": "123"}
-    state_in = State({DesignFormat.NETLIST: Path(test_file)}, metrics=metrics_in)
+    state_in = State(
+        {DesignFormat.NETLIST: pathlib.Path(test_file)}, metrics=metrics_in
+    )
     step = TestStep(
         id="TestStep",
         long_name="longname",
@@ -379,7 +393,9 @@ def test_step_start(mock_config):
         state_in=state_in,
     )
     state_out = step.start(toolbox=Toolbox(tmp_dir="/cwd"), step_dir="/cwd")
-    assert state_out[DesignFormat.NETLIST] == test_file_out, "Wrong step state_out"
+    assert state_out[DesignFormat.NETLIST] == pathlib.Path(test_file_out), (
+        "Wrong step state_out"
+    )
     assert state_out.metrics == {
         **new_metric,
         **metrics_in,
@@ -596,6 +612,35 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
 
     with pytest.raises(StepException, match="non-UTF-8"):
         step.start(step_dir=".")
+
+    # Issue 924: a subprocess writes to a pipe, so Rich inside it sees no
+    # terminal, falls back to 80 columns and clamps the tables the odbpy
+    # scripts print. Only the parent knows the real width.
+    from librelane.logging import console
+
+    columns_log = "columns.log"
+    step = StepTest(
+        config=Config(config_dict),
+        state_in=state_in,
+        _no_revalidate_conf=True,
+    )
+    step.run_subprocess(
+        [sys.executable, "-c", "import os; print(os.environ['COLUMNS'])"],
+        log_to=columns_log,
+        silent=True,
+    )
+    with open(columns_log) as f:
+        assert f.read().strip() == str(console.width)
+
+    # A caller that set one explicitly keeps it.
+    step.run_subprocess(
+        [sys.executable, "-c", "import os; print(os.environ['COLUMNS'])"],
+        env={"COLUMNS": "42"},
+        log_to=columns_log,
+        silent=True,
+    )
+    with open(columns_log) as f:
+        assert f.read().strip() == "42"
 
 
 @pytest.mark.usefixtures("_chdir_tmp")

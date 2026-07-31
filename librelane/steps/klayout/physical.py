@@ -17,6 +17,7 @@
 from loguru import logger
 
 import os
+import pathlib
 from os.path import abspath
 from typing import Optional
 
@@ -73,7 +74,7 @@ class SealRing(KLayoutStep):
             return views_updates, {}
 
         input_gds = state_in[DesignFormat.GDS]
-        assert isinstance(input_gds, Path)
+        assert isinstance(input_gds, pathlib.Path)
         output_gds = os.path.join(
             self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
@@ -105,7 +106,7 @@ class SealRing(KLayoutStep):
             env=env,
         )
 
-        views_updates[DesignFormat.GDS] = Path(output_gds)
+        views_updates[DesignFormat.GDS] = pathlib.Path(output_gds)
 
         return views_updates, {}
 
@@ -116,7 +117,7 @@ class SealRing(KLayoutStep):
         kwargs, env = self.extract_env(kwargs)
 
         input_gds = state_in[DesignFormat.GDS]
-        assert isinstance(input_gds, Path)
+        assert isinstance(input_gds, pathlib.Path)
         output_gds = os.path.join(
             self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
@@ -158,7 +159,7 @@ class SealRing(KLayoutStep):
             env=env,
         )
 
-        views_updates[DesignFormat.GDS] = Path(output_gds)
+        views_updates[DesignFormat.GDS] = pathlib.Path(output_gds)
 
         return views_updates, {}
 
@@ -182,7 +183,7 @@ class Filler(KLayoutStep):
             pdk=True,
         )
 
-        KLAYOUT_FILLER_OPTIONS: Optional[dict[str, bool | int | str]] = variable(
+        KLAYOUT_FILLER_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
             None,
             description="Options passed directly to the KLayout filler script. They vary from one PDK to another.",
             pdk=True,
@@ -214,7 +215,7 @@ class Filler(KLayoutStep):
         kwargs, env = self.extract_env(kwargs)
 
         input_gds = state_in[DesignFormat.GDS]
-        assert isinstance(input_gds, Path)
+        assert isinstance(input_gds, pathlib.Path)
         output_gds = os.path.join(
             self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
@@ -247,7 +248,7 @@ class Filler(KLayoutStep):
             env=env,
         )
 
-        views_updates[DesignFormat.GDS] = Path(output_gds)
+        views_updates[DesignFormat.GDS] = pathlib.Path(output_gds)
 
         return views_updates, {}
 
@@ -258,7 +259,7 @@ class Filler(KLayoutStep):
         kwargs, env = self.extract_env(kwargs)
 
         input_gds = state_in[DesignFormat.GDS]
-        assert isinstance(input_gds, Path)
+        assert isinstance(input_gds, pathlib.Path)
         output_gds = os.path.join(
             self.step_dir, f"{self.config.DESIGN_NAME}.{DesignFormat.GDS.extension}"
         )
@@ -282,6 +283,6 @@ class Filler(KLayoutStep):
             env=env,
         )
 
-        views_updates[DesignFormat.GDS] = Path(output_gds)
+        views_updates[DesignFormat.GDS] = pathlib.Path(output_gds)
 
         return views_updates, {}

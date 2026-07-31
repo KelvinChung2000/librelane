@@ -51,6 +51,126 @@ from librelane.steps.step import (
 from librelane.steps.openroad.base import OpenROADStep
 
 
+@dataclass
+class AntennaViolation:
+    """A single violated antenna ratio check, as reported by OpenROAD's
+    ``check_antennas -verbose``.
+
+    Attributes
+    ----------
+    net
+        The name of the violating net.
+    pin
+        The pin of the gate the violation was attributed to.
+    layer
+        The routing layer the ratio was computed on.
+    check
+        Which rule was violated, as OpenROAD names it: ``Gate area``,
+        ``Cumulative area``, ``Side area`` or ``Cumulative side area``.
+    calculated_ratio
+        The ratio OpenROAD computed. Depending on ``check``, this is a partial
+        (PAR/PSR) or a cumulative (CAR/CSR) area ratio.
+    required_ratio
+        The ratio the PDK's antenna rule allows.
+    """
+
+    net: str
+    pin: str
+    layer: str
+    check: str
+    calculated_ratio: float
+    required_ratio: float
+
+    @property
+    def calculated_to_required(self) -> float:
+        """How far past the limit this violation is, as a multiple of it."""
+        return self.calculated_ratio / self.required_ratio
+
+    def __lt__(self, other: "AntennaViolation") -> bool:
+        return self.calculated_to_required < other.calculated_to_required
+
+
+# OpenROAD emits, per net/pin/layer, a calculated/required pair for each of PAR
+# ("Partial area ratio" / "Gate area"), CAR ("Cumulative area ratio" /
+# "Cumulative area"), PSR ("Partial area ratio" / "Side area") and CSR
+# ("Cumulative area ratio" / "Cumulative side area"). The "(VIOLATED)" marker
+# sits on the "Required ratio:" line and the calculated value is always on the
+# line immediately above it, so a violation is attributed by pairing the two
+# rather than by remembering the last "Partial area ratio" seen.
+_net_pattern = re.compile(r"\s*Net:\s*(\S+)")
+_pin_pattern = re.compile(r"\s*Pin:\s+(\S+)")
+_layer_pattern = re.compile(r"\s*Layer:\s+(\S+)")
+_calculated_ratio_pattern = re.compile(
+    r"\s*(?:Partial|Cumulative) area ratio:\s+([\d.]+)"
+)
+_required_ratio_pattern = re.compile(r"\s*Required ratio:\s+([\d.]+)\s*\(([^)]+)\)")
+
+
+def parse_antenna_report(report_file: str) -> list[AntennaViolation]:
+    """Extract the violated ratio checks from an OpenROAD antenna report.
+
+    Parameters
+    ----------
+    report_file
+        Path to the report written by ``check_antennas -verbose``.
+
+    Returns
+    -------
+    list[AntennaViolation]
+        The violations, worst (highest calculated-to-required ratio) first.
+
+    Raises
+    ------
+    ValueError
+        If a ``(VIOLATED)`` marker appears before any line the violation could
+        be attributed to, which means the report format has changed.
+    """
+    net: Optional[str] = None
+    pin: Optional[str] = None
+    layer: Optional[str] = None
+    calculated_ratio: Optional[float] = None
+    violations: list[AntennaViolation] = []
+
+    with open(report_file, "r", encoding="utf8") as f:
+        for line_number, line in enumerate(f, start=1):
+            if net_match := _net_pattern.match(line):
+                net = net_match.group(1)
+            elif pin_match := _pin_pattern.match(line):
+                pin = pin_match.group(1)
+            elif layer_match := _layer_pattern.match(line):
+                layer = layer_match.group(1)
+            elif calculated_match := _calculated_ratio_pattern.match(line):
+                calculated_ratio = float(calculated_match.group(1))
+            elif required_match := _required_ratio_pattern.match(line):
+                if "VIOLATED" not in line:
+                    continue
+                if (
+                    calculated_ratio is None
+                    or net is None
+                    or pin is None
+                    or layer is None
+                ):
+                    raise ValueError(
+                        f"Could not attribute the violation in the antenna report "
+                        f"{report_file} at line {line_number}: no net, pin, layer "
+                        f"and calculated ratio precede it. The report format has "
+                        f"likely changed."
+                    )
+                violations.append(
+                    AntennaViolation(
+                        net=net,
+                        pin=pin,
+                        layer=layer,
+                        check=required_match.group(2),
+                        calculated_ratio=calculated_ratio,
+                        required_ratio=float(required_match.group(1)),
+                    )
+                )
+
+    violations.sort(reverse=True)
+    return violations
+
+
 @Step.factory.register()
 class CheckAntennas(OpenROADStep):
     """
@@ -71,91 +191,27 @@ class CheckAntennas(OpenROADStep):
 
     def __summarize_antenna_report(self, report_file: str, output_file: str):
         """
-        Extracts the list of violating nets from an ARC report file"
+        Extracts the list of violating nets from an ARC report file
         """
+        violations = parse_antenna_report(report_file)
 
-        class AntennaViolation:
-            def __init__(self, net, pin, required_ratio, partial_ratio, layer):
-                self.net = net
-                self.pin = pin
-                self.required_ratio = float(required_ratio)
-                self.partial_ratio = float(partial_ratio)
-                self.layer = layer
-                self.partial_to_required = self.partial_ratio / self.required_ratio
-
-            def __lt__(self, other):
-                return self.partial_to_required < other.partial_to_required
-
-        net_pattern = re.compile(r"\s*Net:\s*(\S+)")
-        required_ratio_pattern = re.compile(r"\s*Required ratio:\s+([\d.]+)")
-        partial_ratio_pattern = re.compile(r"\s*Partial area ratio:\s+([\d.]+)")
-        layer_pattern = re.compile(r"\s*Layer:\s+(\S+)")
-        pin_pattern = re.compile(r"\s*Pin:\s+(\S+)")
-
-        required_ratio = None
-        layer = None
-        partial_ratio = None
-        required_ratio = None
-        pin = None
-        net = None
-        violations: list[AntennaViolation] = []
-
-        net_pattern = re.compile(r"\s*Net:\s*(\S+)")
-        required_ratio_pattern = re.compile(r"\s*Required ratio:\s+([\d.]+)")
-        partial_ratio_pattern = re.compile(r"\s*Partial area ratio:\s+([\d.]+)")
-        layer_pattern = re.compile(r"\s*Layer:\s+(\S+)")
-        pin_pattern = re.compile(r"\s*Pin:\s+(\S+)")
-
-        with open(report_file, "r") as f:
-            for line in f:
-                pin_new = pin_pattern.match(line)
-                required_ratio_new = required_ratio_pattern.match(line)
-                partial_ratio_new = partial_ratio_pattern.match(line)
-                layer_new = layer_pattern.match(line)
-                net_new = net_pattern.match(line)
-                required_ratio = (
-                    required_ratio_new.group(1)
-                    if required_ratio_new is not None
-                    else required_ratio
-                )
-                partial_ratio = (
-                    partial_ratio_new.group(1)
-                    if partial_ratio_new is not None
-                    else partial_ratio
-                )
-                layer = layer_new.group(1) if layer_new is not None else layer
-                pin = pin_new.group(1) if pin_new is not None else pin
-                net = net_new.group(1) if net_new is not None else net
-
-                if "VIOLATED" in line:
-                    violations.append(
-                        AntennaViolation(
-                            net=net,
-                            pin=pin,
-                            partial_ratio=partial_ratio,
-                            layer=layer,
-                            required_ratio=required_ratio,
-                        )
-                    )
-
-        violations.sort(reverse=True)
-
-        # Partial/Required:  2.36, Required:  3091.96, Partial:  7298.29,
-        # Net: net384, Pin: _22354_/A, Layer: met5
+        # Ratio / Required:  2.36, Required:  3091.96, Ratio:  7298.29,
+        # Check: Cumulative area, Net: net384, Pin: _22354_/A, Layer: met5
         table = rich.table.Table()
         decimal_places = 2
-        row = []
-        table.add_column("P / R")
-        table.add_column("Partial")
+        table.add_column("Ratio / Required")
+        table.add_column("Ratio")
         table.add_column("Required")
+        table.add_column("Check")
         table.add_column("Net")
         table.add_column("Pin")
         table.add_column("Layer")
         for violation in violations:
             row = [
-                f"{violation.partial_to_required:.{decimal_places}f}",
-                f"{violation.partial_ratio:.{decimal_places}f}",
+                f"{violation.calculated_to_required:.{decimal_places}f}",
+                f"{violation.calculated_ratio:.{decimal_places}f}",
                 f"{violation.required_ratio:.{decimal_places}f}",
+                f"{violation.check}",
                 f"{violation.net}",
                 f"{violation.pin}",
                 f"{violation.layer}",

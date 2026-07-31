@@ -1,7 +1,7 @@
 # Copyright 2026 LibreLane Contributors
 import json
 from dataclasses import dataclass
-from typing import Any, ClassVar, TypeVar, cast
+from typing import Annotated, Any, ClassVar, TypeVar, cast
 from collections.abc import Iterator, Mapping
 
 from pydantic import (
@@ -32,6 +32,22 @@ class _DeprecatedNames:
 @dataclass(frozen=True)
 class _LegacyValidator:
     callback: Any
+
+
+def _annotation_of(field: FieldInfo) -> Any:
+    """
+    A field's annotation with its ``Annotated`` metadata reattached.
+
+    Pydantic splits ``Annotated[T, m]`` into ``annotation=T`` and
+    ``metadata=[m]`` for top-level field annotations. Building a
+    :class:`pydantic.TypeAdapter` from ``annotation`` alone therefore validates
+    against a bare ``T``: for a path variable that means Pydantic's stock
+    ``pathlib.Path`` handling, silently losing the glob collapse and the
+    existence check that :data:`librelane.common.Path` carries.
+    """
+    if not field.metadata:
+        return field.annotation
+    return Annotated[tuple([field.annotation, *field.metadata])]
 
 
 class BaseConfigModel(BaseModel, Mapping[str, Any]):
@@ -104,7 +120,7 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
                 split_strings=permissive or name in permissive_keys,
             )
             if name in permissive_keys and not permissive:
-                shaped = TypeAdapter(field.annotation).validate_python(shaped)
+                shaped = TypeAdapter(_annotation_of(field)).validate_python(shaped)
             output[name] = shaped
         return output
 

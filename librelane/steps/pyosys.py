@@ -24,6 +24,7 @@ import sys
 import json
 import fnmatch
 import shutil
+import pathlib
 from decimal import Decimal
 from abc import abstractmethod
 from typing import Literal, Optional
@@ -420,7 +421,7 @@ class JsonHeader(VerilogStep):
             f"{self.config.DESIGN_NAME}.{DesignFormat.JSON_HEADER.extension}",
         )
         views_updates, metrics_updates = super().run(state_in, **kwargs)
-        views_updates[DesignFormat.JSON_HEADER] = Path(out_file)
+        views_updates[DesignFormat.JSON_HEADER] = pathlib.Path(out_file)
         return views_updates, metrics_updates
 
 
@@ -623,7 +624,7 @@ class SynthesisCommon(VerilogStep):
                 self.config.SYNTH_ELABORATE_ONLY,
             )
 
-        view_updates[DesignFormat.NETLIST] = Path(out_file)
+        view_updates[DesignFormat.NETLIST] = pathlib.Path(out_file)
 
         return view_updates, metric_updates
 

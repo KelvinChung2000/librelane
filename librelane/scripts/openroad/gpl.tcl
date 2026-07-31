@@ -79,6 +79,13 @@ lappend arg_list -pad_left $cell_pad_side
 lappend arg_list -init_wirelength_coef $::env(PL_WIRE_LENGTH_COEF)
 append_if_exists_argument arg_list PL_KEEP_RESIZE_BELOW_OVERFLOW -keep_resize_below_overflow
 
+# See: https://github.com/librelane/librelane/pull/985
+if { $::env(PL_GENERATE_GIF) } {
+	set render_dir "$::env(STEP_DIR)/renders"
+	puts "\[INFO\] Capturing global placement as a gif animation, renders written to $render_dir"
+	log_cmd global_placement_debug -pause $::env(PL_GENERATE_GIF_PAUSE) -update 1 -generate_images -images_path $render_dir
+}
+
 log_cmd global_placement {*}$arg_list
 
 unset_dont_touch_objects

@@ -18,11 +18,12 @@ from importlib.resources import files
 import os
 import re
 import json
+import pathlib
 from math import inf
 from decimal import Decimal
 from abc import abstractmethod
 
-from librelane.common import Path, aggregate_metrics
+from librelane.common import aggregate_metrics
 from librelane.state import DesignFormat, State
 
 from librelane.steps.openroad import OpenROADAlertMixin, OpenROADStep
@@ -68,7 +69,7 @@ class OdbpyStep(OpenROADAlertMixin, Step):
             file_path = os.path.join(self.step_dir, filename)
             command.append(f"--output-{output.id}")
             command.append(file_path)
-            views_updates[output] = Path(file_path)
+            views_updates[output] = pathlib.Path(file_path)
 
         command += [
             str(state_in[DesignFormat.ODB]),

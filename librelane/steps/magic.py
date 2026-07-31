@@ -21,6 +21,7 @@ from importlib.resources import files
 import os
 import re
 import shutil
+import pathlib
 from os.path import abspath
 from decimal import Decimal
 from abc import abstractmethod
@@ -213,7 +214,7 @@ class MagicStep(TclStep):
             if output.multiple:
                 # Too step-specific.
                 continue
-            path = Path(env[f"SAVE_{output.id.upper()}"])
+            path = pathlib.Path(env[f"SAVE_{output.id.upper()}"])
             if not path.exists():
                 continue
             views_updates[output] = path
@@ -371,9 +372,9 @@ class StreamOut(MagicStep):
             magic_gds_out = str(views_updates[DesignFormat.MAG_GDS])
             gds_path = os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.gds")
             shutil.copy(magic_gds_out, gds_path)
-            views_updates[DesignFormat.GDS] = Path(gds_path)
+            views_updates[DesignFormat.GDS] = pathlib.Path(gds_path)
 
-        views_updates[DesignFormat.MAG] = Path(
+        views_updates[DesignFormat.MAG] = pathlib.Path(
             os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.mag")
         )
 
@@ -428,7 +429,7 @@ class Filler(Step):
         kwargs, env = self.extract_env(kwargs)
 
         input_gds = state_in[DesignFormat.GDS]
-        assert isinstance(input_gds, Path)
+        assert isinstance(input_gds, pathlib.Path)
 
         fill_gds = os.path.join(
             self.step_dir,
@@ -483,7 +484,7 @@ class Filler(Step):
             env=env,
         )
 
-        views_updates[DesignFormat.GDS] = Path(output_gds)
+        views_updates[DesignFormat.GDS] = pathlib.Path(output_gds)
 
         return views_updates, {}
 

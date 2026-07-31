@@ -29,12 +29,17 @@ set_dont_touch_objects
 # cells this step runs before global placement have no locations yet.
 source $::env(SCRIPTS_DIR)/openroad/common/set_rc.tcl
 
+# Name the buffer explicitly. Left to itself OpenROAD picks any cell it
+# considers a buffer, which on gf180mcu can be a delay buffer.
+# See: https://github.com/librelane/librelane/pull/961
+set buffer_cell [lindex [split $::env(SYNTH_BUFFER_CELL) "/"] 0]
+
 if { $::env(DESIGN_REPAIR_BUFFER_INPUT_PORTS) } {
-    log_cmd buffer_ports -inputs
+    log_cmd buffer_ports -inputs -buffer_cell $buffer_cell
 }
 
 if { $::env(DESIGN_REPAIR_BUFFER_OUTPUT_PORTS) } {
-    log_cmd buffer_ports -outputs
+    log_cmd buffer_ports -outputs -buffer_cell $buffer_cell
 }
 
 unset_dont_touch_objects

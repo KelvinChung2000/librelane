@@ -30,7 +30,7 @@ from collections.abc import Mapping
 from loguru import logger
 
 from librelane.__version__ import __version__
-from librelane.common import Fingerprinter, Path
+from librelane.common import Fingerprinter
 from librelane.common.generic_dict import GenericDictEncoder
 from librelane.state import InvalidState, State
 from librelane.steps import Step
@@ -48,12 +48,12 @@ RESUME_SCHEMA_VERSION = 1
 
 def _substitute_paths(value, fingerprinter: Fingerprinter):
     """
-    Replaces every :class:`librelane.common.Path` with its content identity.
+    Replaces every :class:`pathlib.Path` with its content identity.
 
-    The ``Path`` branch comes first on purpose. ``Path`` subclasses
-    ``UserString``, so it is a ``Sequence``, and a sequence branch reached first
-    would walk a path character by character. For the same reason the sequence
-    branch matches ``list`` and ``tuple`` explicitly rather than ``Sequence``.
+    The path branch comes first on purpose, and the sequence branch matches
+    ``list`` and ``tuple`` explicitly rather than ``Sequence``. Both guard
+    against a path being walked element by element, which is what the old
+    ``UserString``-based path type would have done under a ``Sequence`` branch.
 
     Dataclasses are walked because ``MACROS`` is ``dict[str, Macro]`` and
     :class:`librelane.config.legacy.Macro` holds its GDS, LEF and LIB views in
@@ -71,7 +71,7 @@ def _substitute_paths(value, fingerprinter: Fingerprinter):
     -------
     ``value`` with every path replaced by its content identity.
     """
-    if isinstance(value, Path):
+    if isinstance(value, pathlib.Path):
         return fingerprinter.of_path(value)
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {
@@ -239,7 +239,7 @@ def _missing_views(state: State) -> list[str]:
     missing: list[str] = []
 
     def walk(value) -> None:
-        if isinstance(value, Path):
+        if isinstance(value, pathlib.Path):
             if not os.path.exists(value):
                 missing.append(str(value))
             return

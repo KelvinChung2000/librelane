@@ -114,11 +114,16 @@ class Design(object):
                 # Bad Verilog view-- error would break backcompat
                 continue
             connection_bits = connections[pin_name]
-            if len(connection_bits) != 1:
+            if len(connection_bits) > 1:
                 print(
                     f"[ERROR] Unexpectedly found more than one bit connected to {sigtype} pin {module_name}/{pin_name}."
                 )
                 exit(-1)
+            if len(connection_bits) == 0:
+                # Yosys writes an empty bit list for a port the Verilog leaves
+                # explicitly open, e.g. '.VGND()'. Connecting only some of an
+                # instance's power/ground ports is legitimate.
+                continue
             connection_bit = connection_bits[0]
             connected_to_v = self.get_verilog_net_name_by_bit(
                 top_module,

@@ -13,6 +13,7 @@
 # limitations under the License.
 import os
 import pytest
+import pathlib
 from decimal import Decimal
 from dataclasses import dataclass
 from pyfakefs.fake_filesystem_unittest import Patcher
@@ -139,28 +140,28 @@ def test_macros_without_arrays_are_left_alone():
 
 
 def test_macro_from_state():
-    from librelane.common import Path
+    from librelane.common import DUMMY_PATH
     from librelane.config import Macro
     from librelane.state import State
 
     state_in = State(
         {
-            "nl": Path._dummy_path,
-            "pnl": Path._dummy_path,
-            "def": Path._dummy_path,
-            "odb": Path._dummy_path,
+            "nl": DUMMY_PATH,
+            "pnl": DUMMY_PATH,
+            "def": DUMMY_PATH,
+            "odb": DUMMY_PATH,
             "sdf": {
-                "corner_1": Path._dummy_path,
-                "corner_2": Path._dummy_path,
+                "corner_1": DUMMY_PATH,
+                "corner_2": DUMMY_PATH,
             },
             "spef": {
-                "corner_*": Path._dummy_path,
+                "corner_*": DUMMY_PATH,
             },
             "lib": {
-                "corner_1": Path._dummy_path,
-                "corner_2": Path._dummy_path,
+                "corner_1": DUMMY_PATH,
+                "corner_2": DUMMY_PATH,
             },
-            "gds": Path._dummy_path,
+            "gds": DUMMY_PATH,
         },
         metrics={},
     )
@@ -171,23 +172,23 @@ def test_macro_from_state():
     ):
         Macro.from_state(state_in)
 
-    state_fixed = State(state_in, overrides={"lef": Path._dummy_path})
+    state_fixed = State(state_in, overrides={"lef": DUMMY_PATH})
     macro = Macro.from_state(state_fixed)
     assert macro == Macro(
-        gds=[Path("__librelane_dummy_path")],
-        lef=[Path("__librelane_dummy_path")],
+        gds=[pathlib.Path("__librelane_dummy_path")],
+        lef=[pathlib.Path("__librelane_dummy_path")],
         instances={},
-        nl=[Path("__librelane_dummy_path")],
-        pnl=[Path("__librelane_dummy_path")],
-        spef={"corner_*": [Path("__librelane_dummy_path")]},
+        nl=[pathlib.Path("__librelane_dummy_path")],
+        pnl=[pathlib.Path("__librelane_dummy_path")],
+        spef={"corner_*": [pathlib.Path("__librelane_dummy_path")]},
         lib={
-            "corner_1": [Path("__librelane_dummy_path")],
-            "corner_2": [Path("__librelane_dummy_path")],
+            "corner_1": [pathlib.Path("__librelane_dummy_path")],
+            "corner_2": [pathlib.Path("__librelane_dummy_path")],
         },
         spice=[],
         sdf={
-            "corner_1": [Path("__librelane_dummy_path")],
-            "corner_2": [Path("__librelane_dummy_path")],
+            "corner_1": [pathlib.Path("__librelane_dummy_path")],
+            "corner_2": [pathlib.Path("__librelane_dummy_path")],
         },
         json_h=None,
     ), "Macro was not derived from State correctly"
@@ -312,7 +313,7 @@ def test_compile(variable):
         warning_list,
     )
     assert used_name == "EXAMPLE", "valid input returned incorrect used name"
-    assert paths == [
+    assert [str(path) for path in paths] == [
         "/cwd/a",
         "/cwd/b",
     ], "valid input resolved paths incorrectly"
@@ -370,7 +371,7 @@ def test_compile_deprecated(variable):
     assert used_name == "OLD_EXAMPLE", (
         "deprecated valid input returned incorrect used name"
     )
-    assert paths == [
+    assert [str(path) for path in paths] == [
         "/cwd/a",
         "/cwd/b",
     ], "deprecated valid input returned paths resolved incorrectly"
@@ -604,7 +605,7 @@ def test_compile_permissive(variable_set: list, test_enum: type):
         final[variable.name] = value
 
     assert final == {
-        "EXAMPLE": ["/cwd/a", "/cwd/b"],
+        "EXAMPLE": [pathlib.Path("/cwd/a"), pathlib.Path("/cwd/b")],
         "LIST_VAR": [4, 5, 6],
         "TUPLE_2_VAR": (1, 2),
         "TUPLE_3_VAR": (1, 2, 3),

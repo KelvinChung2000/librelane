@@ -110,9 +110,12 @@ There are some conventions to writing these variables.
 * No complex defaults. Defaults must be scalar and quick to evaluate- if your
   default value depends on the default value of another variable, for example,
   set it to `None` and calculate the default value in the step itself.
-* All filesystem paths must be declared as {class}`librelane.common.Path`,
-  objects which adds some very necessary validation and enables easier
-  processing of the variables down the line.
+* All filesystem paths must be declared as {data}`librelane.common.Path`, which
+  is {class}`pathlib.Path` carrying LibreLane's configuration semantics: a glob
+  matching exactly one file collapses to it, and the result is checked for
+  existence. Values are ordinary {class}`pathlib.Path` objects.
+  * `Path` is an annotation, not a constructor. Write `pathlib.Path(...)` to
+    build one and `isinstance(value, pathlib.Path)` to test one.
   * Avoid pointing to directories. If your step may require multiple files
     within a directory, try using the type `list[Path]`.
 

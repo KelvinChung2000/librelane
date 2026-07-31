@@ -12,8 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import pytest
+import pathlib
+
+from librelane.steps import step
 
 pytestmark = pytest.mark.all
+
+mock_variables = pytest.mock_variables
 
 
 def _stream_out(mocker, incoming_gds=None, **config_overrides):
@@ -108,3 +113,196 @@ def test_primary_streamout_overwrites_an_existing_gds(mocker):
     )
 
     assert DesignFormat.GDS in views_updates
+
+
+def _xor_argv(mocker, mock_config, **overrides):
+    """Runs KLayout.XOR against a stubbed subprocess and returns its argv."""
+    from librelane.state import DesignFormat, State
+    from librelane.steps.klayout.checks import XOR
+
+    instance = XOR(config=mock_config, state_in=State(), **overrides)
+    instance.step_dir = "/cwd/step"
+
+    state_in = State(
+        {
+            DesignFormat.MAG_GDS: pathlib.Path("/cwd/magic.gds"),
+            DesignFormat.KLAYOUT_GDS: pathlib.Path("/cwd/klayout.gds"),
+        }
+    )
+    run_subprocess = mocker.patch.object(
+        XOR, "run_subprocess", return_value={"generated_metrics": {}}
+    )
+    instance.run(state_in)
+
+    return [str(arg) for arg in run_subprocess.call_args.args[0]]
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_xor_does_not_write_a_gds_by_default(mocker, mock_config):
+    argv = _xor_argv(mocker, mock_config)
+
+    assert "--gds-output" not in argv
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_xor_writes_a_gds_when_asked(mocker, mock_config):
+    """Issue 692: the XOR differences were only ever available as a marker
+    database, which cannot be opened as a layout or diffed further."""
+    argv = _xor_argv(mocker, mock_config, KLAYOUT_XOR_WRITE_GDS=True)
+
+    assert argv[argv.index("--gds-output") + 1].endswith("/cwd/step/xor.gds")
+
+
+def test_xor_gds_is_off_by_default():
+    from librelane.steps.klayout.checks import XOR
+
+    assert XOR.Config.model_fields["KLAYOUT_XOR_WRITE_GDS"].default is False
+
+
+def _cli_args(mock_config, **overrides):
+    """get_cli_args() off a bare KLayoutStep, which is where --lym is decided."""
+    from librelane.state import State
+    from librelane.steps.klayout.base import KLayoutStep
+
+    class Probe(KLayoutStep):
+        id = "Test.KLayoutProbe"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    instance = Probe(config=mock_config, state_in=State(), **overrides)
+    instance.step_dir = "/cwd/step"
+    return [str(arg) for arg in instance.get_cli_args()]
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_def_layer_map_is_passed_when_the_pdk_has_one(mock_config):
+    args = _cli_args(mock_config)
+
+    assert args[args.index("--lym") + 1].endswith("dummy.map")
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_def_layer_map_is_omitted_when_the_pdk_has_none(mock_config):
+    """Issue 999: asap7 embeds the LEF/DEF mapping in its .lyt. Passing an
+    empty --lym would not do -- assigning "" to lefdef_config.map_file clears
+    the mapping tech.load() brought in -- so the flag has to be absent."""
+    args = _cli_args(mock_config, KLAYOUT_DEF_LAYER_MAP=None)
+
+    assert "--lym" not in args
+    # The two views that are still required must survive.
+    assert "--lyt" in args
+    assert "--lyp" in args
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_def_layer_map_is_optional_in_the_schema():
+    from librelane.steps.klayout.base import KLayoutStep
+
+    field = KLayoutStep.Config.model_fields["KLAYOUT_DEF_LAYER_MAP"]
+
+    assert field.default is None
+    assert not field.is_required()
+
+
+# Upstream PRs 964 and 973: KLayout.Render required a DEF it does not need,
+# and then erred out when handed neither of its two acceptable inputs.
+
+
+def _render(mocker, views=None):
+    """Returns (argv, views_updates) for a Render run over the given views."""
+    from librelane.state import State
+    from librelane.steps.klayout.views import Render
+
+    instance = object.__new__(Render)
+    instance.config = Render.Config.model_construct(
+        PDK="dummy",
+        DESIGN_NAME="whatever",
+        KLAYOUT_RENDER_GRID_VISBLE=False,
+        KLAYOUT_RENDER_SHOW_RULER=False,
+        KLAYOUT_RENDER_BACKGROUND_COLOR="white",
+        KLAYOUT_RENDER_TEXT_VISIBLE=False,
+        KLAYOUT_RENDER_RESOLUTION=1000,
+        KLAYOUT_RENDER_OVERSAMPLING=0,
+    )
+    instance.step_dir = "/cwd/render"
+    mocker.patch.object(instance, "get_cli_args", return_value=[])
+    run_pya_script = mocker.patch.object(instance, "run_pya_script")
+
+    views_updates, _ = instance.run(State(views or {}))
+
+    argv = (
+        [str(arg) for arg in run_pya_script.call_args.args[0]]
+        if run_pya_script.called
+        else []
+    )
+    return argv, views_updates
+
+
+def test_render_takes_both_its_inputs_optionally():
+    """Neither view is required: a DEF-only state and a GDS-only state are both
+    renderable, so demanding either aborts a flow that could have run."""
+    from librelane.state import DesignFormat
+    from librelane.steps.klayout.views import Render
+
+    optional = {view.id: view.optional for view in Render.inputs}
+
+    assert optional == {DesignFormat.DEF.id: True, DesignFormat.GDS.id: True}
+
+
+def test_render_runs_on_a_gds_only_state(mocker):
+    from librelane.common import Path
+    from librelane.state import DesignFormat
+
+    argv, views_updates = _render(mocker, {DesignFormat.GDS: Path("/cwd/x.gds")})
+
+    assert "/cwd/x.gds" in argv
+    assert DesignFormat.KLAYOUT_RENDER in views_updates
+
+
+def test_render_prefers_the_gds_over_the_def(mocker):
+    from librelane.common import Path
+    from librelane.state import DesignFormat
+
+    argv, _ = _render(
+        mocker,
+        {
+            DesignFormat.DEF: Path("/cwd/x.def"),
+            DesignFormat.GDS: Path("/cwd/x.gds"),
+        },
+    )
+
+    assert "/cwd/x.gds" in argv
+    assert "/cwd/x.def" not in argv
+
+
+def test_render_with_neither_input_does_nothing(mocker):
+    """Both inputs are declared optional, so their absence cannot be an error."""
+    argv, views_updates = _render(mocker)
+
+    assert argv == []
+    assert views_updates == {}
+
+
+def test_render_png_returns_none_when_there_was_nothing_to_render(mocker):
+    """Toolbox.render_png used to read a fixed path out of the temporary
+    directory, which no longer exists when Render declines to run."""
+    from librelane.common import Toolbox
+    from librelane.config import Config
+    from librelane.state import State
+
+    toolbox = object.__new__(Toolbox)
+    mocker.patch("librelane.steps.klayout.views.Render.__init__", return_value=None)
+    started = mocker.patch(
+        "librelane.steps.klayout.views.Render.start", return_value=State()
+    )
+
+    assert toolbox.render_png(Config({"DESIGN_NAME": "whatever"}), State()) is None
+    assert started.called

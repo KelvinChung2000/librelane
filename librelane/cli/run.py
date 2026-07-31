@@ -170,7 +170,7 @@ def apply_initial_state_overrides(request: FlowRequest) -> State | None:
         if design_format is None:
             logger.error(f"Invalid design format ID: '{design_format_id}'.")
             raise typer.Exit(1)
-        overrides[design_format] = common.Path(path)
+        overrides[design_format] = Path(path)
 
     return type(state)(state, overrides=overrides)
 

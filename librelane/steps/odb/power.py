@@ -18,9 +18,9 @@ from loguru import logger
 
 from importlib.resources import files
 import os
+import pathlib
 from typing import Optional
 
-from librelane.common import Path
 from librelane.config import variable
 from librelane.state import DesignFormat, State
 
@@ -109,7 +109,7 @@ class WriteVerilogHeader(OdbpyStep):
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         views_updates, metrics_updates = super().run(state_in, **kwargs)
-        views_updates[DesignFormat.VERILOG_HEADER] = Path(
+        views_updates[DesignFormat.VERILOG_HEADER] = pathlib.Path(
             os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.vh")
         )
         return views_updates, metrics_updates

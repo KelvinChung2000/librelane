@@ -20,6 +20,7 @@ from loguru import logger
 import os
 import json
 import re
+import pathlib
 from abc import abstractmethod
 from base64 import b64encode
 from dataclasses import dataclass
@@ -348,7 +349,8 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
             + " For each IPVT corner, a mapping for each metal layer is provided."
             + " Each mapping describes custom resistance and capacitance values."
             + " Usage of wildcards for specifying IPVT corners is allowed."
-            + " Units are resistance and capacitance per unit length as defined in the first lib file.",
+            + " `res` is in kOhm per um of wire and `cap` in pF per um of wire, whatever units the PDK's liberty files declare.",
+            units="kΩ/µm, pF/µm",
             pdk=True,
         )
 
@@ -358,7 +360,8 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
             + " For each IPVT corner, a mapping for each via layer is provided."
             + " Each mapping describes custom resistance values."
             + " Usage of wildcards for specifying IPVT corners is allowed."
-            + " Via resistance is per cut/via with units asdefined in the first lib file.",
+            + " `res` is in kOhm per cut/via, whatever units the PDK's liberty files declare.",
+            units="kΩ",
             pdk=True,
         )
 
@@ -571,7 +574,7 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
             if output.multiple:
                 # Too step-specific.
                 continue
-            path = Path(env[f"SAVE_{output.id.upper()}"])
+            path = pathlib.Path(env[f"SAVE_{output.id.upper()}"])
             if not path.exists():
                 continue
             views_updates[output] = path

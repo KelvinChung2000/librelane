@@ -123,3 +123,111 @@ def test_condensed_mode_still_suppresses_subprocess_output(terminal):
     output = rendered(terminal)
     assert "should-not-appear" not in output
     assert "should-appear" in output
+
+
+def test_flow_scoped_sinks_do_not_collect_another_flows_records(tmp_path):
+    """
+    Issue 889: Loguru sinks are process-wide. Two flows running at once each
+    registered an error.log/warning.log filtered only by level, so every record
+    landed in both flows' logs.
+    """
+    from librelane.logging import (
+        additional_sink,
+        belongs_to_flow_run,
+        flow_context,
+    )
+
+    a_log = tmp_path / "a.log"
+    b_log = tmp_path / "b.log"
+
+    with flow_context("run-a") as a:
+        with additional_sink(a_log, filter=belongs_to_flow_run(a)):
+            # Flow A's sink is live while flow B emits, which is exactly the
+            # overlap two concurrent flows produce.
+            with flow_context("run-b") as b:
+                with additional_sink(b_log, filter=belongs_to_flow_run(b)):
+                    logger.warning("belongs to b")
+            logger.warning("belongs to a")
+
+    assert a_log.read_text() == "belongs to a\n"
+    assert b_log.read_text() == "belongs to b\n"
+
+
+def test_flow_scoped_sinks_still_separate_errors_from_warnings(tmp_path):
+    """The level split error.log/warning.log relies on has to survive scoping."""
+    from librelane.logging import (
+        additional_sink,
+        belongs_to_flow_run,
+        flow_context,
+    )
+
+    warning_log = tmp_path / "warning.log"
+    error_log = tmp_path / "error.log"
+
+    with flow_context("run-a") as run:
+        with (
+            additional_sink(warning_log, filter=belongs_to_flow_run(run, "WARNING")),
+            additional_sink(error_log, filter=belongs_to_flow_run(run, "ERROR")),
+        ):
+            logger.warning("a warning")
+            logger.error("an error")
+
+    assert warning_log.read_text() == "a warning\n"
+    assert error_log.read_text() == "an error\n"
+
+
+def test_flow_run_attribution_reaches_worker_threads(tmp_path):
+    """
+    Steps fan out onto a thread pool, and a new thread starts with an empty
+    context, so without propagation their records would be dropped by every
+    flow-scoped sink.
+    """
+    from librelane.common import ContextPropagatingThreadPoolExecutor
+    from librelane.logging import (
+        additional_sink,
+        belongs_to_flow_run,
+        flow_context,
+    )
+
+    log = tmp_path / "flow.log"
+
+    with flow_context("run-a") as run:
+        with additional_sink(log, filter=belongs_to_flow_run(run)):
+            with ContextPropagatingThreadPoolExecutor(max_workers=1) as tpe:
+                tpe.submit(logger.warning, "from a worker").result()
+
+    assert log.read_text() == "from a worker\n"
+
+
+def test_process_stats_thread_keeps_its_log_attribution(mocker):
+    """
+    The resource monitor is a bare Thread, so its one warning would fall
+    outside every flow-scoped sink unless it carries the context over itself.
+    """
+    import psutil
+
+    from librelane.logging import flow_context
+    from librelane.steps.step.process_stats import ProcessStatsThread
+
+    seen = {}
+
+    def sink(message):
+        seen["flow_run"] = message.record["extra"].get("flow_run")
+
+    # Not one of the two messages the monitor treats as a normal exit, so it
+    # actually reaches the logger.warning call.
+    error = psutil.Error()
+    error.msg = "the tracker fell over"
+    process = mocker.MagicMock(spec=psutil.Popen)
+    process.status.side_effect = error
+
+    from librelane.logging import additional_sink
+
+    with flow_context("run-a"):
+        thread = ProcessStatsThread(process)
+
+    with additional_sink(sink, level="WARNING"):
+        thread.start()
+        thread.join()
+
+    assert seen["flow_run"] == "run-a"

@@ -23,7 +23,7 @@ import subprocess
 from functools import partial
 from pathlib import Path
 from typing import Annotated, IO, Any
-from collections.abc import Sequence
+from collections.abc import Container, Mapping, Sequence
 from importlib.resources import files
 
 import typer
@@ -165,6 +165,62 @@ def run(
         raise typer.Exit(-1) from e
 
 
+def filter_env_for_script(
+    found_env: Mapping[str, Any],
+    current_env: Mapping[str, str],
+    *,
+    already_set: Container[str],
+    canon_scripts_dir: str,
+    target_scripts_dir: str,
+) -> dict[str, str]:
+    """
+    Reduces a step's environment to the entries an ejected script must re-set.
+
+    Entries the ambient environment already provides are dropped, and paths
+    into LibreLane's own scripts directory are repointed at the copy beside the
+    script.
+
+    Parameters
+    ----------
+    found_env : Mapping[str, Any]
+        The environment the step handed to its subprocess. Values may be path
+        objects rather than strings.
+    current_env : Mapping[str, str]
+        The ambient environment to compare against, normally ``os.environ``.
+    already_set : Container[str]
+        Keys the script sets for itself, which must not be overwritten.
+    canon_scripts_dir : str
+        LibreLane's installed scripts directory.
+    target_scripts_dir : str
+        Where that directory was copied to, relative to the script.
+
+    Returns
+    -------
+    dict[str, str]
+        The entries to write into the script, as strings.
+    """
+    result: dict[str, str] = {}
+    for key, value in found_env.items():
+        # Steps put path objects into the environment without stringifying them
+        # -- TECH_LEF and PDK_ROOT among others -- and everything below is a
+        # string operation: comparing against os.environ, which holds str, then
+        # startswith and replace. Normalising here is what makes those correct
+        # regardless of how a path chooses to represent itself.
+        if isinstance(value, os.PathLike):
+            value = os.fspath(value)
+        if (
+            value == current_env.get(key)
+            or key in already_set
+            or key in ["PATH", "PYTHONPATH"]
+        ):
+            continue
+        if os.path.isabs(value) and os.path.exists(value):
+            if value.startswith(canon_scripts_dir):
+                value = value.replace(canon_scripts_dir, target_scripts_dir)
+        result[key] = value
+    return result
+
+
 @cli.command()
 def eject(
     config: Annotated[
@@ -295,17 +351,15 @@ def eject(
         "SCRIPTS_DIR": target_scripts_dir,
     }
     if found_env is not None:
-        for key, value in found_env.items():
-            if (
-                value == current_env.get(key)
-                or key in filtered_env
-                or key in ["PATH", "PYTHONPATH"]
-            ):
-                continue
-            if os.path.isabs(value) and os.path.exists(value):
-                if value.startswith(canon_scripts_dir_string):
-                    value = value.replace(canon_scripts_dir_string, target_scripts_dir)
-            filtered_env[key] = value
+        filtered_env.update(
+            filter_env_for_script(
+                found_env,
+                current_env,
+                already_set=set(filtered_env),
+                canon_scripts_dir=canon_scripts_dir_string,
+                target_scripts_dir=target_scripts_dir,
+            )
+        )
 
     cat_in = ""
     if found_stdin_data:
