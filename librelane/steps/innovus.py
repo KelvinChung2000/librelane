@@ -87,7 +87,7 @@ class Floorplan(InnovusStep):
 
     script_filename: ClassVar[str] = "floorplan.tcl"
 
-    inputs = [DesignFormat.NETLIST, DesignFormat.SDC]
+    inputs = [DesignFormat.NETLIST]
     outputs = list(PNR_IN_PLACE_PROVIDES)
 
 

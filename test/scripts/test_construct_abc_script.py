@@ -60,6 +60,29 @@ def test_fanout_flag_passed_through_when_set(tmp_path, strategy, expected):
     assert expected in script
 
 
+@pytest.mark.parametrize("strategy", ["AREA 0", "AREA 1", "DELAY 0", "DELAY 3"])
+def test_delay_target_reaches_the_retiming_commands(tmp_path, strategy):
+    """Yosys silently drops `abc -D` when `-script` names a file, so the delay
+    target only reaches ABC if the generated script carries it itself."""
+    creator = ABCScriptCreator(_config())
+    script = open(creator.generate_abc_script(str(tmp_path), strategy)).read()
+
+    retimes = [line for line in script.splitlines() if line.startswith("retime")]
+
+    assert retimes, "no retime command was emitted at all"
+    assert all("-D 10000" in line for line in retimes)
+
+
+def test_delay_target_reaches_the_sizing_commands(tmp_path):
+    creator = ABCScriptCreator(
+        _config(SYNTH_ABC_BUFFERING=False, SYNTH_SIZING=True),
+    )
+    script = open(creator.generate_abc_script(str(tmp_path), "AREA 0")).read()
+
+    assert "upsize -D 10000" in script
+    assert "dnsize -D 10000" in script
+
+
 def test_max_transition_still_emitted_without_fanout(tmp_path):
     """The two constraints are independent -- one being unset must not drop the other."""
     creator = ABCScriptCreator(

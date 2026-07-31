@@ -100,7 +100,7 @@ if { ![info exists ::env(DIODE_CELL)] } {
 
     set arg_list [list]
     lappend arg_list $diode_cell
-    lappend arg_list -ratio_margin $::env(GRT_ANTENNA_REPAIR_MARGIN)
+    lappend arg_list -ratio_margin $::env(DRT_ANTENNA_REPAIR_MARGIN)
     append_if_flag arg_list GRT_ALLOW_CONGESTION -allow_congestion
     append_if_flag arg_list DRT_ANTENNA_REPAIR_JUMPER_ONLY -jumper_only
     append_if_flag arg_list DRT_ANTENNA_REPAIR_DIODE_ONLY -diode_only

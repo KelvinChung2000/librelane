@@ -98,9 +98,10 @@ class Lint(Step):
             description="Warning codes that are passed to the linter to be disabled for all blackbox modules.",
         )
 
-        LINTER_VLT: Optional[Path] = variable(
+        LINTER_VLTS: Optional[list[Path]] = variable(
             None,
-            description="Path to a Verilator Configuration format file (`.vlt`) that is passed to the linter.",
+            description="List of paths to Verilator Configuration format files (`.vlt`) that are passed to the linter.",
+            deprecated_names=[("LINTER_VLT", lambda x: [x])],
         )
 
         LINTER_ARGUMENTS: Optional[list[str]] = variable(
@@ -229,8 +230,8 @@ class Lint(Step):
         for define in defines:
             extra_args.append(f"+define+{define}")
 
-        if linter_vlt := self.config.LINTER_VLT:
-            extra_args.append(str(linter_vlt))
+        if linter_vlts := self.config.LINTER_VLTS:
+            extra_args.extend([str(vlt) for vlt in linter_vlts])
 
         # Last, so a user-supplied option can override anything set above.
         if linter_arguments := self.config.LINTER_ARGUMENTS:

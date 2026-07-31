@@ -342,6 +342,33 @@ def test_chip_with_tools_keeps_its_own_step_list(mock_config):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
+def test_klayout_lvs_is_selectable_on_classic(mock_config):
+    """
+    Issue 696. Selecting klayout for ``lvs`` swaps the whole Magic-plus-Netgen
+    sequence for KLayout's, rather than adding a second checker beside it.
+
+    The load-bearing part is that this passes the view preflight at all.
+    ``KLayout.LVS`` hard-requires the ``cdl`` view and nothing in ``Classic``
+    produced one before this, so the provider has to bring its own producer;
+    that is why ``OpenROAD.WriteCDL`` is inside the sequence and not a plain
+    step of the flow.
+    """
+    flow = _classic_with_tools(mock_config, {"lvs": "klayout"})
+
+    ids = [step.id for step in flow.Steps]
+    assert "Magic.SpiceExtraction" not in ids
+    assert "Checker.IllegalOverlap" not in ids
+    assert "Netgen.LVS" not in ids
+    start = ids.index("OpenROAD.WriteCDL")
+    assert ids[start : start + 3] == [
+        "OpenROAD.WriteCDL",
+        "KLayout.LVS",
+        "Checker.LVS",
+    ]
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow_module, sequential_module, step_module])
 def test_unknown_provider_is_rejected_with_the_registered_names():
     from librelane.flows import Flow
     from librelane.stages import StageResolutionError
@@ -850,6 +877,7 @@ def test_every_single_provider_selection_leaves_no_orphaned_step(mock_config):
         "synthesis": ["yosys", "yosys_vhdl"],
         "streamout": ["magic", "klayout"],
         "drc": ["magic", "klayout"],
+        "lvs": ["netgen", "klayout"],
     }, "a stage gained or lost a provider; extend _ORPHANING_SELECTIONS if so"
 
     for stage_id, providers in selections.items():

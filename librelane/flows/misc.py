@@ -54,6 +54,43 @@ class OpenInOpenROAD(SequentialFlow):
 
 
 @Flow.factory.register()
+class OpenInOpenROADConsole(SequentialFlow):
+    """
+    This 'flow' actually just has one step that opens the ODB from the initial
+    state object in an interactive OpenROAD console.
+
+    Intended for use with run tags that have already been run with
+    another flow, i.e. ::
+
+      librelane [...]
+      librelane --last-run --flow OpenInOpenROADConsole [...]
+    """
+
+    name = "Opening in an OpenROAD console"
+
+    Steps = [OpenROAD.OpenConsole]
+
+
+@Flow.factory.register()
+class OpenInOpenSTAConsole(SequentialFlow):
+    """
+    This 'flow' actually just has one step that opens the netlist from the
+    initial state object, and its parasitics if it has any, in an interactive
+    OpenSTA console.
+
+    Intended for use with run tags that have already been run with
+    another flow, i.e. ::
+
+      librelane [...]
+      librelane --last-run --flow OpenInOpenSTAConsole [...]
+    """
+
+    name = "Opening in an OpenSTA console"
+
+    Steps = [OpenROAD.OpenSTAConsole]
+
+
+@Flow.factory.register()
 class OpenInMagic(SequentialFlow):
     """
     This 'flow' actually just has one step that opens the GDS or DEF from

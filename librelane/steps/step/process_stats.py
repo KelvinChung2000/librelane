@@ -17,7 +17,6 @@ from loguru import logger
 
 import sys
 import psutil
-import contextvars
 import datetime
 from threading import Event, Thread
 from typing import (
@@ -42,15 +41,6 @@ class ProcessStatsThread(Thread):
         self.result = None
         self.interval = interval
         self._stopping = Event()
-        # Before Python 3.14 a new thread starts with an empty context, so the
-        # step and flow-run bindings that attribute this thread's one warning
-        # would be lost. Captured here, on the thread that constructs the
-        # monitor, because ``run`` executes on the new thread where they are
-        # already gone. 3.14 inherits the context itself when
-        # ``thread_inherit_context`` is set, which makes this redundant but not
-        # harmful -- and the flag is not guaranteed. Note the name: ``Thread``
-        # itself owns ``_context`` on 3.14.
-        self._log_context = contextvars.copy_context()
         self.time = {
             "cpu_time_user": 0.0,
             "cpu_time_system": 0.0,
@@ -73,9 +63,6 @@ class ProcessStatsThread(Thread):
         }
 
     def run(self):
-        self._log_context.run(self._run)
-
-    def _run(self):
         try:
             count = 1
             status = self.process.status()

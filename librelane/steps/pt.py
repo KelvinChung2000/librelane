@@ -68,9 +68,10 @@ class PreSTA(PrimeTimeStep):
     Scaffold for pre-PnR static timing analysis using PrimeTime.
 
     Mirrors the neutral contract of the ``pre_pnr_sta`` stage.
-    ``OpenROAD.STAPrePNR`` consumes the netlist and produces SDC, and this
-    step is scaffolded to the same boundary so it is a drop-in alternative
-    provider rather than one with a narrower or wider contract.
+    ``OpenROAD.STAPrePNR`` consumes the netlist and produces no view this
+    stage's contract tracks, and this step is scaffolded to the same boundary
+    so it is a drop-in alternative provider rather than one with a narrower or
+    wider contract.
     """
 
     id = "PrimeTime.STAPrePNR"
@@ -78,7 +79,7 @@ class PreSTA(PrimeTimeStep):
     long_name = "Static Timing Analysis, Pre-PnR (PrimeTime)"
 
     inputs = [DesignFormat.NETLIST]
-    outputs = [DesignFormat.SDC]
+    outputs = []
 
 
 @Step.factory.register()

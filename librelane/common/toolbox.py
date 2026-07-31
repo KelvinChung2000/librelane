@@ -15,6 +15,7 @@ from loguru import logger
 
 import os
 import re
+import gzip
 import uuid
 import shutil
 import tempfile
@@ -33,7 +34,7 @@ import libparse
 
 from librelane.common.misc import mkdirp, gzopen
 from librelane.common.types import Path
-from librelane.common.generic_dict import GenericImmutableDict
+from librelane.common.generic_dict import GenericImmutableDict, is_string
 from librelane.state import DesignFormat
 from librelane.common import Filter
 
@@ -53,9 +54,42 @@ class Toolbox(object):
 
         self.remove_cells_from_lib = lru_cache(16, True)(self.remove_cells_from_lib)  # type: ignore
         self.create_blackbox_model = lru_cache(16, True)(self.create_blackbox_model)  # type: ignore
-        # Parsing a liberty file is not cheap and several steps ask the same
-        # question of the same macro libs.
-        self.find_pinless_cells = lru_cache(16, True)(self.find_pinless_cells)  # type: ignore
+
+    def decompress_liberty(self, input_lib: str) -> str:
+        """
+        Returns a path to an uncompressed copy of a liberty file, or the
+        original path if it was not compressed to begin with.
+
+        ``libparse`` reads from the file descriptor rather than from the Python
+        stream it is handed, so wrapping a gzipped file in :func:`gzopen` gives
+        it the compressed bytes and it fails on line 1, and handing it a
+        ``StringIO`` fails outright on the missing ``fileno``. Decompressing to
+        a real file is the only way to parse a gzipped liberty file, which is
+        the "unzip needed file on request" half of what issue #627 proposed.
+
+        Parameters
+        ----------
+        input_lib : str
+            The lib file in question, compressed or not.
+
+        Returns
+        -------
+        str
+            A path to an uncompressed lib file.
+        """
+        try:
+            with gzip.open(input_lib, "rt", encoding="utf8") as compressed:
+                compressed.read(1)
+        except gzip.BadGzipFile:
+            return input_lib
+
+        mkdirp(self.tmp_dir)
+        out_path = os.path.join(self.tmp_dir, f"{uuid.uuid4().hex}.lib")
+        logger.debug(f"Decompressing '{input_lib}' to '{out_path}'…")
+        with gzip.open(input_lib, "rt", encoding="utf8") as compressed:
+            with open(out_path, "w", encoding="utf8") as out:
+                shutil.copyfileobj(compressed, out)
+        return out_path
 
     def filter_views(
         self,
@@ -90,13 +124,7 @@ class Toolbox(object):
 
         for key in Filter(views_by_corner).get_matching_wildcards(timing_corner):
             value = views_by_corner[key]
-            # "One view" rather than "an iterable of views". Asking whether the
-            # value is a path is the question actually being asked; asking
-            # whether it is string-like only happened to answer it, because
-            # ``common.Path`` subclasses ``UserString``. This spelling is
-            # correct for ``str``, for ``common.Path`` and for ``pathlib.Path``
-            # alike, none of which should be walked element by element.
-            if isinstance(value, (str, os.PathLike)):
+            if is_string(value):
                 result += [value]  # type: ignore
             else:
                 result += list(value)  # type: ignore
@@ -155,63 +183,6 @@ class Toolbox(object):
             logger.warning(
                 f"{label} resolves to the same view at all {len(corners)} timing corners. "
                 "Corner-specific timing will not be seen by the resizer or by STA."
-            )
-
-    def find_pinless_cells(self, input_lib: str) -> tuple[str, ...]:
-        """
-        Returns the cells in a liberty file that declare no pins at all.
-
-        Parameters
-        ----------
-        input_lib : str
-            The liberty file to read.
-
-        Returns
-        -------
-        tuple[str, ...]
-            The names of the pinless cells, in the order they appear.
-        """
-        pinless = []
-        ast = libparse.LibertyParser(open(input_lib, encoding="utf8")).ast
-        for cell in ast.children:
-            if cell.id != "cell":
-                continue
-            if any(member.id in ("pin", "bus") for member in cell.children):
-                continue
-            pinless.append(str(cell.args[0]).strip('"'))
-        return tuple(pinless)
-
-    def check_lib_pins(
-        self,
-        libs: Iterable[str],
-        *,
-        label: str,
-    ) -> None:
-        """
-        Warns when a liberty file declares cells that have no pins.
-
-        A pinless cell carries no timing and nothing to connect to, so STA
-        silently has nothing to say about it and the linter's generated
-        blackbox is an empty module. The usual cause is a ``lib`` written for
-        an abstract or physical-only view being handed to a timing step.
-
-        Parameters
-        ----------
-        libs : Iterable[str]
-            The liberty files to read.
-        label : str
-            How to name the owner of the files in the warning.
-        """
-        for lib in libs:
-            pinless = self.find_pinless_cells(lib)
-            if not pinless:
-                continue
-            shown = ", ".join(pinless[:5])
-            if len(pinless) > 5:
-                shown += f", … ({len(pinless) - 5} more)"
-            logger.warning(
-                f"{label}: '{lib}' declares {len(pinless)} cell(s) with no pins: "
-                f"{shown}. They carry no timing and nothing can connect to them."
             )
 
     def get_macro_views(
@@ -690,7 +661,9 @@ class Toolbox(object):
 
         with open(out_path, "w", encoding="utf8") as out:
             for lib in input_libs:
-                ast = libparse.LibertyParser(open(lib, encoding="utf8")).ast
+                ast = libparse.LibertyParser(
+                    open(self.decompress_liberty(lib), encoding="utf8")
+                ).ast
 
                 bus_ranges: dict[str, tuple[str, str]] = {}
                 for child in ast.children:
@@ -782,7 +755,9 @@ class Toolbox(object):
         Decimal | None
             The voltage in question
         """
-        parser = libparse.LibertyParser(open(input_lib, encoding="utf8"))
+        parser = libparse.LibertyParser(
+            open(self.decompress_liberty(input_lib), encoding="utf8")
+        )
         ast = parser.ast
 
         default_operating_conditions_id = None

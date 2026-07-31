@@ -66,11 +66,6 @@ class XOR(KLayoutStep):
             units="µm",
         )
 
-        KLAYOUT_XOR_WRITE_GDS: bool = variable(
-            False,
-            description="Also write the XOR differences to 'xor.gds' in the step directory, so they can be opened as a layout rather than only as a marker database.",
-        )
-
     config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
@@ -100,13 +95,6 @@ class XOR(KLayoutStep):
         if tile_size := self.config.KLAYOUT_XOR_TILE_SIZE:
             tile_size_options += ["--tile-size", str(tile_size)]
 
-        gds_options = []
-        if self.config.KLAYOUT_XOR_WRITE_GDS:
-            gds_options += [
-                "--gds-output",
-                abspath(os.path.join(self.step_dir, "xor.gds")),
-            ]
-
         thread_count = self.config.KLAYOUT_XOR_THREADS or _get_process_limit()
         logger.info(f"Running XOR with {thread_count} threads…")
 
@@ -129,8 +117,7 @@ class XOR(KLayoutStep):
                 abspath(layout_a),
                 abspath(layout_b),
             ]
-            + tile_size_options
-            + gds_options,
+            + tile_size_options,
             env=env,
         )
 

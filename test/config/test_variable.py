@@ -45,6 +45,99 @@ def test_macro_validation():
         Macro(gds=["test"], lef=["test"], lefs=[])
 
 
+def _array_macro(name_template, **array_overrides):
+    from librelane.config import Instance, InstanceArray, Macro, Orientation
+
+    array = {
+        "offset": (Decimal("100"), Decimal("100")),
+        "step": (Decimal("100"), Decimal("50")),
+        "dimensions": (2, 3),
+    }
+    array.update(array_overrides)
+    return Macro(
+        gds=["test"],
+        lef=["test"],
+        instances={
+            name_template: Instance(
+                orientation=Orientation.N,
+                array=InstanceArray(**array),
+            )
+        },
+    )
+
+
+def test_macro_array_is_expanded_into_one_instance_per_cell():
+    """Two rows of three, filled left to right from the bottom."""
+    macro = _array_macro("sram_{X}_{Y}")
+
+    assert {name: instance.location for name, instance in macro.instances.items()} == {
+        "sram_0_0": (Decimal("100"), Decimal("100")),
+        "sram_1_0": (Decimal("200"), Decimal("100")),
+        "sram_2_0": (Decimal("300"), Decimal("100")),
+        "sram_0_1": (Decimal("100"), Decimal("150")),
+        "sram_1_1": (Decimal("200"), Decimal("150")),
+        "sram_2_1": (Decimal("300"), Decimal("150")),
+    }
+
+
+def test_macro_array_keeps_the_orientation_and_drops_the_template():
+    from librelane.config import Orientation
+
+    macro = _array_macro("sram_{X}_{Y}")
+
+    assert "sram_{X}_{Y}" not in macro.instances
+    assert all(
+        instance.orientation is Orientation.N for instance in macro.instances.values()
+    )
+    assert all(instance.array is None for instance in macro.instances.values())
+
+
+def test_macro_array_supports_the_row_col_and_seq_names():
+    macro = _array_macro("sram_r{ROW}c{COL}n{SEQ}")
+
+    assert sorted(macro.instances) == [
+        "sram_r0c0n0",
+        "sram_r0c1n1",
+        "sram_r0c2n2",
+        "sram_r1c0n3",
+        "sram_r1c1n4",
+        "sram_r1c2n5",
+    ]
+
+
+def test_a_macro_array_may_not_also_be_placed_by_hand():
+    from librelane.config import Instance, InstanceArray, Macro
+
+    with pytest.raises(RuntimeError, match="both a location and an array"):
+        Macro(
+            gds=["test"],
+            lef=["test"],
+            instances={
+                "sram_{X}_{Y}": Instance(
+                    location=(Decimal("1"), Decimal("1")),
+                    array=InstanceArray(
+                        offset=(Decimal("0"), Decimal("0")),
+                        step=(Decimal("1"), Decimal("1")),
+                        dimensions=(2, 2),
+                    ),
+                )
+            },
+        )
+
+
+def test_macros_without_arrays_are_left_alone():
+    from librelane.config import Instance, Macro
+
+    macro = Macro(
+        gds=["test"],
+        lef=["test"],
+        instances={"sram": Instance(location=(Decimal("5"), Decimal("6")))},
+    )
+
+    assert list(macro.instances) == ["sram"]
+    assert macro.instances["sram"].location == (Decimal("5"), Decimal("6"))
+
+
 def test_macro_from_state():
     from librelane.common import Path
     from librelane.config import Macro

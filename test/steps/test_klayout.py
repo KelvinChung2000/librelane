@@ -13,106 +13,98 @@
 # limitations under the License.
 import pytest
 
-from librelane.steps import step
-
 pytestmark = pytest.mark.all
 
-mock_variables = pytest.mock_variables
 
-
-def _xor_argv(mocker, mock_config, **overrides):
-    """Runs KLayout.XOR against a stubbed subprocess and returns its argv."""
+def _stream_out(mocker, incoming_gds=None, **config_overrides):
+    """Returns (argv, views_updates) for a StreamOut run."""
     from librelane.common import Path
     from librelane.state import DesignFormat, State
-    from librelane.steps.klayout.checks import XOR
+    from librelane.steps.klayout.views import StreamOut
 
-    instance = XOR(config=mock_config, state_in=State(), **overrides)
-    instance.step_dir = "/cwd/step"
+    # A real instance would need a PDK supplying every KLAYOUT_* variable; the
+    # run() path under test reads only these six.
+    settings = {
+        "PDK": "dummy",
+        "DESIGN_NAME": "whatever",
+        "KLAYOUT_CONFLICT_RESOLUTION": "RenameCell",
+        "KLAYOUT_ADD_ISOSUB": False,
+        "ISOSUB_LAYER": None,
+        "PRIMARY_GDSII_STREAMOUT_TOOL": "magic",
+    }
+    settings.update(config_overrides)
 
-    state_in = State(
-        {
-            DesignFormat.MAG_GDS: Path("/cwd/magic.gds"),
-            DesignFormat.KLAYOUT_GDS: Path("/cwd/klayout.gds"),
-        }
+    instance = object.__new__(StreamOut)
+    instance.config = StreamOut.Config.model_construct(**settings)
+    instance.step_dir = "/cwd/streamout"
+    mocker.patch.object(instance, "get_cli_args", return_value=[])
+    run_pya_script = mocker.patch.object(instance, "run_pya_script")
+
+    views = {DesignFormat.DEF: Path("/cwd/design.def")}
+    if incoming_gds is not None:
+        views[DesignFormat.GDS] = Path(incoming_gds)
+    mocker.patch("librelane.steps.klayout.views.shutil.copy")
+
+    views_updates, _ = instance.run(State(views))
+
+    argv = [str(arg) for arg in run_pya_script.call_args.args[0]]
+    return argv, views_updates
+
+
+def test_isosub_is_not_drawn_by_default(mocker):
+    argv, _ = _stream_out(mocker)
+
+    assert "--isosub-layer" not in argv
+
+
+def test_isosub_layer_and_datatype_are_passed_separately(mocker):
+    """A single joined argument was one parse away from the wrong datatype."""
+    argv, _ = _stream_out(mocker, KLAYOUT_ADD_ISOSUB=True, ISOSUB_LAYER=(81, 53))
+
+    assert argv[argv.index("--isosub-layer") + 1] == "81"
+    assert argv[argv.index("--isosub-datatype") + 1] == "53"
+
+
+def test_isosub_without_a_pdk_layer_is_an_error(mocker):
+    """Warning and streaming out anyway would ship a GDS silently missing the
+    layer the caller asked for."""
+    from librelane.steps.step import StepError
+
+    with pytest.raises(StepError, match="ISOSUB_LAYER"):
+        _stream_out(mocker, KLAYOUT_ADD_ISOSUB=True)
+
+
+def test_non_primary_streamout_writes_the_gds_when_nothing_else_has(mocker):
+    """A custom flow running only KLayout.StreamOut on a PDK whose primary tool
+    is magic produced no `gds` view at all. https://github.com/librelane/librelane/issues/683"""
+    from librelane.state import DesignFormat
+
+    _, views_updates = _stream_out(mocker, PRIMARY_GDSII_STREAMOUT_TOOL="magic")
+
+    assert DesignFormat.GDS in views_updates
+
+
+def test_non_primary_streamout_leaves_an_existing_gds_alone(mocker):
+    """Magic is primary and already wrote it; KLayout must not clobber it."""
+    from librelane.state import DesignFormat
+
+    _, views_updates = _stream_out(
+        mocker,
+        incoming_gds="/cwd/from-magic.gds",
+        PRIMARY_GDSII_STREAMOUT_TOOL="magic",
     )
-    run_subprocess = mocker.patch.object(
-        XOR, "run_subprocess", return_value={"generated_metrics": {}}
+
+    assert DesignFormat.GDS not in views_updates
+
+
+def test_primary_streamout_overwrites_an_existing_gds(mocker):
+    """The primary tool wins even if a non-primary one got there first."""
+    from librelane.state import DesignFormat
+
+    _, views_updates = _stream_out(
+        mocker,
+        incoming_gds="/cwd/from-magic.gds",
+        PRIMARY_GDSII_STREAMOUT_TOOL="klayout",
     )
-    instance.run(state_in)
 
-    return [str(arg) for arg in run_subprocess.call_args.args[0]]
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-def test_xor_does_not_write_a_gds_by_default(mocker, mock_config):
-    argv = _xor_argv(mocker, mock_config)
-
-    assert "--gds-output" not in argv
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-def test_xor_writes_a_gds_when_asked(mocker, mock_config):
-    """Issue 692: the XOR differences were only ever available as a marker
-    database, which cannot be opened as a layout or diffed further."""
-    argv = _xor_argv(mocker, mock_config, KLAYOUT_XOR_WRITE_GDS=True)
-
-    assert argv[argv.index("--gds-output") + 1].endswith("/cwd/step/xor.gds")
-
-
-def test_xor_gds_is_off_by_default():
-    from librelane.steps.klayout.checks import XOR
-
-    assert XOR.Config.model_fields["KLAYOUT_XOR_WRITE_GDS"].default is False
-
-
-def _cli_args(mock_config, **overrides):
-    """get_cli_args() off a bare KLayoutStep, which is where --lym is decided."""
-    from librelane.state import State
-    from librelane.steps.klayout.base import KLayoutStep
-
-    class Probe(KLayoutStep):
-        id = "Test.KLayoutProbe"
-        inputs = []
-        outputs = []
-
-        def run(self, state_in, **kwargs):
-            return {}, {}
-
-    instance = Probe(config=mock_config, state_in=State(), **overrides)
-    instance.step_dir = "/cwd/step"
-    return [str(arg) for arg in instance.get_cli_args()]
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-def test_def_layer_map_is_passed_when_the_pdk_has_one(mock_config):
-    args = _cli_args(mock_config)
-
-    assert args[args.index("--lym") + 1].endswith("dummy.map")
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-def test_def_layer_map_is_omitted_when_the_pdk_has_none(mock_config):
-    """Issue 999: asap7 embeds the LEF/DEF mapping in its .lyt. Passing an
-    empty --lym would not do -- assigning "" to lefdef_config.map_file clears
-    the mapping tech.load() brought in -- so the flag has to be absent."""
-    args = _cli_args(mock_config, KLAYOUT_DEF_LAYER_MAP=None)
-
-    assert "--lym" not in args
-    # The two views that are still required must survive.
-    assert "--lyt" in args
-    assert "--lyp" in args
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
-def test_def_layer_map_is_optional_in_the_schema():
-    from librelane.steps.klayout.base import KLayoutStep
-
-    field = KLayoutStep.Config.model_fields["KLAYOUT_DEF_LAYER_MAP"]
-
-    assert field.default is None
-    assert not field.is_required()
+    assert DesignFormat.GDS in views_updates

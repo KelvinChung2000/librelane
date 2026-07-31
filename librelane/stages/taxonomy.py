@@ -65,16 +65,21 @@ Stage(
     full_name="Pre-PnR Static Timing Analysis",
     default_provider="openroad",
     requires=(DesignFormat.nl,),
-    # OpenROAD.STAPrePNR emits sdf and sdc; it does not re-emit the netlist,
-    # which reaches floorplan from synthesis instead.
-    provides=(DesignFormat.sdc,),
+    # Nothing. OpenROAD.STAPrePNR adds an SDF per corner to the state, but no
+    # later stage consumes it and the other registered provider for this stage
+    # produces no views at all, so the stage promises none. It does not re-emit
+    # the netlist, which reaches floorplan from synthesis, and it does not
+    # write an SDC: the SDC in the state is floorplan's, and the SDC this stage
+    # reads is the PNR_SDC_FILE configuration variable.
+    provides=_NO_VIEWS,
 ).register()
 
 Stage(
     id="floorplan",
     full_name="Floorplanning",
     default_provider="openroad",
-    requires=(DesignFormat.nl, DesignFormat.sdc),
+    # Floorplan is where the SDC enters the state, so it cannot require one.
+    requires=(DesignFormat.nl,),
     provides=PNR_IN_PLACE_PROVIDES,
 ).register()
 

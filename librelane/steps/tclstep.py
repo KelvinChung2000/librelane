@@ -246,11 +246,7 @@ class TclStep(Step):
         env_out = os.environ.copy()
         with env_in_file.open("w", encoding="utf8") as f:
             for key, value in env.items():
-                # os.environ holds str, and ``value`` may be a path object, so
-                # compare as strings. A path type that does not compare equal
-                # to a str would make this skip never fire and re-emit every
-                # path-valued variable into _env.tcl.
-                if key in env_out and env_out[key] == str(value):
+                if key in env_out and env_out[key] == value:
                     continue
                 if key in _ENV_ALLOWLIST or key.startswith("_"):
                     env_out[key] = value

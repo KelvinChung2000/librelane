@@ -30,7 +30,6 @@ from typing import (
 
 from librelane.common import (
     Path,
-    TclUtils,
     _get_process_limit,
     ContextPropagatingThreadPoolExecutor,
     mkdirp,
@@ -407,107 +406,15 @@ class DEFtoODB(OpenROADStep):
         )
 
 
-@Step.factory.register()
-class SaveImage(OpenROADStep):
+class OpenROADSession(OpenSTAStep):
     """
-    Renders a PNG of the current layout using OpenROAD's ``save_image``.
+    Common loading for the steps that hand an OpenROAD session over to the user:
+    the ODB view, the LIBs, the SDC and, if available, the SPEF for the current
+    corner.
 
-    Unlike ``KLayout.Render``, which needs a DEF or a GDS and so only runs once
-    the layout has been streamed out, this reads the ODB and can therefore be
-    placed anywhere in the flow: after floorplanning, after CTS, after routing.
-    Insert it as many times as there are moments worth a picture.
-
-    The image is written to ``<step_dir>/<design>.png``. The step does not
-    update the state, so several instances do not fight over one view.
+    Subclasses decide what the session looks like by implementing
+    :meth:`get_command` and :meth:`hand_over`.
     """
-
-    id = "OpenROAD.SaveImage"
-    name = "Save Layout Image"
-
-    inputs = [DesignFormat.ODB]
-    outputs = []
-
-    class Config(OpenROADStep.Config):
-        SAVE_IMAGE_WIDTH: int = variable(
-            1000,
-            description="The width of the rendered image, in pixels.",
-            units="px",
-        )
-
-        SAVE_IMAGE_RESOLUTION: Optional[Decimal] = variable(
-            None,
-            description="Microns per pixel. Overrides the width when set.",
-            units="µm/px",
-        )
-
-        SAVE_IMAGE_AREA: Optional[list[Decimal]] = variable(
-            None,
-            description="The area to render as four numbers, x0 y0 x1 y1. The whole design is rendered when unset.",
-            units="µm",
-        )
-
-        SAVE_IMAGE_DISPLAY_OPTIONS: Optional[dict[str, bool]] = variable(
-            None,
-            description="OpenROAD display controls to override, e.g. {'Nets/Power': false}. The names are those of the GUI's Display Control pane.",
-        )
-
-    config: Config
-
-    def get_script_path(self):
-        return files("librelane").joinpath("scripts", "openroad", "save_image.tcl")
-
-    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        kwargs, env = self.extract_env(kwargs)
-
-        output = os.path.join(
-            self.step_dir,
-            f"{self.config.DESIGN_NAME}.{DesignFormat.KLAYOUT_RENDER.extension}",
-        )
-        env["_SAVE_IMAGE_OUTPUT"] = output
-        env["_SAVE_IMAGE_WIDTH"] = str(self.config.SAVE_IMAGE_WIDTH)
-        env["_SAVE_IMAGE_RESOLUTION"] = (
-            ""
-            if self.config.SAVE_IMAGE_RESOLUTION is None
-            else str(self.config.SAVE_IMAGE_RESOLUTION)
-        )
-        if area := self.config.SAVE_IMAGE_AREA:
-            if len(area) != 4:
-                raise StepException(
-                    f"SAVE_IMAGE_AREA must have exactly four elements (x0 y0 x1 y1), got {len(area)}."
-                )
-            env["_SAVE_IMAGE_AREA"] = TclUtils.join([str(value) for value in area])
-        else:
-            env["_SAVE_IMAGE_AREA"] = ""
-        env["_SAVE_IMAGE_DISPLAY_OPTIONS"] = TclUtils.join(
-            [
-                TclUtils.join([control, "true" if value else "false"])
-                for control, value in (
-                    self.config.SAVE_IMAGE_DISPLAY_OPTIONS or {}
-                ).items()
-            ]
-        )
-
-        # save_image drives Qt. With no usable display it does not raise a Tcl
-        # error that could be caught -- it fails to load the "xcb" platform
-        # plugin and aborts the whole OpenROAD process with SIGABRT, taking the
-        # step with it. The offscreen platform renders to the file identically
-        # and is the only one that always works, so it is set unconditionally
-        # rather than left to depend on whether a DISPLAY happens to exist.
-        env["QT_QPA_PLATFORM"] = "offscreen"
-
-        return super().run(state_in, env=env, **kwargs)
-
-
-@Step.factory.register()
-class OpenGUI(OpenSTAStep):
-    """
-    Opens the ODB view in the OpenROAD GUI. Useful to inspect some parameters,
-    such as routing density, timing paths, clock tree and whatnot.
-    The LIBs are loaded by default and the SPEFs if available.
-    """
-
-    id = "OpenROAD.OpenGUI"
-    name = "Open In GUI"
 
     inputs = [
         DesignFormat.ODB,
@@ -518,13 +425,18 @@ class OpenGUI(OpenSTAStep):
     def get_script_path(self) -> str:
         return str(files("librelane").joinpath("scripts", "openroad", "gui.tcl"))
 
-    def get_command(self) -> list[str]:
-        return [
-            "openroad",
-            "-no_splash",
-            "-gui",
-            self.get_script_path(),
-        ]
+    def hand_over(self, command: list[str], env: dict, **kwargs) -> None:
+        """
+        Runs the session and returns once the user is done with it.
+
+        Parameters
+        ----------
+        command : list[str]
+            The command from :meth:`get_command`
+        env : dict
+            The environment the command is run in
+        """
+        raise NotImplementedError()
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
@@ -535,14 +447,64 @@ class OpenGUI(OpenSTAStep):
 
         env = self.prepare_env(env, state_in)
 
-        command = self.get_command()
+        self.hand_over(self.get_command(), env, **kwargs)
+
+        return {}, {}
+
+
+@Step.factory.register()
+class OpenGUI(OpenROADSession):
+    """
+    Opens the ODB view in the OpenROAD GUI. Useful to inspect some parameters,
+    such as routing density, timing paths, clock tree and whatnot.
+    The LIBs are loaded by default and the SPEFs if available.
+    """
+
+    id = "OpenROAD.OpenGUI"
+    name = "Open In GUI"
+
+    def get_command(self) -> list[str]:
+        return [
+            self.get_openroad_path(),
+            "-no_splash",
+            "-gui",
+            self.get_script_path(),
+        ]
+
+    def hand_over(self, command: list[str], env: dict, **kwargs) -> None:
         self.run_subprocess(
             command,
             env=env,
             **kwargs,
         )
 
-        return {}, {}
+
+@Step.factory.register()
+class OpenConsole(OpenROADSession):
+    """
+    Opens the ODB view in an interactive OpenROAD Tcl console, with the same
+    views loaded as :class:`OpenGUI`. Useful to query the database or the timing
+    graph by hand on a machine with no display.
+
+    The step ends when the console does, i.e., on ``exit`` or an end-of-file.
+    """
+
+    id = "OpenROAD.OpenConsole"
+    name = "Open In Console"
+
+    def get_command(self) -> list[str]:
+        # No -exit: the point of the step is that OpenROAD keeps reading
+        # commands from the terminal once the script is done.
+        return [
+            self.get_openroad_path(),
+            "-no_splash",
+            self.get_script_path(),
+        ]
+
+    def hand_over(self, command: list[str], env: dict, **kwargs) -> None:
+        # Not run_subprocess: the console needs the terminal's stdin, stdout
+        # and stderr, which the output processors would take away.
+        self.run_interactive_subprocess(command, env=env)
 
 
 @Step.factory.register()
@@ -559,6 +521,9 @@ class DumpRCValues(OpenROADStep):
     name = "Dump RC Values"
 
     inputs = [DesignFormat.DEF]
+    # Reports only: dump_rc.tcl never calls write_views, so the five views
+    # OpenROADStep declares by default would never be written.
+    outputs = []
 
     def get_script_path(self) -> str:
         return str(files("librelane").joinpath("scripts", "openroad", "dump_rc.tcl"))

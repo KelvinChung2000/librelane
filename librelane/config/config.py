@@ -54,7 +54,7 @@ from librelane.common import (
     GenericImmutableDict,
     TclUtils,
     AnyPath,
-    is_string_like,
+    is_string,
 )
 
 AnyConfig = Union[AnyPath, Mapping[str, Any]]
@@ -392,7 +392,7 @@ class Config(GenericImmutableDict[str, Any]):
         """
         default_meta_version = 2
 
-        if is_string_like(config_in):
+        if is_string(config_in):
             config_in = str(config_in)
             validated_type = _validate_config_file(config_in)
             if validated_type == "tcl":
@@ -560,7 +560,7 @@ class Config(GenericImmutableDict[str, Any]):
         """
         if isinstance(config_in, Mapping):
             config_in = [config_in]
-        elif is_string_like(config_in):
+        elif is_string(config_in):
             config_in = [str(config_in)]
 
         assert not isinstance(config_in, str)
@@ -595,7 +595,7 @@ class Config(GenericImmutableDict[str, Any]):
                 meta = Self.get_meta(config_validated)
             except TypeError as e:
                 identifier = "configuration dict"
-                if is_string_like(config_validated):
+                if is_string(config_validated):
                     identifier = os.path.relpath(str(config_validated))
                 raise InvalidConfig(identifier, [], [f"'meta' object is invalid: {e}"])
 

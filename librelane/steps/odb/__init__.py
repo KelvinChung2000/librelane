@@ -30,6 +30,8 @@ from librelane.steps.odb.diodes import (
 from librelane.steps.odb.eco import (
     ECOBuffer,
     InsertECOBuffers,
+    ECOCellReplacement,
+    ReplaceECOCells,
     ECODiode,
     InsertECODiodes,
 )
@@ -57,6 +59,8 @@ _REEXPORTED_CLASSES = [
     HeuristicDiodeInsertion,
     ECOBuffer,
     InsertECOBuffers,
+    ECOCellReplacement,
+    ReplaceECOCells,
     ECODiode,
     InsertECODiodes,
     ApplyDEFTemplate,

@@ -29,7 +29,7 @@ from librelane.config.model import (
     variable,
     variables_to_model,
 )
-from librelane.config.types import Instance, Macro, Orientation
+from librelane.config.types import Instance, InstanceArray, Macro, Orientation
 from librelane.config.config import (
     Meta,
     Config,

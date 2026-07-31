@@ -22,6 +22,13 @@ pytestmark = pytest.mark.all
 mock_variables = pytest.mock_variables
 
 
+def _write_vlts(*paths):
+    """Create empty Verilator configuration files, so path validation accepts them."""
+    for path in paths:
+        with open(path, "w") as f:
+            f.write("`verilator_config\n")
+
+
 def _lint_command(mock_config, mocker, models=None, **overrides):
     """Run Verilator.Lint with the tool stubbed out; return the argv it built."""
     from librelane.state import State
@@ -93,6 +100,31 @@ def test_no_linter_arguments_by_default(mock_config, mocker):
 
     assert "--no-timing" not in argv
     assert "None" not in argv
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_every_linter_vlt_is_forwarded(mock_config, mocker):
+    _write_vlts("/cwd/src/a.vlt", "/cwd/src/b.vlt")
+
+    argv = _lint_command(
+        mock_config,
+        mocker,
+        LINTER_VLTS=["/cwd/src/a.vlt", "/cwd/src/b.vlt"],
+    )
+
+    assert "/cwd/src/a.vlt" in argv
+    assert "/cwd/src/b.vlt" in argv
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_the_deprecated_scalar_linter_vlt_still_works(mock_config, mocker):
+    _write_vlts("/cwd/src/a.vlt")
+
+    argv = _lint_command(mock_config, mocker, LINTER_VLT="/cwd/src/a.vlt")
+
+    assert "/cwd/src/a.vlt" in argv
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")

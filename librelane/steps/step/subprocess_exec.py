@@ -18,6 +18,7 @@ from loguru import logger
 import os
 import json
 import psutil
+import signal
 import subprocess
 import pathlib
 from collections import deque
@@ -34,7 +35,7 @@ from collections.abc import Callable, Sequence
 from rich.markup import escape
 
 from librelane.common import slugify, protected
-from librelane.logging import console, options
+from librelane.logging import options
 
 from librelane.steps.step.exceptions import StepException
 from librelane.steps.step.output_processor import OutputProcessor
@@ -153,16 +154,6 @@ class SubprocessMixin:
 
         if env is None:
             env = os.environ.copy()
-
-        # A subprocess writes to a pipe, not a terminal, so Rich inside it can
-        # only fall back to its 80-column default and clamps every table it
-        # prints -- the cell frequency and disconnected pin tables among them.
-        # Only the parent knows the real width. ``console.width`` already
-        # honours a COLUMNS the user exported, and ``setdefault`` leaves a
-        # caller that set one explicitly alone.
-        env = dict(env)
-        env.setdefault("COLUMNS", str(console.width))
-
         for key, value in env.items():
             if not (
                 isinstance(value, str)
@@ -261,6 +252,44 @@ class SubprocessMixin:
             raise subprocess.CalledProcessError(returncode, process.args)
 
         return result
+
+    @protected
+    def run_interactive_subprocess(
+        self,
+        cmd: Sequence[str | os.PathLike],
+        env: dict[str, Any] | None = None,
+    ) -> int:
+        """
+        A helper function for :class:`Step` objects that hand a tool's own
+        prompt or window over to the user.
+
+        Unlike :meth:`run_subprocess`, the subprocess inherits the terminal's
+        standard input, output and error, so the user can interact with it. That
+        also means its output is neither logged nor processed.
+
+        Parameters
+        ----------
+        cmd : Sequence[str | os.PathLike]
+            A list of variables, representing a program and its arguments,
+            similar to how you would use it in a shell.
+        env : dict[str, Any] | None
+            The environment to run the command in.
+
+        Returns
+        -------
+        int
+            The exit code of the subprocess.
+        """
+        process = subprocess.Popen(
+            [str(arg) for arg in cmd],
+            env=env,
+            cwd=self.step_dir,
+        )
+        try:
+            return process.wait()
+        except KeyboardInterrupt:
+            process.send_signal(signal.SIGKILL)
+            return process.wait()
 
     @protected
     def extract_env(self, kwargs) -> tuple[dict, dict[str, str]]:

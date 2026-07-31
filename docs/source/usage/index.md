@@ -13,6 +13,7 @@ pdn
 timing_corners
 timing_closure/index
 using_macros
+using_systemverilog
 using_vhdl
 lvs/index
 writing_custom_flows

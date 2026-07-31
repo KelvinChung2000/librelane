@@ -156,63 +156,6 @@ initialize_logger()
 
 
 @contextmanager
-def flow_context(flow_run: str) -> Iterator[str]:
-    """
-    Marks the calling context as belonging to one flow run.
-
-    Loguru sinks are process-wide, so two flows running at once in the same
-    process both see every record: without a discriminator, each flow's
-    ``error.log`` and ``warning.log`` collect the other's issues too. Sinks a
-    flow registers for itself pair this with a
-    ``record["extra"]["flow_run"] == flow_run`` filter so they only take their
-    own.
-
-    Like :func:`step_context` this rides in a :mod:`contextvars` context, so it
-    reaches worker threads through
-    :class:`librelane.common.ContextPropagatingThreadPoolExecutor` and reaches
-    nested steps without any explicit binding.
-
-    Parameters
-    ----------
-    flow_run : str
-        A token unique to this run of this flow.
-
-    Yields
-    ------
-    str
-        ``flow_run``, so a caller can bind the sinks it registers to it.
-    """
-    with _logger.contextualize(flow_run=flow_run):
-        yield flow_run
-
-
-def belongs_to_flow_run(flow_run: str, level: str | None = None):
-    """
-    Builds a sink filter accepting only one flow run's records.
-
-    Parameters
-    ----------
-    flow_run : str
-        The token given to :func:`flow_context`.
-    level : str | None
-        If given, also require the record to be at exactly this level. Loguru's
-        own ``level=`` is a minimum, so it cannot keep ``error.log`` out of
-        ``warning.log``, and its ``filter`` dict form keys on the module name.
-
-    Returns
-    -------
-    A predicate suitable for Loguru's ``filter`` argument.
-    """
-
-    def _filter(record) -> bool:
-        if record["extra"].get("flow_run") != flow_run:
-            return False
-        return level is None or record["level"].name == level
-
-    return _filter
-
-
-@contextmanager
 def step_context(
     step_id: str,
     title: str | None = None,

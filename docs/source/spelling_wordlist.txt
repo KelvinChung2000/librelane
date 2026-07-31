@@ -185,6 +185,7 @@ stdin
 stdout
 str
 streamout
+slang
 StreamOut
 subcell
 subcells
@@ -199,6 +200,7 @@ Submodule
 submodules
 subprocesses
 superclass
+Surelog
 Synlig
 systemd
 Tapeout

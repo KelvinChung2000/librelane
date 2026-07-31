@@ -71,7 +71,6 @@ def _Design_read_verilog_files(
         chparams[param] = value
         slang_chparam_args.append(f"-G{param}={value}")
 
-    ys.log("use_slang" if use_slang else "wtaf")
     if use_slang:
         self.run_pass("plugin", "-i", "slang")
         self.run_pass(

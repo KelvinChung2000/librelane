@@ -361,6 +361,43 @@ _REGISTRATIONS: list[dict] = [
         + ("NETGEN_", "LVS_", "ERROR_ON_ILLEGAL_OVERLAPS", "ERROR_ON_LVS_ERROR"),
         "metrics": ["magic__illegal_overlap__count"],
     },
+    # The alternative to the sequence above, not an addition to it. `lvs` is
+    # single-provider, so exactly one of the two runs and both are free to write
+    # the stage's contracted `design__lvs_error__count`. That licence ends the
+    # moment the stage goes multi_provider, where every provider runs and the
+    # last to finish silently wins. Issue 696 asks for exactly that change, and
+    # it would land on two shared names, not one: the metric, and the `spice`
+    # view that `Magic.SpiceExtraction` and `KLayout.LVS` both output.
+    #
+    # A shared name between co-running providers is not itself the hazard, and a
+    # registration-time prohibition on one would be wrong. `streamout` is
+    # multi_provider today and both its providers output `gds`, which shipped
+    # flows depend on: every later consumer, Magic.WriteLEF and the signoff
+    # steps included, reads the neutral view. What makes that safe is that the
+    # two steps implement an explicit precedence rule, keyed on the PDK's
+    # `PRIMARY_GDSII_STREAMOUT_TOOL` -- the primary tool always writes `gds`, a
+    # non-primary one only when nothing has (steps/magic.py:363,
+    # steps/klayout/views.py:217), so the outcome does not depend on which
+    # provider ran last.
+    #
+    # Neither the `spice` view nor `design__lvs_error__count` has such a rule:
+    # both writers write unconditionally, so a multi_provider `lvs` really would
+    # be decided by position, invisibly. The missing piece is an explicit
+    # statement of which contributor wins, which is what the workflow engine
+    # specs give a `source:` key for, not a ban on sharing.
+    #
+    # OpenROAD.WriteCDL is inside the sequence for the same reason
+    # Magic.SpiceExtraction is inside netgen's: KLayout.LVS compares the layout
+    # against a CDL, no stage promises one, and `lvs.requires` must not grow a
+    # view that only one of the two providers can use. It declares openroad's
+    # namespaces to match, exactly as netgen's declares magic's.
+    {
+        "stage": "lvs",
+        "provider": "klayout",
+        "steps": [OpenROAD.WriteCDL, KLayout.LVS, Checker.LVS],
+        "namespaces": _OPENROAD_NAMESPACES + ("KLAYOUT_", "ERROR_ON_LVS_ERROR"),
+        "native_views": _ODB,
+    },
     {
         "stage": "formal_equivalence",
         "provider": "yosys",

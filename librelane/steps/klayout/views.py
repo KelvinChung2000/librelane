@@ -24,7 +24,7 @@ from os.path import abspath
 from base64 import b64encode
 from typing import Optional, Literal
 
-from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
+from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step, StepError
 
 from librelane.config import variable
 from librelane.state import DesignFormat, State
@@ -151,6 +151,11 @@ class StreamOut(KLayoutStep):
             description="Specifies the conflict resolution if a cell name conflict arises.",
         )
 
+        KLAYOUT_ADD_ISOSUB: bool = variable(
+            False,
+            description="Draws the isolated substrate (subcut) layer over the design's bounding box, on the layer/datatype pair named by `ISOSUB_LAYER`. Useful when the design is to be integrated into another design with multiple power domains.",
+        )
+
     config: Config
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
@@ -170,6 +175,20 @@ class StreamOut(KLayoutStep):
             "'KLAYOUT_CONFLICT_RESOLUTION' has no null behaviour to fall back on"
         )
 
+        isosub_args: list[str] = []
+        if self.config.KLAYOUT_ADD_ISOSUB:
+            isosub_layer = self.config.ISOSUB_LAYER
+            if isosub_layer is None:
+                raise StepError(
+                    f"'KLAYOUT_ADD_ISOSUB' is enabled, but the {self.config.PDK} PDK does not define 'ISOSUB_LAYER'."
+                )
+            isosub_args = [
+                "--isosub-layer",
+                str(isosub_layer[0]),
+                "--isosub-datatype",
+                str(isosub_layer[1]),
+            ]
+
         self.run_pya_script(
             [
                 sys.executable,
@@ -188,13 +207,21 @@ class StreamOut(KLayoutStep):
                 "--conflict-resolution",
                 conflict_resolution,
             ]
+            + isosub_args
             + self.get_cli_args(include_lefs=True, include_gds=True),
             env=env,
         )
 
         views_updates[DesignFormat.KLAYOUT_GDS] = Path(klayout_gds_out)
 
-        if self.config.PRIMARY_GDSII_STREAMOUT_TOOL == "klayout":
+        # The primary tool always writes the neutral view, overwriting a
+        # non-primary tool's. A non-primary tool writes it only when nothing
+        # has, so a flow running just one stream-out still produces a GDS
+        # whatever the PDK names as primary.
+        if (
+            self.config.PRIMARY_GDSII_STREAMOUT_TOOL == "klayout"
+            or state_in.get_by_df(DesignFormat.GDS) is None
+        ):
             gds_path = os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.gds")
             shutil.copy(klayout_gds_out, gds_path)
             views_updates[DesignFormat.GDS] = Path(gds_path)

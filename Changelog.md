@@ -106,11 +106,56 @@ Style Notes
   * Fixed the step reading `ROUTING_OBSTRUCTIONS`, inherited from
     `Odb.RemoveRoutingObstructions`, instead of `PDN_OBSTRUCTIONS`.
 
+* Fixed `VIAS_R` matching the wrong corners. Its corner pattern was handed to
+  `Filter` as a bare string rather than a one-element list, and `Filter`
+  iterates what it is given, so the pattern became one filter per character.
+  A key containing `*` anywhere, such as `nom_*`, therefore applied its via
+  resistances to every corner, and a key naming a corner exactly applied to
+  none. `LAYERS_RC`, filtered by the line above it, was always correct.
+
+* Fixed `DRT_ANTENNA_REPAIR_MARGIN` having no effect. The post-detailed-routing
+  antenna repair read `GRT_ANTENNA_REPAIR_MARGIN` instead, which
+  `OpenROAD.DetailedRouting` also has in scope because its configuration
+  includes the global routing group. Both default to 10, so this was invisible
+  until someone set the DRT one. The jumper-only and diode-only flags beside it
+  were already reading their `DRT_` variables.
+
+* Fixed gzipped liberty files crashing `Toolbox.get_lib_voltage` and
+  `Toolbox.create_blackbox_model_from_libs`, which reach
+  `OpenROAD.IRDropReport` and the linter's macro blackbox generation. Both
+  parsed the file directly, and `libparse` reads the file descriptor rather
+  than the Python stream, so neither a `gzip` wrapper nor a string buffer can
+  be handed to it. Added `Toolbox.decompress_liberty`, which writes an
+  uncompressed copy to the run's temporary directory when the input is
+  compressed and returns the input unchanged when it is not (#627, partial).
+
+* Removed a stray `wtaf` that Yosys logged on every synthesis run not using the
+  slang frontend.
+* Removed the unused `_EXTRA_CORNER_TCL_FILE` environment variable. The
+  `STA_EXTRA_CORNER_TCL_FILE` feature reaches Tcl under its own name and is
+  unaffected.
+
+* `KLayout.StreamOut`, `Magic.StreamOut`
+
+  * A stream-out that is not the PDK's `PRIMARY_GDSII_STREAMOUT_TOOL` now
+    writes the neutral `gds` view when nothing else has. A custom flow running
+    only one of the two produced no `gds` at all if the PDK named the other as
+    primary. The primary tool still always writes it, overwriting whatever a
+    non-primary tool left, so a full flow is unchanged (#683).
+
 * `OpenROAD.DiodeInsertion`
 
   * Registered the step. It was reachable only through
     `OpenROAD.RepairAntennas`, but wrote its own `config.json` naming this ID,
     so a reproducible made from its directory could not be loaded (#920).
+
+* Created `OpenROAD.RMP`, which resynthesizes clouds of logic in place using
+  OpenROAD's `rmp` module and ABC (#558, ported from the unmerged upstream
+  #560). Added `RMP_TARGET`, `RMP_CORNER`, `RMP_SLACK_THRESHOLD`,
+  `RMP_DEPTH_THRESHOLD` and `RMP_REMOVE_BUFFERS`. The step raises rather than
+  restructuring against part of the standard cell library when the selected
+  corner resolves to more than one liberty file, because OpenROAD's
+  `restructure` hands its single `-liberty_file` to one ABC `read_lib`.
 
 * `OpenROAD.GeneratePDN`
 
@@ -120,11 +165,73 @@ Style Notes
     corresponding `FP_MACRO_*_HALO`, which leaves standard cell rows in a band
     the macro power grid is suppressed in (#947).
 
+* `OpenROAD.AddBuffer`
+
+  * Created. Inserts the buffers on the design's input and output ports, and
+    runs before global placement so that global placement knows about them and
+    places the logic around them. `Classic` and `VHDLClassic` run it between
+    I/O placement and global placement (#917).
+  * `DESIGN_REPAIR_BUFFER_INPUT_PORTS` and `DESIGN_REPAIR_BUFFER_OUTPUT_PORTS`
+    moved here from `OpenROAD.RepairDesignPostGPL`, which no longer buffers
+    ports. The names, the defaults and the deprecated aliases are unchanged, so
+    an existing configuration keeps working; the buffering happens earlier.
+    **Behaviour change:** a custom flow that runs
+    `OpenROAD.RepairDesignPostGPL` without `OpenROAD.AddBuffer` gets no port
+    buffering at all.
+
+* `Odb.ReplaceECOCells`
+
+  * Created. Replaces the cell of every instance a regular expression matches,
+    optionally only those instances of a named current cell, then legalizes the
+    placement and incrementally re-routes the affected nets. Driven by the new
+    `REPLACE_ECO_CELLS` list variable, whose entries are `instance`,
+    `replace_with` and the optional `current_cell`. A rule matching no instance
+    is an error rather than a silent no-op (#967).
+
+* `OpenROAD.OpenConsole`
+
+  * Created. Loads the ODB view, the LIBs, the SDC and, if available, the SPEF
+    for the current corner, then hands an interactive OpenROAD Tcl console over
+    to the user. Same views as `OpenROAD.OpenGUI`, no display required (#532).
+
+* `OpenROAD.OpenSTAConsole`
+
+  * Created. Loads the netlist, the timing models and, if available, the
+    parasitics for one corner, then hands an interactive OpenSTA console over to
+    the user, so timing paths can be reported by hand (#532).
+
+* `OpenROAD.STAMidPNR`
+
+  * Reports every corner in `STA_CORNERS` instead of one. The resizer steps
+    on either side of it already optimize against all of them, so a mid-PnR
+    STA reporting a single corner disagreed with the steps it sits between
+    (#636). On sky130 that is nine corners rather than one, and the reports
+    move from the step directory into one directory per corner, which is where
+    the pre-PnR and post-PnR STA steps have always put theirs.
+  * Added `STA_MIDPNR_CORNERS`, the step-specific override, for designs where
+    reporting every corner four times per flow is not worth the runtime.
+    `DEDUPLICATE_CORNERS` also applies, and collapses corners that share their
+    libraries and RC values.
+  * The power metrics stay on one corner. They aggregate by summing, and a sum
+    of one design's power at several corners is not a number that means
+    anything; every corner's own numbers are in its `power.rpt`.
+
 * `OpenROAD.CheckMacroInstances`
 
   * Warns when a macro's `lib` or `spef` covers only some timing corners, or
     resolves to the same view at all of them -- neither of which was reported
     before (#605).
+
+* `KLayout.StreamOut`, `Magic.StreamOut`
+
+  * Added `KLAYOUT_ADD_ISOSUB` and `MAGIC_ADD_ISOSUB`, which draw the isolated
+    substrate (subcut) layer over the design's bounding box on the way out.
+    Both default to `False`. For a design destined to be integrated into
+    another with multiple power domains (#531, #583).
+  * Added `ISOSUB_LAYER`, the GDSII layer and datatype pair KLayout draws that
+    shape on, supplied per PDK. `81/53` for sky130 and `23/5` for gf180mcu,
+    which is what those PDKs' Magic tech files give the CIF layer `SUBCUT` that
+    `isosub` maps to. Magic needs no such variable; it knows the layer by name.
 
 * `Magic.DRC`
 
@@ -156,11 +263,47 @@ Style Notes
   * Deprecated `DRT_THREADS` in favour of `OPENROAD_THREADS`. The old name is
     still accepted.
 
+* `OpenROAD.STAPrePNR`, `OpenROAD.STAMidPNR`, `OpenROAD.STAPostPNR`
+
+  * Added the `timing__clock__fmax` metric and a "Max Frequency (MHz)" column
+    in the timing summary, being the clock period less the setup worst slack,
+    per corner. The overall figure is the smallest of them, so it reads as the
+    frequency the design meets timing at everywhere. The column is red when a
+    corner falls short of `1/CLOCK_PERIOD` (#790, ported from upstream #835).
+    Only written for a single-clock design, since the setup worst slack is
+    design-wide and there is no one period to subtract it from otherwise.
+
 * `Yosys.JsonHeader`, `Yosys.Synthesis`
 
   * Macro `.lib` views and `EXTRA_LIBS` now reach the liberty set given to
     `dfflibmap` and ABC, not just the blackbox model list, so synthesis sees
     macro area and timing (#940).
+
+* `Yosys.Synthesis`, `Yosys.Resynthesis`, `Yosys.VHDLSynthesis`
+
+  * The ABC delay target is now written into the generated ABC strategy script
+    rather than passed as `abc -D`. Yosys substitutes its delay target only
+    into the scripts it builds itself, so `-D` was silently dropped for every
+    run, which is all of them, since LibreLane always passes `-script`. The
+    target now reaches `retime`, `upsize` and `dnsize` (#975, ported from
+    upstream #898).
+  * Added `SYNTH_ARITH_TREE`, on by default, which runs Yosys' `arith_tree`
+    pass after `alumacc` to rewrite chains of arithmetic cells into carry-save
+    adder trees. The sky130 APU design regresses on setup and slew under it
+    and is dropped from the fastest test set upstream, so it is dropped here
+    too; turn the variable off to run that kind of design (#975, ported from
+    upstream #986). Requires Yosys 0.65 or newer.
+  * Added `SYNTH_ABC_STRATEGY_SCRIPT`, which runs a user-supplied ABC script
+    instead of the one generated for `SYNTH_STRATEGY`. Every other
+    `SYNTH_ABC_*` variable is then ignored, except `SYNTH_ABC_DFF`, which is a
+    flag on the `abc` pass rather than part of the script (#975, ported from
+    upstream #899).
+  * Every problem counted towards `synthesis__check_error__count` is now logged,
+    along with the path of the report it came from. Yosys writes two `check`
+    reports per run, the count only ever came from the earlier
+    `reports/pre_synth_chk.rpt`, and the problems were logged at a level no
+    default run displays, so a nonzero count sent readers to `reports/chk.rpt`,
+    which routinely says zero problems (#824).
 
 * `Verilator.Lint`
 
@@ -173,8 +316,62 @@ Style Notes
   * Added `LINTER_ARGUMENTS`, passed verbatim to Verilator after every
     argument LibreLane builds, for options with no variable of their own --
     `--no-timing` being the motivating case (#492).
+  * Added `LINTER_VLTS`, a list of Verilator configuration files, and
+    deprecated the scalar `LINTER_VLT` in favour of it. The old name is still
+    accepted and becomes a one-element list (#680, ported from upstream #983).
 
 ## Flows
+
+* Registered `klayout` as a second provider of the `lvs` stage, selectable with
+  `{"TOOLS": {"lvs": "klayout"}}`. Its sequence is `OpenROAD.WriteCDL`,
+  `KLayout.LVS`, `Checker.LVS`. `KLayout.LVS` was previously reachable from no
+  built-in flow at all (#696).
+  * It is an *alternative* to the `netgen` provider, not an addition beside it.
+    `lvs` is single-provider, so exactly one of the two runs. No default
+    changes: `Classic` and `VHDLClassic` still run Magic plus Netgen unless
+    `TOOLS` says otherwise.
+  * `design__lvs_error__count` is therefore written by whichever provider was
+    selected, and the two do not write the same quantity. Netgen reports its
+    count of mismatching cells and nets. The KLayout scripts report only
+    whether the netlists matched, so that provider writes `0` for a match and
+    `1` for a mismatch. `Checker.LVS` thresholds at zero and behaves
+    identically either way; a dashboard or a regression comparison reading the
+    number itself does not. The producing tool is the `lvs` entry of the run's
+    resolved `TOOLS`.
+  * The two checks are also not equally deep. Netgen compares a Magic-extracted
+    netlist against the powered Verilog netlist; KLayout compares the GDSII
+    against a CDL and is the less complete of the two on hierarchical designs.
+  * `KLayout.LVS` supports `ihp-sg13g2` and `ihp-sg13cmos5l` only. On any other
+    PDK it warns and emits no metric, and `Checker.LVS` then reports the metric
+    as absent.
+  * `OpenROAD.WriteCDL` sits inside the provider sequence rather than in the
+    flows, for the same reason `Magic.SpiceExtraction` sits inside the `netgen`
+    sequence: `KLayout.LVS` hard-requires the `cdl` view, no stage promises
+    one, and a flow that never selects this provider should not write a CDL it
+    has no use for.
+  * Issue #696 asked instead for `KLayout.LVS` to run *alongside* Netgen in the
+    default `Classic` flow, behind a `RUN_KLAYOUT_LVS` gate. That shape was not
+    implemented. Running both would make `lvs` multi-provider, and two names
+    would then have two unconditional writers: `design__lvs_error__count`, and
+    the `spice` view that `Magic.SpiceExtraction` and `KLayout.LVS` both output.
+    Sharing a name is not itself the problem, and no rule against it is being
+    proposed: `streamout` is multi-provider and both its providers write `gds`
+    deliberately. What makes that one safe is the explicit precedence rule the
+    two stream-out steps implement on the PDK's `PRIMARY_GDSII_STREAMOUT_TOOL`.
+    Neither of the `lvs` overlaps has an equivalent, so the winner would be
+    decided by registration order and be invisible. A multi-provider `lvs`
+    therefore needs an explicit statement of which contributor wins.
+  * Co-running both tools would also put a step supporting two IHP PDKs into
+    the default flow for every PDK. The maintainer's reply on the issue
+    proposes substitution instead, driven by PDK-supplied flow configuration,
+    and the reporter asked for it not to be rushed; that redesign is untouched
+    by this change, which only makes the substitution expressible.
+
+* Added `RUN_RMP` to `Classic` and `VHDLClassic`, which enables the new
+  `OpenROAD.RMP` step after floorplanning. It defaults to `False`, because
+  local resynthesis rewrites the netlist every later step works on and the
+  upstream pull request it comes from moved critical metrics on twelve of the
+  CI designs (#558).
 
 * Sequential flows resume within an existing run tag. A step whose own
   configuration, the contents of every file that configuration names, and whose
@@ -376,13 +573,62 @@ Style Notes
 * `--reproducible` naming a step this configuration would never execute,
   because it is gated off or named by `--skip`, now raises rather than
   silently producing nothing.
+* Created `OpenInOpenROADConsole` and `OpenInOpenSTAConsole`, the mono-step
+  flows behind `OpenROAD.OpenConsole` and `OpenROAD.OpenSTAConsole`. They are
+  used the same way the GUI ones are, i.e.
+  `librelane --last-run --flow OpenInOpenSTAConsole` (#532).
 
 ## Tool Updates
 
 * Relaxed version requirement for `rich` to allow rich 16.
+* Updated nix-eda to 7.0.0, which moves the Nix environment to NixOS 26.05
+  (#854, ported from upstream #977). Magic becomes `8.3.674`, Netgen
+  `1.5.320`, Yosys and its eqy/sby plugins `0.66`, Verilator `5.046`, KLayout
+  `0.30.9` and GHDL `6.0.0`. Ciel is pinned to `2.5.1`.
+  * Dropped the local `lemon-graph` C++20 patch and the local `yamlcore`
+    Python package. NixOS 26.05 carries both, and nothing in this fork read
+    the nixpkgs `yamlcore` anyway, since the Python environment is built from
+    `uv.lock`.
+  * `tclint` is now taken as a top-level argument in `nix/openroad.nix` rather
+    than out of `python3.pkgs`, matching where NixOS 26.05 puts it, and
+    `openroad` no longer needs `llvmPackages_18` pinned.
+  * `flake-compat` comes from `github:NixOS/flake-compat` as a non-flake input
+    instead of the FlakeHub tarball.
+  * `yosys-ghdl` inclusion is decided by `lib.meta.availableOn`, which honours
+    `meta.badPlatforms`, rather than by searching `meta.platforms`.
 
 ## Misc. Enhancements/Bugfixes
 
+* Added `InstanceArray`, reachable as the `array` attribute of a macro
+  instance, which expands one entry into a grid of instances on a regular
+  pitch. The instance name is a template taking `{X}`/`{COL}`, `{Y}`/`{ROW}`
+  and `{SEQ}`. Giving both `array` and `location` is an error (#893, ported
+  from upstream #896).
+* Added `VERILOG_FLIST_FILES`, which names F-lists (`*.f`) for the preprocessor
+  to unpack. Each listed file's `+incdir+` and `+define+` lines are appended to
+  `VERILOG_INCLUDE_DIRS` and `VERILOG_DEFINES`, every other line to
+  `VERILOG_FILES`, and the key itself is then dropped, so no step sees it.
+  Preprocessor directives work on the paths in `VERILOG_FLIST_FILES` but not
+  inside an F-list. Only (System)Verilog is supported (#901, ported from
+  upstream #902).
+* Fixed `Classic` and `VHDLClassic` failing at the `pre_pnr_sta` stage
+  boundary, which made them unable to complete a run on this branch. The stage
+  was contracted to produce an `sdc`, but no OpenSTA script writes one: the
+  SDC in the state is the floorplan's, and the SDC these steps read is the
+  `PNR_SDC_FILE` configuration variable. The false claim originated in
+  `MultiCornerSTA.outputs`, which the stage's `provides` was then derived from,
+  and which the runtime never checks because a step's declared outputs are not
+  enforced the way its inputs are.
+  * `MultiCornerSTA` declares `SDF` only, `PrimeTime.STAPrePNR` and
+    `OpenROAD.DumpRCValues` declare no outputs, and `FC.Floorplan`,
+    `ICC2.Floorplan` and `Innovus.Floorplan` no longer declare an `SDC` input
+    that no earlier step in any flow produces.
+  * `pre_pnr_sta` now provides nothing and `floorplan` requires only the
+    netlist, both of which now describe what the steps do.
+  * Two tests check the general form: an OpenROAD step may not declare an
+    output that neither its script nor its own `run` ever writes, and a stage
+    contract may not promise a view whose only declared producer never writes
+    it.
 * Reworked configuration loading around typed Pydantic models and a staged
   read/layer/process/preprocess/validate pipeline.
 * Added structured configuration diagnostics, replayed after flow log sinks
@@ -397,10 +643,7 @@ Style Notes
   copied file tree does not contain (#621).
 * Fixed later configuration sources not being able to select
   `STD_CELL_LIBRARY` (#827).
-* Improved lax union coercion for fields validated by Pydantic. The legacy
-  OpenLane Tcl path in `config/legacy.py` still resolves unions by trying each
-  member in the order `typing.get_args` reports, so #993 is **not** fixed for
-  `pdk=True` variables read from a PDK's `config.tcl`.
+* Fixed lax union coercion choosing a less-specific scalar type (#993).
 * Fixed multiple globs supplied to a `list[Path]` field (#712).
 * Fixed strict validation rejecting whole numbers for `Decimal` fields,
   sequences for tuple fields, and mappings for dataclass fields such as
@@ -521,6 +764,11 @@ Style Notes
 
 ## Documentation
 
+* Added {doc}`/usage/using_systemverilog`, covering `USE_SLANG`,
+  `SLANG_ARGUMENTS`, and the fact that Synlig and Surelog were replaced by
+  yosys-slang and that `read_systemverilog` no longer exists. The frontend was
+  supported but documented nowhere, so the only way to find it was to read the
+  variable list (#793).
 * Added {doc}`/usage/resuming_runs`, covering what resuming a run tag reuses,
   that invalidation cascades, why step directory numbering leaves gaps, and
   that a tool upgraded in place is not detected.

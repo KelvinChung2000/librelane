@@ -439,9 +439,6 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
         env["_MACRO_LIBS"] = TclStep.value_to_tcl(
             self.toolbox.get_macro_views(self.config, DesignFormat.LIB)
         )
-        if self.config.STA_EXTRA_CORNER_TCL_FILE:
-            env["_EXTRA_CORNER_TCL_FILE"] = self.config.STA_EXTRA_CORNER_TCL_FILE
-
         excluded_cells: set[str] = set(self.config.EXTRA_EXCLUDED_CELLS or [])
         excluded_cells.update(process_list_file(self.config.PNR_EXCLUDED_CELL_FILE))
         env["_PNR_EXCLUDED_CELLS"] = TclUtils.join(excluded_cells)
@@ -516,7 +513,7 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
         vias_r = self.config.VIAS_R
         if vias_r is not None:
             for corner_wildcard, metal_layers in vias_r.items():
-                for corner in Filter(corner_wildcard).filter(corners):
+                for corner in Filter([corner_wildcard]).filter(corners):
                     ipvt_corners[corner].vias_r = metal_layers
 
         filtered_ipvt_corners_names_sorted = corners

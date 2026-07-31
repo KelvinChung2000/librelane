@@ -49,7 +49,7 @@ from librelane.steps.openroad import (
 )
 
 from librelane.steps import odb as Odb
-from librelane.steps.odb import OdbpyStep, ECOBuffer, ECODiode
+from librelane.steps.odb import OdbpyStep, ECOBuffer, ECOCellReplacement, ECODiode
 
 from librelane.steps import magic as Magic
 from librelane.steps.magic import MagicStep

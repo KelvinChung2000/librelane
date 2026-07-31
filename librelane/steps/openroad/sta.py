@@ -25,6 +25,7 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from decimal import Decimal
 from math import inf
+from collections.abc import Callable
 from typing import (
     Any,
     Optional,
@@ -70,8 +71,27 @@ class STAMidPNR(OpenROADStep):
     inputs = [DesignFormat.ODB]
     outputs = []
 
+    class Config(OpenROADStep.Config):
+        STA_MIDPNR_CORNERS: Optional[list[str]] = variable(
+            None,
+            description="Mid-PnR STA step-specific override for the timing corners to report. If unset, `STA_CORNERS` is used, which is what the resizer steps around this one analyze.",
+        )
+
+    config: Config
+
     def get_script_path(self):
         return files("librelane").joinpath("scripts", "openroad", "sta", "corner.tcl")
+
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
+        kwargs, env = self.extract_env(kwargs)
+        corners = self.config.STA_MIDPNR_CORNERS or self.config.STA_CORNERS
+
+        # The script writes one report directory per corner, and the output
+        # processor opens the report files without creating directories.
+        for corner in corners:
+            mkdirp(os.path.join(self.step_dir, corner))
+
+        return super().run(state_in, corners=corners, env=env, **kwargs)
 
 
 class OpenSTAStep(OpenROADStep):
@@ -188,6 +208,52 @@ class OpenSTAStep(OpenROADStep):
 
 
 @Step.factory.register()
+class OpenSTAConsole(OpenSTAStep):
+    """
+    Loads the netlist, the timing models and, if available, the parasitics for
+    one corner into an interactive OpenSTA console, so paths can be reported by
+    hand.
+
+    The corner is the PDK's default corner unless ``DEFAULT_CORNER`` says
+    otherwise.
+
+    The step ends when the console does, i.e., on ``exit`` or an end-of-file.
+    """
+
+    id = "OpenROAD.OpenSTAConsole"
+    name = "Open In OpenSTA Console"
+
+    inputs = [
+        DesignFormat.NETLIST,
+        DesignFormat.SPEF.mkOptional(),
+    ]
+    outputs = []
+
+    def get_script_path(self):
+        return files("librelane").joinpath("scripts", "openroad", "sta", "console.tcl")
+
+    def get_command(self) -> list[str]:
+        # No -exit: the point of the step is that OpenSTA keeps reading commands
+        # from the terminal once the script is done.
+        return ["sta", "-no_splash", str(self.get_script_path())]
+
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
+        kwargs, env = self.extract_env(kwargs)
+
+        corner_name, file_list = self._get_corner_files(prioritize_nl=True)
+        file_list.set_env(env)
+        env["_CURRENT_CORNER_NAME"] = corner_name
+
+        env = self.prepare_env(env, state_in)
+
+        # Not run_subprocess: the console needs the terminal's stdin, stdout
+        # and stderr, which the output processors would take away.
+        self.run_interactive_subprocess(self.get_command(), env=env)
+
+        return {}, {}
+
+
+@Step.factory.register()
 class CheckMacroInstances(OpenSTAStep):
     """
     Checks if all macro instances declared in the configuration are, in fact,
@@ -230,18 +296,6 @@ class CheckMacroInstances(OpenSTAStep):
                     corners=self.config.STA_CORNERS,
                     label=f"Macro '{macro_name}' {view_label}",
                 )
-            self.toolbox.check_lib_pins(
-                sorted(
-                    {
-                        str(lib)
-                        for corner in self.config.STA_CORNERS
-                        for lib in self.toolbox.filter_views(
-                            self.config, data.lib, corner
-                        )
-                    }
-                ),
-                label=f"Macro '{macro_name}' LIB",
-            )
 
         env["_check_macro_instances"] = TclUtils.join(macro_instance_pairs)
 
@@ -252,8 +306,41 @@ class CheckMacroInstances(OpenSTAStep):
         return super().run(state_in, env=env, **kwargs)
 
 
+def format_frequency_against_target(
+    frequency: int | float | Decimal | None,
+    target_fmax: float,
+) -> str:
+    """Render a maximum frequency, red when it falls short of the target.
+
+    Parameters
+    ----------
+    frequency
+        The reported maximum frequency in MHz, or None if the corner did not
+        report one.
+    target_fmax
+        The frequency the design asked for, in MHz.
+
+    Returns
+    -------
+    str
+        The frequency to four decimal places, tagged with a rich colour.
+    """
+    if frequency is None:
+        return "[gray]?"
+    frequency = round(float(frequency), 4)
+    formatted_frequency = f"{frequency:.4f}"
+    if frequency < target_fmax:
+        return f"[red]{formatted_frequency}"
+    else:
+        return f"[green]{formatted_frequency}"
+
+
 class MultiCornerSTA(OpenSTAStep):
-    outputs = [DesignFormat.SDF, DesignFormat.SDC]
+    # SDF only. The corner script writes no views: an SDF per corner is added
+    # to the state by STAPrePNR.run, and a LIB per corner by STAPostPNR.run.
+    # Declaring an SDC here claimed a view nothing in this class ever produces,
+    # which the pre-PnR STA stage contract then promised on its behalf.
+    outputs = [DesignFormat.SDF]
 
     class Config(OpenSTAStep.Config):
         STA_MACRO_PRIORITIZE_NL: bool = variable(
@@ -298,7 +385,10 @@ class MultiCornerSTA(OpenSTAStep):
                 log_to=log_path,
                 env=current_env,
                 silent=True,
-                report_dir=corner_dir,
+                # The script names its reports '<corner>/<report>', so the
+                # report directory is the step directory and the reports land
+                # in corner_dir, where they have always been.
+                report_dir=self.step_dir,
             )
 
             generated_metrics = subprocess_result["generated_metrics"]
@@ -376,6 +466,13 @@ class MultiCornerSTA(OpenSTAStep):
             else:
                 return f"[green]{formatted_slack}"
 
+        # The frequency the design asked for. A corner reporting less than this
+        # missed its target.
+        target_fmax = 1000 / float(self.config.CLOCK_PERIOD)
+
+        def format_frequency(frequency: int | float | Decimal | None) -> str:
+            return format_frequency_against_target(frequency, target_fmax)
+
         table = rich.table.Table()
         table.add_column("Corner/Group", width=20)
         table.add_column("Hold Worst Slack")
@@ -390,6 +487,7 @@ class MultiCornerSTA(OpenSTAStep):
         table.add_column("of which reg to reg")
         table.add_column("Max Cap Violations")
         table.add_column("Max Slew Violations")
+        table.add_column("Max Frequency (MHz)")
         for corner in ["Overall"] + self.config.STA_CORNERS:
             modifier = ""
             if corner != "Overall":
@@ -410,8 +508,15 @@ class MultiCornerSTA(OpenSTAStep):
                 "timing__setup_r2r_vio__count",
                 "design__max_cap_violation__count",
                 "design__max_slew_violation__count",
+                "timing__clock__fmax",
             ]:
-                formatter = format_count if metric.endswith("count") else format_slack
+                formatter: Callable[[int | float | Decimal | None], str]
+                if metric.endswith("count"):
+                    formatter = format_count
+                elif metric == "timing__clock__fmax":
+                    formatter = format_frequency
+                else:
+                    formatter = format_slack
                 row.append(
                     formatter(metric_updates_with_aggregates.get(f"{metric}{modifier}"))
                 )

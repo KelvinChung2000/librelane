@@ -14,6 +14,7 @@ from librelane.steps.openroad.base import (
 from librelane.steps.openroad.sta import (
     STAMidPNR,
     OpenSTAStep,
+    OpenSTAConsole,
     CheckMacroInstances,
     MultiCornerSTA,
     STAPrePNR,
@@ -52,12 +53,15 @@ from librelane.steps.openroad.finishing import (
     CutRows,
     WriteCDL,
     DEFtoODB,
+    OpenROADSession,
     OpenGUI,
-    SaveImage,
+    OpenConsole,
     DumpRCValues,
 )
+from librelane.steps.openroad.restructure import RMP
 from librelane.steps.openroad.resizer import ResizerStep, CTS
 from librelane.steps.openroad.resizer_timing import (
+    AddBuffer,
     RepairDesignPostGPL,
     RepairDesign,
     RepairDesignPostGRT,
@@ -70,6 +74,7 @@ _REEXPORTED_CLASSES = [
     OpenROADStep,
     STAMidPNR,
     OpenSTAStep,
+    OpenSTAConsole,
     CheckMacroInstances,
     MultiCornerSTA,
     STAPrePNR,
@@ -96,15 +101,19 @@ _REEXPORTED_CLASSES = [
     IRDropReport,
     CutRows,
     WriteCDL,
+    RMP,
     ResizerStep,
     CTS,
+    AddBuffer,
     RepairDesignPostGPL,
     RepairDesign,
     RepairDesignPostGRT,
     ResizerTimingPostCTS,
     ResizerTimingPostGRT,
     DEFtoODB,
+    OpenROADSession,
     OpenGUI,
+    OpenConsole,
     DumpRCValues,
 ]
 for _class in _REEXPORTED_CLASSES:

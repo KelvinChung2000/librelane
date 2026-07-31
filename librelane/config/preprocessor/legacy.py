@@ -23,7 +23,7 @@ from collections.abc import Mapping, Sequence
 from lark import Lark, Token, Transformer
 from lark.exceptions import UnexpectedCharacters, UnexpectedToken, VisitError
 
-from librelane.common import is_string_like
+from librelane.common import is_string
 
 Keys = SimpleNamespace(
     pdk_root="PDK_ROOT",
@@ -193,7 +193,7 @@ def process_string(
         if target is None:
             return None
 
-        if not is_string_like(target):
+        if not is_string(target):
             if type(target) in [int, float, Decimal]:
                 raise TypeError(
                     f"Referenced variable {reference_variable} is a number and not a string: use expr::{match[0]} if you want to reference this number."
@@ -252,7 +252,7 @@ def process_list_recursive(
                 symbols,
                 key_path=current_key_path,
             )
-        elif isinstance(value, Sequence) and not is_string_like(value):
+        elif isinstance(value, Sequence) and not is_string(value):
             processed = []
             process_list_recursive(
                 value,
@@ -260,8 +260,8 @@ def process_list_recursive(
                 symbols,
                 key_path=current_key_path,
             )
-        elif is_string_like(value):
-            processed = process_string(str(value), symbols)
+        elif is_string(value):
+            processed = process_string(value, symbols)
         else:
             processed = value
 
@@ -312,7 +312,7 @@ def process_dict_recursive(
                     key_path=current_key_path,
                 )
 
-        elif isinstance(value, Sequence) and not is_string_like(value):
+        elif isinstance(value, Sequence) and not is_string(value):
             processed = []
             process_list_recursive(
                 value,
@@ -320,8 +320,8 @@ def process_dict_recursive(
                 symbols,
                 key_path=current_key_path,
             )
-        elif is_string_like(value):
-            processed = process_string(str(value), symbols)
+        elif is_string(value):
+            processed = process_string(value, symbols)
         else:
             processed = value
 

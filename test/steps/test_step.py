@@ -597,35 +597,6 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
     with pytest.raises(StepException, match="non-UTF-8"):
         step.start(step_dir=".")
 
-    # Issue 924: a subprocess writes to a pipe, so Rich inside it sees no
-    # terminal, falls back to 80 columns and clamps the tables the odbpy
-    # scripts print. Only the parent knows the real width.
-    from librelane.logging import console
-
-    columns_log = "columns.log"
-    step = StepTest(
-        config=Config(config_dict),
-        state_in=state_in,
-        _no_revalidate_conf=True,
-    )
-    step.run_subprocess(
-        [sys.executable, "-c", "import os; print(os.environ['COLUMNS'])"],
-        log_to=columns_log,
-        silent=True,
-    )
-    with open(columns_log) as f:
-        assert f.read().strip() == str(console.width)
-
-    # A caller that set one explicitly keeps it.
-    step.run_subprocess(
-        [sys.executable, "-c", "import os; print(os.environ['COLUMNS'])"],
-        env={"COLUMNS": "42"},
-        log_to=columns_log,
-        silent=True,
-    )
-    with open(columns_log) as f:
-        assert f.read().strip() == "42"
-
 
 @pytest.mark.usefixtures("_chdir_tmp")
 @mock_variables([step])

@@ -28,17 +28,9 @@ source $::env(SCRIPTS_DIR)/openroad/common/set_rc.tcl
 estimate_parasitics -placement
 
 
-# Buffer I/O
+# The ports are buffered by OpenROAD.AddBuffer, before global placement.
 if { $::env(DESIGN_REPAIR_REMOVE_BUFFERS) } {
     remove_buffers
-}
-
-if { $::env(DESIGN_REPAIR_BUFFER_INPUT_PORTS) } {
-    buffer_ports -inputs
-}
-
-if { $::env(DESIGN_REPAIR_BUFFER_OUTPUT_PORTS) } {
-    buffer_ports -outputs
 }
 
 set arg_list [list]

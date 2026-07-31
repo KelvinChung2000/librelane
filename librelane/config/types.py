@@ -10,7 +10,7 @@ from pydantic import TypeAdapter
 from pydantic_core import core_schema
 
 from librelane.common import Path, TclUtils
-from librelane.config.legacy import Instance, Macro, Orientation
+from librelane.config.legacy import Instance, InstanceArray, Macro, Orientation
 from librelane.config.preprocessor import GlobMatch
 
 
@@ -118,6 +118,7 @@ __all__ = [
     "ByNameEnum",
     "GlobMatch",
     "Instance",
+    "InstanceArray",
     "Macro",
     "Orientation",
     "Path",

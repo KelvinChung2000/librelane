@@ -21,9 +21,7 @@ from importlib.resources import files
 import os
 import re
 import shutil
-import subprocess
 from os.path import abspath
-from signal import SIGKILL
 from decimal import Decimal
 from abc import abstractmethod
 from typing import Any, Literal, Optional
@@ -296,6 +294,11 @@ class StreamOut(MagicStep):
             deprecated_names=["MAGIC_DISABLE_HIER_GDS"],
         )
 
+        MAGIC_ADD_ISOSUB: bool = variable(
+            False,
+            description="Draws the isolated substrate (subcut) layer over the design's bounding box. Useful when the design is to be integrated into another design with multiple power domains. The PDK's Magic tech file must define an `isosub` layer.",
+        )
+
         MAGIC_MACRO_STD_CELL_SOURCE: Literal["PDK", "macro"] = variable(
             "macro",
             description="If set to PDK, magic will use the PDK definition of the STD cells for macros inside the design."
@@ -357,7 +360,14 @@ class StreamOut(MagicStep):
             **kwargs,
         )
 
-        if self.config.PRIMARY_GDSII_STREAMOUT_TOOL == "magic":
+        # The primary tool always writes the neutral view, overwriting a
+        # non-primary tool's. A non-primary tool writes it only when nothing
+        # has, so a flow running just one stream-out still produces a GDS
+        # whatever the PDK names as primary.
+        if (
+            self.config.PRIMARY_GDSII_STREAMOUT_TOOL == "magic"
+            or state_in.get_by_df(DesignFormat.GDS) is None
+        ):
             magic_gds_out = str(views_updates[DesignFormat.MAG_GDS])
             gds_path = os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.gds")
             shutil.copy(magic_gds_out, gds_path)
@@ -698,15 +708,7 @@ class OpenGUI(MagicStep):
 
         # Not run_subprocess- need stdin, stdout, stderr to be accessible to the
         # user normally
-        magic = subprocess.Popen(
-            cmd,
-            env=env,
-            cwd=self.step_dir,
-        )
-        try:
-            magic.wait()
-        except KeyboardInterrupt:
-            magic.send_signal(SIGKILL)
+        self.run_interactive_subprocess(cmd, env=env)
 
         return {}, {}
 

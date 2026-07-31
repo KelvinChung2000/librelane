@@ -381,6 +381,69 @@ Linting using LibreLane, `__pnr__` will be defined, thereby using the header for
 the hardened version of the Macro. Additionally, as the power pins have no relevance
 for the RTL, they can simply be left out when PnR is not defined.
 
+## Placing macros in a grid
+
+An SRAM array, an FPGA fabric or some mixed-signal layouts want many instances
+of one macro on a regular pitch. Writing each one out by hand is tedious and
+easy to get wrong, so an instance may instead carry an `array` attribute, which
+LibreLane expands into one instance per cell of the grid.
+
+```yaml
+MACROS:
+  gf180mcu_fd_ip_sram__sram512x8m8wm1:
+    gds:
+      - pdk_dir::libs.ref/gf180mcu_fd_ip_sram/gds/gf180mcu_fd_ip_sram__sram512x8m8wm1.gds
+    lef:
+      - pdk_dir::libs.ref/gf180mcu_fd_ip_sram/lef/gf180mcu_fd_ip_sram__sram512x8m8wm1.lef
+    instances:
+      sram_inst_{X}_{Y}:
+        orientation: N
+        array:
+          offset: [10, 10]
+          step: [100, 100]
+          dimensions: [2, 2]
+```
+
+The array is described by three attributes.
+
+`offset`
+: The co-ordinates of the bottom-left instance's origin, in microns.
+
+`step`
+: How far to move in x and y between one instance and the next, in microns.
+
+`dimensions`
+: The number of rows and columns, in that order.
+
+The instance name is a template. Five names are substituted into it.
+
+`{X}`, `{COL}`
+: The column index, counting from zero.
+
+`{Y}`, `{ROW}`
+: The row index, counting from zero.
+
+`{SEQ}`
+: The position in fill order, counting from zero.
+
+The grid is filled left to right along each row, starting from the bottom, so
+`{SEQ}` runs as follows for a two by two array.
+
+```
++---+ +---+
+| 2 | | 3 |
++---+ +---+
++---+ +---+
+| 0 | | 1 |
++---+ +---+
+```
+
+An instance may not give both `array` and `location`, since the array decides
+where every one of its instances goes. Nothing checks that the instances fit
+inside the die or that they do not overlap each other, so verify the geometry
+yourself. Errors raised later in the flow name the expanded instances, which do
+not appear anywhere in your configuration file.
+
 ## Misc. Useful Variables
 
 There are some variables used in the Classic that you may want to configure when

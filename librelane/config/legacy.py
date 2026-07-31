@@ -36,14 +36,7 @@ from typing import (
 )
 from collections.abc import Iterable, Mapping, Callable
 from librelane.state import DesignFormat, State
-from librelane.common import (
-    GenericDict,
-    Path,
-    TclUtils,
-    is_string_like,
-    Number,
-    slugify,
-)
+from librelane.common import GenericDict, Path, TclUtils, is_string, Number, slugify
 
 # Scalar = Union[Type[str], Type[Decimal], Type[Path], Type[bool]]
 # VType = Union[Scalar, List[Scalar]]
@@ -86,6 +79,27 @@ class Orientation(str, Enum):
 
 
 @dataclass
+class InstanceArray:
+    """
+    A grid of instances of one macro, placed on a regular pitch.
+
+    Parameters
+    ----------
+    offset : tuple[Decimal, Decimal]
+        The co-ordinates of the bottom-left instance's origin, in microns.
+    step : tuple[Decimal, Decimal]
+        How far to move in x and y between one instance and the next, in
+        microns.
+    dimensions : tuple[int, int]
+        The number of rows and columns, in that order.
+    """
+
+    offset: tuple[Decimal, Decimal]
+    step: tuple[Decimal, Decimal]
+    dimensions: tuple[int, int]
+
+
+@dataclass
 class Instance:
     """
     Location information for an instance of a cell or macro.
@@ -97,10 +111,62 @@ class Instance:
         empty for automatic placement.
     orientation : Orientation | None
         The orientation of the object's placement. 'N'/'R0' by default.
+    array : InstanceArray | None
+        If set, this entry is a template: it is replaced by a grid of
+        instances, one per cell of the array, and its name is used as a format
+        string. Mutually exclusive with ``location``.
     """
 
     location: tuple[Decimal, Decimal] | None = None
     orientation: Orientation | None = None
+    array: InstanceArray | None = None
+
+
+def _expand_instance_array(
+    name_template: str,
+    array: "InstanceArray",
+    orientation: "Orientation | None",
+) -> "dict[str, Instance]":
+    """Lay one array template out into an instance per cell of the grid.
+
+    The grid is filled left to right along each row, starting at the bottom.
+
+    Parameters
+    ----------
+    name_template : str
+        The instance name, used as a format string. ``{X}``/``{COL}`` become
+        the column index, ``{Y}``/``{ROW}`` the row index and ``{SEQ}`` the
+        position in fill order.
+    array : InstanceArray
+        The offset, pitch and dimensions of the grid.
+    orientation : Orientation | None
+        Applied to every instance in the grid.
+
+    Returns
+    -------
+    dict
+        The expanded instances, keyed by their formatted names.
+    """
+    expanded: dict[str, Instance] = {}
+    x_offset, y_offset = array.offset
+    x_step, y_step = array.step
+    rows, columns = array.dimensions
+
+    for row in range(rows):
+        for column in range(columns):
+            name = name_template.format(
+                X=column,
+                Y=row,
+                COL=column,
+                ROW=row,
+                SEQ=row * columns + column,
+            )
+            expanded[name] = Instance(
+                location=(x_offset + x_step * column, y_offset + y_step * row),
+                orientation=orientation,
+            )
+
+    return expanded
 
 
 @dataclass
@@ -189,6 +255,22 @@ class Macro:
         if len(self.lef) < 1:
             raise ValueError(
                 "Macro definition invalid- at least one LEF file must be specified."
+            )
+        self.__expand_instance_arrays()
+
+    def __expand_instance_arrays(self):
+        """Replace every array template with the instances it stands for."""
+        for name_template, instance in list(self.instances.items()):
+            if (array := instance.array) is None:
+                continue
+            if instance.location is not None:
+                raise RuntimeError(
+                    f"Macro instance '{name_template}' gives both a location and "
+                    f"an array. The location was {instance.location}."
+                )
+            del self.instances[name_template]
+            self.instances.update(
+                _expand_instance_array(name_template, array, instance.orientation)
             )
 
     def __repr__(self) -> str:
@@ -615,14 +697,11 @@ class Variable:
                     if any(isinstance(item, list) for item in raw):
                         Variable.__flatten_list(value)
                 pass  # do nothing, can be used as is
-            elif is_string_like(raw):
+            elif is_string(raw):
                 if not permissive_typing:
                     raise ValueError(
                         f"Refusing to automatically convert string at '{key_path}' to list"
                     )
-                # The splits below are str operations; a path reaching here has
-                # to be read as the text it names.
-                raw = str(raw)
                 if "," in raw:
                     raw = raw.split(",")
                 elif ";" in raw:
@@ -664,14 +743,14 @@ class Variable:
             key_type, value_type = type_args
             if isinstance(raw, dict):
                 pass
-            elif isinstance(raw, list) or is_string_like(raw):
+            elif isinstance(raw, list) or is_string(raw):
                 if not permissive_typing:
                     raise ValueError(
                         f"Refusing to automatically convert string at '{key_path}' to dict"
                     )
                 components = raw
-                if is_string_like(raw):
-                    components = TclUtils.split(str(raw))
+                if is_string(raw):
+                    components = TclUtils.split(raw)
                 assert isinstance(components, list)
                 # Assuming Tcl format:
                 if len(components) % 2 != 0:
@@ -813,7 +892,7 @@ class Variable:
                     f"Variable provided for variable '{key_path}' of enumerated type {validating_type.__name__} is invalid: '{value}'"
                 )
         elif issubclass(validating_type, str):
-            if not is_string_like(value):
+            if not is_string(value):
                 raise ValueError(
                     f"Refusing to automatically convert value at '{key_path}' to a string"
                 )

@@ -33,6 +33,17 @@ def _mock_fs():
         patcher.fs.create_file("/cwd/src/another_file.v")
         patcher.fs.create_file("/ncwd/src/a_file.v")
         patcher.fs.create_file("/ncwd/src/another_file.v")
+        patcher.fs.create_file(
+            "/cwd/src/files.f",
+            contents=(
+                "+incdir+/cwd/src\n"
+                "+define+TARGET_SYNTHESIS\n"
+                "\n"
+                "/cwd/src/a_file.v\n"
+                "/cwd/src/another_file.v\n"
+            ),
+        )
+        patcher.fs.create_file("/cwd/src/bad.f", contents="+notadirective+value\n")
         os.chdir("/cwd")
         yield
 
@@ -223,6 +234,66 @@ def test_preprocess_dict():
         },
     }
     assert preprocessed == expected, "Preprocessor produced a different result"
+
+
+def _preprocess_flist(config):
+    from librelane.config.preprocessor import preprocess_dict
+
+    return preprocess_dict(
+        {
+            "meta": {"version": 2},
+            "DESIGN_NAME": "flist_test",
+            **config,
+        },
+        "/cwd",
+        pdk="sky130A",
+        pdkpath="/cwd",
+        scl="sky130_fd_sc_hd",
+    )
+
+
+def test_flist_is_folded_into_the_keys_it_names():
+    preprocessed = _preprocess_flist({"VERILOG_FLIST_FILES": ["dir::src/files.f"]})
+
+    assert preprocessed["VERILOG_FILES"] == [
+        "/cwd/src/a_file.v",
+        "/cwd/src/another_file.v",
+    ]
+    assert preprocessed["VERILOG_INCLUDE_DIRS"] == ["/cwd/src"]
+    assert preprocessed["VERILOG_DEFINES"] == ["TARGET_SYNTHESIS"]
+    # Nothing downstream knows this key, and unknown keys are rejected.
+    assert "VERILOG_FLIST_FILES" not in preprocessed
+
+
+def test_flist_appends_to_verilog_files_already_given_as_a_string():
+    """A list variable may be written as a bare string, so the F-list has to
+    widen it rather than append to it."""
+    preprocessed = _preprocess_flist(
+        {
+            "VERILOG_FLIST_FILES": ["dir::src/files.f"],
+            "VERILOG_FILES": "/cwd/src/preexisting.v",
+        }
+    )
+
+    assert preprocessed["VERILOG_FILES"] == [
+        "/cwd/src/preexisting.v",
+        "/cwd/src/a_file.v",
+        "/cwd/src/another_file.v",
+    ]
+
+
+def test_an_unknown_flist_directive_is_an_error():
+    with pytest.raises(RuntimeError, match="notadirective"):
+        _preprocess_flist({"VERILOG_FLIST_FILES": ["dir::src/bad.f"]})
+
+
+def test_no_flist_leaves_the_configuration_alone():
+    preprocessed = _preprocess_flist({"VERILOG_FILES": "dir::src/*.v"})
+
+    assert preprocessed["VERILOG_FILES"] == [
+        "/cwd/src/a_file.v",
+        "/cwd/src/another_file.v",
+    ]
 
 
 def test_forward_reference_and_cycle():

@@ -38,6 +38,7 @@
   git,
   gtest,
   darwin,
+  tclint,
   # environments,
   openroad,
   buildPythonEnvForInterpreter,
@@ -129,7 +130,8 @@ stdenv.mkDerivation (finalAttrs: {
     yaml-cpp
 
     or-tools_9_14
-  ] ++ finalAttrs.qt5Libs;
+  ]
+  ++ finalAttrs.qt5Libs;
 
   nativeBuildInputs = [
     swig
@@ -141,7 +143,7 @@ stdenv.mkDerivation (finalAttrs: {
     ninja
     libsForQt5.wrapQtAppsHook
     llvmPackages.clang-tools
-    python3.pkgs.tclint
+    tclint
     ctestCheckHook
   ]
   ++ lib.optionals stdenv.isDarwin [

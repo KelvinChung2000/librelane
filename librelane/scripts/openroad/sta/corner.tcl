@@ -48,193 +48,6 @@ if { [namespace exists ::ord] } {
 }
 read_spefs
 
-foreach {corner_name corner_object} [lln::get_corner_dict] {
-    # the two variables above are set for the rest of this script's scope
-    lln::set_sta_cmd_corner $corner_name
-    break
-}
-
-set clocks [sta::sort_by_name [sta::all_clocks]]
-
-if {  [info exist ::env(STA_EXTRA_CORNER_TCL_FILE)] } {
-    source $::env(STA_EXTRA_CORNER_TCL_FILE)
-}
-
-puts "%OL_CREATE_REPORT min.rpt"
-puts "\n==========================================================================="
-puts "report_checks -path_delay min (Hold)"
-puts "============================================================================"
-puts "======================= $corner_name Corner ===================================\n"
-report_checks -sort_by_slack -path_delay min -fields {slew cap input net fanout} -format full_clock_expanded -group_path_count 1000 -corner $corner_name
-puts ""
-puts "%OL_END_REPORT"
-
-
-puts "%OL_CREATE_REPORT max.rpt"
-puts "\n==========================================================================="
-puts "report_checks -path_delay max (Setup)"
-puts "============================================================================"
-puts "======================= $corner_name Corner ===================================\n"
-report_checks -sort_by_slack -path_delay max -fields {slew cap input net fanout} -format full_clock_expanded -group_path_count 1000 -corner $corner_name
-puts ""
-puts "%OL_END_REPORT"
-
-
-puts "%OL_CREATE_REPORT checks.rpt"
-puts "\n==========================================================================="
-puts "report_checks -unconstrained"
-puts "==========================================================================="
-puts "======================= $corner_name Corner ===================================\n"
-report_checks -unconstrained -fields {slew cap input net fanout} -format full_clock_expanded -corner $corner_name
-puts ""
-
-
-puts "\n==========================================================================="
-puts "report_checks --slack_max -0.01"
-puts "============================================================================"
-puts "======================= $corner_name Corner ===================================\n"
-report_checks -slack_max -0.01 -fields {slew cap input net fanout} -format full_clock_expanded -corner $corner_name
-puts ""
-
-puts "\n==========================================================================="
-puts " report_check_types -max_slew -max_cap -max_fanout -violators"
-puts "============================================================================"
-puts "======================= $corner_name Corner ===================================\n"
-report_check_types -max_slew -max_capacitance -max_fanout -violators -corner $corner_name
-puts ""
-
-puts "\n==========================================================================="
-puts "report_parasitic_annotation -report_unannotated"
-puts "============================================================================"
-report_parasitic_annotation -report_unannotated
-
-puts "\n==========================================================================="
-puts "max slew violation count [sta::max_slew_violation_count]"
-write_metric_int "design__max_slew_violation__count__corner:$corner_name" [sta::max_slew_violation_count]
-puts "max fanout violation count [sta::max_fanout_violation_count]"
-write_metric_int "design__max_fanout_violation__count__corner:$corner_name" [sta::max_fanout_violation_count]
-puts "max cap violation count [sta::max_capacitance_violation_count]"
-write_metric_int "design__max_cap_violation__count__corner:$corner_name" [sta::max_capacitance_violation_count]
-puts "============================================================================"
-
-puts "\n==========================================================================="
-puts "check_setup -verbose -unconstrained_endpoints -multiple_clock -no_clock -no_input_delay -loops -generated_clocks"
-puts "==========================================================================="
-check_setup -verbose -unconstrained_endpoints -multiple_clock -no_clock -no_input_delay -loops -generated_clocks
-puts "%OL_END_REPORT"
-
-
-
-puts "%OL_CREATE_REPORT power.rpt"
-puts "\n==========================================================================="
-puts " report_power"
-puts "============================================================================"
-puts "======================= $corner_name Corner ===================================\n"
-report_power -corner $corner_name
-
-set power_result [sta::design_power $corner_object]
-set totals       [lrange $power_result  0  3]
-lassign $totals design_internal design_switching design_leakage design_total
-
-write_metric_num "power__internal__total" $design_internal
-write_metric_num "power__switching__total" $design_switching
-write_metric_num "power__leakage__total" $design_leakage
-write_metric_num "power__total" $design_total
-
-puts ""
-puts "%OL_END_REPORT"
-
-
-puts "%OL_CREATE_REPORT skew.min.rpt"
-puts "\n==========================================================================="
-puts "Clock Skew (Hold)"
-puts "============================================================================"
-set skew_corner [worst_clock_skew -hold]
-write_metric_num "clock__skew__worst_hold__corner:$corner_name" $skew_corner
-
-puts "======================= $corner_name Corner ===================================\n"
-report_clock_skew -corner $corner_name -hold
-
-puts "%OL_END_REPORT"
-
-puts "%OL_CREATE_REPORT skew.max.rpt"
-puts "\n==========================================================================="
-puts "Clock Skew (Setup)"
-puts "============================================================================"
-set skew_corner [worst_clock_skew -setup]
-write_metric_num "clock__skew__worst_setup__corner:$corner_name" $skew_corner
-
-puts "======================= $corner_name Corner ===================================\n"
-report_clock_skew -corner $corner_name -setup
-
-puts "%OL_END_REPORT"
-
-puts "%OL_CREATE_REPORT ws.min.rpt"
-puts "\n==========================================================================="
-puts "Worst Slack (Hold)"
-puts "============================================================================"
-set ws [worst_slack -corner $corner_name -min]
-write_metric_num "timing__hold__ws__corner:$corner_name" $ws
-puts "$corner_name: $ws"
-puts "%OL_END_REPORT"
-
-puts "%OL_CREATE_REPORT ws.max.rpt"
-puts "\n==========================================================================="
-puts "Worst Slack (Setup)"
-puts "============================================================================"
-
-set ws [worst_slack -corner $corner_name -max]
-write_metric_num "timing__setup__ws__corner:$corner_name" $ws
-puts "$corner_name: $ws"
-puts "%OL_END_REPORT"
-
-puts "%OL_CREATE_REPORT tns.min.rpt"
-puts "\n==========================================================================="
-puts "Total Negative Slack (Hold)"
-puts "============================================================================"
-
-set tns [total_negative_slack -corner $corner_name -min]
-write_metric_num "timing__hold__tns__corner:$corner_name" $tns
-puts "$corner_name: $tns"
-puts "%OL_END_REPORT"
-
-puts "%OL_CREATE_REPORT tns.max.rpt"
-puts "\n==========================================================================="
-puts "Total Negative Slack (Setup)"
-puts "============================================================================"
-set tns [total_negative_slack -corner $corner_name -max]
-write_metric_num "timing__setup__tns__corner:$corner_name" $tns
-puts "$corner_name: $tns"
-puts "%OL_END_REPORT"
-
-puts "%OL_CREATE_REPORT wns.min.rpt"
-puts "\n==========================================================================="
-puts "Worst Negative Slack (Hold)"
-puts "============================================================================"
-
-set ws [worst_slack -corner $corner_name -min]
-set wns 0
-if { $ws < 0 } {
-    set wns $ws
-}
-write_metric_num "timing__hold__wns__corner:$corner_name" $wns
-puts "$corner_name: $wns"
-puts "%OL_END_REPORT"
-
-puts "%OL_CREATE_REPORT wns.max.rpt"
-puts "\n==========================================================================="
-puts "Worst Negative Slack (Setup)"
-puts "============================================================================"
-
-set ws [worst_slack -corner $corner_name -max]
-set wns 0.0
-if { $ws < 0 } {
-    set wns $ws
-}
-write_metric_num "timing__setup__wns__corner:$corner_name" $wns
-puts "$corner_name: $wns"
-puts "%OL_END_REPORT"
-
 proc check_if_terminal {pin_object} {
     set net [get_nets -of_object $pin_object]
     if { "$net" == "NULL" } {
@@ -256,149 +69,367 @@ proc get_path_kind {start_pin end_pin} {
     return "$from-$to"
 }
 
-puts "%OL_CREATE_REPORT violator_list.rpt"
-puts "\n==========================================================================="
-puts "Violator List"
-puts "============================================================================"
 
-set total_hold_vios 0
-set r2r_hold_vios 0
-set total_setup_vios 0
-set r2r_setup_vios 0
+# One iteration per defined corner. Steps that define a single corner per
+# process, i.e. the OpenSTA ones, run the body exactly once.
+set corner_index 0
+foreach {corner_name corner_object} [lln::get_corner_dict] {
+    lln::set_sta_cmd_corner $corner_name
 
-set max_violator_count 999999999
-if { [info exists ::env(STA_MAX_VIOLATOR_COUNT)] } {
-    set max_violator_count $::env(STA_MAX_VIOLATOR_COUNT)
-}
+    set clocks [sta::sort_by_name [sta::all_clocks]]
 
-set hold_violating_paths [find_timing_paths -unique_paths_to_endpoint -path_delay min -sort_by_slack -group_path_count $max_violator_count -slack_max 0]
-foreach path $hold_violating_paths {
-    set start_pin [get_property $path startpoint]
-    set end_pin [get_property $path endpoint]
-    set kind "[get_path_kind $start_pin $end_pin]"
-    set slack [get_property $path slack]
-
-    if { $slack >= 0 } {
-        continue
+    if {  [info exist ::env(STA_EXTRA_CORNER_TCL_FILE)] } {
+        source $::env(STA_EXTRA_CORNER_TCL_FILE)
     }
 
-    incr total_hold_vios
-    if { "$kind" == "reg-reg" } {
-        incr r2r_hold_vios
+    puts "%OL_CREATE_REPORT $corner_name/min.rpt"
+    puts "\n==========================================================================="
+    puts "report_checks -path_delay min (Hold)"
+    puts "============================================================================"
+    puts "======================= $corner_name Corner ===================================\n"
+    report_checks -sort_by_slack -path_delay min -fields {slew cap input net fanout} -format full_clock_expanded -group_path_count 1000 -corner $corner_name
+    puts ""
+    puts "%OL_END_REPORT"
+
+
+    puts "%OL_CREATE_REPORT $corner_name/max.rpt"
+    puts "\n==========================================================================="
+    puts "report_checks -path_delay max (Setup)"
+    puts "============================================================================"
+    puts "======================= $corner_name Corner ===================================\n"
+    report_checks -sort_by_slack -path_delay max -fields {slew cap input net fanout} -format full_clock_expanded -group_path_count 1000 -corner $corner_name
+    puts ""
+    puts "%OL_END_REPORT"
+
+
+    puts "%OL_CREATE_REPORT $corner_name/checks.rpt"
+    puts "\n==========================================================================="
+    puts "report_checks -unconstrained"
+    puts "==========================================================================="
+    puts "======================= $corner_name Corner ===================================\n"
+    report_checks -unconstrained -fields {slew cap input net fanout} -format full_clock_expanded -corner $corner_name
+    puts ""
+
+
+    puts "\n==========================================================================="
+    puts "report_checks --slack_max -0.01"
+    puts "============================================================================"
+    puts "======================= $corner_name Corner ===================================\n"
+    report_checks -slack_max -0.01 -fields {slew cap input net fanout} -format full_clock_expanded -corner $corner_name
+    puts ""
+
+    puts "\n==========================================================================="
+    puts " report_check_types -max_slew -max_cap -max_fanout -violators"
+    puts "============================================================================"
+    puts "======================= $corner_name Corner ===================================\n"
+    report_check_types -max_slew -max_capacitance -max_fanout -violators -corner $corner_name
+    puts ""
+
+    puts "\n==========================================================================="
+    puts "report_parasitic_annotation -report_unannotated"
+    puts "============================================================================"
+    report_parasitic_annotation -report_unannotated
+
+    puts "\n==========================================================================="
+    puts "max slew violation count [sta::max_slew_violation_count]"
+    write_metric_int "design__max_slew_violation__count__corner:$corner_name" [sta::max_slew_violation_count]
+    puts "max fanout violation count [sta::max_fanout_violation_count]"
+    write_metric_int "design__max_fanout_violation__count__corner:$corner_name" [sta::max_fanout_violation_count]
+    puts "max cap violation count [sta::max_capacitance_violation_count]"
+    write_metric_int "design__max_cap_violation__count__corner:$corner_name" [sta::max_capacitance_violation_count]
+    puts "============================================================================"
+
+    puts "\n==========================================================================="
+    puts "check_setup -verbose -unconstrained_endpoints -multiple_clock -no_clock -no_input_delay -loops -generated_clocks"
+    puts "==========================================================================="
+    check_setup -verbose -unconstrained_endpoints -multiple_clock -no_clock -no_input_delay -loops -generated_clocks
+    puts "%OL_END_REPORT"
+
+
+
+    puts "%OL_CREATE_REPORT $corner_name/power.rpt"
+    puts "\n==========================================================================="
+    puts " report_power"
+    puts "============================================================================"
+    puts "======================= $corner_name Corner ===================================\n"
+    report_power -corner $corner_name
+
+    set power_result [sta::design_power $corner_object]
+    set totals       [lrange $power_result  0  3]
+    lassign $totals design_internal design_switching design_leakage design_total
+
+    if { $corner_index == 0 } {
+        # The power metrics aggregate by summing, and a sum of the same design's
+        # power at several corners is not a number that means anything, so only the
+        # first corner writes them. Every corner's numbers are in its power.rpt.
+        write_metric_num "power__internal__total" $design_internal
+        write_metric_num "power__switching__total" $design_switching
+        write_metric_num "power__leakage__total" $design_leakage
+        write_metric_num "power__total" $design_total
     }
-    puts "\[hold $kind] [get_property $start_pin full_name] -> [get_property $end_pin full_name] : [get_property $path slack]"
-}
 
-set worst_r2r_hold_slack 1e30
-set hold_paths [find_timing_paths -unique_paths_to_endpoint -path_delay min -sort_by_slack -group_path_count $max_violator_count -slack_max $worst_r2r_hold_slack]
-foreach path $hold_paths {
-    set start_pin [get_property $path startpoint]
-    set end_pin [get_property $path endpoint]
-    set kind "[get_path_kind $start_pin $end_pin]"
-    set slack [get_property $path slack]
+    puts ""
+    puts "%OL_END_REPORT"
 
-    if { "$kind" == "reg-reg" } {
-        set slack [get_property $path slack]
 
-        if { $slack < $worst_r2r_hold_slack } {
-            set worst_r2r_hold_slack $slack
+    puts "%OL_CREATE_REPORT $corner_name/skew.min.rpt"
+    puts "\n==========================================================================="
+    puts "Clock Skew (Hold)"
+    puts "============================================================================"
+    set skew_corner [worst_clock_skew -hold]
+    write_metric_num "clock__skew__worst_hold__corner:$corner_name" $skew_corner
+
+    puts "======================= $corner_name Corner ===================================\n"
+    report_clock_skew -corner $corner_name -hold
+
+    puts "%OL_END_REPORT"
+
+    puts "%OL_CREATE_REPORT $corner_name/skew.max.rpt"
+    puts "\n==========================================================================="
+    puts "Clock Skew (Setup)"
+    puts "============================================================================"
+    set skew_corner [worst_clock_skew -setup]
+    write_metric_num "clock__skew__worst_setup__corner:$corner_name" $skew_corner
+
+    puts "======================= $corner_name Corner ===================================\n"
+    report_clock_skew -corner $corner_name -setup
+
+    puts "%OL_END_REPORT"
+
+    puts "%OL_CREATE_REPORT $corner_name/ws.min.rpt"
+    puts "\n==========================================================================="
+    puts "Worst Slack (Hold)"
+    puts "============================================================================"
+    set ws [worst_slack -corner $corner_name -min]
+    write_metric_num "timing__hold__ws__corner:$corner_name" $ws
+    puts "$corner_name: $ws"
+    puts "%OL_END_REPORT"
+
+    puts "%OL_CREATE_REPORT $corner_name/ws.max.rpt"
+    puts "\n==========================================================================="
+    puts "Worst Slack (Setup)"
+    puts "============================================================================"
+
+    set ws [worst_slack -corner $corner_name -max]
+    write_metric_num "timing__setup__ws__corner:$corner_name" $ws
+    puts "$corner_name: $ws"
+    puts "%OL_END_REPORT"
+
+    # The highest frequency this corner would still meet setup at, in MHz, being
+    # the clock's own period less the slack left over on the worst setup path.
+    #
+    # Only written when the design has exactly one clock. The setup worst slack
+    # is a design-wide number, so with several clocks there is no way to say
+    # which period it should be subtracted from.
+    #
+    # This block sets its own clock list rather than reusing the one the loop
+    # body already holds, so that it stays self-contained. test_openroad_sta.py
+    # lifts it out of this file by those two markers and runs it against stubs
+    # in a real Tcl interpreter, which is the only way any of this file is
+    # covered without a live OpenSTA.
+    set clocks [all_clocks]
+    if { [llength $clocks] == 1 } {
+        set min_period [expr { [get_property [lindex $clocks 0] period] - $ws }]
+        # Non-positive when the design has no timing paths at all, in which
+        # case worst_slack reports infinity, and there is no frequency to
+        # report.
+        if { $min_period > 0 } {
+            write_metric_num "timing__clock__fmax__corner:$corner_name" [expr { 1.0e3 / $min_period }]
         }
     }
-}
 
-set setup_violating_paths [find_timing_paths -unique_paths_to_endpoint -path_delay max -sort_by_slack -group_path_count $max_violator_count -slack_max 0]
-foreach path $setup_violating_paths {
-    set start_pin [get_property $path startpoint]
-    set end_pin [get_property $path endpoint]
-    set kind "[get_path_kind $start_pin $end_pin]"
-    set slack [get_property $path slack]
+    puts "%OL_CREATE_REPORT $corner_name/tns.min.rpt"
+    puts "\n==========================================================================="
+    puts "Total Negative Slack (Hold)"
+    puts "============================================================================"
 
-    if { $slack >= 0 } {
-        continue
+    set tns [total_negative_slack -corner $corner_name -min]
+    write_metric_num "timing__hold__tns__corner:$corner_name" $tns
+    puts "$corner_name: $tns"
+    puts "%OL_END_REPORT"
+
+    puts "%OL_CREATE_REPORT $corner_name/tns.max.rpt"
+    puts "\n==========================================================================="
+    puts "Total Negative Slack (Setup)"
+    puts "============================================================================"
+    set tns [total_negative_slack -corner $corner_name -max]
+    write_metric_num "timing__setup__tns__corner:$corner_name" $tns
+    puts "$corner_name: $tns"
+    puts "%OL_END_REPORT"
+
+    puts "%OL_CREATE_REPORT $corner_name/wns.min.rpt"
+    puts "\n==========================================================================="
+    puts "Worst Negative Slack (Hold)"
+    puts "============================================================================"
+
+    set ws [worst_slack -corner $corner_name -min]
+    set wns 0
+    if { $ws < 0 } {
+        set wns $ws
+    }
+    write_metric_num "timing__hold__wns__corner:$corner_name" $wns
+    puts "$corner_name: $wns"
+    puts "%OL_END_REPORT"
+
+    puts "%OL_CREATE_REPORT $corner_name/wns.max.rpt"
+    puts "\n==========================================================================="
+    puts "Worst Negative Slack (Setup)"
+    puts "============================================================================"
+
+    set ws [worst_slack -corner $corner_name -max]
+    set wns 0.0
+    if { $ws < 0 } {
+        set wns $ws
+    }
+    write_metric_num "timing__setup__wns__corner:$corner_name" $wns
+    puts "$corner_name: $wns"
+    puts "%OL_END_REPORT"
+
+    puts "%OL_CREATE_REPORT $corner_name/violator_list.rpt"
+    puts "\n==========================================================================="
+    puts "Violator List"
+    puts "============================================================================"
+
+    set total_hold_vios 0
+    set r2r_hold_vios 0
+    set total_setup_vios 0
+    set r2r_setup_vios 0
+
+    set max_violator_count 999999999
+    if { [info exists ::env(STA_MAX_VIOLATOR_COUNT)] } {
+        set max_violator_count $::env(STA_MAX_VIOLATOR_COUNT)
     }
 
-    incr total_setup_vios
-    if { "$kind" == "reg-reg" } {
-        incr r2r_setup_vios
-    }
-    puts "\[setup $kind] [get_property $start_pin full_name] -> [get_property $end_pin full_name] : [get_property $path slack]"
-}
-
-set worst_r2r_setup_slack 1e30
-set setup_paths [find_timing_paths -unique_paths_to_endpoint -path_delay max -sort_by_slack -group_path_count $max_violator_count -slack_max $worst_r2r_setup_slack]
-foreach path $setup_paths {
-    set start_pin [get_property $path startpoint]
-    set end_pin [get_property $path endpoint]
-    set kind "[get_path_kind $start_pin $end_pin]"
-    set slack [get_property $path slack]
-
-    if { "$kind" == "reg-reg" } {
+    set hold_violating_paths [find_timing_paths -unique_paths_to_endpoint -path_delay min -sort_by_slack -group_path_count $max_violator_count -slack_max 0]
+    foreach path $hold_violating_paths {
+        set start_pin [get_property $path startpoint]
+        set end_pin [get_property $path endpoint]
+        set kind "[get_path_kind $start_pin $end_pin]"
         set slack [get_property $path slack]
-        if { $slack < $worst_r2r_setup_slack } {
-            set worst_r2r_setup_slack $slack
+
+        if { $slack >= 0 } {
+            continue
+        }
+
+        incr total_hold_vios
+        if { "$kind" == "reg-reg" } {
+            incr r2r_hold_vios
+        }
+        puts "\[hold $kind] [get_property $start_pin full_name] -> [get_property $end_pin full_name] : [get_property $path slack]"
+    }
+
+    set worst_r2r_hold_slack 1e30
+    set hold_paths [find_timing_paths -unique_paths_to_endpoint -path_delay min -sort_by_slack -group_path_count $max_violator_count -slack_max $worst_r2r_hold_slack]
+    foreach path $hold_paths {
+        set start_pin [get_property $path startpoint]
+        set end_pin [get_property $path endpoint]
+        set kind "[get_path_kind $start_pin $end_pin]"
+        set slack [get_property $path slack]
+
+        if { "$kind" == "reg-reg" } {
+            set slack [get_property $path slack]
+
+            if { $slack < $worst_r2r_hold_slack } {
+                set worst_r2r_hold_slack $slack
+            }
         }
     }
+
+    set setup_violating_paths [find_timing_paths -unique_paths_to_endpoint -path_delay max -sort_by_slack -group_path_count $max_violator_count -slack_max 0]
+    foreach path $setup_violating_paths {
+        set start_pin [get_property $path startpoint]
+        set end_pin [get_property $path endpoint]
+        set kind "[get_path_kind $start_pin $end_pin]"
+        set slack [get_property $path slack]
+
+        if { $slack >= 0 } {
+            continue
+        }
+
+        incr total_setup_vios
+        if { "$kind" == "reg-reg" } {
+            incr r2r_setup_vios
+        }
+        puts "\[setup $kind] [get_property $start_pin full_name] -> [get_property $end_pin full_name] : [get_property $path slack]"
+    }
+
+    set worst_r2r_setup_slack 1e30
+    set setup_paths [find_timing_paths -unique_paths_to_endpoint -path_delay max -sort_by_slack -group_path_count $max_violator_count -slack_max $worst_r2r_setup_slack]
+    foreach path $setup_paths {
+        set start_pin [get_property $path startpoint]
+        set end_pin [get_property $path endpoint]
+        set kind "[get_path_kind $start_pin $end_pin]"
+        set slack [get_property $path slack]
+
+        if { "$kind" == "reg-reg" } {
+            set slack [get_property $path slack]
+            if { $slack < $worst_r2r_setup_slack } {
+                set worst_r2r_setup_slack $slack
+            }
+        }
+    }
+
+    write_metric_int "timing__hold_vio__count__corner:$corner_name" $total_hold_vios
+    write_metric_num "timing__hold_r2r__ws__corner:$corner_name" $worst_r2r_hold_slack
+    write_metric_int "timing__hold_r2r_vio__count__corner:$corner_name" $r2r_hold_vios
+    write_metric_int "timing__setup_vio__count__corner:$corner_name" $total_setup_vios
+    write_metric_num "timing__setup_r2r__ws__corner:$corner_name" $worst_r2r_setup_slack
+    write_metric_int "timing__setup_r2r_vio__count__corner:$corner_name" $r2r_setup_vios
+    puts "%OL_END_REPORT"
+
+    puts "%OL_CREATE_REPORT $corner_name/unpropagated.rpt"
+
+    foreach clock [all_clocks] {
+        if { ![get_property $clock is_propagated] } {
+            puts "[get_property $clock full_name]"
+        }
+    }
+
+    puts "%OL_END_REPORT"
+
+
+    puts "%OL_CREATE_REPORT $corner_name/clock.rpt"
+
+    foreach clock [all_clocks] {
+        set source_names ""
+        set is_generated "no"
+        set is_virtual "no"
+        set is_propagated "no"
+        foreach source [get_property $clock sources] {
+            set source_names "[get_property $source full_name] $source_names"
+        }
+        if { [get_property $clock is_generated] } {
+            set is_generated "yes"
+        }
+        if { [get_property $clock is_virtual] } {
+            set is_virtual "yes"
+        }
+        if { [get_property $clock is_propagated] } {
+            set is_virtual "yes"
+        }
+        puts "Clock: [get_property $clock name]"
+        puts "Sources: $source_names"
+        puts "Generated: $is_generated"
+        puts "Virtual: $is_virtual"
+        puts "Propagated: $is_propagated"
+        puts "Period: [get_property $clock period]"
+        puts "\n==========================================================================="
+        puts "report_clock_properties"
+        puts "============================================================================"
+        report_clock_properties $clock
+        puts "\n==========================================================================="
+        puts "report_clock_latency"
+        puts "============================================================================"
+        report_clock_latency -clock $clock
+        puts "\n==========================================================================="
+        puts "report_clock_min_period"
+        puts "============================================================================"
+        report_clock_min_period -clocks [get_property $clock name]
+    }
+
+    puts "%OL_END_REPORT"
+
+    incr corner_index
 }
-
-write_metric_int "timing__hold_vio__count__corner:$corner_name" $total_hold_vios
-write_metric_num "timing__hold_r2r__ws__corner:$corner_name" $worst_r2r_hold_slack
-write_metric_int "timing__hold_r2r_vio__count__corner:$corner_name" $r2r_hold_vios
-write_metric_int "timing__setup_vio__count__corner:$corner_name" $total_setup_vios
-write_metric_num "timing__setup_r2r__ws__corner:$corner_name" $worst_r2r_setup_slack
-write_metric_int "timing__setup_r2r_vio__count__corner:$corner_name" $r2r_setup_vios
-puts "%OL_END_REPORT"
-
-puts "%OL_CREATE_REPORT unpropagated.rpt"
-
-foreach clock [all_clocks] {
-    if { ![get_property $clock is_propagated] } {
-        puts "[get_property $clock full_name]"
-    }
-}
-
-puts "%OL_END_REPORT"
-
-
-puts "%OL_CREATE_REPORT clock.rpt"
-
-foreach clock [all_clocks] {
-    set source_names ""
-    set is_generated "no"
-    set is_virtual "no"
-    set is_propagated "no"
-    foreach source [get_property $clock sources] {
-        set source_names "[get_property $source full_name] $source_names"
-    }
-    if { [get_property $clock is_generated] } {
-        set is_generated "yes"
-    }
-    if { [get_property $clock is_virtual] } {
-        set is_virtual "yes"
-    }
-    if { [get_property $clock is_propagated] } {
-        set is_virtual "yes"
-    }
-    puts "Clock: [get_property $clock name]"
-    puts "Sources: $source_names"
-    puts "Generated: $is_generated"
-    puts "Virtual: $is_virtual"
-    puts "Propagated: $is_propagated"
-    puts "Period: [get_property $clock period]"
-    puts "\n==========================================================================="
-    puts "report_clock_properties"
-    puts "============================================================================"
-    report_clock_properties $clock
-    puts "\n==========================================================================="
-    puts "report_clock_latency"
-    puts "============================================================================"
-    report_clock_latency -clock $clock
-    puts "\n==========================================================================="
-    puts "report_clock_min_period"
-    puts "============================================================================"
-    report_clock_min_period -clocks [get_property $clock name]
-}
-
-puts "%OL_END_REPORT"
-
 write_sdfs
 write_libs

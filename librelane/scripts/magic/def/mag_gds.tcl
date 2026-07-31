@@ -104,5 +104,12 @@ if { $::env(MAGIC_GDS_MERGE) } {
 	gds merge yes
 }
 
+if { $::env(MAGIC_ADD_ISOSUB) } {
+	# "select top cell" above left the box around the top cell, which is the
+	# area the isolated substrate has to cover.
+	puts "\[INFO\] Drawing isolated substrate over [box values]"
+	paint isosub
+}
+
 gds write $::env(SAVE_MAG_GDS)
 puts "\[INFO\] GDS Write Complete"

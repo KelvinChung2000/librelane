@@ -102,6 +102,68 @@ class InsertECOBuffers(OdbpyStep):
 
 
 @dataclass
+class ECOCellReplacement:
+    """
+    Parameters
+    ----------
+    instance : str
+        A regular expression. Instances whose name it matches are considered
+        for replacement.
+    replace_with : str
+        The cell every matched instance is replaced with. It must have the same
+        terminals as the cell being replaced, otherwise the step fails.
+    current_cell : str | None
+        If set, only instances of this cell are matched.
+    """
+
+    instance: str
+    replace_with: str
+    current_cell: str | None = None
+
+
+@Step.factory.register()
+class ReplaceECOCells(OdbpyStep):
+    """
+    Experimental step to replace the cell of matching instances after global or
+    detailed routing, e.g. to swap a buffer type or resize a cell. The placement
+    is legalized and global routing is incrementally re-run for affected nets.
+
+    If run after detailed routing, detailed routing must be re-run as affected
+    nets that are altered are removed and require re-routing.
+
+    A rule that matches no instance is an error: an ECO that silently does
+    nothing is worse than one that fails.
+    """
+
+    id = "Odb.ReplaceECOCells"
+    name = "Replace ECO Cells"
+
+    class Config(GrtConfig, DplConfig, OdbpyStep.Config):
+        REPLACE_ECO_CELLS: Optional[list[ECOCellReplacement]] = variable(
+            None,
+            description="List of cell replacements to perform",
+        )
+
+    config: Config
+
+    def get_script_path(self):
+        return files("librelane").joinpath("scripts", "odbpy", "eco_replace_cell.py")
+
+    def get_command(self) -> list[str]:
+        assert self.config_path is not None, "get_command called before start()"
+        return super().get_command() + [
+            "--step-config",
+            os.fspath(self.config_path),
+        ]
+
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
+        if self.config.REPLACE_ECO_CELLS is None:
+            logger.info(f"'REPLACE_ECO_CELLS' not set. Skipping '{self.id}'…")
+            return {}, {}
+        return super().run(state_in, **kwargs)
+
+
+@dataclass
 class ECODiode:
     """
     Parameters

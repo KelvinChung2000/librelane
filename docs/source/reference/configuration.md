@@ -226,6 +226,40 @@ You can also simply reference another number using this prefix:
 
 > In this example, B will simply hold the value of A.
 
+#### F-lists
+
+Industry IP blocks, academic IP and tools such as
+[Bender](https://github.com/pulp-platform/bender) emit a `*.f` file, an ad-hoc
+standard listing the files that make up a design along with its include
+directories and preprocessor defines. These are written to be passed straight
+to a command-line tool such as Verilator, so LibreLane has to unpack one before
+it can use it.
+
+Name your F-lists in `VERILOG_FLIST_FILES`, which takes a list. Every entry may
+use any of the preprocessor directives above.
+
+```yaml
+DESIGN_NAME: cool_core
+VERILOG_FLIST_FILES:
+  - dir::rtl/ip/super_core_64/supercore.f
+  - refg::$VENDOR_DIR/vendor/gigabyte_sram.f
+```
+
+Two directives are understood inside an F-list, and every other line is taken
+to be the path of a source file.
+
+`+incdir+DIRECTORY`
+: Appended to `VERILOG_INCLUDE_DIRS`.
+
+`+define+MACRO`
+: Appended to `VERILOG_DEFINES`.
+
+The preprocessor reads each F-list, appends its contents to
+`VERILOG_INCLUDE_DIRS`, `VERILOG_DEFINES` and `VERILOG_FILES`, then drops
+`VERILOG_FLIST_FILES` from the configuration. No step sees it.
+
+Only (System)Verilog F-lists are supported. VHDL is not.
+
 ## Tcl
 
 These configuration files are simple Tcl scripts with environment variables that

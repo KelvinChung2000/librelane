@@ -8,6 +8,20 @@ merged back into `librelane-unstable`.
 All 152 open issues were triaged. Sections A–B are done, C–D are the queue.
 One commit per issue.
 
+Counting them is not as simple as adding up the buckets, so the arithmetic is
+written out here once. The A–F lists hold 149 distinct numbers (A 19, B 31,
+C 6, D 21, E 40, F 33, with 975 deliberately appearing in both C and E). The
+other three, 728, 813 and 931, are triaged in the prose under D rather than in
+a list, which is why any bucket-based count comes out three short. 149 plus
+those three is 152.
+
+Two corrections are folded into those figures. 571 appeared nowhere in this
+file at all on the first pass and has since been triaged into section B, which
+is what takes B from 30 to 31. Separately, B has been recorded elsewhere as
+holding 28; it never did. That list has not been edited since it was first
+written, so the 28 is a transcription slip in the summary rather than drift in
+this record.
+
 Before implementing anything from C or D, run `git log HEAD..upstream/dev
 --oneline` first — this branch is missing roughly 31 commits merged upstream,
 and several open issues are already solved there. Most do not cherry-pick
@@ -30,24 +44,16 @@ uses `config_vars = [Variable(...)]` lists where this fork uses nested typed
 | 567 | `8ea9ef0` | 7 emitted-but-unregistered metrics registered, plus a scan test |
 | 579 | `2dba783` | Linter blackboxes generated from macro `lib` views |
 | 605 | `830d943` | Warn when a macro's LIB or SPEF is not per-corner |
-| 611 | `0ec2b9e` | New `OpenROAD.SaveImage` step; reads the ODB so it can sit anywhere in the flow, and forces the offscreen Qt platform |
 | 621 | `ab57d84` | Reproducibles created from composite steps actually run |
 | 630 | `7f84df7` | `report_dont_touch`, `report_dont_use`, `filler_placement -verbose` |
-| 692 | `f80dc33` | `KLAYOUT_XOR_WRITE_GDS` writes the XOR differences to `xor.gds` alongside the marker database |
-| 797 | `019e6b3` | Antenna summary pairs each `(VIOLATED)` with the ratio line above it, so CAR/CSR violations report their own cumulative ratio and name the broken rule |
 | 802 | `c563a13` | `LINTER_INCLUDE_PDK_MODELS` made functional |
-| 812 | `4c03f13` | `runtimes.csv` written per run from `Flow.step_objects`; skipped steps get empty runtime columns rather than being omitted |
-| 889 | `9ae8f28` | `flow_run` contextvar scopes every sink a flow registers, so concurrent flows stop cross-contaminating `error.log` / `warning.log` / `flow.log` and the end-of-run issue summary |
-| 910 | `1abe0ed` | `Toolbox.check_lib_pins` warns when a macro's `.lib` declares cells with no pins, called from `OpenROAD.CheckMacroInstances` |
 | 920 | `07eb1e8` | `OpenROAD.DiodeInsertion` registered so its reproducibles load |
-| 924 | `efc7024` | `COLUMNS` propagated to every subprocess, so Rich tables in the odbpy scripts use the real terminal width instead of the 80-column pipe fallback |
 | 928 | `d9eff48` | `gds maskhints true` (cherry-picked upstream `9636a6b`, authorship kept) |
 | 940 | `09b2313` | Macro libs and `EXTRA_LIBS` reach the synthesis lib set (from PR 943, with its cache bug fixed) |
 | 947 | `286a8aa` | Warn when the PDN halo exceeds the row-cutting halo |
 | 948 | `6d717bc` | `MAGIC_WRITE_LEF_PINONLY` defaults to `True` **(breaking)** |
 | 974 | `869cf4c` | `t_ck` removed from the arrival-time equations |
 | 997 | `5d865bb` | `PDN_CFG` marked `pdk=True` |
-| 999 | `f0b3f4b` | `KLAYOUT_DEF_LAYER_MAP` optional; `--lym` omitted entirely rather than passed empty, so a `.lyt`-embedded mapping survives |
 | — | `865bbe3` | Sphinx build fix; a one-line module docstring crashed the build and blocked verifying any docs change |
 
 Three breaking changes are in here (370, 521, 948). The user confirmed keeping
@@ -60,8 +66,28 @@ with 250 pre-existing warnings.
 
 ## B. Already done — close with the evidence, no code needed
 
-318, 410, 450, 508, 527, 580, 610, 618, 627, 633, 654, 657, 668, 671, 683, 694,
-695, 698, 712, 718, 732, 744, 745, 752, 779, 793, 796, 827, 853, 956
+318, 410, 450, 508, 527, 571, 580, 610, 618, 627, 633, 654, 657, 668, 671, 683,
+694, 695, 698, 712, 718, 732, 744, 745, 752, 779, 793, 796, 827, 853, 956
+
+Notable: **571** ("review usage of `set_propagated_clock`") reports that the
+command is "forced inside OR tcl scripts" when it belongs in the SDC. Reviewed,
+and the premise is largely false. There are eleven sites in three roles. The
+one that decides what signoff STA reports is `io.tcl:121-128`, which applies a
+default only when the SDC mentions neither `set_propagated_clock` nor
+`unset_propagated_clock`, so it defers to the user rather than overriding them.
+Nothing under `scripts/openroad/sta/` touches propagation at all. The eight
+unconditional calls do run after the SDC is read and do override it, but they
+are in the per-stage PnR scripts and they split on physical state, not on
+preference: `unset` before CTS, where there is no clock tree to propagate, and
+`set` after it, where optimising against an ideal clock would size and buffer
+for the wrong slack. Removing them would let pre-CTS repair optimise against a
+clock tree that does not exist. Close as answered.
+
+One secondary fragility, found while checking and not worth fixing on its own:
+the `io.tcl` guard is `string_in_file`, a raw substring search. A
+`set_propagated_clock` in a comment suppresses the default, and one in a file
+the SDC `source`s is missed entirely. Fixing it means parsing Tcl. Worth
+knowing if propagation ever behaves unexpectedly.
 
 Notable: **744** ("DRT running out of iterations doesn't fail the flow") was
 empirically disproved. Running spm with `DRT_OPT_ITERS=1` leaves 9 violations,
@@ -74,7 +100,7 @@ and the flow exits 2. The reporter was on OpenLane 2.2.9.
 |---|---|---|
 | 680 | commit `bf07672` | `LINTER_VLTS` list replaces the scalar `LINTER_VLT` |
 | 790 | open PR 835 | fmax metric |
-| 854 | commit `4fc4628` | nix-eda 7 / nixos-26.05 bump (qrencode source moved) |
+| 854 | commit `4fc4628` | nix-eda 7 / nixos-26.05 bump (qrencode source moved). Built and run, not just evaluated: see below |
 | 893 | commit `cedcd43` | macro array instantiator |
 | 901 | open PR 902 | f-list (`*.f`) parser |
 | 975 (partial) | commits `b272909`, `dbf73b8`, PR 986 | ABC strategy script, ABC delay target, arith_tree |
@@ -83,484 +109,73 @@ Unmerged upstream and issue-adjacent: `acd2341` (GPL GIF), `5b60312` (partial PG
 connect), `39a8ada` (`SYNTH_BUFFER_CELL`), `e607def` + `415c7e2` (padring),
 `aedda63` + `5fe3db1` (`KLayout.Render`).
 
+### What the nix-eda 7 bump (854) has actually been shown to do
+
+Recorded because "the nix bump was verified" is the kind of claim that grows in
+the retelling, and the gap between what was checked and what people will later
+assume was checked is where the next surprise comes from.
+
+Shown, on x86_64-linux:
+
+- The flake evaluates and both `librelane` and the default dev shell
+  instantiate, so no attribute was renamed out from under the fork.
+- The closure builds. KLayout 0.30.9, `yosys-with-plugins` 0.66, `tkinter`,
+  librelane itself and the C extensions all compiled. OpenROAD did not compile
+  and should not have: it substituted from `nix-cache.fossi-foundation.org`,
+  which is stronger evidence than a local rebuild, because a cache hit proves
+  the derivation hashes match upstream's exactly.
+- The built artefact runs. `bin/librelane --version` reports v3.0.5, and the
+  Yosys in that closure answers `help arith_tree`, which closes the chain from
+  the version bump to the pass `SYNTH_ARITH_TREE` depends on, on the binary
+  rather than inferred from a version string.
+
+Not shown, and not to be claimed:
+
+- Only x86_64-linux was built. ciel 2.5.x dropping Intel Macs, and the
+  `lib.meta.availableOn` change to the `yosys-ghdl` gate, are untested.
+- Nothing was run through an actual flow. This establishes that the toolchain
+  builds and launches, not that a design hardens against it.
+
 ## D. Ready to implement — concrete plans, not yet done
 
 | Issue | Size | Summary |
 |---|---|---|
-| 696 | — | **Blocked on the PDK-meta-config product decision (see E/697).** Not ready to implement. The metric "collision" was mis-triaged; there is none. See below |
+| 692 | S | XOR: add a variable to save the GDS; `target($gds_out,...)` is commented out in `xor.drc` |
+| 696 | S | Add `KLayout.LVS` to Classic behind `RUN_KLAYOUT_LVS`. Caveat: it shares the metric key `design__lvs_error__count` with `Netgen.LVS` |
+| 797 | S | `CheckAntennas.__summarize_antenna_report` has no regex for `Cumulative area ratio:`, so CAR/CSR violations carry a stale partial ratio and are mislabelled |
+| 812 | S | Write an aggregate `runtimes.csv` from `Flow.step_objects` |
 | 824 | M | `YosysSynthChecks` counts from `pre_synth_chk.rpt` but users grep `chk.rpt`; report the offending lines and the source path |
+| 889 | M | `error.log` / `warning.log` sinks filter by level only, so concurrent flows cross-contaminate. Needs a `flow_run` contextvar in the sink filters |
+| 910 | S | Warn when a macro's `.lib` has cells with no pins |
 | 917 | M | New `OpenROAD.AddBuffer` step (moves the Classic goldens) |
-| 993 | M | **Do not fix by "respecting declaration order" — that premise is false.** See below. Changelog corrected in `9c7683c` |
+| 924 | S | Propagate `COLUMNS` to subprocesses so rich tables are not clamped to 80 |
+| 993 | M | The Changelog overclaims this. Fixed for the Pydantic path, but `legacy.py`'s ordered union loop still coerces `'1'` to `True` for every `pdk=True` variable before Pydantic sees it |
+| 999 | M | Make `KLAYOUT_DEF_LAYER_MAP` optional (4 files) |
 | 599 / 600 / 669 | L | Replace `common.Path` with `pathlib.Path` (see below) |
-| 532, 558/560, 583, 636, 967 | M | OpenConsole, RMP resynthesis, isosub, multi-corner STAMidPNR, ReplaceECOCells |
+| 532, 558/560, 583, 611, 636, 967 | M | OpenConsole, RMP resynthesis, isosub, layout images, multi-corner STAMidPNR, ReplaceECOCells |
 
-`599` asks for "pathlib.Path **or a subclass of it**". The direct route needs no
-subclassing. An earlier revision of this file called the work blocked on 3.12;
-that was wrong — *nothing* is blocked. But one **hard design constraint** falls
-out of the version floor and governs the whole shape of the migration:
+`599` asks for "pathlib.Path **or a subclass of it**", so the direct route needs
+no subclassing and `requires-python = ">=3.10"` blocks nothing. An earlier
+revision of this file called it blocked on 3.12; that was wrong. Nothing has
+migrated yet: `common/types.py:39` still defines `class Path(UserString,
+os.PathLike)`, imported by 22 modules, 345 `Path` mentions across 52 files.
 
-> **`pathlib.Path` cannot be subclassed before Python 3.12, and
-> `requires-python = ">=3.10"`.** Subclassing it needs `_flavour`, which is
-> private and absent on 3.10/3.11.
+The work, none of it blocking:
 
-So anything that wants to *be* a path has to **compose** one and implement
-`os.PathLike`, not inherit. That is why `ScopedFile` was recomposed in
-`9fb0886` — a prerequisite, not tidying — and it is why the pydantic behaviour
-has to live in an `Annotated` alias rather than in a subclass's
-`__get_pydantic_core_schema__`. Anyone reaching for the obvious
-`class Path(pathlib.Path)` will get a `TypeError` on the supported floor and
-should stop rather than raise the floor to 3.12 to make it work.
+- `common.Path` **is a string**, so it survives Tcl export, JSON state
+  serialization and `str` concatenation for free. `pathlib.Path` does not, so
+  every such site needs auditing.
+- `validate()` (the existence check) and the `GlobMatch` one-element collapse
+  live in the class's `__get_pydantic_core_schema__`. They move into an
+  `Annotated[pathlib.Path, ...]` alias, which is what pydantic is for.
+- `ScopedFile` is the only subclass and would compose rather than inherit.
+- `rel_if_child` becomes a free function over `Path.relative_to`.
 
 `600` (portable states, keeping `dir::` / `pdk_dir::` unresolved and resolving on
 access) is the feature `599` was meant to unlock. Also not done.
 
-**Status: the preparation is done; one mechanical step remains.**
-
-Read the audit below with that in mind. It describes the problem as it stood
-before any of it was fixed, and a reader who takes it at face value will
-over-estimate what is left — which is how this issue has survived three
-releases. What is actually outstanding is the **last** item on the list:
-
-> Retype the ~41 `common.Path` annotations to `pathlib.Path` (or an
-> `Annotated` alias), fix whatever the swap breaks, and delete the
-> `UserString` class.
-
-Everything that made that dangerous has already been dealt with, in
-`14874a6`, `4cf5d52`, `3c27a9a`, `e359348`, `7779364`, `c9e6243` and `9fb0886`:
-
-- the scalar-vs-iterable dispatch no longer depends on string-likeness
-- the ejected-environment string operations no longer depend on it
-- `rel_if_child` no longer depends on it, and its latent bug is fixed
-- **the JSON schema acceptance criterion is met** — 40 failures to 0
-- the `_dummy_path` sentinel and the `_env.tcl` skip compare as strings
-- the twelve `is_string` gates in `config/` ask about path-likeness
-- `ScopedFile` composes, so `Path` has **no subclasses left**
-
-The remaining swap is ~129 mechanical edits plus two genuine semantic decisions
-(`steps/step/reporting.py:299` and `:341`) and the `frozenset`/`lru_cache`
-identity sharing. It is measured and designed under "what the swap actually
-costs" below. The test residue turned out to be **empty**.
-
-It is not started. The window opened when the OpenROAD slice landed, but a
-129-edit refactor across 33 modules is more than could be completed and
-verified in the budget remaining, and a half-applied type migration is worse
-than none: the failure mode of stopping midway is a tree that imports but is
-silently wrong at the sites not yet reached. The measurements and the design
-below are the handover, so the next agent executes rather than re-derives.
-
-#### Audit (2026-07-31), evidence-based
-
-**Correct the premise first.** This file has said, and I repeated, that
-`common.Path` "is a string". It is not. `UserString` is **not** a subclass of
-`str`, so `isinstance(common.Path("/tmp"), str)` is already `False` today.
-Measured:
-
-| expression | `common.Path` | `pathlib.Path` |
-|---|---|---|
-| `isinstance(x, str)` | **False** | False |
-| `is_string(x)` (UserString-aware) | **True** | **False** |
-| `x == "/tmp"` | **True** | **False** |
-| `x in {"/tmp"}` | **True** | **False** |
-| `hash(x) == hash("/tmp")` | True | True (equality still fails) |
-| iterable | **True** | False |
-| `x + "/y"` | `Path('/tmp/y')` | **TypeError** |
-
-So the break surface is *not* "everything that treats it as a str". It is
-precisely: `is_string()` gates, `==`/`in` against plain strings, iterability,
-and `+`. Bare `isinstance(x, str)` sites are **already** False for
-`common.Path` and are therefore not at risk — that rules out ~20 sites a naive
-sweep would flag.
-
-Scale, measured: **373** `Path`-mentioning lines in `librelane/` and **142** in
-`test/`; **33** modules in `librelane/` and **11** in `test/` import
-`common.Path` — more than the 22 previously recorded, because the `openroad/`
-package and `cli/run.py` use multi-line or qualified (`common.Path(...)`)
-imports that a single-line grep misses. Note four CLI modules
-(`cli/config.py`, `cli/options.py`, `cli/state.py`, `cli/metrics.py`) do
-`from pathlib import Path`, so a bare `Path` there is already the stdlib one.
-
-**Risk surface by category** (full list in the categories below; ranked worst
-first):
-
-1. `common/toolbox.py:93` — `filter_views` uses `if is_string(value):` to tell
-   one view from an iterable of views in `Mapping[str, Path | Iterable[Path]]`.
-   After the change a scalar path takes the `else` branch, `list(value)`, and
-   `pathlib.Path` is not iterable → **TypeError on the hot path** of every
-   timing-aware step. Reached from `steps/openroad/sta.py:168`,
-   `flows/flow.py:1062`, `steps/tclstep.py:135`, and `toolbox.py:354/376/395`.
-2. `cli/steps.py:306-307` — `.startswith` / `.replace` called on env values that
-   are `Path` objects (put there unstringified by `steps/tclstep.py:140`,
-   `steps/magic.py:439`, `steps/klayout/physical.py:83/126/268`) →
-   **AttributeError** in `--create-reproducible` replay.
-3. `common/types.py:96` — `not self == Path._dummy_path` compares against a
-   `str` sentinel; becomes permanently False, so `__librelane_dummy_path` stops
-   being exempt from existence validation. Same shape at `steps/tclstep.py:249`
-   (`env_out[key] == value`), which would re-write every path-valued env var
-   into `_env.tcl` instead of skipping it as unchanged.
-4. `is_string()` gates that currently permit a coercion and would start raising:
-   `config/legacy.py:611`, `:657`, `:663`, `:806`; `config/config.py:395`,
-   `:563`, `:598`; `config/preprocessor/legacy.py:196`, `:255`, `:263`, `:315`,
-   `:323`.
-5. `steps/step/reporting.py:299` returns `Path(f"pdk_dir::{...}")` — a path
-   object deliberately holding a *directive*, re-parsed at
-   `config/preprocessor/resolve.py:79`; and `:341` returns `Path(f"./{rel}")`,
-   where `pathlib` normalises `./x` to `x`. Both are asserted verbatim by
-   `test/steps/test_step.py:76/87/88`.
-6. Hash-identity: `frozenset`s of paths feed `lru_cache`d toolbox methods
-   (`steps/yosys.py:88/94`, `steps/pyosys.py:297/306`,
-   `steps/verilator.py:128/136`). Today those share a cache entry with the
-   pre-stringified spellings used at `steps/yosys.py:111`,
-   `steps/pyosys.py:352`, `steps/openroad/base.py:486`. They stop sharing.
-
-**Categories that turned out to be near-empty, contrary to the old note:**
-
-- *String concatenation*: **no** `Path + str` anywhere in the tree. Everything
-  goes through `os.path.join`, `pathlib` `/`, or an explicit `str()`.
-- *JSON serialization*: **safe as-is**. `common/generic_dict.py:43` already
-  dispatches `isinstance(o, os.PathLike)` *before* the `UserString` arm, and
-  `pathlib.Path` is `os.PathLike`. Every consumer inherits that. The
-  `UserString` arm just becomes dead.
-- *Tcl export*: `common/tcl.py:91` excludes `(str, UserString)` from the
-  iterable branch purely because `common.Path` is iterable; `pathlib.Path` is
-  not, so it falls through to `str(value)` and is correct — the guard merely
-  becomes vestigial. `steps/step/subprocess_exec.py:168` already accepts
-  `os.PathLike`.
-
-So the genuinely dangerous surface is **`is_string`, `==`/`in`, and
-iterability**, not serialization.
-
-**Pydantic (the acceptance check).** Measured on this branch, not inspected:
-
-- **347** distinct config variable names reachable from `Step.factory`
-  (370 including flow classes; 1276 with per-step duplicates). I could not
-  reproduce the figure of 389 — recording what I measured rather than
-  asserting the other number.
-- **40** of them fail `model_json_schema()` with `PydanticInvalidForJsonSchema`,
-  and **every one mentions `common.Path`**. 41 variables mention it; the one
-  that "passes" is `EXTRA_SPEFS: list[str | Path] | None`, and it passes only
-  because the `str` arm of the union gives pydantic a renderable branch — its
-  schema is silently incomplete rather than correct.
-- **Root cause identified exactly**: `common/types.py:69` returns
-  `core_schema.no_info_plain_validator_function(...)`, which is opaque —
-  pydantic cannot know the output type, so it refuses
-  (`Cannot generate a JsonSchema for core_schema.PlainValidatorFunctionSchema`).
-- **`pathlib.Path` alone closes it.** A bare `pathlib.Path` field yields
-  `{'type': 'string', 'format': 'path'}`.
-- **And the `Annotated` alias keeps it closed** — crucially, no explicit
-  `__get_pydantic_json_schema__` is needed. `Annotated[pathlib.Path,
-  BeforeValidator(collapse_and_validate)]` still yields
-  `{'type': 'string', 'format': 'path'}`, including nested inside `list[...]`,
-  because a `BeforeValidator` leaves the core output type visible. That is the
-  whole trick: swap the *plain* validator for a *before* validator over a real
-  type, and both `validate()` (existence) and the `GlobMatch` one-element
-  collapse survive with the schema intact.
-
-**`ScopedFile`.** Confirmed the only subclass — `Path.__subclasses__()` returns
-exactly `[ScopedFile]` at runtime. Note its real signature is keyword-only
-(`ScopedFile(*, contents="")`, `common/types.py:150`), not positional.
-Composition verified working: a plain class holding a `pathlib.Path` and
-implementing `__fspath__` is accepted by `open()`, by `pathlib.Path()`, and by
-`isinstance(x, os.PathLike)`, and the `weakref.finalize` cleanup still fires on
-garbage collection.
-
-**`rel_if_child` — the audit found a live bug.** It has **zero call sites and
-zero tests** in the whole tree (only its own definition at
-`common/types.py:109`), so this is latent, but the migration *fixes* rather than
-preserves it. It tests parentage with `str.startswith` on the abspath, which is
-a textual prefix test, not a path-component one. Measured against base
-`/tmp/claude-1000`:
-
-| target | current | `pathlib.is_relative_to` |
-|---|---|---|
-| `/tmp/claude-1000/a/b.txt` | `./a/b.txt` | True → `a/b.txt` |
-| `/tmp/claude-1000` | `./.` | True → `.` |
-| `/tmp/other/c.txt` | absolute (correct) | False |
-| `/tmp/claude-1000-sibling/d.txt` | **`./../claude-1000-sibling/d.txt`** | **False** |
-
-A sibling directory that merely shares a name prefix is wrongly classified as a
-child and returned as a `../` escape. `pathlib.is_relative_to` gets it right.
-So the answer to "do the semantics match at the boundaries" is **no, and
-pathlib's are the correct ones** — the free function should use
-`is_relative_to` and this deserves a regression test rather than a
-bug-for-bug port.
-
-**Order of work when it is handed over**, cheapest risk-reduction first:
-
-1. ~~Fix `filter_views` to dispatch on `isinstance(value, (str, os.PathLike))`~~
-   — **done, `14874a6`.** Correct under both representations, so it landed
-   ahead of the type change. Pinned for `str`, `common.Path` and
-   `pathlib.Path`; the pathlib case raises `TypeError` against the old
-   dispatch.
-2. ~~Stringify at the env boundary so `cli/steps.py:306` is safe~~ — **done,
-   `4cf5d52`.** Normalises with `os.fspath()` inside a new
-   `filter_env_for_script()` helper, which also makes the "already in the
-   ambient environment" skip the str-to-str comparison it always meant to be.
-   *Trap for the next editor:* that helper must stay **above** the
-   `@cli.command()` decorator belonging to `eject`, or typer adopts it as a
-   subcommand and dies on its `Mapping` parameters.
-3. ~~`rel_if_child`~~ — **done, `3c27a9a`.** Ported to `is_relative_to`; the
-   sibling-prefix case is a regression test, and the old `./../` output is
-   deliberately not preserved.
-4. ~~The pydantic schema acceptance gate~~ — **done, `e359348`. 40 → 0.**
-   Note the deviation: the `Annotated[pathlib.Path, BeforeValidator(...)]`
-   alias would have required retyping the 40 declarations, which live in
-   `librelane/steps/{klayout,magic,netgen}` — the held sweep. The same
-   criterion was met inside `common/types.py` alone by rebuilding
-   `__get_pydantic_core_schema__` *around* a `str_schema` instead of replacing
-   it with an opaque plain validator: collapse the glob and coerce to `str` on
-   the way in, construct and existence-check on the way out. The core type
-   stays visible so pydantic derives the schema itself — still **no**
-   `__get_pydantic_json_schema__`, which is what the audit predicted. Verified
-   0 failures at all three levels: 370 variables, 173 `Step.Config`, 6
-   `Flow.Config`. Pinned by two tests that *name* offenders rather than
-   counting them. The `Annotated` alias remains the shape to adopt when the
-   runtime type actually flips.
-5. ~~`_dummy_path` and the `steps/tclstep.py:249` twin~~ — **done, `7779364`.**
-6. ~~The `is_string` gates in `config/`~~ — **done, `c9e6243`.** New
-   `is_string_like()` (str, `UserString` or `os.PathLike`) asks what those
-   twelve sites actually mean; `str()` is now explicit where a real `str` is
-   needed. `is_string()` is unchanged and still correct where the question
-   really is "is this a string", notably `generic_dict.copy_recursive`.
-7. ~~`ScopedFile`~~ — **done, `9fb0886`.** Composes `.path` and implements
-   `os.PathLike`. `Path.__subclasses__()` is now empty, pinned by a test.
-   Breaking for anyone who relied on a `ScopedFile` being a `str`; zero call
-   sites in the tree.
-8. **Outstanding:** the annotation swap and deleting the `UserString` class.
-   Measured and designed below, not started — see "what the swap actually
-   costs".
-
-#### What the swap actually costs, measured
-
-Counted on this branch rather than estimated:
-
-| | count |
-|---|---|
-| `Path` in annotation position (`: Path`, `Optional[Path]`, `list[Path]`, …) | ~110 across 24 files |
-| `Path(` runtime constructor calls | 103 |
-| `isinstance(…, Path)` | ~26 across 10 files |
-| modules importing `common.Path` | 33 |
-
-**The design that minimises the diff.** `Path` cannot stay one name doing both
-jobs, because the pydantic behaviour has to live in an `Annotated` alias (see
-the 3.10 subclassing constraint above) and an `Annotated` alias is neither
-callable nor usable with `isinstance`. Two spellings are unavoidable. Which
-name keeps which job decides the size of the diff:
-
-- Keep `Path` as the **Annotated alias** → all ~110 annotation sites are
-  untouched; the 103 constructor calls become `pathlib.Path(...)` and the 26
-  `isinstance` sites become `isinstance(..., pathlib.Path)`. **~129 mechanical
-  edits, each greppable** (`\bPath\(` and `isinstance\(..., Path\)`).
-- Keep `Path` as `pathlib.Path` → constructors and `isinstance` are untouched,
-  but all ~110 annotations must change. Worse, and easy to miss one silently:
-  a missed annotation still *works*, it just quietly loses the existence check
-  and the `GlobMatch` collapse.
-
-Prefer the first: its failure mode is a loud `TypeError`, the second's is
-silent.
-
-Three things must move off the class before it goes:
-
-- `Path._dummy_path` → a module constant. Used at `common/toolbox.py:301` and
-  throughout `test/config/test_variable.py`.
-- `Path.validate()` → a free function. Called at `common/types.py:138` and
-  **`config/legacy.py:791`**, which the category sweep missed.
-- `rel_if_child` → free function. Already correct as of `3c27a9a`, still zero
-  call sites.
-
-**Corrections to the audit's categories 5 and 6.** Both were over-stated, and
-both were checked at runtime rather than read:
-
-- **"Tests that assert `Path == str` fail immediately" is wrong — that residue
-  is empty.** `State` does **not** coerce: given a plain `str` it stores and
-  returns a `builtins.str`, so every `assert state[DesignFormat.NETLIST] ==
-  "abc"` in `test/state/test_state.py` is `str == str` and is unaffected. The
-  reproducible assertions at `test/steps/test_step.py:76/87/88` read
-  `json.loads(...)`, so they are also `str == str`. The single test comparing
-  against a `Path(...)`, `test/steps/test_script_paths.py:41`, imports
-  `from pathlib import Path` — it is already stdlib-to-stdlib. **No test in the
-  tree compares a `common.Path` to a `str`.**
-- What those `test_step.py` assertions *do* pin is real and must survive: the
-  emitted `config.json` has to contain `./files/relative.v` and
-  `pdk_dir::tech.lef` verbatim. That is intent about what
-  `steps/step/reporting.py:341` and `:299` emit — the `./` prefix that
-  `pathlib` would normalise away, and the `pdk_dir::` directive that is not a
-  path at all. Those two lines are the genuine semantic decisions in the swap
-  and should be settled first; everything else is mechanical.
-- `to_raw_dict()` does **not** stringify — it returns the path object as-is, so
-  JSON output depends entirely on `common/generic_dict.py:43` dispatching
-  `os.PathLike` before `UserString`. It already does, so this survives.
-
-Steps 1–7 are landed. The remaining refactor is much smaller than the audit
-describes — every ranked risk site is already neutral to which path
-representation is in use, and the acceptance gate that blocked the JSON Schema
-work is met *today*, before the type change.
-
-### 696 — there is no collision today, and the feature is deliberately postponed
-
-Two findings.
-
-**1. The metric key is not a collision; it is the single-provider contract.**
-`lvs` is a **single-provider** stage (`stages/taxonomy.py:288-299`) with a
-stage-level contract `metrics=("design__lvs_error__count",)`. `drc` and
-`streamout` are `multi_provider=True`; `lvs` is not. So exactly one LVS provider
-runs, and its providers are *alternatives*. `Pegasus.LVS` reuses the same key on
-purpose, with the reason written at `steps/pegasus.py:158-161`: it "reuses that
-stage-level metric rather than inventing a Pegasus-specific name". `KLayout.LVS`
-doing the same is consistent, not a bug. Nothing can overwrite anything today:
-`KLayout.LVS` is registered in the step factory but appears in **no flow and no
-provider** (only hit is `test/steps/registry_snapshot.json:87`), so it and
-`Netgen.LVS` cannot both run.
-
-The tool-prefixed naming the triage expected (`klayout__lvs_error__count`,
-mirroring `klayout__drc_error__count`) is correct only under the *run-alongside*
-model — which is what the issue asks for and what would make `lvs`
-multi_provider. Which naming is right is therefore downstream of a design
-decision that is not made yet. Pinned by
-`test_providers_that_run_together_do_not_declare_the_same_metric` in
-`test/stages/test_providers.py`, which exempts single-provider stages and will
-fail loudly the moment `lvs` becomes multi_provider without the rename.
-
-**2. The participants explicitly asked not to rush it.** donn wants a PDK meta
-configuration variable to drive flow composition (which would also retire
-`PRIMARY_GDSII_STREAMOUT_TOOL`) plus derivative flows via #648; mole99's reply is
-"That's a lot to think about and it feels important to get this right. So let's
-better not rush this one :)". That is the same "PDK dictates flow defaults"
-redesign that already put **697** in section E.
-
-Implementing the `RUN_KLAYOUT_LVS` boolean as specced would also fight the
-architecture: adding `KLayout.LVS` to `Classic` as a plain step, emitting a
-stage-contracted metric outside any registration, is the exact anti-pattern
-`test_a_tool_specific_metric_is_checked_inside_its_own_registration` and
-`test_each_drc_provider_owns_its_own_checker` were written to condemn.
-
-**Status: blocked, not ready.** Making `lvs` multi_provider *is* the
-PDK-meta-config redesign already sitting in section E as a product decision
-(**697**), and donn and mole99 postponed it deliberately. This needs the
-maintainer to pick the model; it should be surfaced, not guessed at. Do not
-move it back to "ready to implement" without that decision.
-
-A note on the analogy that produced the original triage line: "a metric written
-by two steps is the same class of problem as a view written by two steps" is
-only true when both steps can actually run. That holds for the `gds` fan-in,
-where `Magic.StreamOut` and `KLayout.StreamOut` genuinely both run on a
-`multi_provider` stage. It does not hold on a single-provider stage, where the
-providers are alternatives. The structural check — `multi_provider` true or
-false — is what distinguishes the two cases, and it is now enforced by
-`test_providers_that_run_together_do_not_declare_the_same_metric` rather than
-left to judgement.
-
-### 611 — save_image aborts the process headlessly unless Qt is told otherwise
-
-`KLayout.Render` already existed but only ever runs at stream-out, because it
-needs a DEF or a GDS; it is registered in the `streamout`/klayout provider
-(`stages/providers.py:330`). The issue asks for images *throughout* the flow, so
-the new `OpenROAD.SaveImage` reads the **ODB** instead and can be inserted at
-any point. It deliberately declares no outputs, so several instances in one flow
-cannot collide over a single state view.
-
-The load-bearing detail: `save_image` drives Qt, and with no usable display it
-does **not** raise a Tcl error that a step could catch. It fails to load the
-`xcb` platform plugin and calls `abort()` — SIGABRT, whole OpenROAD process
-gone. Reproduced against OpenROAD `dcf3613` (built `+GUI`, `gui::supported`
-returns 1). Setting `QT_QPA_PLATFORM=offscreen` makes it work and produces a
-real render, so the step sets it unconditionally rather than letting the outcome
-depend on whether a `DISPLAY` happens to exist.
-
-Verified by running the exact Tcl the step generates against
-`gcd_nangate45.def`: a 1000x1000 PNG, and `-display_option` demonstrably
-changes the output. Note the display-control names are the GUI's own and an
-unknown one is a clean `GUI-0013` error, not a crash, so a typo fails loudly.
-
-### 999 — the empty-string route would have silently broken it
-
-The obvious implementation, passing `--lym ""` when the PDK has no `.map`, is
-wrong, and quietly so. Verified with the `klayout` Python module: a `.lyt` can
-embed the LEF/DEF mapping, `tech.load(lyt)` carries it into
-`load_layout_options.lefdef_config.map_file`, and assigning `""` over it turns
-it into `None` — destroying exactly the mapping asap7 relies on. So the flag has
-to be **absent**, not empty, which is why `get_cli_args` omits it rather than
-passing a blank value. Same change in all three pya scripts
-(`open_design.py`, `render.py`, `stream_out.py`), where `--lym` became
-`required=False, default=None` and the assignment is guarded.
-
-`KLAYOUT_TECH` and `KLAYOUT_PROPERTIES` stay required. Making the dead
-`if None in [lyp, lyt, lym]` check real again (it could never fire, since all
-three were non-optional `Path`s) means it now guards only those two.
-
-### 993 — the triage was wrong, and so was the Changelog
-
-Two separate findings, both reproduced.
-
-**1. The Changelog overclaimed it.** The line "Fixed lax union coercion choosing
-a less-specific scalar type (#993)" came from `e225d51`, the big configuration
-redesign. That redesign moved *Pydantic-validated* fields to Pydantic's own
-union handling. It did not touch `librelane/config/legacy.py:700-723`, the
-ordered union loop, which is still the live path for every `pdk=True` variable
-read from a PDK's `config.tcl` (`permissive_typing=True`). Corrected in the
-Changelog.
-
-**2. But the planned fix does not work either.** The plan was to make the loop
-respect the declared member order. Declaration order is not reliably
-recoverable. `typing.Union[X, Y]` and `Union[Y, X]` compare equal *and hash
-equal*, and `typing`'s `_tp_cache` is an `lru_cache` keyed on the arguments, so
-the nested `Optional[Union[...]]` form used throughout this codebase's variable
-declarations returns whichever equal union was built first in the process.
-Verified on Python 3.14.3:
-
-```
-Optional[Union[bool, int]]      args=(bool, int, NoneType)
-Optional[Union[int, bool]]      args=(bool, int, NoneType)   <- not as written
-Optional[Union[str, int, bool]] args=(str, int, bool, NoneType)
-Optional[Union[int, bool, str]] args=(str, int, bool, NoneType)   <- not as written
-```
-
-The direct three-argument form `Union[int, bool, None]` *does* keep its order;
-only the nested `Optional[Union[...]]` spelling collapses, and that is the
-spelling the variables use. So the order the loop sees depends on module import
-order, which is not something a fix can stand on.
-
-A correct fix has to rank candidate types by a fixed specificity order
-independent of what `get_args` reports, with `str` last as the fallback the
-issue asks for. That is a coercion *policy* decision: the issue is labelled a
-breaking change and donn explicitly floats "just not doing this and making PDKs
-use `meta.version = 2` YAML files" as the alternative. Left in D deliberately —
-it needs the maintainer to choose the policy, not a guess.
-
-Reproduction kept out of the tree; the four-line probe is
-`Optional[Union[bool, int]]` vs `Optional[Union[int, bool]]` through
-`typing.get_args`.
-
-Best next candidate: **696**, investigated, with the exact files and call sites
-recorded below. Note `KLayout.LVS` **already exists** at
-`librelane/steps/klayout/lvs.py:33`; it is registered but appears in no flow and
-no stage provider, and its `run` only does real work for `ihp-sg13g2` /
-`ihp-sg13cmos5l`. The metric collision is real and confirmed: `Netgen.LVS`
-writes `design__lvs_error__count` at `librelane/steps/netgen.py:97` and
-`KLayout.LVS` writes the same key at `librelane/steps/klayout/lvs.py:137`, while
-`librelane/stages/taxonomy.py:297` contracts that key for the `lvs` stage. State
-metrics are a flat dict, so whichever runs second wins and `Checker.LVS`
-(`librelane/steps/checker.py:329`) only ever sees the survivor.
-
-**692** was mis-scoped by the issue title. Uncommenting `target($gds_out, ...)`
-would *not* have worked: `target()` and `report()` both claim the single output
-channel `output` writes to, and the last call silently wins. Verified with
-KLayout 0.30.7 on a two-box test case: `target` after `report` gives a report
-database with zero categories and zero items; `report` after `target` gives an
-empty layout. `target()` also changes `output`'s signature -- under a layout
-target the first argument must be a `LayerInfo` or a layer number, so the
-script's `output(layer_info.to_s, description)` raises `TypeError: no implicit
-conversion of String into Integer`. The GDS is therefore built directly with
-`RBA::Layout` and written at the end, which keeps both outputs.
-
-While fixing **889** it turned out `ProcessStatsThread` is a bare
-`threading.Thread`, so its one `logger.warning` had no step or flow attribution
-at all and would have been dropped by every scoped sink. It now carries a
-`contextvars` copy taken on the constructing thread. Note Python 3.14 added
-`Thread(context=...)` and inherits the caller's context when
-`sys.flags.thread_inherit_context` is set, but that flag is **0** in this
-environment and the project supports 3.10+, so the explicit copy is
-load-bearing. Beware: `Thread` itself owns the attribute name `_context` on
-3.14, so the copy is stored as `_log_context`.
+Best next candidates: **797** (antenna violations are currently mislabelled) and
+**889** (concurrent flows cross-contaminate each other's `error.log`).
 
 ### Blocked on verification not possible headlessly
 
@@ -621,83 +236,105 @@ a triage line:
 4. **728**'s config key was right but the value format is not a boolean.
 5. The first **521** attempt was wrong about DRT being single-threaded; corrected
    in `311cff2`.
-6. **797** was under-stated. The stale ratio is only half of it: the old loop
-   also took `Required ratio:` from the *violating* CAR line while taking
-   `Partial area ratio:` from the *non-violating* PAR line above it, so the two
-   columns came from different checks. On a real IHP-shaped report that yields
-   `Partial=12.34, Required=3091.96, P/R=0.0040` where the truth is
-   `7298.29 / 3091.96 = 2.36`, which sorted the worst violation to the *bottom*
-   of a table sorted worst-first. The original code comment
-   (`Partial/Required: 2.36, Required: 3091.96, Partial: 7298.29`) is itself a
-   CAR pairing, so the author's own example was a case the code never parsed.
-   Ratio kind (`Gate area` / `Cumulative area` / `Side area` /
-   `Cumulative side area`) is now a column. Format confirmed against
-   `OpenROAD/src/ant/src/AntennaChecker.cc`, which emits the four checks in the
-   order PAR, CAR, then PSR, CSR on routing layers.
 
-## Shared counter and golden files
+## G. Defects found on the branch, not in the issue tracker
 
-Four worktrees regenerate these from trees lacking each other's commits, so a
-regeneration **replaces rather than adds** and whoever merges second silently
-reverts the first. Reconcile arithmetically, never by re-running a generator.
+Unreleased-branch breakage, i.e. introduced by work that lives only on
+`librelane-unstable`. None of it is a shipped regression and none of it has an
+upstream issue number.
 
-What this branch moves, against `5d63684`:
+1. **`Classic` could not complete a run.** The `pre_pnr_sta` stage was
+   contracted to produce an `sdc` that no OpenSTA script writes, so every run
+   died at that stage boundary with "completed without producing views
+   ['sdc']". Reproduced on the bundled spm example with no local changes
+   applied. Root cause was `MultiCornerSTA.outputs` declaring a view the class
+   never writes, which `Stage(pre_pnr_sta).provides` was then derived from and
+   which `StageRegistry` accepted because it checks *declared* outputs. A
+   step's declared outputs are not enforced anywhere else, so the lie had
+   nowhere to surface until stage contracts started reading it. The same
+   pattern was in `PrimeTime.STAPrePNR` (`SDC`, copied from the comment),
+   `OpenROAD.DumpRCValues` (five views, script writes only reports) and the
+   three vendor `Floorplan` scaffolds (an `SDC` *input* nothing produces).
+   Fixed at the root, with two tests for the general class of bug rather than
+   for the instance.
+## Facts worth not rediscovering
 
-| File | From | To | Commits |
-|---|---|---|---|
-| `test/config/test_model_registry.py` (declaration count) | `346` | `351` | `610482d` (+1, `KLAYOUT_XOR_WRITE_GDS`, #692), `0ec2b9e` (+4, the `SAVE_IMAGE_*` group, #611) |
-| `test/steps/registry_snapshot.json` | 172 entries | 173 entries | `0ec2b9e` — one **addition**, `"OpenROAD.SaveImage"`, no removals |
+Found while implementing; none of them are written down anywhere else.
 
-`test/flows/classic_gating.json` and its `GATING_VARIABLES` list: **not touched**.
-`classic_steps.json` / `vhdl_classic_steps.json`: **not touched**.
+- **A stage provider's config variables are namespace-checked at import time.**
+  `librelane/stages/registry.py` rejects a variable declared on a provider step
+  that is neither a common flow variable nor prefixed with one of the provider's
+  namespaces, raising `StageError` when the module is imported. So an unprefixed
+  name on, say, `KLayout.StreamOut` is not merely bad style, it fails to import:
+  `Provider 'klayout' for stage 'streamout' declares variable 'ISOSUB_LAYER',
+  which is neither a common flow variable nor prefixed with any of
+  ['KLAYOUT_']`. A variable two tools both need belongs in `config/flow.py`,
+  not on one of them.
+- **OpenROAD's `rmp` README documents a `-target` value the code rejects.**
+  `src/rmp/README.md` says `-target area|delay`, but `Restructure::setMode`
+  compares against `"timing"` and `"area"` only, and on anything else emits
+  `utl::warn RMP 10` and leaves area mode selected. Passing the documented
+  `delay` therefore silently optimizes for area. `RMP_TARGET` is
+  `Literal["timing", "area"]` for this reason. Upstream documentation bug, not
+  fixed here.
+- **`test/steps/all` is a git submodule** (`librelane-step-unit-tests`). A fresh
+  worktree does not populate it, so the 192 `step_impl_test` cases are never
+  collected and `uv run pytest` reports 777 passed / 1 deselected instead of
+  777 passed / 192 deselected. The passed count is the invariant.
 
-So this branch's contribution is `+5` to the declaration count and `+1` line to
-the registry snapshot. Both are purely additive and can be merged by summing
-deltas rather than by regenerating.
+## Blocked on a maintainer decision, not on code
 
-## Test baseline
+- **531 / 583** (isosub). The two stream-out options are implemented. The
+  standalone `Magic.AddIsosub` step from upstream PR 583 is not, and should not
+  be until someone decides what it is for. In that patch the step's script is
+  gated on `MAGIC_ADD_ISOSUB`, the same variable that gates the painting inside
+  `Magic.StreamOut`, so enabling either enables both and the step's only reason
+  to exist -- applying isosub after signoff DRC rather than before -- is
+  defeated. Where it would go here is also open: Classic is a stage list,
+  `Stage.drc` is atomic so upstream's "between `KLayout.DRC` and
+  `Checker.MagicDRC`" has no equivalent, and a full-die SUBCUT rectangle would
+  reach LVS extraction and XOR. Issue 531's body is two sentences and the
+  maintainer's request for a rationale was never answered.
 
-**Verify with plain `uv run pytest`.** `pyproject.toml:117` sets
-`addopts = "--strict-markers -m 'not step_impl_test'"`, so the bare command is
-already the canonical selection: everything except the step implementation
-tests.
+## Section B re-audit — the "already done" list does not hold
 
-The canonical baseline on `librelane-unstable` is
-**777 passed / 192 deselected / 1 xfailed**.
+Every one of the 30 entries in section B was re-checked against the code.
+**Twelve do not hold up.** Section B is not safe to close as a batch.
 
-Do **not** use `-m all`. It overrides the `addopts` marker expression rather
-than adding to it, so it selects a different and smaller set — the 732 passed /
-45 deselected figure an earlier revision of this file recorded as the baseline.
-Both numbers are real for their own command; only that command was the wrong one
-to measure against. `-m all` also silently drops tests that carry no `all`
-marker, which is how a real regression survived six commits here: adding
-`KLAYOUT_XOR_WRITE_GDS` for **692** broke the deliberate anti-shrinkage counter
-in `test/config/test_model_registry.py:45`, and no `-m all` run ever selected
-that test. Fixed in `610482d` (346 → 347).
+Not resolved at all:
 
-Two things make the numbers differ between the main checkout and a worktree:
+- **683** `PRIMARY_GDSII_STREAMOUT_TOOL`. Fixed here.
+- **718** KLayout DRC for gf180mcu. See below; the root cause is PDK data.
+- **793** SystemVerilog frontend. The capability existed but was documented
+  nowhere. Documented here.
+- **853** DRC inspection guide. Does not exist. The newcomers section predates
+  the issue and cites filenames the flow no longer produces.
 
-- `test/steps/all` is a **git submodule** (`librelane-step-unit-tests`, see
-  `.gitmodules`) and **a new worktree does not populate it** — `git worktree
-  add` does not check submodules out, so the directory is empty and
-  `git ls-tree HEAD test/steps/all` shows a bare `160000 commit` entry. The
-  fixture that reads it is `collect_step_tests()` in `test/steps/conftest.py`,
-  which globs `test/steps/all/by_id`; with the submodule checked out it finds
-  the step-impl directories and `addopts` deselects **192**, with it empty only
-  **1**. A worktree reporting "1 deselected" is therefore not a different tree
-  and not a marker-filter artefact — it is an unpopulated submodule, and
-  `git submodule update --init test/steps/all` is what closes the gap. Both
-  causes compound: the marker expression explains 777-vs-732, the submodule
-  explains 192-vs-1.
-- The passed count moves with the tests each slice adds.
+Partial: **410** (three deprecation warnings still emitted before any log sink
+exists, including the `.tcl`-config one every OpenLane 1 migrant hits), **508**
+(`OpenROAD.PadRing` and the `Chip` flow exist, but no documentation, no example,
+and `config/removals.py:41` still says `FP_PADFRAME_CFG: "To be implemented."`),
+**580** (both mounts guarded, but the warning the issue also asked for was never
+added), **610**, **618**, **627** (fixed for the Toolbox here; Yosys still cannot
+read gzipped SCL dotlibs), **657**, **668**, **745**, **956**.
 
-In this worktree after 797, 889, 692, 924, 812, 910, 696, 999, 611 and the
-599 preparation (steps 1-7):
-**823 passed / 1 deselected / 1 xfailed**, which reconciles exactly against the
-canonical baseline as 777 + 46 added tests. `ruff check` clean,
-`ruff format --check` clean over 246 files, `mypy` clean over 147 source files.
+Genuinely resolved, with commits: 318, 450, 527, 633, 654, 671, 694, 695, 698,
+712, 732, 744, 752, 779, 796, 827.
 
-The dummy PDK in `test/conftest.py` gained `KLAYOUT_TECH`,
-`KLAYOUT_PROPERTIES` and `KLAYOUT_DEF_LAYER_MAP` (and the three files they
-point at) in `f80dc33`. Without them no KLayout step could be constructed in a
-test at all, which is worth knowing before starting **999**.
+### 718 belongs to the PDK, not here
+
+The reporter is right that gf180mcu ships a KLayout DRC runset. It is at
+`libs.tech/klayout/tech/drc/gf180mcu.drc`. The PDK's own
+`libs.tech/openlane/config.tcl:126` points at
+`libs.tech/klayout/drc/gf180mcu.drc`, missing the `tech/` component, and no such
+file exists. LibreLane then deletes `KLAYOUT_DRC_TECH_SCRIPT` for gf180mcu at
+`config/pdk_compat.py:184-185`, under a heading reading "Invalid Variables
+(gf180mcu)", which is why the step is skipped rather than failing on a missing
+file.
+
+`pdk_compat.py` is the designed place to correct a broken PDK config, so
+rewriting the path here would work. It is deliberately not done, because it
+would switch on a signoff check that has never run in this repository against a
+PDK whose runset LibreLane's invocation has never been tested with, and that
+cannot be verified headlessly. Same category as 931. The durable fix is in the
+gf180mcu PDK's `config.tcl`.

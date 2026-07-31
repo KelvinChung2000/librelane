@@ -102,14 +102,13 @@ class Floorplan(ICC2PNRStep):
     name = "Floorplan (ICC2)"
     script_filename: ClassVar[str] = "floorplan.tcl"
 
-    # Unlike every later stage in this span, floorplan is where DEF is
-    # produced for the first time, not carried in: the floorplan stage's own
-    # contract requires only DesignFormat.NETLIST and DesignFormat.SDC (see
-    # librelane/stages/taxonomy.py), matching OpenROAD.Floorplan. Inheriting
-    # ICC2PNRStep.inputs unmodified would claim DEF as an input the stage
-    # never promises, which the registration-time view check correctly
-    # rejects.
-    inputs = [DesignFormat.NETLIST, DesignFormat.SDC]
+    # Unlike every later stage in this span, floorplan is where DEF and SDC
+    # are produced for the first time, not carried in: the floorplan stage's
+    # own contract requires only DesignFormat.NETLIST (see librelane/stages/
+    # taxonomy.py), matching OpenROAD.Floorplan. Inheriting the base step's
+    # inputs unmodified would claim DEF as an input the stage never promises,
+    # which the registration-time view check correctly rejects.
+    inputs = [DesignFormat.NETLIST]
 
 
 @Step.factory.register()

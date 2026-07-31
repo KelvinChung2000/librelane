@@ -148,7 +148,7 @@ of this page:
 | `ir_drop` | `openroad` | none |
 | `streamout` | `magic`, `klayout` | none |
 | `drc` | `magic`, `klayout` | none |
-| `lvs` | `netgen` | none |
+| `lvs` | `netgen` | `klayout` |
 | `formal_equivalence` | `yosys` | none |
 
 `post_route_opt` shows `none selected`: it is an optional stage with no
@@ -176,6 +176,49 @@ contracts its own metric (`magic__drc_error__count`,
 `klayout__drc_error__count`). There is no "primary" concept here: dropping one
 provider from `TOOLS` simply runs one deck instead of two, with no downstream
 comparison step depending on the other.
+
+## The two `lvs` providers write the same metric key
+
+`lvs` is *not* a multi-provider stage. Its two providers are alternatives, so
+exactly one of them runs, and both write the stage's contracted
+`design__lvs_error__count`. That is what makes the key safe to share, and it
+is also what makes the number's meaning depend on which provider ran.
+
+| Provider | Sequence | What it compares | What the metric holds |
+| --- | --- | --- | --- |
+| `netgen` (default) | `Magic.SpiceExtraction`, `Checker.IllegalOverlap`, `Netgen.LVS`, `Checker.LVS` | a Magic-extracted SPICE netlist against the powered Verilog netlist | Netgen's count of mismatching cells and nets |
+| `klayout` | `OpenROAD.WriteCDL`, `KLayout.LVS`, `Checker.LVS` | the GDSII against a CDL written from the OpenDB database | `0` if KLayout reported "netlists match", `1` otherwise |
+
+So the KLayout number is a verdict, not a count. `Checker.LVS` thresholds at
+zero and behaves identically either way, but any consumer that reads the
+number itself, a metrics dashboard or a regression comparison, is reading two
+different quantities. Which one produced it is recorded as the `lvs` entry of
+the run's resolved `TOOLS`.
+
+The two are also not equally deep. Netgen compares a netlist extracted from
+the layout with connectivity and device parameters; the KLayout script
+compares against a CDL and, for hierarchical designs, is the less complete of
+the two. Selecting `klayout` is not a like-for-like substitution.
+
+`KLayout.LVS` ships PDK-specific handling for `ihp-sg13g2` and
+`ihp-sg13cmos5l` only. On any other PDK the step warns that it is unsupported
+and returns no metric at all, at which point `Checker.LVS` warns that the
+metric was not found and the run continues with no LVS result. Nothing selects
+this provider for you.
+
+```json
+{
+  "TOOLS": {
+    "lvs": "klayout"
+  }
+}
+```
+
+`OpenROAD.WriteCDL` is part of the `klayout` sequence rather than a plain step
+of `Classic`, for the same reason `Magic.SpiceExtraction` is part of the
+`netgen` sequence: `KLayout.LVS` hard-requires the `cdl` view, no stage
+promises one, and a flow that never selects this provider should not be made
+to write a CDL it has no use for.
 
 ## Setting many stages at once
 

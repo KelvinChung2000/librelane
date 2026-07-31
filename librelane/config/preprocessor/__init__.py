@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from typing import Any
 from collections.abc import Mapping
 
+from librelane.config.preprocessor.flist import FLIST_KEY, expand_flists
 from librelane.config.preprocessor.graph import SymbolCycleError, resolve_symbols
 from librelane.config.preprocessor.legacy import Expr
 from librelane.config.preprocessor.overlay import apply_overlays
@@ -79,16 +80,26 @@ def preprocess_dict(
         Keys.pad: pad,
         Keys.design_dir: design_dir,
     }
-    processed = process_config_dict(config_dict, seeds)
-    return extract_process_vars(processed) if only_extract_process_info else processed
+    if only_extract_process_info:
+        # This pass runs before the PDK is known and keeps only the PDK and SCL
+        # keys, so reading the F-lists here would be work thrown away, against
+        # seeds that cannot resolve a path under the PDK yet.
+        return extract_process_vars(process_config_dict(config_dict, seeds))
+
+    def resolve_flist_paths(raw: Any) -> Any:
+        return process_config_dict({FLIST_KEY: raw}, seeds)[FLIST_KEY]
+
+    return process_config_dict(expand_flists(config_dict, resolve_flist_paths), seeds)
 
 
 __all__ = [
     "Expr",
+    "FLIST_KEY",
     "GlobMatch",
     "Keys",
     "SymbolCycleError",
     "apply_overlays",
+    "expand_flists",
     "parse_directive",
     "preprocess_dict",
     "process_config_dict",

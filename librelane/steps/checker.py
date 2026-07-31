@@ -178,7 +178,7 @@ class YosysSynthChecks(MetricChecker):
     class Config(MetricChecker.Config):
         ERROR_ON_SYNTH_CHECKS: bool = variable(
             True,
-            description="Quits the flow immediately if one or more synthesis check errors are flagged. This checks for combinational loops and/or wires with no drivers.",
+            description="Quits the flow immediately if one or more synthesis check errors are flagged. This checks for combinational loops and/or wires with no drivers. The flagged problems are logged by the synthesis step and listed in its `reports/pre_synth_chk.rpt`.",
             deprecated_names=["QUIT_ON_SYNTH_CHECKS"],
         )
 
@@ -339,7 +339,7 @@ class LVS(MetricChecker):
     class Config(MetricChecker.Config):
         ERROR_ON_LVS_ERROR: bool = variable(
             True,
-            description="Checks for LVS errors after Netgen is executed. If any exist, it raises an error at the end of the flow.",
+            description="Checks for LVS errors after the selected LVS tool is executed. If any exist, it raises an error at the end of the flow.",
             deprecated_names=["QUIT_ON_LVS_ERROR"],
         )
 

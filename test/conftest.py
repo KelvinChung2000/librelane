@@ -81,15 +81,8 @@ def _mock_conf_fs():
             }
             set ::env(TECH_LEF) "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
             set ::env(LIB_SYNTH) "sky130_fd_sc_hd__tt_025C_1v80.lib"
-            set ::env(KLAYOUT_TECH) "/pdk/dummy/libs.tech/klayout/dummy.lyt"
-            set ::env(KLAYOUT_PROPERTIES) "/pdk/dummy/libs.tech/klayout/dummy.lyp"
-            set ::env(KLAYOUT_DEF_LAYER_MAP) "/pdk/dummy/libs.tech/klayout/dummy.map"
             """,
         )
-        # Enough of a KLayout view for the KLayout steps to resolve their
-        # required PDK variables; the tool itself is stubbed out in tests.
-        for klayout_view in ("dummy.lyt", "dummy.lyp", "dummy.map"):
-            patcher.fs.create_file(f"/pdk/dummy/libs.tech/klayout/{klayout_view}")
         patcher.fs.create_file(
             "/pdk/dummy2/libs.tech/librelane/config.tcl",
             contents="""

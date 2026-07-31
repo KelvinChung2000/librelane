@@ -70,6 +70,7 @@ def test_vhdl_classic_declares_its_own_stages():
 
 
 GATING_VARIABLES = [
+    "RUN_RMP",
     "RUN_TAP_ENDCAP_INSERTION",
     "RUN_POST_GPL_DESIGN_REPAIR",
     "RUN_POST_GRT_DESIGN_REPAIR",
@@ -149,3 +150,18 @@ def test_widened_gates_have_their_documented_reach():
     Classic = Flow.factory.get("Classic")
     for variable, expected in WIDENED_GATES.items():
         assert _gated_step_ids(Classic, variable) == expected, variable
+
+
+def test_ports_are_buffered_before_global_placement():
+    """
+    Issue 917: buffering the ports after global placement leaves the port
+    buffers where global placement did not know to put the logic. The step has
+    to sit after I/O placement, so the pins it buffers are placed, and before
+    global placement, so the buffers are placed with everything else.
+    """
+    for flow_name in ("Classic", "VHDLClassic"):
+        step_ids = _step_ids(Flow.factory.get(flow_name))
+        assert "OpenROAD.AddBuffer" in step_ids, flow_name
+        add_buffer = step_ids.index("OpenROAD.AddBuffer")
+        assert add_buffer > step_ids.index("OpenROAD.IOPlacement"), flow_name
+        assert add_buffer < step_ids.index("OpenROAD.GlobalPlacement"), flow_name

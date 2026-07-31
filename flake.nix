@@ -5,10 +5,13 @@
   description = "open-source infrastructure for implementing chip design flows";
 
   inputs = {
-    nix-eda.url = "github:fossi-foundation/nix-eda/6.11.0";
-    ciel.url = "github:fossi-foundation/ciel";
+    nix-eda.url = "github:fossi-foundation/nix-eda/7.0.0";
+    ciel.url = "github:fossi-foundation/ciel/2.5.1";
     devshell.url = "github:numtide/devshell";
-    flake-compat.url = "https://flakehub.com/f/edolstra/flake-compat/1.tar.gz";
+    flake-compat = {
+      url = "github:NixOS/flake-compat";
+      flake = false;
+    };
     pyproject-nix.url = "github:pyproject-nix/pyproject.nix";
     uv2nix.url = "github:pyproject-nix/uv2nix";
     pyproject-build-systems.url = "github:pyproject-nix/build-system-pkgs";
@@ -55,16 +58,7 @@
               colab-env = callPackage ./nix/colab-env.nix { };
               opensta = callPackage ./nix/opensta.nix { };
               openroad-abc = callPackage ./nix/openroad-abc.nix { };
-              openroad = callPackage ./nix/openroad.nix {
-                llvmPackages = pkgs'.llvmPackages_18;
-              };
-              lemon-graph = pkgs.lemon-graph.overrideAttrs (
-                finalAttrs: previousAttrs: {
-                  patches = previousAttrs.patches ++ [
-                    ./nix/patches/lemon-graph/update_cxx20.patch
-                  ];
-                }
-              );
+              openroad = callPackage ./nix/openroad.nix { };
             }
           )
           (nix-eda.composePythonOverlay (
@@ -135,7 +129,6 @@
 
               sphinx-tippy = callPythonPackage ./nix/sphinx-tippy.nix { };
               sphinx-subfigure = callPythonPackage ./nix/sphinx-subfigure.nix { };
-              yamlcore = callPythonPackage ./nix/yamlcore.nix { };
               py-mon = callPythonPackage ./nix/py-mon.nix { };
 
               # ---

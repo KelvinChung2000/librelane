@@ -322,8 +322,9 @@ class StagedFlow(SequentialFlow):
 
         * The stage's own ``provides``/``metrics``, checked once the whole stage
           has run. This obligation is satisfied by the selected providers
-          jointly: both ``streamout`` tools stream out, but only the one named
-          by ``PRIMARY_GDSII_STREAMOUT_TOOL`` writes the neutral ``gds`` view.
+          jointly: both ``streamout`` tools stream out, and the one named by
+          ``PRIMARY_GDSII_STREAMOUT_TOOL`` owns the neutral ``gds`` view, with
+          the other writing it only if that tool did not run at all.
         * Each provider's own, checked once that provider's steps have run, so
           that gating one tool of a stage off leaves the other still answerable
           for its metric.

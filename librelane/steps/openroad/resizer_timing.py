@@ -31,27 +31,52 @@ from librelane.steps.openroad.resizer import ResizerStep
 
 
 @Step.factory.register()
+class AddBuffer(ResizerStep):
+    """
+    Inserts buffers on the input and output ports of the design, before global
+    placement, so that global placement knows about them and places the logic
+    around them accordingly.
+
+    Buffering the ports after global placement instead leaves the port buffers
+    wherever the cells they drive are not, which costs routing time on
+    area-constrained designs.
+    """
+
+    id = "OpenROAD.AddBuffer"
+    name = "Add Buffers on Ports"
+
+    class Config(ResizerStep.Config):
+        DESIGN_REPAIR_BUFFER_INPUT_PORTS: bool = variable(
+            True,
+            description="Specifies whether or not to insert buffers on input ports.",
+            deprecated_names=["PL_RESIZER_BUFFER_INPUT_PORTS"],
+        )
+
+        DESIGN_REPAIR_BUFFER_OUTPUT_PORTS: bool = variable(
+            True,
+            description="Specifies whether or not to insert buffers on output ports.",
+            deprecated_names=["PL_RESIZER_BUFFER_OUTPUT_PORTS"],
+        )
+
+    config: Config
+
+    def get_script_path(self):
+        return files("librelane").joinpath("scripts", "openroad", "buffer_ports.tcl")
+
+
+@Step.factory.register()
 class RepairDesignPostGPL(ResizerStep):
     """
     Runs a number of design "repairs" on a global-placed ODB file.
+
+    Port buffering is not one of them: it belongs to
+    :class:`AddBuffer`, which runs before global placement.
     """
 
     id = "OpenROAD.RepairDesignPostGPL"
     name = "Repair Design (Post-Global Placement)"
 
     class Config(ResizerStep.Config):
-        DESIGN_REPAIR_BUFFER_INPUT_PORTS: bool = variable(
-            True,
-            description="Specifies whether or not to insert buffers on input ports when design repairs are run.",
-            deprecated_names=["PL_RESIZER_BUFFER_INPUT_PORTS"],
-        )
-
-        DESIGN_REPAIR_BUFFER_OUTPUT_PORTS: bool = variable(
-            True,
-            description="Specifies whether or not to insert buffers on output ports when design repairs are run.",
-            deprecated_names=["PL_RESIZER_BUFFER_OUTPUT_PORTS"],
-        )
-
         DESIGN_REPAIR_TIE_FANOUT: bool = variable(
             True,
             description="Specifies whether or not to repair tie cells fanout when design repairs are run.",

@@ -10,6 +10,7 @@
     "OpenROAD.Floorplan",
     "OpenROAD.DumpRCValues",
     "Odb.CheckMacroAntennaProperties",
+    "OpenROAD.RMP",
     "Odb.ManualMacroPlacement",
     "OpenROAD.CutRows",
     "OpenROAD.TapEndcapInsertion",
@@ -21,6 +22,7 @@
     "OpenROAD.IOPlacement",
     "Odb.CustomIOPlacement",
     "Odb.ApplyDEFTemplate",
+    "OpenROAD.AddBuffer",
     "OpenROAD.GlobalPlacement",
     "Checker.PowerGridViolations",
     "OpenROAD.STAMidPNR",
@@ -84,6 +86,7 @@
     "OpenROAD.Floorplan",
     "OpenROAD.DumpRCValues",
     "Odb.CheckMacroAntennaProperties",
+    "OpenROAD.RMP",
     "Odb.ManualMacroPlacement",
     "OpenROAD.CutRows",
     "OpenROAD.TapEndcapInsertion",
@@ -95,6 +98,7 @@
     "OpenROAD.IOPlacement",
     "Odb.CustomIOPlacement",
     "Odb.ApplyDEFTemplate",
+    "OpenROAD.AddBuffer",
     "OpenROAD.GlobalPlacement",
     "Checker.PowerGridViolations",
     "OpenROAD.STAMidPNR",
@@ -222,6 +226,9 @@
     "OpenROAD.RCX": [
       "RUN_SPEF_EXTRACTION"
     ],
+    "OpenROAD.RMP": [
+      "RUN_RMP"
+    ],
     "OpenROAD.RepairAntennas": [
       "RUN_ANTENNA_REPAIR"
     ],
@@ -265,6 +272,7 @@
     "RUN_POST_GPL_DESIGN_REPAIR",
     "RUN_POST_GRT_DESIGN_REPAIR",
     "RUN_POST_GRT_RESIZER_TIMING",
+    "RUN_RMP",
     "RUN_SPEF_EXTRACTION",
     "RUN_TAP_ENDCAP_INSERTION",
     "TOOLS"

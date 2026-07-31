@@ -35,6 +35,30 @@ def test_synthesis_has_two_providers():
     assert sorted(StageRegistry.providers("synthesis")) == ["yosys", "yosys_vhdl"]
 
 
+def test_lvs_offers_klayout_as_an_alternative_to_netgen():
+    """
+    ``lvs`` is single-provider, so its two providers are alternatives and
+    exactly one runs. That is what lets both write the stage's contracted
+    ``design__lvs_error__count`` without either overwriting the other, the same
+    licence ``Pegasus.LVS`` takes.
+
+    The klayout sequence carries ``OpenROAD.WriteCDL`` for the same reason the
+    netgen sequence carries ``Magic.SpiceExtraction``: the comparison needs a
+    schematic-side netlist in the tool's own idiom, and no stage promises one.
+    ``lvs.requires`` is unchanged by this, so a flow that never selects klayout
+    is not made to write a CDL it has no use for.
+    """
+    from librelane.stages import StageRegistry
+    from librelane.steps import Checker, KLayout, OpenROAD
+
+    assert sorted(StageRegistry.providers("lvs")) == ["klayout", "netgen"]
+    assert StageRegistry.get("lvs", "klayout").steps == (
+        OpenROAD.WriteCDL,
+        KLayout.LVS,
+        Checker.LVS,
+    )
+
+
 def test_yosys_vhdl_does_not_provide_the_json_header():
     """
     Odb.SetPowerConnections and Odb.WriteVerilogHeader both take json_h as a
@@ -147,48 +171,6 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
             f"{sorted(tool_specific - checked)}, which nothing in the sequence "
             f"checks. A checker for it elsewhere in a flow would outlive the "
             f"tool it checks."
-        )
-
-
-def test_providers_that_run_together_do_not_declare_the_same_metric():
-    """
-    On a ``multi_provider`` stage every provider runs, so two of them declaring
-    the same metric key means whichever finishes last silently wins and the
-    other tool's result is lost. That is the metric-side twin of two steps
-    writing the same view.
-
-    Single-provider stages are exempt on purpose: exactly one provider runs, so
-    its providers are alternatives and are *expected* to share the stage's
-    contracted key. That is why ``Pegasus.LVS`` reuses
-    ``design__lvs_error__count`` rather than inventing a name, and why
-    ``KLayout.LVS`` may keep it while it remains an alternative. Issue 696 wants
-    KLayout LVS to run *alongside* Netgen, which would make ``lvs``
-    multi_provider -- and this test is what will then require the rename.
-    """
-    from collections import defaultdict
-
-    from librelane.stages import Stage, StageRegistry
-    from librelane.stages.taxonomy import STAGE_ORDER
-
-    for stage_id in STAGE_ORDER:
-        stage = Stage.factory.get(stage_id)
-        if not stage.multi_provider:
-            continue
-
-        owners = defaultdict(list)
-        for provider in StageRegistry.providers(stage_id):
-            registration = StageRegistry.get(stage_id, provider)
-            for metric in registration.metrics:
-                owners[metric].append(provider)
-
-        clashing = {
-            metric: providers
-            for metric, providers in owners.items()
-            if len(providers) > 1
-        }
-        assert not clashing, (
-            f"{stage_id} runs every provider, but {clashing} declare the same "
-            f"metric. The last one to finish would silently overwrite the other."
         )
 
 

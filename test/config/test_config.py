@@ -845,3 +845,66 @@ def test_deprecated_name_is_reported_while_it_is_honoured():
         if item.severity is Severity.DEPRECATION
     ]
     assert any("EXAMPLE_PDK_VAR_LEGACY" in message for message in deprecations)
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables()
+def test_macro_array_config():
+    from librelane.config import Config, Instance, Macro, Orientation
+
+    with open("/cwd/config.yaml", "w") as f:
+        f.write(
+            """
+            DESIGN_NAME: whatever
+            VERILOG_FILES: dir::src/*.v
+            MACROS:
+                sram:
+                    gds:
+                        - /cwd
+                    lef:
+                        - /cwd
+                    instances:
+                        sram_inst_{X}_{Y}:
+                            orientation: N
+                            array:
+                                offset: [100, 100]
+                                step: [100, 200]
+                                dimensions: [2, 2]
+            meta:
+                version: 2
+                flow: Whatever
+            """
+        )
+
+    cfg, _ = Config.load(
+        "/cwd/config.yaml",
+        config.flow_common_variables,
+        pdk="dummy",
+        scl="dummy_scl",
+        pdk_root="/pdk",
+    )
+
+    assert cfg["MACROS"] == {
+        "sram": Macro(
+            gds=[Path("/cwd")],
+            lef=[Path("/cwd")],
+            instances={
+                "sram_inst_0_0": Instance(
+                    location=(Decimal("100"), Decimal("100")),
+                    orientation=Orientation.N,
+                ),
+                "sram_inst_1_0": Instance(
+                    location=(Decimal("200"), Decimal("100")),
+                    orientation=Orientation.N,
+                ),
+                "sram_inst_0_1": Instance(
+                    location=(Decimal("100"), Decimal("300")),
+                    orientation=Orientation.N,
+                ),
+                "sram_inst_1_1": Instance(
+                    location=(Decimal("200"), Decimal("300")),
+                    orientation=Orientation.N,
+                ),
+            },
+        )
+    }

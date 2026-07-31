@@ -32,6 +32,23 @@ from librelane.steps.klayout.base import KLayoutStep
 
 @Step.factory.register()
 class LVS(KLayoutStep):
+    """
+    Runs LVS using KLayout, comparing the GDSII against a CDL netlist.
+
+    This is the ``klayout`` provider of the ``lvs`` stage, an alternative to
+    the default ``netgen`` provider rather than an addition to it. Both write
+    the stage's contracted ``design__lvs_error__count``, but they do not write
+    the same quantity: Netgen reports a count of mismatching cells and nets,
+    while the KLayout scripts report only whether the netlists matched, so this
+    step emits ``0`` or ``1``. ``Checker.LVS`` thresholds at zero and behaves
+    identically either way; anything reading the number itself does not.
+
+    Like ``KLayout.DRC``, the scripts vary wildly by PDK, and a PDK this step
+    does not support is skipped with a warning. Currently, only ``ihp-sg13g2``
+    and ``ihp-sg13cmos5l`` are supported. A skipped run emits no metric at all,
+    which ``Checker.LVS`` then reports as absent.
+    """
+
     id = "KLayout.LVS"
     name = "Layout Versus Schematic (KLayout)"
 

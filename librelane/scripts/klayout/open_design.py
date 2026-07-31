@@ -14,20 +14,13 @@
 # limitations under the License.
 import os
 import sys
-from typing import Optional
 
 import click
 import pya  # Must be run inside KLayout-- the library version of pya does not include "Application"
 from click.shell_completion import split_arg_string
 
 
-def open_design(
-    input_lefs: tuple[str, ...],
-    lyt: str,
-    lyp: str,
-    lym: Optional[str],
-    input: str,
-):
+def open_design(input_lefs: tuple[str, ...], lyt: str, lyp: str, lym: str, input: str):
     try:
         main_window = pya.Application.instance().main_window()
 
@@ -46,10 +39,7 @@ def open_design(
         layout_options.lefdef_config.macro_resolution_mode = 1
         layout_options.lefdef_config.read_lef_with_def = False
         layout_options.lefdef_config.lef_files = list(input_lefs)
-        # Left alone when no .map was given, so the mapping the .lyt embeds
-        # survives; assigning an empty value clears it.
-        if lym is not None:
-            layout_options.lefdef_config.map_file = lym
+        layout_options.lefdef_config.map_file = lym
 
         cell_view = main_window.load_layout(input, layout_options, tech.name, False)
         layout_view = cell_view.view()
@@ -72,14 +62,11 @@ def open_design(
 @click.option(
     "-M",
     "--lym",
-    required=False,
-    default=None,
-    help="KLayout .map (LEF/DEF layer map) file. Omit when the .lyt embeds the mapping.",
+    required=True,
+    help="KLayout .map (LEF/DEF layer map) file",
 )
 @click.argument("input")
-def cli(
-    input_lefs: tuple[str, ...], lyt: str, lyp: str, lym: Optional[str], input: str
-):
+def cli(input_lefs: tuple[str, ...], lyt: str, lyp: str, lym: str, input: str):
     """Open a layout in the KLayout GUI."""
     open_design(input_lefs, lyt, lyp, lym, input)
 
