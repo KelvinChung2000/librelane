@@ -167,8 +167,8 @@ jobs:
   # No provider is pinned, because the Python flow does not pin one either:
   # Classic.Stages declares a bare Job.synthesis and only VHDLClassic writes
   # .using("yosys_vhdl"). This mirrors that and nothing more. Provider
-  # selection through TOOLS is task 7's, on the engine; resolve_jobs does not
-  # consult TOOLS today, so neither spelling would be selectable yet.
+  # selection through TOOLS belongs to the engine and resolve_jobs does not
+  # consult it today, so neither spelling would be selectable yet.
   synthesis:
     needs: [lint]
     uses: synthesis

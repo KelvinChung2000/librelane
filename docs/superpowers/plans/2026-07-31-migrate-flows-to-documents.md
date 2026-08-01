@@ -213,6 +213,40 @@ The alternative reading, in which a `source` naming a producer that carried no s
 
 ## The Magic DRC decision, recorded on purpose
 
+> **RETRACTED 2026-08-01, during task 3.** Everything below the line was written on a
+> false premise and the instruction it gives would silently change results. It is kept
+> rather than deleted because tasks 2 and 3 were dispatched against it and the reader
+> needs to know what they were answering. **Do not act on it.**
+>
+> The premise was that `Magic.DRC` reads KLayout's GDSII. It does not, on any open PDK.
+> Both stream-out steps write the neutral `gds` only when
+> `PRIMARY_GDSII_STREAMOUT_TOOL` names them **or** nothing has written one yet
+> (`librelane/steps/magic.py:368-370`, `librelane/steps/klayout/views.py:236-238`).
+> `librelane/config/pdk_compat.py:340-342` defaults that variable to `"magic"` for
+> `sky130*` and `gf180mcu*`, and `librelane/config/flow.py:58` declares it `pdk=True`
+> with no fallback default. So Magic writes `gds`, KLayout **declines to clobber it**,
+> and every later consumer reads **Magic's** GDSII. `test/steps/test_klayout.py:90`
+> already pinned this: "Magic is primary and already wrote it; KLayout must not clobber
+> it." There is no emergent bug here to make explicit, and
+> `source: {gds: klayout_streamout}` would have *introduced* one on every sky130 run.
+>
+> The deeper reason the instruction cannot be salvaged: once the two stream-outs run
+> concurrently, each sees `state_in` with no `gds`, so both write it unconditionally and
+> the join must choose **statically**. `source` maps a view to a **job name**, so no
+> static entry can express "whichever job `PRIMARY_GDSII_STREAMOUT_TOOL` names".
+> Parallel stream-outs are not behaviour-preserving under the current mechanism for any
+> static choice. Letting `source` name a configuration variable is spec 3's problem.
+>
+> **What task 3 landed instead**, and what tasks 4 and 7 must follow: keep the single
+> edge `klayout_streamout: needs: [magic_streamout]`, relax everything else, carry no
+> `source` anywhere. That preserves semantics for both settings of the variable — with
+> `PRIMARY=magic` Magic writes and KLayout declines; with `PRIMARY=klayout` Magic writes
+> because nothing has, then KLayout overwrites — and still yields six concurrent
+> branches, which is where the wall-clock win actually is. See
+> `librelane/flows/classic.yaml` and its comment on `klayout_streamout`.
+
+---
+
 `Magic.DRC` reads KLayout's GDSII today. That is almost certainly not what anybody intended when they named the step, and it is invisible in `classic.py` because it is an emergent property of list position.
 
 This plan **preserves** it, which is also the spec's position. `magic_drc` gets `source: {gds: klayout_streamout}`, the equivalence tests pass unchanged, and the oddity stops being emergent and becomes one reviewable line of YAML that a reader can object to.
