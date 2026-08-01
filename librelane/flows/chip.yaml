@@ -334,11 +334,19 @@ jobs:
     steps: [KLayout.Render]
   # A three-variable conjunction, because KLayout.XOR genuinely consumes
   # mag_gds from one stream-out and klayout_gds from the other and cannot run
-  # unless both fired. Those two views are what it reads, and chip_finishing
-  # rewrites neither, so the XOR runs beside the finishing branch rather than
-  # before it.
+  # unless both fired.
+  #
+  # In series after render and before chip_finishing, which is Chip.Stages'
+  # real order (Render, XOR, Checker.XOR, then the six finishing steps) and is
+  # not a relaxation this document may make. chip_finishing rewrites 'gds';
+  # render and xor read the stream-out's. Run in parallel, the branches reach
+  # final_checks holding two different 'gds' values and join_states raises
+  # JoinConflictError -- it compares values, not declarations, so a key written
+  # in the shared prefix and rewritten on exactly one branch is a conflict.
+  # _check_fan_in_is_unambiguous cannot see it, because it subtracts the shared
+  # ancestors before intersecting.
   xor:
-    needs: [klayout_streamout]
+    needs: [render]
     steps: [KLayout.XOR, Checker.XOR]
     if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
   # The six finishing steps, as one job, because two of them rewrite 'gds' in
@@ -347,7 +355,7 @@ jobs:
   # is what lets the three signoff jobs below take it from here with no
   # 'source' to tie-break. All six are ungated today.
   chip_finishing:
-    needs: [klayout_streamout]
+    needs: [xor]
     steps:
       - KLayout.Antenna
       - Checker.KLayoutAntenna
@@ -382,11 +390,12 @@ jobs:
     if: RUN_EQY
   # Every leaf, so that the flow has one sink, for the reason classic.yaml
   # gives: Misc.ReportManufacturability reads the LVS, DRC and antenna metrics
-  # out of state_in.metrics and warns for each one it cannot find.
+  # out of state_in.metrics and warns for each one it cannot find. render and
+  # xor are not named because they are no longer leaves: both are ancestors of
+  # chip_finishing and so of all three branches below, and their metrics arrive
+  # anyway.
   final_checks:
     needs:
-      - render
-      - xor
       - magic_drc
       - klayout_drc
       - formal_equivalence

@@ -13,9 +13,17 @@
 # limitations under the License.
 #
 # 'name' is the registration key, which is the class name and the string a user
-# types after --flow, so it survives the migration character for character. The
-# class's 'name' attribute was a display string, "Opening in KLayout", and that
-# becomes the description.
+# types after --flow, so it survives the migration character for character.
+#
+# What does NOT survive is the display string. OpenInKLayout and its four
+# siblings are the only flows that set the class attribute 'name' to prose --
+# "Opening in KLayout" here -- and Flow.start logs it: "Starting a new run of
+# the '<name>' flow with the tag ...". A document has no field for it. 'name'
+# is the registration key and 'description' below is a paraphrase of the class
+# docstring, not that string, so those log lines will read "OpenInKLayout"
+# once the class is gone. Recorded rather than worked around: adding a display
+# field to FlowSpec is a schema change, and it belongs with the decision to
+# delete the classes, not with the translation of them.
 name: OpenInKLayout
 description: >-
   Opens the LEF/DEF from the initial state object in the KLayout GUI. Intended

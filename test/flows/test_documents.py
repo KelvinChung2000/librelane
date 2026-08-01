@@ -29,7 +29,11 @@ from librelane.steps.openroad.base import OpenROADStep
 from librelane.flows.job import resolve_jobs
 from librelane.flows.spec import FlowSpec, load_flow_spec
 from librelane.flows.spec_graph import ancestors, topological_order
-from librelane.flows.spec_validation import validate_against_registry
+from librelane.flows.spec_validation import (
+    _produced_keys,
+    _steps_of,
+    validate_against_registry,
+)
 
 pytestmark = pytest.mark.all
 
@@ -214,53 +218,129 @@ def _assert_orders_its_steps_as_the_flow_did(name: str, flow) -> None:
             )
 
 
-def _assert_framework_metric_writers_are_never_concurrent(name: str) -> None:
+#: The metrics every OpenROAD invocation writes and nothing declares.
+#:
+#: ``OpenROADStep.get_command`` and ``OdbpyStep.get_command`` both pass an
+#: unconditional ``-metrics``, and OpenROAD's logger fills these in. No step,
+#: job template or registration mentions them -- ``grep`` across ``librelane``
+#: finds nothing -- so every load-time check reasons from contracts that cannot
+#: see them, and :mod:`librelane.flows.join` is what discovers the disagreement,
+#: on the first real run, after the tools have been invoked. Modelled here as
+#: implicit outputs, which is where the special case belongs.
+_FRAMEWORK_METRICS = (
+    "flow__warnings__count",
+    "flow__errors__count",
+    "flow__warnings__type_count",
+)
+
+
+def _produced_by(name: str) -> dict[str, set[str]]:
     """
-    Asserts that no job running an OpenROAD-backed step has a concurrent peer.
-
-    Every OpenROAD invocation writes ``flow__warnings__count``,
-    ``flow__errors__count`` and ``flow__warnings__type_count`` into the JSON
-    that ``OpenROADStep.get_command`` and ``OdbpyStep.get_command`` request with
-    an unconditional ``-metrics``. No step, job template or registration
-    declares them -- ``grep`` for the names across ``librelane`` finds nothing
-    -- so every load-time check reasons from contracts that cannot see them and
-    :func:`librelane.flows.join.join_states` is what discovers the conflict, on
-    the first real run, after the tools have been invoked.
-
-    The condition is deliberately stronger than "no two concurrent branches
-    both run OpenROAD", which is *not* sufficient and would pass on a document
-    that raises. One branch writing fresh counts while its siblings carry the
-    values they inherited from a common ancestor is already a disagreement, and
-    the join raises on exactly that. So a job that writes these metrics may have
-    no concurrent peer at all, whether or not the peer writes them too.
-
-    ``source`` cannot rescue it either:
-    :func:`librelane.flows.spec_validation._check_sources_can_deliver` rejects a
-    ``source`` naming a key no declared contract in the producer's branch
-    mentions.
+    Every key each job writes: its declared views and metrics, plus the
+    framework metrics if any of its steps is OpenROAD-backed.
     """
     spec = _document(name)
-    jobs = resolve_jobs(spec)
+    produced = {}
+    for job_id, job in spec.jobs.items():
+        keys = set(_produced_keys(job_id, job))
+        if any(
+            issubclass(step, (OpenROADStep, OdbpyStep))
+            for step in _steps_of(job_id, job)
+        ):
+            keys.update(_FRAMEWORK_METRICS)
+        produced[job_id] = keys
+    return produced
+
+
+def _join_conflicts(name: str) -> list[tuple[str, str, list[str]]]:
+    """
+    Replays :mod:`librelane.flows.join`'s rule symbolically over a document.
+
+    Returns
+    -------
+    list[tuple[str, str, list[str]]]
+        One ``(consumer, key, origins)`` triple per unresolved conflict.
+
+    The rule this checks is the general one, of which "no OpenROAD-backed job
+    has a concurrent peer" is only a proper subset:
+
+        No job may rewrite a view or metric that a concurrent peer inherits
+        from their common ancestor.
+
+    ``join.py`` compares *values*, not declarations, so what matters per key is
+    which job last wrote it on each incoming branch. This walks
+    ``topological_order`` carrying exactly that -- a ``key -> writing job`` map
+    per token -- and flags any job whose predecessors disagree, plus the
+    implicit join that forms the final state.
+
+    Written as a replay rather than as a structural rule because
+    ``_check_fan_in_is_unambiguous`` is the structural rule and this is the
+    class of defect it cannot see: it subtracts the shared ancestors before
+    intersecting, so a key produced in the shared prefix and *re-produced* on
+    exactly one exclusive branch gives an empty intersection and passes.
+
+    Every job is modelled as enabled. A gated-off job passes ``state_in``
+    through unchanged (``engine.py``), which changes which job an origin names
+    but cannot introduce a disagreement that the all-enabled graph does not
+    already have somewhere; the all-enabled graph is also the shipped default.
+    """
+    spec = _document(name)
     edges = spec.edges()
+    produced = _produced_by(name)
 
-    def writes_framework_metrics(job_id: str) -> bool:
-        return any(
-            issubclass(step, (OpenROADStep, OdbpyStep)) for step in jobs[job_id].steps
-        )
+    conflicts: list[tuple[str, str, list[str]]] = []
+    carried: dict[str, dict[str, str]] = {}
 
-    for first, second in itertools.combinations(sorted(spec.jobs), 2):
-        if first in ancestors(edges, second) or second in ancestors(edges, first):
-            continue
-        writers = [job for job in (first, second) if writes_framework_metrics(job)]
-        assert not writers, (
-            f"'{first}' and '{second}' are concurrent and {writers} run an "
-            f"OpenROAD-backed step, so they reach their join carrying different "
-            f"values for flow__warnings__count, flow__errors__count and "
-            f"flow__warnings__type_count. No contract declares those, so "
-            f"nothing rejects this at load time and the join raises "
-            f"JoinConflictError on the first real run. Every branch of a "
-            f"fan-out must descend from the last OpenROAD-backed step."
-        )
+    def merge(
+        consumer: str, branches: list[str], source: dict[str, str]
+    ) -> dict[str, str]:
+        incoming: dict[str, list[tuple[str, str]]] = {}
+        for branch in branches:
+            for key, origin in carried[branch].items():
+                incoming.setdefault(key, []).append((branch, origin))
+
+        merged: dict[str, str] = {}
+        for key, contributors in sorted(incoming.items()):
+            origins = {origin for _, origin in contributors}
+            if len(origins) == 1:
+                merged[key] = next(iter(origins))
+                continue
+            # A 'source' settles it only by naming a predecessor that actually
+            # contributed, which is what join.py's resolver requires.
+            chosen = [
+                origin for branch, origin in contributors if branch == source.get(key)
+            ]
+            if not chosen:
+                conflicts.append((consumer, key, sorted(origins)))
+            merged[key] = chosen[0] if chosen else sorted(origins)[0]
+        return merged
+
+    for job_id in topological_order(edges):
+        job = spec.jobs[job_id]
+        state = merge(job_id, list(job.needs), job.source)
+        for key in produced[job_id]:
+            state[key] = job_id
+        carried[job_id] = state
+
+    if spec.final is None:
+        needed = {need for job in spec.jobs.values() for need in job.needs}
+        sinks = [job_id for job_id in spec.jobs if job_id not in needed]
+        # No job's 'source' can settle a sink conflict, so an empty mapping is
+        # not a simplification here: join_sink_states has none to read.
+        merge("<the final state>", sinks, {})
+
+    return conflicts
+
+
+def _assert_no_join_conflicts(name: str) -> None:
+    conflicts = _join_conflicts(name)
+    assert not conflicts, "\n".join(
+        f"'{consumer}' joins branches that wrote '{key}' from different jobs "
+        f"{origins}, so join_states raises JoinConflictError on the first real "
+        f"run. Every branch of a fan-out must descend from the last job that "
+        f"writes each key the branches share."
+        for consumer, key, origins in conflicts
+    )
 
 
 def _assert_gds_writers_are_ordered(name: str, expected: list[str]) -> None:
@@ -725,16 +805,35 @@ def test_chip_reads_the_sealed_and_filled_gds_for_signoff():
 def test_chip_runs_its_xor_against_the_unfinished_stream_outs():
     """
     KLayout.XOR consumes 'mag_gds' and 'klayout_gds', which the seal ring and
-    filler neither read nor write, and it ran before them in ``Chip.Stages``.
-    So the XOR branch and the finishing branch are genuinely independent, and
-    the document leaves them so.
-    """
-    edges = _document("chip.yaml").edges()
+    filler neither read nor write. So the XOR compares the two raw stream-outs,
+    exactly as it did in ``Chip.Stages``, where it ran before the six finishing
+    steps.
 
-    assert edges["xor"] == ["klayout_streamout"]
-    assert edges["chip_finishing"] == ["klayout_streamout"]
-    assert "xor" not in ancestors(edges, "chip_finishing")
-    assert "chip_finishing" not in ancestors(edges, "xor")
+    ``xor`` nonetheless runs *in series* before ``chip_finishing`` rather than
+    beside it. The edge is an ordering edge, not a data edge: no view XOR reads
+    comes from ``chip_finishing``. It exists because ``chip_finishing``
+    rewrites 'gds' while ``render`` and ``xor`` carry the stream-out's, and
+    concurrent branches holding two 'gds' values make ``join_states`` raise.
+    An earlier revision of this document left them concurrent and did raise.
+    """
+    spec = _document("chip.yaml")
+    edges = spec.edges()
+    jobs = resolve_jobs(spec)
+
+    assert edges["xor"] == ["render"]
+    assert edges["chip_finishing"] == ["xor"]
+
+    # The data claim the ordering does not rest on, pinned so that a step gaining
+    # a 'gds' input or a 'klayout_gds' output has to come back through here.
+    xor_reads = {str(view) for step in jobs["xor"].steps for view in step.inputs}
+    assert xor_reads == {"mag_gds", "klayout_gds"}
+
+    finishing = {
+        str(view)
+        for step in jobs["chip_finishing"].steps
+        for view in (*step.inputs, *step.outputs)
+    }
+    assert finishing == {"gds"}
 
 
 def test_chip_omits_the_three_entries_a_chip_does_not_need():
@@ -781,25 +880,31 @@ def test_chip_finishing_is_ungated():
 
 
 @pytest.mark.parametrize("document", _shipped_documents())
-def test_no_shipped_document_runs_openroad_on_a_parallel_branch(document):
+def test_no_shipped_document_has_a_join_conflict(document):
     """
     The guard for the class of defect, applied to every shipped document.
 
-    See :func:`_assert_framework_metric_writers_are_never_concurrent` for why
-    the invariant is what it is. This runs over
-    :func:`_shipped_documents`, so a document added later is covered without
-    anyone remembering to name it here -- which is how ``vhdl_classic.yaml``
-    shipped with the defect while a by-name guard was already in the file.
+    See :func:`_join_conflicts` for the invariant. It is the general rule --
+    no job may rewrite a key a concurrent peer inherits from their common
+    ancestor -- rather than the OpenROAD-only subset an earlier version of this
+    guard encoded. That subset passed ``chip.yaml``, which raised on ``gds``:
+    ``chip_finishing`` rewrote it while ``render`` and ``xor`` carried
+    ``klayout_streamout``'s, and all five branches met at ``final_checks``.
 
-    ``classic.yaml`` and ``vhdl_classic.yaml`` obey it by keeping render,
-    write_lef and check_antenna_properties on the chain and fanning out below
-    them, because Odb.CheckDesignAntennaProperties rewrites all three counts.
-    ``chip.yaml`` obeys it for free: Chip omits that step, so its last
-    OpenROAD-backed job is ir_drop, upstream of the single stream-out chain and
-    therefore an ancestor of every branch. The ``open_in_*`` documents are
-    single-job and have no concurrency to violate.
+    Runs over :func:`_shipped_documents`, so a document added later is covered
+    without anyone remembering to name it here -- which is how
+    ``vhdl_classic.yaml`` shipped with the framework-metric defect while a
+    by-name guard was already in the file.
+
+    ``classic.yaml`` and ``vhdl_classic.yaml`` keep render, write_lef and
+    check_antenna_properties on the chain and fan out below them, because
+    Odb.CheckDesignAntennaProperties rewrites the framework counts.
+    ``chip.yaml`` chains render, xor and chip_finishing in flow order, so the
+    one job that rewrites ``gds`` after the stream-outs is an ancestor of every
+    remaining branch. The ``open_in_*`` documents are single-job and have no
+    concurrency to violate.
     """
-    _assert_framework_metric_writers_are_never_concurrent(document)
+    _assert_no_join_conflicts(document)
 
 
 def test_the_shipped_document_guard_covers_every_document():
