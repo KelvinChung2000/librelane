@@ -871,6 +871,27 @@ Style Notes
     output that neither its script nor its own `run` ever writes, and a job
     contract may not promise a view whose only declared producer never writes
     it.
+* **Fixed:** a `pdk::`/`scl::` section no longer outranks a configuration
+  source layered after the file that carried it. The sections were expanded
+  after every source had been flattened into one mapping, so which of two
+  files won a key was decided by that mapping's insertion order -- and a
+  `--config-override` on a key the first file already wrote at the top level
+  kept that key's position, above the sections, and was silently discarded.
+  `librelane -c CLOCK_PERIOD=20 librelane/examples/spm/config.yaml` ran at the
+  shipped example's `CLOCK_PERIOD` of 10 while `--explain-variables` reported
+  the value as the command line's.
+  * Each source's sections are now expanded into that source before the
+    sources are layered, so a section overrides the file that carried it and
+    nothing else, and an override beats every file.
+  * A matching section now overrides its own file's top-level value wherever
+    the block is written rather than only below it. Every shipped
+    configuration writes its sections last, so no shipped file changes
+    meaning; moving one no longer changes what it resolves to.
+  * A key promoted out of a section is now attributed to the file that carried
+    the section. `--explain-variables` reported `default` for the example's
+    `FP_CORE_UTIL`, or the PDK for a variable the PDK also sets, because the
+    attribution was recorded under the section's own key and dropped when that
+    key did not survive.
 * Reworked configuration loading around typed Pydantic models and a staged
   read/layer/process/preprocess/validate pipeline.
 * Added structured configuration diagnostics, replayed after flow log sinks
@@ -1177,6 +1198,11 @@ Style Notes
   {doc}`/usage/resuming_runs` as "Step directory layout", since a run
   directory now holds one directory per job and numbers steps within their own
   job rather than across the whole run.
+* Rewrote the "Conditional Execution" section of
+  {doc}`/reference/configuration`, which documented a matching `pdk::`/`scl::`
+  section as losing to a top-level key written below it. A section now
+  overrides its own file wherever it is written, and the section states what it
+  does not outrank: a later configuration file, or a command-line override.
 
 # 3.0.4
 

@@ -97,9 +97,9 @@ The match is evaluated using
 wildcard support: meaning that `pdk::sky130*` would match both `sky130A` and
 `sky130B`.
 
-Note that **_the order of declarations matter here_**: as seen in the following
-example, despite a more specific value for a PDK existing, the unconditionally
-declared value later in the code would end up overwriting it:
+A matching section overrides the values written beside it in the same file
+wherever the block appears, so both of the following resolve `A` to 40 under
+`sky130A` and to 4 under any other PDK:
 
 ```json
 {
@@ -117,9 +117,11 @@ declared value later in the code would end up overwriting it:
 }
 ```
 
-> In the first example, the final value for A would always be 4 given the order
-> of declarations. In the second example, it would be 40 is the PDK is sky130A
-> and 4 otherwise.
+A section only outranks the file that carried it. A value from a configuration
+file given later on the command line, or from a `--config-override`, beats a
+matching section in an earlier file. Where two matching sections are written in
+the same file, the later one wins, so a `pdk::sky130*` block written after a
+`pdk::sky130A` block overrides it.
 
 It is worth nothing that the final resolved configuration would have the symbol
 in the parent object with no trace left of the conditionally-executed, dict
@@ -136,8 +138,8 @@ i.e., the second example with the sky130A PDK simply becomes:
 If a string's value starts with `ref::`, you can interpolate exactly one
 **string** variable at the beginning of your string.
 
-Like conditional execution, the order of declarations matter: i.e., you cannot
-reference a variable that is declared after the current expression.
+The order of declarations matter: i.e., you cannot reference a variable that is
+declared after the current expression.
 
 ```json
 {
