@@ -36,8 +36,8 @@ A step is reused when all of the following hold.
   contents, not paths and not timestamps. Editing `src/design.v` in place
   invalidates synthesis even though the path is identical, and `touch`-ing it
   without editing does not.
-* Its entire input state is unchanged, including metrics. Checker steps read
-  metrics, so a changed metric is a changed input.
+* Its entire input state is unchanged, including metrics. Any step may read
+  `state_in.metrics`, so a changed metric is a changed input.
 * The outputs it recorded still exist on disk. Delete a step's `.def` and that
   step runs again.
 * The LibreLane version is unchanged.
@@ -62,10 +62,7 @@ directory per step, numbered by that step's position within its own job:
 ```
 runs/my_run/
 ├── lint
-│   ├── 1-verilator-lint
-│   ├── 2-checker-linttimingconstructs
-│   ├── 3-checker-linterrors
-│   └── 4-checker-lintwarnings
+│   └── 1-verilator-lint
 ├── synthesis
 │   ├── 1-yosys-jsonheader
 │   ├── 2-yosys-synthesis

@@ -30,7 +30,7 @@ from librelane.state import DesignFormat
 JobRegistry.register(
     job="synthesis",
     provider="genus",
-    steps=[Genus.Synthesis, Checker.GenusSynthChecks],
+    steps=[Genus.Synthesis],
     namespaces=("GENUS_",),
     provides=(),
     metrics=(),
@@ -99,9 +99,10 @@ with `TOOLS` does not change the declared graph, so a selection whose steps stop
 producing a view the graph promised is not caught here. It surfaces during the
 run, at the first step that cannot find the view.
 
-**Run time**, inside `Workflow`, enforces the job contract. A backend that does
-not actually emit `route__drc_errors` must not be able to let a downstream
-checker pass on an unexamined design.
+**Run time**, inside `Workflow`, enforces the job contract. A gate only checks
+a metric that is present, so a backend that never emits `route__drc_errors`
+would otherwise let its own gate silently pass an unexamined design; this
+contract is what catches that instead.
 
 Once a job completes, every view in its `provides` must be in the state it
 produced and every metric in its `metrics` must have been emitted. The union of

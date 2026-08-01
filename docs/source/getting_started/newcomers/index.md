@@ -325,20 +325,14 @@ The run directory is composed of many of these step directories:
 ```text
 RUN_2023-12-27_16-59-15
 ├── 01-verilator-lint
-├── 02-checker-linttimingconstructs
-├── 03-checker-linterrors
-├── 04-checker-lintwarnings
-├── 05-yosys-jsonheader
-├── 06-yosys-synthesis
-├── 07-checker-yosysunmappedcells
-├── 08-checker-yosyssynthchecks
-├── 09-checker-netlistassignstatements
-├── 10-openroad-checksdcfiles
-├── 11-openroad-checkmacroinstances
-├── 12-openroad-staprepnr
-├── 13-openroad-floorplan
-├── 14-odb-checkmacroantennaproperties
-├── 15-odb-setpowerconnections
+├── 02-yosys-jsonheader
+├── 03-yosys-synthesis
+├── 04-openroad-checksdcfiles
+├── 05-openroad-checkmacroinstances
+├── 06-openroad-staprepnr
+├── 07-openroad-floorplan
+├── 08-odb-checkmacroantennaproperties
+├── 09-odb-setpowerconnections
 ⋮
 ├── final/
 ├── tmp

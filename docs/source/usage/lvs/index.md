@@ -38,10 +38,9 @@ ERROR   The following error was encountered while running the flow:
         1 LVS errors found.
 ```
 
-This indicates that both:
-* The {step}`Netgen.LVS` was run, comparing the final Verilog netlist with the
-  final {term}`SPICE` netlist, found one mismatch.
-* Another step, {step}`Checker.LVS`, reported it to the flow as an Error.
+This indicates that {step}`Netgen.LVS` was run, compared the final Verilog
+netlist with the final {term}`SPICE` netlist, found one mismatch, and reported
+it to the flow as an Error.
 
 We can find the specific LVS mismatches in the reports directory of
 {step}`Netgen.LVS`, which would be named something along the lines

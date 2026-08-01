@@ -285,14 +285,14 @@ is also what makes the number's meaning depend on which provider ran.
 
 | Provider | Sequence | What it compares | What the metric holds |
 | --- | --- | --- | --- |
-| `netgen` (default) | `Magic.SpiceExtraction`, `Checker.IllegalOverlap`, `Netgen.LVS`, `Checker.LVS` | a Magic-extracted SPICE netlist against the powered Verilog netlist | Netgen's count of mismatching cells and nets |
-| `klayout` | `OpenROAD.WriteCDL`, `KLayout.LVS`, `Checker.LVS` | the GDSII against a CDL written from the OpenDB database | `0` if KLayout reported "netlists match", `1` otherwise |
+| `netgen` (default) | `Magic.SpiceExtraction`, `Netgen.LVS` | a Magic-extracted SPICE netlist against the powered Verilog netlist | Netgen's count of mismatching cells and nets |
+| `klayout` | `OpenROAD.WriteCDL`, `KLayout.LVS` | the GDSII against a CDL written from the OpenDB database | `0` if KLayout reported "netlists match", `1` otherwise |
 
-So the KLayout number is a verdict, not a count. `Checker.LVS` thresholds at
-zero and behaves identically either way, but any consumer that reads the
-number itself, a metrics dashboard or a regression comparison, is reading two
-different quantities. Which one produced it is recorded as the `lvs` entry of
-the run's resolved `TOOLS`.
+So the KLayout number is a verdict, not a count. `Netgen.LVS` and `KLayout.LVS`
+each gate the metric they wrote at zero and behave identically either way, but
+any consumer that reads the number itself, a metrics dashboard or a regression
+comparison, is reading two different quantities. Which one produced it is
+recorded as the `lvs` entry of the run's resolved `TOOLS`.
 
 The two are also not equally deep. Netgen compares a netlist extracted from
 the layout with connectivity and device parameters; the KLayout script
@@ -301,9 +301,10 @@ the two. Selecting `klayout` is not a like-for-like substitution.
 
 `KLayout.LVS` ships PDK-specific handling for `ihp-sg13g2` and
 `ihp-sg13cmos5l` only. On any other PDK the step warns that it is unsupported
-and returns no metric at all, at which point `Checker.LVS` warns that the
-metric was not found and the run continues with no LVS result. Nothing selects
-this provider for you.
+and returns no metric at all. Its own gate has nothing to compare against, so
+it raises nothing either: the warning naming the unsupported PDK is the only
+record, and the run continues with no LVS result. Nothing selects this
+provider for you.
 
 ```json
 {

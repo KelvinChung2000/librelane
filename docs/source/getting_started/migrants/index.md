@@ -210,20 +210,16 @@ runs/<run_tag>
 ├── resolved.json
 ├── warning.log
 ├── 01-verilator-lint
-├── 02-checker-linttimingconstructs
-├── 03-checker-linterrors
-├── 04-yosys-jsonheader
-├── 05-yosys-synthesis
-├── 06-checker-yosysunmappedcells
-├── 07-checker-yosyssynthchecks
-├── 08-openroad-checksdcfiles
-├── 09-openroad-staprepnr
-├── 10-openroad-floorplan
-├── 11-odb-setpowerconnections
-├── 12-odb-manualmacroplacement
-├── 13-openroad-cutrows
-├── 14-openroad-tapendcapinsertion
-├── 15-openroad-globalplacementskipio
+├── 02-yosys-jsonheader
+├── 03-yosys-synthesis
+├── 04-openroad-checksdcfiles
+├── 05-openroad-staprepnr
+├── 06-openroad-floorplan
+├── 07-odb-setpowerconnections
+├── 08-odb-manualmacroplacement
+├── 09-openroad-cutrows
+├── 10-openroad-tapendcapinsertion
+├── 11-openroad-globalplacementskipio
 ⋮
 ---
 For one thing, run folders have been redone entirely: instead of a haphazardly
