@@ -783,6 +783,29 @@ def test_a_resource_pool_capacity_below_one_is_rejected():
     assert "0" in message
 
 
+@pytest.mark.parametrize("capacity", [True, False])
+def test_a_boolean_resource_pool_capacity_is_rejected(capacity):
+    """
+    bool is an int subclass, so dict[str, int | str] admits True/False as 1/0
+    under pydantic's lax coercion. A YAML boolean -- however the loader
+    spelled it -- is neither a positive integer literal nor a declared
+    variable name, and accepting it would silently coerce a document typo
+    ('drc_seats: yes') into a capacity of 1.
+    """
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "resources": {"drc_seats": capacity},
+                "jobs": {"drc": {"uses": "drc/magic"}},
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "drc_seats" in message
+    assert "boolean" in message.lower()
+
+
 def test_job_resources_naming_an_undeclared_pool_is_rejected():
     with pytest.raises(FlowSpecError) as exc_info:
         FlowSpec.model_validate(

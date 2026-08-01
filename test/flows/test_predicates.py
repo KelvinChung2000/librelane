@@ -83,6 +83,24 @@ def test_two_tokens_is_rejected():
     assert "metric::x >=" in str(exc_info.value)
 
 
+def test_a_bare_metric_prefixed_token_is_recognized_as_a_short_metric_term():
+    """
+    'metric::x' alone (or conjoined) carries the 'metric::' prefix, so it must
+    be diagnosed as a metric term short two tokens, not misread as a
+    config-variable-name term -- 'metric::x' is not a legal identifier either
+    way, but the *reason* it is rejected should name the shape the author
+    evidently intended.
+    """
+    with pytest.raises(PredicateError) as exc_info:
+        parse_predicate("metric::x and B")
+
+    message = str(exc_info.value)
+    assert "metric::x" in message
+    assert "1" in message
+    assert "three" in message
+    assert "which is not a legal configuration variable name" not in message
+
+
 def test_four_tokens_is_rejected():
     with pytest.raises(PredicateError) as exc_info:
         parse_predicate("metric::x >= 1 2")

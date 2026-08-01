@@ -159,6 +159,8 @@ def _parse_term(predicate: str, segment: list[str]) -> Term:
         )
     if len(segment) == 1:
         name = segment[0]
+        if name.startswith(_METRIC_PREFIX):
+            return _parse_metric_term(predicate, segment)
         if _IDENTIFIER.match(name) is None:
             raise PredicateError(
                 f"Predicate '{predicate}' has term '{name}', which is not a "

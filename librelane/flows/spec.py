@@ -225,6 +225,33 @@ class FlowSpec(BaseModel):
     #: names the pools it needs in its own ``resources``.
     resources: dict[str, int | str] = {}
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_boolean_resource_capacities(cls, data: Any) -> Any:
+        # Caught here, before pydantic parses 'resources' against
+        # dict[str, int | str]: bool is an int subclass, so a lax union
+        # coerces True/False to 1/0 silently, and by the time an
+        # 'after' validator sees the field the observed value is already
+        # indistinguishable from a literal '1' or '0' in the document. This
+        # is the only point at which the actual YAML/mapping value -- a
+        # Python bool, however the loader spelled it (true/false, yes/no,
+        # on/off) -- is still visible.
+        if not isinstance(data, dict):
+            return data
+        resources = data.get("resources")
+        if not isinstance(resources, dict):
+            return data
+        for pool, capacity in resources.items():
+            if isinstance(capacity, bool):
+                raise FlowSpecError(
+                    f"Resource pool '{pool}' declares capacity "
+                    f"{capacity!r}, a boolean. A pool's capacity is a "
+                    f"positive integer or the name of a configuration "
+                    f"variable the flow declares with type 'int'; a "
+                    f"boolean is neither."
+                )
+        return data
+
     def edges(self) -> dict[str, list[str]]:
         """
         Returns
