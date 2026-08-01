@@ -52,6 +52,14 @@ Style Notes
   stage under both `magic_streamout` and `klayout_streamout`.
 * `--explain` now prints one row per job the document declares, with a `NEEDS`
   column showing the graph, and no longer requires a sequential flow.
+* Added `--explain-variables`, which prints one row per configuration variable
+  with its value, the layer that supplied it and the jobs that can read it,
+  then exits without running. Reach is reported as "universal" for a variable
+  every step can read, as the step class that declares it where one class
+  explains the whole list, and as the job names otherwise. A variable two jobs
+  set differently in their `with` blocks gets a row for each value. It selects
+  a second table rather than adding rows to `--explain`'s, and every row is
+  printed, including the variables sitting at their defaults.
 * An unknown flow name now lists the registered flows, whether it came from
   `--flow` or from the configuration file's `meta.flow`.
 * Fixed `librelane <config>` failing for every design with "DESIGN_DIR: Input

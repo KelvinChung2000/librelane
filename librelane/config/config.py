@@ -29,6 +29,7 @@ from typing import (
     Optional,
 )
 from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 
 from librelane.config.legacy import Variable, MissingRequiredVariable
 from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
@@ -204,6 +205,15 @@ class Meta:
         return dataclasses.replace(self)
 
 
+#: The source name given to a value handed straight to a ``Config``
+#: constructor through the Python API -- :meth:`Config.copy`,
+#: :meth:`Config.interactive` or :meth:`Config.with_increment` -- rather than
+#: written by a configuration file, a PDK, a flow document or the command line.
+#: Named rather than left out of the map, because absence is how ``default`` is
+#: spelled and a value somebody passed in is not a default.
+_API_OVERRIDE = "<override>"
+
+
 class Config(GenericImmutableDict[str, Any]):
     """
     A map from LibreLane configuration variable keys to their values.
@@ -216,6 +226,11 @@ class Config(GenericImmutableDict[str, Any]):
     meta : Meta | None
         The :class:`Meta` object for this configuration. If ``None`` is
         passed, the default Meta object will be assigned.
+    diagnostics : DiagnosticSet | None
+        The warnings and errors raised while this configuration was
+        assembled.
+    provenance : Mapping[str, str] | None
+        The source that last wrote each key. See :attr:`provenance`.
     final
         Whether the configuration is final (i.e. has been
         pre-assembled for an entire flow) or may be incremented per-step.
@@ -231,6 +246,7 @@ class Config(GenericImmutableDict[str, Any]):
         *args,
         meta: Meta | None = None,
         diagnostics: DiagnosticSet | None = None,
+        provenance: Mapping[str, str] | None = None,
         **kwargs,
     ):
         if meta is None:
@@ -238,8 +254,27 @@ class Config(GenericImmutableDict[str, Any]):
 
         self.meta = meta
         self.diagnostics = diagnostics or DiagnosticSet()
+        self.__provenance: Mapping[str, str] = MappingProxyType(dict(provenance or {}))
 
         super().__init__(*args, **kwargs)
+
+    @property
+    def provenance(self) -> Mapping[str, str]:
+        """
+        Returns
+        -------
+        Mapping[str, str]
+            The name of the source that last wrote each key. A design
+            configuration file is named by its path, and the layers that have
+            no path are named ``<mapping>``, ``<pdk>``, ``<scl>``, ``<pad>``,
+            ``<flow document>``, ``<flow document: {job id}>``,
+            ``<command line>`` and ``<override>``, that last one for a value
+            handed straight to a constructor through the Python API.
+
+            Keys no source wrote are absent, which is what makes their origin
+            ``default``.
+        """
+        return self.__provenance
 
     def copy(self, **overrides) -> "Config":
         """
@@ -256,6 +291,13 @@ class Config(GenericImmutableDict[str, Any]):
             self,
             meta=self.meta,
             diagnostics=self.diagnostics,
+            # An overridden key's old source did not write the value this copy
+            # carries, so keeping its name would attribute one layer's value to
+            # another.
+            provenance={
+                **self.provenance,
+                **{key: _API_OVERRIDE for key in overrides},
+            },
             overrides=overrides,
         )
 
@@ -333,6 +375,11 @@ class Config(GenericImmutableDict[str, Any]):
             {variable: self[variable] for variable in variables},
             meta=dataclasses.replace(self.meta),
             diagnostics=self.diagnostics,
+            provenance={
+                variable: source
+                for variable, source in self.provenance.items()
+                if variable in variables
+            },
         )
 
     def with_increment(
@@ -368,7 +415,7 @@ class Config(GenericImmutableDict[str, Any]):
         """
         incremental_pdk_vars = [variable for variable in config_vars if variable.pdk]
 
-        mutable, _, _, _, _ = self.__get_pdk_config(
+        mutable, _, _, _, pdk_provenance = self.__get_pdk_config(
             self["PDK"],
             self["STD_CELL_LIBRARY"],
             self.get("PAD_CELL_LIBRARY", None),
@@ -397,7 +444,19 @@ class Config(GenericImmutableDict[str, Any]):
                 Diagnostic(Severity.WARNING, "incremental", warning)
                 for warning in design_warnings
             )
-        return Config(processed, meta=self.meta.copy(), diagnostics=diagnostics)
+        # In the order the three mappings are layered above: the incremental
+        # PDK variables first, then everything this configuration already
+        # carried, then the step's own inputs.
+        return Config(
+            processed,
+            meta=self.meta.copy(),
+            diagnostics=diagnostics,
+            provenance={
+                **pdk_provenance,
+                **self.provenance,
+                **{key: _API_OVERRIDE for key in other_inputs},
+            },
+        )
 
     @classmethod
     def get_meta(
@@ -492,7 +551,7 @@ class Config(GenericImmutableDict[str, Any]):
         """
         PDK_ROOT = Self.__resolve_pdk_root(PDK_ROOT)
 
-        raw, _, _, _, _ = Self.__get_pdk_config(
+        raw, _, _, _, pdk_provenance = Self.__get_pdk_config(
             PDK,
             STD_CELL_LIBRARY,
             PAD_CELL_LIBRARY,
@@ -522,7 +581,13 @@ class Config(GenericImmutableDict[str, Any]):
         for warning in design_warnings:
             logger.warning(warning)
 
-        Config.current_interactive = Config(processed)
+        Config.current_interactive = Config(
+            processed,
+            provenance={
+                **pdk_provenance,
+                **{key: _API_OVERRIDE for key in kwargs},
+            },
+        )
 
         return Config.current_interactive
 
@@ -533,7 +598,7 @@ class Config(GenericImmutableDict[str, Any]):
         flow_config_vars: Sequence[Variable],
         *,
         flow_values: Mapping[str, Any] | None = None,
-        flow_values_name: str = "<flow document>",
+        job_values: tuple[str, Mapping[str, Any]] | None = None,
         config_override_strings: Sequence[str] | None = None,
         pdk: str | None = None,
         pdk_root: str | None = None,
@@ -559,14 +624,21 @@ class Config(GenericImmutableDict[str, Any]):
             in the future.
         flow_values : Mapping[str, Any] | None
             Values a flow supplies for configuration variables, from the
-            ``with`` block of a workflow document. They layer *under* the design
-            configuration and *over* the PDK and the SCL, so a design always
-            wins and a document always beats a PDK default.
-        flow_values_name : str
-            The name ``flow_values`` is attributed to in diagnostics. A
-            per-job ``with`` block passes ``<flow document: {job id}>``, so that
-            a message about a value one job set does not read as a message about
-            the whole document.
+            top-level ``with`` block of a workflow document. They layer *under*
+            the design configuration and *over* the PDK and the SCL, so a
+            design always wins and a document always beats a PDK default.
+        job_values : tuple[str, Mapping[str, Any]] | None
+            A job id and the values that job's own ``with`` block supplies.
+            Layered over ``flow_values``, so a job overrides the document and
+            anything the job is silent about still comes from the document.
+
+            The two are separate sources rather than one merged mapping
+            because each key is attributed to whichever of them wrote it: a
+            document-level value that reached this job unchanged must not be
+            reported, in diagnostics or by ``--explain``, as something the job
+            asked for. The id and the values are one argument because the
+            attribution *is* the id, and two arguments could name a different
+            job than they carried.
         config_override_strings : Sequence[str] | None
             A list of "overrides" in the form of
             NAME=VALUE strings. These are primarily for running LibreLane from
@@ -634,7 +706,14 @@ class Config(GenericImmutableDict[str, Any]):
             # folded into configs_validated: that loop also computes 'meta' and
             # 'file_design_dir', and a document is neither a design directory
             # nor a source of meta.
-            sources.append(ConfigSource(dict(flow_values), flow_values_name, "mapping"))
+            sources.append(
+                ConfigSource(dict(flow_values), "<flow document>", "mapping")
+            )
+        if job_values is not None:
+            job_id, values = job_values
+            sources.append(
+                ConfigSource(dict(values), f"<flow document: {job_id}>", "mapping")
+            )
         meta = Meta()
         for config_validated in configs_validated:
             try:
@@ -830,7 +909,9 @@ class Config(GenericImmutableDict[str, Any]):
                 diagnostics.rendered_errors(),
             )
 
-        return Config(processed, meta=meta, diagnostics=diagnostics)
+        return Config(
+            processed, meta=meta, diagnostics=diagnostics, provenance=provenance
+        )
 
     @classmethod
     def __mapping_from_tcl(
@@ -922,6 +1003,11 @@ class Config(GenericImmutableDict[str, Any]):
             library, and a map from each key of the environment to the layer
             that last wrote it.
 
+            Every key of the returned environment has an entry. The map is keyed
+            by the names the *migrated* environment uses, which are the names the
+            configuration ends up with, and not by the names the ``.tcl`` files
+            wrote -- see the comment on the comparison below.
+
         The origin map is memoized along with everything else here, so callers
         read it and never mutate it.
         """
@@ -995,18 +1081,42 @@ class Config(GenericImmutableDict[str, Any]):
                 )
             scl_config_path = scl_config_path_alt
 
+        # Every layer is attributed in migrated form, never raw. migrate_old_config
+        # renames TECH_LEF to TECH_LEFS, SYNTH_TIEHI_PORT to SYNTH_TIEHI_CELL and
+        # four more besides, and synthesises CELL_VERILOG_MODELS and its siblings
+        # out of the PDK tree, so a key recorded under the name a '.tcl' file used
+        # describes nothing that reaches the configuration. Attributing the raw
+        # names and dropping the ones that did not survive left TECH_LEFS with no
+        # entry at all, which reads as 'default' -- and every openlane-era PDK
+        # reaches that rename, which is why the migration exists.
+        #
+        # Comparing migrated environments credits a renamed key to the layer whose
+        # file supplied its input, which is the question being asked. The
+        # alternative, flooring whatever is left to '<pdk>', would be wrong for
+        # SYNTH_TIEHI_CELL: sky130A writes SYNTH_TIEHI_PORT in the standard cell
+        # library's file, not the PDK's.
+        #
+        # migrate_old_config is idempotent -- every branch of it is guarded on the
+        # old name still being present, or on the new one being absent -- so
+        # migrating a layer that a later one migrates again is safe, which the pad
+        # branch below already relied on.
+        migrated_pdk_env = migrate_old_config(pdk_env)
+
         # Every key the process selection and the PDK's own file put in scope.
         # The seed keys -- PDK, PDK_ROOT and, when it was named rather than
         # defaulted, STD_CELL_LIBRARY -- are attributed to the PDK layer too,
         # because '<pdk>' names the layer and not the file.
-        origins: dict[str, str] = dict.fromkeys(pdk_env, "<pdk>")
+        origins: dict[str, str] = dict.fromkeys(migrated_pdk_env, "<pdk>")
 
+        # Evaluated against the raw environment, not the migrated one: the SCL's
+        # file is written against the names the PDK's file used, and handing it
+        # renamed keys would change what it reads.
         scl_env = TclUtils._eval_env(
             pdk_env,
             open(scl_config_path, encoding="utf8").read(),
         )
-        origins.update(_written_by(pdk_env, scl_env, "<scl>"))
         full_env = migrate_old_config(scl_env)
+        origins.update(_written_by(migrated_pdk_env, full_env, "<scl>"))
 
         pad = pdk_env.get("PAD_CELL_LIBRARY", None)
 
@@ -1025,11 +1135,13 @@ class Config(GenericImmutableDict[str, Any]):
                 full_env,
                 open(pad_config_path, encoding="utf8").read(),
             )
-            origins.update(_written_by(full_env, pad_env, "<pad>"))
-            full_env = migrate_old_config(pad_env)
+            migrated_pad_env = migrate_old_config(pad_env)
+            origins.update(_written_by(full_env, migrated_pad_env, "<pad>"))
+            full_env = migrated_pad_env
 
-        # migrate_old_config renames a handful of old keys, so an origin under
-        # a name the migration consumed describes nothing that survived.
+        # Both sides of every comparison above are migrated, so this drops only a
+        # key some later layer genuinely deleted -- the gf180mcu removals -- and
+        # never one that was merely renamed.
         origins = {key: origin for key, origin in origins.items() if key in full_env}
 
         return GenericImmutableDict(full_env), pdkpath, scl, pad, origins
@@ -1056,6 +1168,14 @@ class Config(GenericImmutableDict[str, Any]):
             a caller asking where it came from is told ``default`` -- a wrong
             answer rather than a missing one. A variable no configuration file
             here wrote is absent, which is how ``default`` is spelled.
+
+            ``PDK`` and ``STD_CELL_LIBRARY`` are attributed ``<pdk>`` even when
+            the caller named them, because a PDK's ``config.tcl`` emits both
+            and the caller's choice reaches this layer as an argument rather
+            than as a source that could outrank it. Correcting that needs a
+            name for a layer LibreLane does not have today -- the ``pdk``,
+            ``scl`` and ``pad`` arguments -- and this method cannot tell one
+            passed by ``--scl`` from one passed by an API caller.
         """
 
         frozen, pdkpath, scl, pad, origins = Config.__get_pdk_raw(

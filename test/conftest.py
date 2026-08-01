@@ -120,6 +120,10 @@ def mock_conf_tree(tree: MockConfTree) -> dict[str, str]:
             set ::env(KLAYOUT_TECH) "{pdk_root}/dummy/libs.tech/klayout/dummy.lyt"
             set ::env(KLAYOUT_PROPERTIES) "{pdk_root}/dummy/libs.tech/klayout/dummy.lyp"
             set ::env(KLAYOUT_DEF_LAYER_MAP) "{pdk_root}/dummy/libs.tech/klayout/dummy.map"
+            set ::env(FP_TRACKS_INFO) "{pdk_root}/dummy/libs.tech/librelane/dummy_scl/tracks.info"
+            set ::env(GRT_LAYER_ADJUSTMENTS) "0.3 0.3"
+            set ::env(DPL_CELL_PADDING) "0"
+            set ::env(GPL_CELL_PADDING) "0"
             """,
         f"{pdk_root}/dummy2/libs.tech/librelane/config.tcl": f"""
             if {{ ![info exists ::env(STD_CELL_LIBRARY)] }} {{
@@ -131,6 +135,12 @@ def mock_conf_tree(tree: MockConfTree) -> dict[str, str]:
         f"{pdk_root}/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef": "",
         f"{pdk_root}/dummy2/libs.ref/techlef/dummy2_scl/dummy_tech_lef.tlef": "",
         f"{pdk_root}/dummy/libs.tech/librelane/dummy_scl/config.tcl": "",
+        # The four PDK variables the OpenROAD floorplan and global placement
+        # steps require and have no default for. Declared here for the same
+        # reason the KLayout views below are: a document that runs those steps
+        # cannot resolve its configuration at all without them, so a test of
+        # anything else about such a flow would fail in the loader.
+        f"{pdk_root}/dummy/libs.tech/librelane/dummy_scl/tracks.info": "",
         f"{pdk_root}/dummy2/libs.tech/librelane/dummy2_scl/config.tcl": "",
     }
     # Enough of a KLayout view for the KLayout steps to resolve their required

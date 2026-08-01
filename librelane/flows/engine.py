@@ -25,11 +25,21 @@ from loguru import logger
 from rapidfuzz import fuzz, process, utils
 
 from librelane.common import Filter, get_tpe, slugify
-from librelane.config import AnyConfig, AnyConfigs, Config, variable
+from librelane.config import (
+    AnyConfig,
+    AnyConfigs,
+    Config,
+    universal_flow_config_variables,
+    variable,
+)
 from librelane.jobs import JobContractError, extract_tools
 from librelane.state import State
 from librelane.steps import DeferredStepError, Step, StepError, StepException
-from librelane.flows.explanation import Explanation, JobDisposition
+from librelane.flows.explanation import (
+    Explanation,
+    JobDisposition,
+    VariableDisposition,
+)
 from librelane.flows.flow import Flow, FlowError, FlowException
 from librelane.flows.job import ResolvedJob, ToolSelection, resolve_jobs
 from librelane.flows.join import join_sink_states, join_states
@@ -70,6 +80,44 @@ def _listed(names: Iterable[str]) -> str:
     if len(ordered) <= _MAX_LISTED_JOBS:
         return str(ordered)
     return f"{ordered[:_MAX_LISTED_JOBS]} and {len(ordered) - _MAX_LISTED_JOBS} more"
+
+
+def _declaring_class(step: type[Step], name: str) -> str:
+    """
+    Parameters
+    ----------
+    step : type[Step]
+        A step whose ``config_vars`` carries the variable.
+    name : str
+        The variable's name.
+
+    Returns
+    -------
+    str
+        The name of the class ``step`` gets the variable from, which is the
+        least derived class in its MRO whose ``config_vars`` still carries it.
+
+        A step's ``config_vars`` is derived from its nested ``Config`` model
+        and a model inherits its base's fields, so every class below the
+        declaring one carries the variable too. The last one going up the
+        hierarchy that still has it is therefore the one that declared it.
+
+        Named by step ID where the class has one. An abstract base such as
+        ``OpenROADStep`` has none, and is named by its class name, which is
+        what the hierarchy calls it.
+    """
+    declaring: type[Step] | None = None
+    for ancestor in step.__mro__:
+        if not issubclass(ancestor, Step):
+            continue
+        if any(declared.name == name for declared in ancestor.config_vars):
+            declaring = ancestor
+    assert declaring is not None, (
+        f"'{name}' is not declared anywhere in '{step.id}', which is only "
+        f"reachable if the caller asked about a variable the step does not "
+        f"read. Please report this as a bug."
+    )
+    return declaring.id if declaring.id is not NotImplemented else declaring.__name__
 
 
 class _ReproducibleCreated(Exception):
@@ -273,10 +321,12 @@ class Workflow(Flow):
             resolved, _ = Config.load(
                 config_in=config,
                 flow_config_vars=self.get_all_config_variables(),
-                # The document's own block first, so a job overrides it and
-                # anything neither sets still comes from the document.
-                flow_values={**self.values, **job.values},
-                flow_values_name=f"<flow document: {job_id}>",
+                # Two layers rather than one merged mapping: the job overrides
+                # the document, anything neither sets still comes from the
+                # document, and each key is attributed to whichever of the two
+                # wrote it.
+                flow_values=self.values,
+                job_values=(job_id, job.values),
                 config_override_strings=config_override_strings,
                 pdk=load_kwargs.get("pdk"),
                 pdk_root=load_kwargs.get("pdk_root"),
@@ -618,6 +668,7 @@ class Workflow(Flow):
         *,
         target: Iterable[str] | None = None,
         skip: Iterable[str] | None = None,
+        variables: bool = False,
     ) -> Explanation:
         """
         Parameters
@@ -626,6 +677,13 @@ class Workflow(Flow):
             As :meth:`run`.
         skip : Iterable[str] | None
             As :meth:`run`.
+        variables : bool
+            Also report every configuration variable, its value, the layer that
+            supplied it and the jobs that can read it. Asked for rather than
+            always answered, because it is a larger question than which jobs
+            run and it can only be answered by a flow whose configuration was
+            resolved against its own variable list. Nothing is filtered when
+            it is asked: every variable gets a row, defaults included.
 
         Returns
         -------
@@ -685,7 +743,119 @@ class Workflow(Flow):
                 dispositions.append(
                     JobDisposition(job_id, needs, False, reason, mechanism)
                 )
-        return Explanation(steps=(), unselected_jobs=(), jobs=tuple(dispositions))
+        return Explanation(
+            steps=(),
+            unselected_jobs=(),
+            jobs=tuple(dispositions),
+            variables=self._variable_dispositions() if variables else (),
+        )
+
+    def _variable_dispositions(self) -> tuple[VariableDisposition, ...]:
+        """
+        Returns
+        -------
+        tuple[VariableDisposition, ...]
+            One entry per configuration variable this flow resolves, in the
+            order :meth:`librelane.flows.Flow.get_all_config_variables` returns
+            them, and one further entry for each additional value the jobs
+            reading a variable resolved it to.
+
+            Read off the *resolved* jobs and not off the document, so that a
+            ``TOOLS`` selection re-pointing a job at another provider is
+            reflected in what that job is reported to read.
+
+            Not narrowed by ``--target`` or ``--skip``. Which jobs *can* read a
+            variable is a property of the document and the configuration, and
+            an invocation that runs fewer of them does not change it.
+        """
+        universal = {member.name for member in universal_flow_config_variables}
+        readers: dict[str, list[str]] = {}
+        declarers: dict[str, set[str]] = {}
+        for job_id, job in self.jobs.items():
+            for step in job.steps:
+                for declared in step.config_vars:
+                    readers.setdefault(declared.name, []).append(job_id)
+                    declarers.setdefault(declared.name, set()).add(
+                        _declaring_class(step, declared.name)
+                    )
+
+        every_job = tuple(self.jobs)
+        dispositions: list[VariableDisposition] = []
+        for declared in self.get_all_config_variables():
+            is_universal = declared.name in universal
+            reach = (
+                every_job
+                if is_universal
+                # dict.fromkeys deduplicates while keeping declaration order: a
+                # job's steps commonly declare one variable more than once.
+                else tuple(dict.fromkeys(readers.get(declared.name, [])))
+            )
+            declaring = declarers.get(declared.name, set())
+            for value, origin, group in self._resolutions(declared.name, reach):
+                dispositions.append(
+                    VariableDisposition(
+                        name=declared.name,
+                        value=value,
+                        origin=origin,
+                        universal=is_universal,
+                        reach=group,
+                        # A universal variable is readable by every step
+                        # whatever any class declares, so no class explains its
+                        # reach even if some step declares it as well.
+                        declared_by=(
+                            next(iter(declaring))
+                            if len(declaring) == 1 and not is_universal
+                            else None
+                        ),
+                    )
+                )
+        return tuple(dispositions)
+
+    def _resolutions(
+        self, name: str, reach: tuple[str, ...]
+    ) -> list[tuple[Any, str, tuple[str, ...]]]:
+        """
+        Parameters
+        ----------
+        name : str
+            The variable to resolve.
+        reach : tuple[str, ...]
+            The jobs that can read it.
+
+        Returns
+        -------
+        list[tuple[Any, str, tuple[str, ...]]]
+            Each distinct value the jobs in ``reach`` resolved the variable to
+            with the source that supplied it and the jobs that see it, in
+            first-seen order.
+
+            One entry for every variable no job's ``with`` block overrides,
+            which is every variable of every shipped document, because a job
+            that declares no ``with`` reads the flow's own configuration. Two
+            when two jobs set it differently, which is what a per-job ``with``
+            is for.
+
+            A variable no job reads is answered by the flow's configuration
+            alone, reaching nothing: ``TOOLS`` and the variables a job's ``if``
+            names are read by the engine before any job exists to read them.
+        """
+        groups: list[tuple[Any, str, list[str]]] = []
+        for job_id in reach:
+            # A job that declares no 'with' block has no configuration of its
+            # own, exactly as in _run_job.
+            config = self.job_configs.get(job_id, self.config)
+            resolved = (config[name], config.provenance.get(name, "default"))
+            for value, origin, group in groups:
+                if (value, origin) == resolved:
+                    group.append(job_id)
+                    break
+            else:
+                groups.append((*resolved, [job_id]))
+        if not groups:
+            return [
+                (self.config[name], self.config.provenance.get(name, "default"), ())
+            ]
+        return [(value, origin, tuple(group)) for value, origin, group in groups]
 
     def _target_subgraph(
         self, edges: dict[str, list[str]], target: Iterable[str] | None

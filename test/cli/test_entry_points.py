@@ -76,6 +76,7 @@ def make_request(tmp_path: Path, **overrides):
         invalidate=(),
         skip=(),
         explain=False,
+        explain_variables=False,
         overwrite=False,
         reproducible=None,
         initial_state=None,
@@ -584,7 +585,7 @@ class TestJobExplanationTable:
 
         assert raised.value.exit_code == 0
         workflow.return_value.explain.assert_called_once_with(
-            target=["floorplan"], skip=["lint"]
+            target=["floorplan"], skip=["lint"], variables=False
         )
         formatter.assert_called_once_with(workflow.return_value.explain.return_value)
         workflow.return_value.start.assert_not_called()
@@ -615,7 +616,95 @@ class TestJobExplanationTable:
                 )
             )
 
-        workflow.return_value.explain.assert_called_once_with(target=None, skip=None)
+        workflow.return_value.explain.assert_called_once_with(
+            target=None, skip=None, variables=False
+        )
+
+
+class TestVariableExplanationTable:
+    def test_explain_variables_renders_the_variable_half_and_exits(
+        self, mocker, tmp_path: Path
+    ):
+        """
+        `--explain-variables` selects the variables table rather than filtering
+        rows out of the job table, so on its own it prints that table and only
+        that one, and it is what asks the flow for the rows at all.
+        """
+        import typer
+
+        import librelane.cli.run as run_module
+
+        mocker.patch.object(run_module, "select_flow")
+        workflow = mocker.patch.object(run_module, "Workflow")
+        jobs = mocker.patch.object(run_module, "format_job_explanation")
+        variables = mocker.patch.object(run_module, "format_variable_explanation")
+
+        with pytest.raises(typer.Exit) as raised:
+            run_module.start_flow(
+                make_request(
+                    tmp_path,
+                    config_files=("config.json",),
+                    explain_variables=True,
+                )
+            )
+
+        assert raised.value.exit_code == 0
+        workflow.return_value.explain.assert_called_once_with(
+            target=None, skip=None, variables=True
+        )
+        variables.assert_called_once_with(workflow.return_value.explain.return_value)
+        jobs.assert_not_called()
+        workflow.return_value.start.assert_not_called()
+
+    def test_both_explain_options_print_both_tables(self, mocker, tmp_path: Path):
+        import typer
+
+        import librelane.cli.run as run_module
+
+        mocker.patch.object(run_module, "select_flow")
+        mocker.patch.object(run_module, "Workflow")
+        jobs = mocker.patch.object(run_module, "format_job_explanation")
+        variables = mocker.patch.object(run_module, "format_variable_explanation")
+
+        with pytest.raises(typer.Exit):
+            run_module.start_flow(
+                make_request(
+                    tmp_path,
+                    config_files=("config.json",),
+                    explain=True,
+                    explain_variables=True,
+                )
+            )
+
+        jobs.assert_called_once()
+        variables.assert_called_once()
+
+    def test_explain_variables_reaches_the_request(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import librelane.cli.run as run_module
+
+        config = tmp_path / "config.json"
+        config.write_text("{}", encoding="utf8")
+        captured: dict = {}
+        monkeypatch.setattr(
+            run_module, "start_flow", lambda request: captured.update(request=request)
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "--manual-pdk",
+                "--pdk-root",
+                str(tmp_path),
+                "--explain-variables",
+                str(config),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert captured["request"].explain_variables is True
+        assert captured["request"].explain is False
 
 
 class TestWorkflowOptionsAreParsed:

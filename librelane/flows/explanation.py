@@ -14,6 +14,7 @@
 """What a prospective invocation of a flow would do, without running it."""
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,59 @@ class JobDisposition:
 
 
 @dataclass(frozen=True)
+class VariableDisposition:
+    """
+    One configuration variable's value, where it came from, and which jobs can
+    read it.
+
+    Parameters
+    ----------
+    name : str
+        The variable's name.
+    value : Any
+        The value the jobs in :attr:`reach` resolved it to.
+    origin : str
+        The layer that supplied that value, or ``default`` if none did.
+    universal : bool
+        True when the variable is in
+        :data:`librelane.config.universal_flow_config_variables`, and so is
+        readable by every step whatever any step declares. Kept apart from a
+        reach that happens to be every job, because a variable readable
+        everywhere by construction is a different fact from one every job in
+        this particular document reads.
+    reach : tuple[str, ...]
+        The jobs that can read it, in the order the document declares them.
+        Every job when :attr:`universal` is set, and empty for a variable read
+        before any job exists to read it, such as ``TOOLS`` or a variable a
+        job's ``if`` names.
+
+        A variable two jobs resolve differently -- which is what a per-job
+        ``with`` block is for -- has one entry per distinct value, each
+        reaching the jobs that see that value. A single entry could only
+        report one of the two, and would name whichever job the reader was not
+        asking about.
+    declared_by : str | None
+        The step class every job in :attr:`reach` inherits the variable from,
+        where they all inherit it from the same one. ``None`` when two classes
+        declare it separately, when no step declares it, and whenever
+        :attr:`universal` is set, since a universal variable's reach is not
+        explained by any class.
+
+        Named by step ID where the class has one, and by class name where it
+        is abstract and so has none: thirteen variables are declared on
+        ``OpenROADStep`` and read by every OpenROAD step below it, and naming
+        the family is the same fact as listing its members.
+    """
+
+    name: str
+    value: Any
+    origin: str
+    universal: bool
+    reach: tuple[str, ...]
+    declared_by: str | None
+
+
+@dataclass(frozen=True)
 class Explanation:
     """
     What a prospective invocation of this flow would do.
@@ -107,8 +161,13 @@ class Explanation:
         One entry per job the document declares, in topological order. Empty
         for a ``SequentialFlow``, which has jobs no more than a ``Workflow``
         has stages. Both halves live here until phase 5 deletes the first.
+    variables : tuple[VariableDisposition, ...]
+        One entry per configuration variable the flow resolves, plus one more
+        for each further value a job resolved it to. Empty for a
+        ``SequentialFlow``, whose steps all read one configuration.
     """
 
     steps: tuple[StepDisposition, ...]
     unselected_jobs: tuple[str, ...]
     jobs: tuple[JobDisposition, ...] = ()
+    variables: tuple[VariableDisposition, ...] = ()

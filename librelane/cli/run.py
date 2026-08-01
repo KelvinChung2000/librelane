@@ -41,7 +41,13 @@ from librelane import common
 from librelane.__version__ import __version__
 from librelane.config import Config, InvalidConfig, PassedDirectoryError
 from librelane.container import run_in_container
-from librelane.flows import Explanation, Flow, FlowError, FlowException
+from librelane.flows import (
+    Explanation,
+    Flow,
+    FlowError,
+    FlowException,
+    VariableDisposition,
+)
 from librelane.flows.engine import Workflow
 from librelane.flows.spec import FlowSpec
 from librelane.state import DesignFormat, State
@@ -73,6 +79,7 @@ from librelane.cli.options import (
     SclOption,
     ShowProgressBarOption,
     ExplainOption,
+    ExplainVariablesOption,
     SkipOption,
     SmokeTestOption,
     TargetOption,
@@ -119,6 +126,7 @@ class FlowRequest:
     invalidate: tuple[str, ...]
     skip: tuple[str, ...]
     explain: bool
+    explain_variables: bool
     overwrite: bool
     reproducible: str | None
     initial_state: State | None
@@ -272,6 +280,98 @@ def format_job_explanation(explanation: Explanation) -> str:
     return "\n".join(lines)
 
 
+#: How many job names the reach column spells out before it rolls them up into
+#: the class that declares the variable. Thirteen variables are declared on
+#: ``OpenROADStep`` and read by 31 of Classic's jobs, and 31 names per row is
+#: not something a reader takes in; "read by all 31 OpenROAD-based jobs" is the
+#: same fact in a form they can. At or below this, the names are strictly more
+#: information than the class, so they are what gets printed.
+_MAX_LISTED_REACH = 4
+
+#: How wide the value column may grow. A handful of PDK variables hold nested
+#: tables thousands of characters long, and one of them sets the column width
+#: for every other row in the table.
+_MAX_RENDERED_VALUE = 60
+
+
+def _format_reach(disposition: VariableDisposition) -> str:
+    """
+    Parameters
+    ----------
+    disposition : VariableDisposition
+        The row to describe.
+
+    Returns
+    -------
+    str
+        Who can read this variable, as one of the three answers a reach has:
+        every job because the variable is universal, every job of one step
+        family, or a list of job ids.
+    """
+    if disposition.universal:
+        return f"universal, read by all {len(disposition.reach)} jobs"
+    if not disposition.reach:
+        return "the flow itself"
+    if (
+        disposition.declared_by is not None
+        and len(disposition.reach) > _MAX_LISTED_REACH
+    ):
+        return (
+            f"read by all {len(disposition.reach)} {disposition.declared_by}-based jobs"
+        )
+    return ", ".join(disposition.reach)
+
+
+def format_variable_explanation(explanation: Explanation) -> str:
+    """
+    Renders the variable half of an :class:`librelane.flows.Explanation` as a
+    fixed-width table.
+
+    Every row is printed, including the variables sitting at their defaults. A
+    variable at its default is exactly what somebody debugging an unexpected
+    value is looking for, and a table that dropped those rows could not say
+    whether a variable was defaulted or never declared.
+
+    Parameters
+    ----------
+    explanation : Explanation
+        What the workflow reported.
+
+    Returns
+    -------
+    str
+        The table, without a trailing newline.
+    """
+    header = ("VARIABLE", "VALUE", "ORIGIN", "REACH")
+    rows = [
+        (
+            disposition.name,
+            _truncated(str(disposition.value)),
+            disposition.origin,
+            _format_reach(disposition),
+        )
+        for disposition in explanation.variables
+    ]
+    widths = [max(len(cell) for cell in column) for column in zip(header, *rows)]
+    return "\n".join(
+        "  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip()
+        for row in (header, *rows)
+    )
+
+
+def _truncated(value: str) -> str:
+    """
+    Returns
+    -------
+    str
+        ``value``, cut to :data:`_MAX_RENDERED_VALUE` characters with an
+        ellipsis marking what was left out.
+    """
+    if len(value) <= _MAX_RENDERED_VALUE:
+        return value
+    return value[: _MAX_RENDERED_VALUE - 1] + "…"
+
+
 def bind_workflow_arguments(**arguments: Any) -> dict[str, Any]:
     """
     Checks that every flow-control keyword this module hands to
@@ -352,15 +452,19 @@ def start_flow(request: FlowRequest) -> None:
         logger.error("LibreLane will now quit.")
         raise typer.Exit(1) from error
 
-    if request.explain:
-        typer.echo(
-            format_job_explanation(
-                flow.explain(
-                    target=list(request.target) or None,
-                    skip=list(request.skip) or None,
-                )
-            )
+    if request.explain or request.explain_variables:
+        explanation = flow.explain(
+            target=list(request.target) or None,
+            skip=list(request.skip) or None,
+            variables=request.explain_variables,
         )
+        # Each option selects a table; neither filters the other's rows. Given
+        # both, both are printed, jobs first, because the reach column of the
+        # variable table names the jobs of the one above it.
+        if request.explain:
+            typer.echo(format_job_explanation(explanation))
+        if request.explain_variables:
+            typer.echo(format_variable_explanation(explanation))
         raise typer.Exit(0)
 
     try:
@@ -428,6 +532,7 @@ def run_included_example(
             reproducible=None,
             skip=(),
             explain=False,
+            explain_variables=False,
             initial_state=None,
             config_overrides=(),
             force_run_dir=None,
@@ -510,6 +615,7 @@ def run(
     invalidate: InvalidateOption = None,
     skip: SkipOption = None,
     explain: ExplainOption = False,
+    explain_variables: ExplainVariablesOption = False,
     overwrite: OverwriteOption = False,
     reproducible: ReproducibleOption = None,
     log_level: LogLevelOption = None,
@@ -573,6 +679,7 @@ def run(
         invalidate=tuple(invalidate or []),
         skip=tuple(skip or []),
         explain=explain,
+        explain_variables=explain_variables,
         overwrite=overwrite,
         reproducible=reproducible,
         initial_state=load_initial_state(with_initial_state_files),

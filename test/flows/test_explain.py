@@ -13,7 +13,11 @@
 # limitations under the License.
 import pytest
 
-from librelane.flows import flow as flow_module, sequential as sequential_module
+from librelane.flows import (
+    engine as engine_module,
+    flow as flow_module,
+    sequential as sequential_module,
+)
 from librelane.steps import step as step_module
 from test.conftest import COMMON_FLOW_VARS, MockConfTree
 
@@ -483,3 +487,494 @@ def test_explain_keeps_every_row_when_a_target_narrows_the_classic_document(
     assert by_id["floorplan"].will_run is True
     assert by_id["lint"].will_run is True
     assert by_id["final_checks"].mechanism == "not-in-target"
+
+
+def _pnr_jobs() -> dict:
+    """
+    Returns
+    -------
+    dict
+        Three chained jobs over real shipped steps: Yosys synthesis, the
+        OpenROAD floorplan and OpenROAD global placement.
+
+        Real jobs rather than registered test doubles, because a variable's
+        reach is a fact about what the shipped step classes declare and about
+        where in their hierarchy they declare it. A document of test steps
+        would pin only what the test itself wrote down.
+    """
+    return {
+        "synthesis": {"uses": "synthesis/yosys"},
+        "floorplan": {"needs": ["synthesis"], "uses": "floorplan"},
+        "global_placement": {"needs": ["floorplan"], "uses": "global_placement"},
+    }
+
+
+def _rows(explanation, name: str) -> list:
+    """
+    Parameters
+    ----------
+    explanation : librelane.flows.Explanation
+        What the workflow reported.
+    name : str
+        The variable to look up.
+
+    Returns
+    -------
+    list[librelane.flows.VariableDisposition]
+        Every row for that variable. More than one only when the document's
+        jobs resolved it differently, which is the case a single row cannot
+        report.
+    """
+    return [row for row in explanation.variables if row.name == name]
+
+
+def _row(explanation, name: str):
+    """
+    Returns
+    -------
+    librelane.flows.VariableDisposition
+        The single row for ``name``.
+    """
+    rows = _rows(explanation, name)
+    assert len(rows) == 1, f"expected one row for '{name}', got {rows}"
+    return rows[0]
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_reports_a_universal_variable_as_reaching_everything(
+    minimal_design, mock_pdk
+):
+    """
+    DIODE_ON_PORTS stands in for DIE_AREA here. mock_variables replaces the
+    universal variable list with test/conftest.py's COMMON_FLOW_VARS, which
+    contains DIODE_ON_PORTS and not DIE_AREA, and the property under test is
+    membership of that list rather than the identity of the variable.
+
+    engine_module is in the list because the reader is in engine.py.
+    mock_variables patches only the modules it is handed, so without it
+    engine.py keeps the real list and this assertion fails.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+    variable = _row(explanation, "DIODE_ON_PORTS")
+
+    assert variable.universal
+    assert set(variable.reach) == {job.job_id for job in explanation.jobs}
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_scopes_a_step_variable_to_the_jobs_that_read_it(
+    minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+    strategy = _row(explanation, "SYNTH_STRATEGY")
+
+    assert not strategy.universal
+    assert strategy.reach == ("synthesis",)
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_reports_a_variable_read_by_several_jobs(minimal_design, mock_pdk):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+    util = _row(explanation, "FP_CORE_UTIL")
+
+    assert not util.universal
+    assert set(util.reach) == {"floorplan", "global_placement"}
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_names_the_class_that_declares_an_inherited_variable(
+    minimal_design, mock_pdk
+):
+    """
+    OPENROAD_THREADS is declared once, on OpenROADStep, and inherited by every
+    OpenROAD step below it. Naming the family is the same fact as listing its
+    members and is the one a reader can act on.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+    threads = _row(explanation, "OPENROAD_THREADS")
+
+    assert threads.declared_by == "OpenROADStep"
+    assert set(threads.reach) == {"floorplan", "global_placement"}
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_names_a_declaring_class_by_its_step_id_when_it_has_one(
+    minimal_design, mock_pdk
+):
+    """
+    OpenROADStep above is abstract and so has no step ID to be named by. A
+    concrete step does, and its ID is what a reader recognises: two step
+    classes may share a Python name, and no two share an ID.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+
+    assert _row(explanation, "FP_SIZING").declared_by == "OpenROAD.Floorplan"
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_a_variable_two_classes_declare_separately_has_no_declaring_class(
+    minimal_design, mock_pdk
+):
+    """
+    FP_CORE_UTIL is declared by the floorplan step and, independently, by the
+    global placement step: neither inherits it from the other. There is no one
+    class to name, so the jobs are the whole answer.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+
+    assert _row(explanation, "FP_CORE_UTIL").declared_by is None
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_a_variable_no_step_declares_reaches_no_job(minimal_design, mock_pdk):
+    """
+    TOOLS is declared by the engine and read by it, before any job exists. An
+    empty reach is the honest answer and not a missing one, and a row that
+    claimed otherwise would say a job could change the provider selection from
+    its own 'with' block.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+    tools = _row(explanation, "TOOLS")
+
+    assert not tools.universal
+    assert tools.reach == ()
+    assert tools.declared_by is None
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_names_the_document_as_the_origin_of_a_document_value(
+    minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "T", "with": {"FP_SIZING": "absolute"}, "jobs": _pnr_jobs()}
+    )
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+    sizing = _row(explanation, "FP_SIZING")
+
+    assert sizing.value == "absolute"
+    assert sizing.origin == "<flow document>"
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_names_the_design_as_the_origin_of_a_design_value(
+    minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+
+    explanation = Workflow(
+        spec, dict(minimal_design, FP_SIZING="absolute"), **mock_pdk
+    ).explain(variables=True)
+
+    assert _row(explanation, "FP_SIZING").origin == "<mapping>"
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_names_the_command_line_as_the_origin_of_an_override(
+    minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "T", "with": {"FP_SIZING": "absolute"}, "jobs": _pnr_jobs()}
+    )
+
+    explanation = Workflow(
+        spec,
+        minimal_design,
+        config_override_strings=["FP_SIZING=relative"],
+        **mock_pdk,
+    ).explain(variables=True)
+
+    assert _row(explanation, "FP_SIZING").origin == "<command line>"
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_a_variable_no_source_wrote_reports_default_as_its_origin(
+    minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+
+    assert _row(explanation, "FP_SIZING").origin == "default"
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_reports_both_values_when_two_jobs_set_a_variable_differently(
+    minimal_design, mock_pdk
+):
+    """
+    The case the per-job 'with' exists for, and the one a single row cannot
+    answer. Reading the flow's own configuration would report one value for a
+    variable that demonstrably has two, and would name whichever of the two
+    jobs the reader was not asking about.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "T",
+            "jobs": {
+                "synth_area": {
+                    "uses": "synthesis/yosys",
+                    "with": {"SYNTH_STRATEGY": "AREA 0"},
+                },
+                "synth_delay": {
+                    "needs": ["synth_area"],
+                    "uses": "synthesis/yosys",
+                    "with": {"SYNTH_STRATEGY": "DELAY 0"},
+                },
+            },
+        }
+    )
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+
+    assert {
+        (row.value, row.origin, row.reach)
+        for row in _rows(explanation, "SYNTH_STRATEGY")
+    } == {
+        ("AREA 0", "<flow document: synth_area>", ("synth_area",)),
+        ("DELAY 0", "<flow document: synth_delay>", ("synth_delay",)),
+    }
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_a_job_with_block_does_not_reattribute_a_document_value(
+    minimal_design, mock_pdk
+):
+    """
+    The document's own 'with' and a job's are two layers, not one. A job that
+    sets some other variable must not make every value the document supplied
+    read as though that job had supplied it, which is what merging the two
+    into a single source named for the job would do.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "T",
+            "with": {"DIODE_ON_PORTS": "in"},
+            "jobs": {
+                "synthesis": {
+                    "uses": "synthesis/yosys",
+                    "with": {"SYNTH_STRATEGY": "DELAY 0"},
+                },
+                "floorplan": {"needs": ["synthesis"], "uses": "floorplan"},
+            },
+        }
+    )
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+    diodes = _row(explanation, "DIODE_ON_PORTS")
+
+    assert diodes.value == "in"
+    assert diodes.origin == "<flow document>"
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_explain_reports_a_row_for_every_configuration_variable(
+    minimal_design, mock_pdk
+):
+    """
+    The no-suppression guard for the variables table, matching the one the job
+    table has. A variable sitting at its default is exactly what somebody
+    debugging an unexpected value is looking for, and the sample output in the
+    workflow engine design document uses a default row to demonstrate the
+    'default' origin.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
+    workflow = Workflow(spec, minimal_design, **mock_pdk)
+
+    explanation = workflow.explain(variables=True)
+
+    assert {row.name for row in explanation.variables} == {
+        variable.name for variable in workflow.get_all_config_variables()
+    }
+    assert any(row.origin == "default" for row in explanation.variables)
+
+
+def _variables(*rows):
+    from librelane.flows import Explanation
+
+    return Explanation(steps=(), unselected_jobs=(), variables=rows)
+
+
+def test_format_variable_explanation_renders_every_row():
+    from librelane.cli.run import format_variable_explanation
+    from librelane.flows import VariableDisposition
+
+    rendered = format_variable_explanation(
+        _variables(
+            VariableDisposition(
+                "FP_CORE_UTIL", 40, "<mapping>", False, ("floorplan",), None
+            ),
+            VariableDisposition(
+                "CTS_SINK_CLUSTERING_SIZE", 16, "default", False, ("cts",), None
+            ),
+        )
+    )
+
+    assert "VARIABLE" in rendered
+    assert "FP_CORE_UTIL" in rendered
+    assert "<mapping>" in rendered
+    # A row at its default is kept, not filtered out: it is the row that
+    # answers "why is this not the value I set".
+    assert "CTS_SINK_CLUSTERING_SIZE" in rendered
+    assert "default" in rendered
+
+
+def test_format_variable_explanation_rolls_a_universal_variable_up():
+    from librelane.cli.run import format_variable_explanation
+    from librelane.flows import VariableDisposition
+
+    rendered = format_variable_explanation(
+        _variables(
+            VariableDisposition(
+                "DIE_AREA",
+                "0 0 550 550",
+                "<flow document>",
+                True,
+                tuple(f"job{n}" for n in range(24)),
+                None,
+            )
+        )
+    )
+
+    assert "universal, read by all 24 jobs" in rendered
+    assert "job0" not in rendered
+
+
+def test_format_variable_explanation_rolls_up_by_declaring_class():
+    from librelane.cli.run import format_variable_explanation
+    from librelane.flows import VariableDisposition
+
+    rendered = format_variable_explanation(
+        _variables(
+            VariableDisposition(
+                "OPENROAD_THREADS",
+                None,
+                "default",
+                False,
+                tuple(f"job{n}" for n in range(31)),
+                "OpenROADStep",
+            )
+        )
+    )
+
+    assert "read by all 31 OpenROADStep-based jobs" in rendered
+    assert "job0" not in rendered
+
+
+def test_format_variable_explanation_names_the_jobs_of_a_short_reach():
+    """
+    A roll-up replaces a list that is too long to read. Two job names are not,
+    and naming them is strictly more information than naming their class.
+    """
+    from librelane.cli.run import format_variable_explanation
+    from librelane.flows import VariableDisposition
+
+    rendered = format_variable_explanation(
+        _variables(
+            VariableDisposition(
+                "PNR_SDC_FILE",
+                None,
+                "default",
+                False,
+                ("floorplan", "global_placement"),
+                "OpenROADStep",
+            )
+        )
+    )
+
+    assert "floorplan, global_placement" in rendered
+    assert "OpenROADStep" not in rendered
+
+
+def test_format_variable_explanation_says_when_no_job_reads_a_variable():
+    from librelane.cli.run import format_variable_explanation
+    from librelane.flows import VariableDisposition
+
+    rendered = format_variable_explanation(
+        _variables(VariableDisposition("RUN_CTS", True, "default", False, (), None))
+    )
+
+    assert "the flow itself" in rendered
+
+
+def test_format_variable_explanation_truncates_a_value_that_would_set_the_width():
+    """
+    A handful of PDK variables hold nested tables thousands of characters
+    long, and one of them would otherwise set the value column's width for
+    every other row in the table.
+    """
+    from librelane.cli.run import format_variable_explanation
+    from librelane.flows import VariableDisposition
+
+    rendered = format_variable_explanation(
+        _variables(
+            VariableDisposition(
+                "LAYERS_RC", "x" * 4000, "<pdk>", False, ("cts",), None
+            ),
+            VariableDisposition(
+                "FP_SIZING", "relative", "default", False, ("fp",), None
+            ),
+        )
+    )
+
+    assert "…" in rendered
+    assert max(len(line) for line in rendered.split("\n")) < 120
+    # Truncating the one row must not cost the others their alignment.
+    assert "FP_SIZING" in rendered
+    assert "relative" in rendered

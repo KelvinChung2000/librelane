@@ -176,6 +176,14 @@ ExplainOption = Annotated[
         rich_help_panel=WORKFLOW_OPTIONS,
     ),
 ]
+ExplainVariablesOption = Annotated[
+    bool,
+    typer.Option(
+        "--explain-variables",
+        help="Print every configuration variable this flow resolves, its value, the layer that supplied it and the jobs that can read it, then exit without running. Selects a second table rather than adding rows to the one --explain prints, and can be given on its own.",
+        rich_help_panel=WORKFLOW_OPTIONS,
+    ),
+]
 SkipOption = Annotated[
     list[str] | None,
     typer.Option(
