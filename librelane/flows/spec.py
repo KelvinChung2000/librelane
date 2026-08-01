@@ -26,14 +26,26 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    model_validator,
+)
 
 from librelane.common import Path
 from librelane.common.errors import FlowError
 from librelane.config import Variable
 from librelane.config.loading.sources import read_source
 from librelane.flows import predicates
-from librelane.flows.spec_graph import topological_order
+from librelane.flows.spec_graph import (
+    collapse,
+    nontrivial_sccs,
+    ring_order,
+    topological_order,
+)
 
 
 class FlowSpecError(FlowError):
@@ -225,6 +237,11 @@ class FlowSpec(BaseModel):
     #: names the pools it needs in its own ``resources``.
     resources: dict[str, int | str] = {}
 
+    #: Gate id -> ring members, computed once by :meth:`_check_cycles_are_loops`
+    #: and returned by :meth:`rings`. ``None`` until that validator runs, which
+    #: happens during construction, so every fully-built instance has it set.
+    _ring_cache: dict[str, tuple[str, ...]] | None = PrivateAttr(default=None)
+
     @model_validator(mode="before")
     @classmethod
     def _reject_boolean_resource_capacities(cls, data: Any) -> Any:
@@ -261,10 +278,42 @@ class FlowSpec(BaseModel):
         """
         return {name: list(job.needs) for name, job in self.jobs.items()}
 
+    def rings(self) -> dict[str, tuple[str, ...]]:
+        """
+        Returns
+        -------
+        Every ring's gate id mapped to its members, ordered to start at the
+        gate's intra-ring successor and end at the gate -- the order one
+        pass runs its members in. Computed once, by
+        :meth:`_check_cycles_are_loops`, and cached; :meth:`rings` and
+        :meth:`collapsed_edges` never disagree with what construction
+        already validated.
+        """
+        assert self._ring_cache is not None, (
+            "computed by _check_cycles_are_loops, which model_validator "
+            "runs before any public method is reachable"
+        )
+        return self._ring_cache
+
+    def collapsed_edges(self) -> dict[str, list[str]]:
+        """
+        Returns
+        -------
+        :func:`librelane.flows.spec_graph.collapse` over :meth:`edges`, with
+        every ring member mapped to its gate's id. Acyclic by construction,
+        because a ring is a strongly connected component and the
+        condensation of a directed graph's strongly connected components is
+        always a DAG.
+        """
+        member_ring = {
+            member: gate for gate, members in self.rings().items() for member in members
+        }
+        return collapse(self.edges(), member_ring)
+
     @model_validator(mode="after")
     def _check_structure(self) -> "FlowSpec":
         self._check_needs_are_declared()
-        self._check_acyclic()
+        self._check_cycles_are_loops()
         self._check_sources_name_direct_predecessors()
         self._check_conditions_are_declared_booleans()
         self._check_final_names_a_job()
@@ -304,13 +353,97 @@ class FlowSpec(BaseModel):
                     )
                 seen.add(need)
 
-    def _check_acyclic(self) -> None:
+    def _check_cycles_are_loops(self) -> None:
+        # A well-formed cycle is a simple ring: a strongly connected
+        # component in which every member has exactly one predecessor
+        # inside the component, with exactly one 'until' gate. Everything
+        # else that graphlib would once have called a cycle is still an
+        # error, with a message that says what well-formed means.
+        edges = self.edges()
+        rings: dict[str, tuple[str, ...]] = {}
+        gated_jobs: set[str] = set()
+        for scc in nontrivial_sccs(edges):
+            order = ring_order(edges, scc)
+            if order is None:
+                raise FlowSpecError(
+                    f"The jobs of flow '{self.name}' contain a cycle among "
+                    f"{scc} that is not a simple ring: a well-formed loop "
+                    f"is a strongly connected component in which every "
+                    f"member has exactly one predecessor inside the "
+                    f"component, forming one cycle through every member -- "
+                    f"not a chord, and not two cycles sharing a member. A "
+                    f"flow document's cycles must each be a simple ring "
+                    f"with exactly one 'until' gate, or the jobs must be "
+                    f"acyclic."
+                )
+            gated_jobs.update(scc)
+            gates = [member for member in scc if self.jobs[member].until is not None]
+            if not gates:
+                raise FlowSpecError(
+                    f"Jobs {scc} of flow '{self.name}' form a cycle -- a "
+                    f"ring -- with no 'until' gate. Exactly one member of "
+                    f"a ring must declare 'until'; that member is the "
+                    f"ring's gate, the job whose output decides when the "
+                    f"loop exits."
+                )
+            if len(gates) > 1:
+                raise FlowSpecError(
+                    f"The ring {scc} of flow '{self.name}' declares "
+                    f"'until' on {sorted(gates)}. Exactly one member of a "
+                    f"ring may declare 'until'; that member is the ring's "
+                    f"gate."
+                )
+            gate = gates[0]
+            for member in scc:
+                if self.jobs[member].mode == "sweep":
+                    raise FlowSpecError(
+                        f"Job '{member}' is a member of ring {scc} and "
+                        f"declares 'mode: sweep'. A sweep is "
+                        f"v1-restricted to a single job that is not a "
+                        f"ring member."
+                    )
+            for member in scc:
+                if member == gate:
+                    continue
+                for other_name, other_job in self.jobs.items():
+                    if other_name in scc:
+                        continue
+                    if member not in other_job.needs:
+                        continue
+                    raise FlowSpecError(
+                        f"Job '{other_name}' needs '{member}', a non-gate "
+                        f"member of ring {scc} gated by '{gate}'. Only the "
+                        f"ring's gate may have consumers outside the "
+                        f"ring, because every result that leaves the loop "
+                        f"must leave through the job that decided the "
+                        f"loop was done. Move '{other_name}''s need from "
+                        f"'{member}' to '{gate}', or move 'until' from "
+                        f"'{gate}' to '{member}'."
+                    )
+            successor_count = len(order)
+            gate_index = order.index(gate)
+            rings[gate] = tuple(
+                order[(gate_index + 1 + offset) % successor_count]
+                for offset in range(successor_count)
+            )
+        for name, job in self.jobs.items():
+            if job.until is not None and name not in gated_jobs:
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'until', but is not part of a "
+                    f"cycle. A loop is a cycle in 'needs', and 'until' "
+                    f"gates a loop, so a job with no back edge into it "
+                    f"cannot be a gate. Add a 'needs' edge that closes a "
+                    f"ring back to '{name}', or remove 'until'."
+                )
+        self._ring_cache = rings
         try:
-            topological_order(self.edges())
+            topological_order(self.collapsed_edges())
         except graphlib.CycleError as e:
             raise FlowSpecError(
-                f"The jobs of flow '{self.name}' contain a cycle: "
-                f"{' -> '.join(e.args[1])}. A flow document is acyclic."
+                f"The jobs of flow '{self.name}' contain a cycle after "
+                f"collapsing its ring(s): {' -> '.join(e.args[1])}. A flow "
+                f"document is acyclic once every ring is collapsed to its "
+                f"gate."
             ) from None
 
     def _check_sources_name_direct_predecessors(self) -> None:
@@ -365,6 +498,16 @@ class FlowSpec(BaseModel):
             raise FlowSpecError(
                 f"Flow '{self.name}' declares final job '{self.final}', which "
                 f"it does not declare. Declared jobs: {sorted(self.jobs)}."
+            )
+        for gate, members in self.rings().items():
+            if self.final == gate or self.final not in members:
+                continue
+            raise FlowSpecError(
+                f"Flow '{self.name}' declares final job '{self.final}', a "
+                f"non-gate member of the ring gated by '{gate}' "
+                f"({sorted(members)}). A non-gate member's output never "
+                f"leaves the loop, so it cannot be the flow's final state; "
+                f"name the gate '{gate}' instead."
             )
 
     def _check_values_are_not_reserved(self) -> None:

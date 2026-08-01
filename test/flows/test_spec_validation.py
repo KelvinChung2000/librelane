@@ -510,3 +510,208 @@ def test_a_final_resolves_the_sink_join_conflict():
             final="klayout_streamout",
         )
     )
+
+
+def test_the_loops_not_executable_yet_guard_fires_for_any_ring_document():
+    spec = _spec(
+        {
+            "floorplan": {
+                "needs": ["floorplan"],
+                "uses": "floorplan",
+                "until": "metric::x >= 0",
+                "max": 3,
+            }
+        }
+    )
+
+    with pytest.raises(FlowSpecError) as exc_info:
+        validate_against_registry(spec)
+
+    message = str(exc_info.value)
+    assert "loops are not executable yet" in message.lower()
+    assert "floorplan" in message
+
+
+def test_a_schedule_variable_read_outside_the_ring_is_rejected():
+    """
+    'floorplan' is a legal ring of one (a self-loop gated by itself) that
+    schedules FP_CORE_UTIL. 'global_placement' also reads FP_CORE_UTIL and
+    sits outside the ring.
+
+    Exercised through the public validate_against_registry: the "loops are
+    not executable yet" guard runs last, so this document's real load error
+    (the schedule covering violation) surfaces before the guard would ever
+    get a say.
+    """
+    spec = _spec(
+        {
+            "floorplan": {
+                "needs": ["floorplan"],
+                "uses": "floorplan",
+                "until": "metric::x >= 0",
+                "iterations": [{"FP_CORE_UTIL": 40}, {"FP_CORE_UTIL": 50}],
+            },
+            "global_placement": {
+                "needs": ["floorplan"],
+                "uses": "global_placement",
+            },
+        }
+    )
+
+    with pytest.raises(FlowSpecError) as exc_info:
+        validate_against_registry(spec)
+
+    message = str(exc_info.value)
+    assert "floorplan" in message
+    assert "FP_CORE_UTIL" in message
+    assert "global_placement" in message
+    assert "loops are not executable yet" not in message.lower()
+
+
+def test_a_universal_variable_in_a_ring_schedule_is_rejected():
+    """
+    DIE_AREA is universal (every job reads it), so scheduling it inside a
+    ring is refused as soon as the document has any job outside that ring,
+    the same "reach ⊆ scope" rule as the non-universal case above. Exercised
+    through the public entry point, same reasoning as above.
+    """
+    spec = _spec(
+        {
+            "floorplan": {
+                "needs": ["floorplan"],
+                "uses": "floorplan",
+                "until": "metric::x >= 0",
+                "iterations": [{"DIE_AREA": "0 0 100 100"}],
+            },
+            "global_placement": {
+                "needs": ["floorplan"],
+                "uses": "global_placement",
+            },
+        }
+    )
+
+    with pytest.raises(FlowSpecError) as exc_info:
+        validate_against_registry(spec)
+
+    message = str(exc_info.value)
+    assert "DIE_AREA" in message
+    assert "global_placement" in message
+    assert "loops are not executable yet" not in message.lower()
+
+
+def test_a_sweep_schedule_variable_read_outside_the_sweep_job_is_rejected():
+    """
+    A sweep is not a ring, so the "loops are not executable yet" guard does
+    not apply, and this is exercised through the public entry point.
+    """
+    with pytest.raises(FlowSpecError) as exc_info:
+        validate_against_registry(
+            _spec(
+                {
+                    "floorplan": {"uses": "floorplan"},
+                    "global_placement": {
+                        "needs": ["floorplan"],
+                        "uses": "global_placement",
+                        "mode": "sweep",
+                        "iterations": [
+                            {"FP_CORE_UTIL": 40},
+                            {"FP_CORE_UTIL": 50},
+                        ],
+                        "select": "route__wirelength min",
+                    },
+                }
+            )
+        )
+
+    message = str(exc_info.value)
+    assert "global_placement" in message
+    assert "FP_CORE_UTIL" in message
+    assert "floorplan" in message
+
+
+def test_a_str_resource_capacity_naming_an_undeclared_variable_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        validate_against_registry(
+            _spec(
+                {"drc": {"uses": "drc/magic"}},
+                resources={"drc_seats": "MAX_DRC_SEATS"},
+            )
+        )
+
+    message = str(exc_info.value)
+    assert "drc_seats" in message
+    assert "MAX_DRC_SEATS" in message
+
+
+def test_a_str_resource_capacity_naming_a_non_int_variable_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        validate_against_registry(
+            _spec(
+                {"drc": {"uses": "drc/magic"}},
+                resources={"drc_seats": "RUN_LINTER"},
+                config=[
+                    {
+                        "name": "RUN_LINTER",
+                        "type": "bool",
+                        "description": "x",
+                        "default": True,
+                    }
+                ],
+            )
+        )
+
+    message = str(exc_info.value)
+    assert "drc_seats" in message
+    assert "RUN_LINTER" in message
+    assert "bool" in message
+
+
+def test_a_str_resource_capacity_naming_a_declared_int_variable_is_accepted():
+    validate_against_registry(
+        _spec(
+            {"drc": {"uses": "drc/magic"}},
+            resources={"drc_seats": "MAX_DRC_SEATS"},
+            config=[
+                {
+                    "name": "MAX_DRC_SEATS",
+                    "type": "int",
+                    "description": "x",
+                    "default": 2,
+                }
+            ],
+        )
+    )
+
+
+def test_a_ring_document_is_refused_before_reaching_topological_order(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    Workflow.__init__ calls validate_against_registry(spec) before anything
+    else, including resolve_jobs and every later topological_order(spec.edges())
+    call in engine.py and selection_validation.py, which are not yet aware a
+    ring is a legal cycle. A ring document must therefore fail here, with a
+    FlowSpecError, and never reach one of those calls, which would otherwise
+    raise a raw graphlib.CycleError.
+    """
+    from librelane.flows.engine import Workflow
+
+    _order, First, _Second = counting_steps
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "resize": {
+                    "needs": ["resize"],
+                    "steps": [First.id],
+                    "until": "metric::x >= 0",
+                    "max": 2,
+                }
+            },
+        }
+    )
+
+    with pytest.raises(FlowSpecError) as exc_info:
+        Workflow(spec, minimal_design, **mock_pdk)
+
+    assert "loops are not executable yet" in str(exc_info.value).lower()

@@ -64,6 +64,21 @@ def validate_against_registry(spec: FlowSpec) -> None:
     _check_fan_in_is_unambiguous(spec, keys)
     _check_sink_join_is_unambiguous(spec, keys)
     _check_job_values_are_covering(spec)
+    _check_schedule_values_are_covering(spec)
+    _check_resource_variable_capacities_are_declared_ints(spec)
+
+    # TODO(spec 3, task 4): delete this guard once the loop driver runs a
+    # ring. It runs last, not first, so a ring document surfaces every real
+    # load error above -- including a bad schedule -- before this refusal;
+    # only a document with no other complaint ever reaches it. Until Task 4,
+    # a ring reaching engine.py or selection_validation.py would hit
+    # topological_order(spec.edges()) over a graph with a real cycle and
+    # raise a raw graphlib.CycleError instead of a FlowSpecError.
+    if spec.rings():
+        raise FlowSpecError(
+            f"Flow '{spec.name}' declares ring(s) gated by "
+            f"{sorted(spec.rings())}. Loops are not executable yet."
+        )
 
 
 def _resolved_uses(job_id: str, job: JobSpec) -> str | None:
@@ -451,6 +466,71 @@ def _check_job_values_are_covering(spec: FlowSpec) -> None:
                 f"blocks, but no step of those jobs reads '{variable_name}', "
                 f"so the value could never take effect. Jobs that read "
                 f"'{variable_name}': {sorted(readers)}."
+            )
+
+
+def _check_schedule_values_are_covering(spec: FlowSpec) -> None:
+    # The covering rule for a job's 'with' block (_check_job_values_are_
+    # covering) extends to a gate's or a sweep job's 'iterations': a reader
+    # outside the schedule's scope would resolve the design's value for a
+    # variable the schedule is escalating or sweeping, the same silent
+    # divergence the covering rule exists to catch. A ring's scope is its
+    # members; a sweep's scope is the sweep job alone, because a sweep body
+    # is v1-restricted to one job.
+    reach = _reach(spec)
+    rings = spec.rings()
+    for name, job in spec.jobs.items():
+        if job.iterations is None:
+            continue
+        if name in rings:
+            allowed = set(rings[name])
+            scope = f"the ring gated by '{name}' ({sorted(allowed)})"
+        else:
+            assert job.mode == "sweep", "checked by _check_schedule_combinations"
+            allowed = {name}
+            scope = f"sweep job '{name}'"
+        variables = {key for entry in job.iterations for key in entry}
+        for variable_name in sorted(variables):
+            outside = reach.get(variable_name, set()) - allowed
+            if not outside:
+                continue
+            raise FlowSpecError(
+                f"Job '{name}' schedules '{variable_name}' in its "
+                f"'iterations', but job(s) {sorted(outside)} also read "
+                f"'{variable_name}' and are outside {scope}. A reader "
+                f"outside the schedule's scope would resolve the design's "
+                f"value while the schedule resolved its own for that "
+                f"pass, the silent divergence the covering rule exists to "
+                f"catch. A variable named by 'iterations' must be read "
+                f"only by jobs inside the ring, or, for a sweep, only by "
+                f"the sweep job itself."
+            )
+
+
+def _check_resource_variable_capacities_are_declared_ints(spec: FlowSpec) -> None:
+    # A literal capacity is checked in spec.py, which needs no registry. A
+    # variable capacity names a configuration variable, which spec.py cannot
+    # check without importing the job and step packages it deliberately
+    # stays free of; resolving whether the name is even declared is enough
+    # to belong here, alongside the other registry-shaped checks.
+    declared = {variable.name: variable for variable in spec.config}
+    for pool, capacity in spec.resources.items():
+        if not isinstance(capacity, str):
+            continue
+        variable = declared.get(capacity)
+        if variable is None:
+            raise FlowSpecError(
+                f"Resource pool '{pool}' declares capacity '{capacity}', "
+                f"which flow '{spec.name}' does not declare as a "
+                f"configuration variable. Declared variables: "
+                f"{sorted(declared)}."
+            )
+        if variable.type != "int":
+            raise FlowSpecError(
+                f"Resource pool '{pool}' declares capacity '{capacity}', "
+                f"which flow '{spec.name}' declares with type "
+                f"'{variable.type}'. A pool's capacity naming a variable "
+                f"must be declared with type 'int'."
             )
 
 

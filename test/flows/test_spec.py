@@ -161,6 +161,10 @@ def test_a_needs_naming_the_same_job_twice_is_rejected():
 
 
 def test_a_cycle_is_rejected_naming_its_members():
+    # A two-job mutual cycle is a well-shaped ring, but neither member
+    # declares 'until', so it is rejected as a gate-less ring rather than
+    # as an ill-shaped one: test_a_cycle_that_is_not_a_simple_ring_is_rejected
+    # covers the other kind.
     with pytest.raises(FlowSpecError) as exc_info:
         FlowSpec.model_validate(
             {
@@ -174,8 +178,236 @@ def test_a_cycle_is_rejected_naming_its_members():
 
     message = str(exc_info.value)
     assert "cycle" in message.lower()
+    assert "until" in message
     assert "a" in message
     assert "b" in message
+
+
+def test_a_cycle_that_is_not_a_simple_ring_is_rejected():
+    # a-b-c-a is a simple ring, but 'c' also needs 'a' directly (a chord),
+    # so 'c' has two intra-ring predecessors and the cycle is not a ring.
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "a": {"needs": ["c"], "uses": "floorplan"},
+                    "b": {"needs": ["a"], "uses": "floorplan"},
+                    "c": {"needs": ["b", "a"], "uses": "floorplan"},
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "not a simple ring" in message
+    assert "a" in message
+    assert "b" in message
+    assert "c" in message
+
+
+def test_a_legal_ring_validates_and_rings_returns_the_pass_order():
+    # cts feeds the ring's non-gate member from outside, which is legal:
+    # only a *consumer* of a non-gate member is restricted, not a producer.
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "cts": {"uses": "cts"},
+                "resize": {"needs": ["cts", "sta"], "uses": "floorplan"},
+                "sta": {
+                    "needs": ["resize"],
+                    "uses": "sta",
+                    "until": "metric::timing__setup__ws >= 0",
+                    "max": 3,
+                },
+            },
+        }
+    )
+
+    # Rotated to start at the gate's intra-ring successor ('resize') and end
+    # at the gate ('sta'): the order one pass runs its members in.
+    assert spec.rings() == {"sta": ("resize", "sta")}
+
+
+def test_collapsed_edges_collapses_a_ring_to_its_gate():
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "cts": {"uses": "cts"},
+                "resize": {"needs": ["cts", "sta"], "uses": "floorplan"},
+                "sta": {
+                    "needs": ["resize"],
+                    "uses": "sta",
+                    "until": "metric::timing__setup__ws >= 0",
+                    "max": 3,
+                },
+            },
+        }
+    )
+
+    # 'resize' has no key of its own: it collapsed into the gate's id 'sta',
+    # and the ring's only outside dependency, 'cts', survives once.
+    assert spec.collapsed_edges() == {"cts": [], "sta": ["cts"]}
+
+
+def test_a_self_need_with_until_is_a_legal_ring_of_one():
+    # Today a self-need passes _check_needs_are_declared (the need it names
+    # is declared) and used to die in _check_acyclic. A self-loop gated by
+    # 'until' is now a legal ring of one.
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "resize": {
+                    "needs": ["resize"],
+                    "uses": "floorplan",
+                    "until": "metric::x >= 0",
+                    "max": 3,
+                }
+            },
+        }
+    )
+
+    assert spec.rings() == {"resize": ("resize",)}
+
+
+def test_a_ring_with_multiple_until_gates_is_rejected_naming_them():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "a": {
+                        "needs": ["b"],
+                        "uses": "floorplan",
+                        "until": "metric::x >= 0",
+                        "max": 2,
+                    },
+                    "b": {
+                        "needs": ["a"],
+                        "uses": "floorplan",
+                        "until": "metric::y >= 0",
+                        "max": 2,
+                    },
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "a" in message
+    assert "b" in message
+    assert "until" in message
+
+
+def test_a_non_gate_ring_member_with_an_outside_consumer_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "resize": {"needs": ["sta"], "uses": "floorplan"},
+                    "sta": {
+                        "needs": ["resize"],
+                        "uses": "sta",
+                        "until": "metric::x >= 0",
+                        "max": 3,
+                    },
+                    "outside": {"needs": ["resize"], "uses": "drc/magic"},
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "outside" in message
+    assert "resize" in message
+    assert "sta" in message
+
+
+def test_until_on_a_job_with_no_back_edge_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {"sta": {"uses": "sta", "until": "metric::x >= 0", "max": 3}},
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "not part of a cycle" in message
+
+
+def test_mode_sweep_on_a_ring_member_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "resize": {
+                        "needs": ["sta"],
+                        "uses": "floorplan",
+                        "mode": "sweep",
+                        "iterations": [{}],
+                        "select": "route__wirelength min",
+                    },
+                    "sta": {
+                        "needs": ["resize"],
+                        "uses": "sta",
+                        "until": "metric::x >= 0",
+                        "max": 3,
+                    },
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "resize" in message
+    assert "sweep" in message
+
+
+def test_final_naming_a_non_gate_ring_member_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "final": "resize",
+                "jobs": {
+                    "resize": {"needs": ["sta"], "uses": "floorplan"},
+                    "sta": {
+                        "needs": ["resize"],
+                        "uses": "sta",
+                        "until": "metric::x >= 0",
+                        "max": 3,
+                    },
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "resize" in message
+    assert "sta" in message
+    assert "final" in message.lower()
+
+
+def test_final_naming_the_ring_s_gate_is_accepted():
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "final": "sta",
+            "jobs": {
+                "resize": {"needs": ["sta"], "uses": "floorplan"},
+                "sta": {
+                    "needs": ["resize"],
+                    "uses": "sta",
+                    "until": "metric::x >= 0",
+                    "max": 3,
+                },
+            },
+        }
+    )
+
+    assert spec.final == "sta"
 
 
 def test_a_source_naming_an_unrelated_job_is_rejected():
@@ -447,6 +679,7 @@ def test_a_job_using_every_new_key_legally_validates():
             "jobs": {
                 "sta": {
                     "uses": "sta",
+                    "needs": ["sta"],
                     "until": "metric::timing__setup__ws >= 0",
                     "max": 3,
                     "resources": ["drc_seats"],
@@ -470,6 +703,7 @@ def test_a_job_using_every_new_key_legally_validates():
     assert spec.jobs["place"].mode == "sweep"
     assert spec.jobs["place"].select == "route__wirelength min"
     assert spec.resources == {"drc_seats": 2}
+    assert spec.rings() == {"sta": ("sta",)}
 
 
 def test_an_until_naming_a_configuration_variable_is_rejected():
@@ -478,7 +712,14 @@ def test_an_until_naming_a_configuration_variable_is_rejected():
             {
                 "name": "Tiny",
                 "config": [_RUN_LINTER],
-                "jobs": {"sta": {"uses": "sta", "until": "RUN_LINTER", "max": 3}},
+                "jobs": {
+                    "sta": {
+                        "uses": "sta",
+                        "needs": ["sta"],
+                        "until": "RUN_LINTER",
+                        "max": 3,
+                    }
+                },
             }
         )
 
@@ -493,7 +734,13 @@ def test_an_until_with_neither_iterations_nor_max_is_rejected():
         FlowSpec.model_validate(
             {
                 "name": "Tiny",
-                "jobs": {"sta": {"uses": "sta", "until": "metric::x >= 0"}},
+                "jobs": {
+                    "sta": {
+                        "uses": "sta",
+                        "needs": ["sta"],
+                        "until": "metric::x >= 0",
+                    }
+                },
             }
         )
 
@@ -511,6 +758,7 @@ def test_an_until_with_both_iterations_and_max_is_rejected():
                 "jobs": {
                     "sta": {
                         "uses": "sta",
+                        "needs": ["sta"],
                         "until": "metric::x >= 0",
                         "max": 3,
                         "iterations": [{}],
@@ -636,6 +884,7 @@ def test_an_empty_iterations_list_is_rejected():
                 "jobs": {
                     "sta": {
                         "uses": "sta",
+                        "needs": ["sta"],
                         "until": "metric::x >= 0",
                         "iterations": [],
                     }
@@ -657,6 +906,7 @@ def test_an_iterations_entry_naming_a_process_selection_key_is_rejected(key):
                 "jobs": {
                     "sta": {
                         "uses": "sta",
+                        "needs": ["sta"],
                         "until": "metric::x >= 0",
                         "iterations": [{key: "whatever"}],
                     }
@@ -678,6 +928,7 @@ def test_an_iterations_entry_naming_tools_is_rejected():
                 "jobs": {
                     "sta": {
                         "uses": "sta",
+                        "needs": ["sta"],
                         "until": "metric::x >= 0",
                         "iterations": [{}, {"TOOLS": {"sta": "opensta"}}],
                     }
@@ -696,7 +947,14 @@ def test_a_max_below_one_is_rejected():
         FlowSpec.model_validate(
             {
                 "name": "Tiny",
-                "jobs": {"sta": {"uses": "sta", "until": "metric::x >= 0", "max": 0}},
+                "jobs": {
+                    "sta": {
+                        "uses": "sta",
+                        "needs": ["sta"],
+                        "until": "metric::x >= 0",
+                        "max": 0,
+                    }
+                },
             }
         )
 
