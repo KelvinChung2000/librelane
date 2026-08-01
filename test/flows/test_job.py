@@ -16,6 +16,7 @@ import pytest
 import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
 from librelane.flows.job import resolve_jobs
+from librelane.flows.predicates import ConfigTerm
 from librelane.flows.spec import FlowSpec
 from librelane.jobs import Job, JobRegistry, JobResolutionError
 from librelane.state import DesignFormat
@@ -110,7 +111,7 @@ def test_needs_and_a_single_condition_carry_through():
     )
 
     assert jobs["floorplan"].needs == ("synthesis",)
-    assert jobs["floorplan"].conditions == ("RUN_FLOORPLAN",)
+    assert jobs["floorplan"].conditions == (ConfigTerm("RUN_FLOORPLAN"),)
     assert jobs["synthesis"].needs == ()
     assert jobs["synthesis"].conditions == ()
 
@@ -136,9 +137,9 @@ def test_a_conjunction_becomes_one_entry_per_conjunct():
     )
 
     assert jobs["xor"].conditions == (
-        "RUN_KLAYOUT_XOR",
-        "RUN_MAGIC_STREAMOUT",
-        "RUN_KLAYOUT_STREAMOUT",
+        ConfigTerm("RUN_KLAYOUT_XOR"),
+        ConfigTerm("RUN_MAGIC_STREAMOUT"),
+        ConfigTerm("RUN_KLAYOUT_STREAMOUT"),
     )
 
 

@@ -17,10 +17,11 @@ Binding a document's jobs to the registry, producing the units the engine runs.
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from rapidfuzz import fuzz, process, utils
 
-from librelane.flows.predicates import config_terms, parse_predicate
+from librelane.flows.predicates import MetricTerm, Term, metric_terms, parse_predicate
 from librelane.flows.spec import FlowSpec, JobSpec
 from librelane.jobs import Job, JobRegistry, JobResolutionError
 from librelane.state import DesignFormat
@@ -46,9 +47,21 @@ class ResolvedJob:
     :class:`librelane.state.DesignFormat` because the join rule is one rule
     over views and metrics and a metric name is not a view.
 
-    ``conditions`` is the ``if`` conjunction already split into its variable
-    names, empty when the job declares no ``if``. The job runs when every named
-    variable is true.
+    ``conditions`` is the ``if`` conjunction already split into its terms,
+    empty when the job declares no ``if``. A :class:`~librelane.flows.predicates.ConfigTerm`
+    is read off the flow's configuration at construction; a
+    :class:`~librelane.flows.predicates.MetricTerm` is a runtime term,
+    evaluated against a job's input state on the scheduling thread, once every
+    configuration term has already passed. The job runs when every term holds.
+
+    ``until_terms``, ``iterations``, ``max_passes``, ``mode``, ``select`` and
+    ``resources`` are the loop, sweep and resource-pool declarations, copied
+    and parsed once off the document's ``JobSpec`` rather than left for a
+    later reader to re-derive: ``until_terms`` is ``until``'s parsed
+    ``MetricTerm``s (empty off a ring gate), ``iterations`` is the value
+    schedule as given, ``select`` is ``(metric, direction)`` rather than the
+    document's single string, and ``resources`` is the pools this job's
+    execution must hold a seat in.
 
     ``native_views`` is the selected registration's, copied here rather than
     left to be looked up again: it is a fact about the provider that won, and
@@ -60,13 +73,19 @@ class ResolvedJob:
     id: str
     needs: tuple[str, ...]
     source: dict[str, str]
-    conditions: tuple[str, ...]
+    conditions: tuple[Term, ...]
     requires: tuple[DesignFormat, ...]
     provides: tuple[DesignFormat, ...]
     metrics: tuple[str, ...]
     steps: tuple[type[Step], ...]
     provider: str | None
     native_views: tuple[DesignFormat, ...]
+    until_terms: tuple[MetricTerm, ...]
+    iterations: tuple[Mapping[str, Any], ...]
+    max_passes: int | None
+    mode: str
+    select: tuple[str, str] | None
+    resources: tuple[str, ...]
 
 
 def resolve_jobs(
@@ -154,13 +173,19 @@ def _checked_selections(
 
 
 def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
-    # Task 3 retypes ResolvedJob.conditions to carry the parsed Term objects
-    # (and gate runtime 'metric::' terms at scheduling time); until then this
-    # keeps today's runtime behavior exactly, by carrying only the
-    # configuration-variable names a ConfigTerm names.
-    conditions = (
-        () if spec.condition is None else config_terms(parse_predicate(spec.condition))
+    # Parsed once here, off the document's JobSpec, rather than left for the
+    # scheduler or the explainer to re-derive: both read these off the
+    # ResolvedJob from now on, and are never handed the raw document strings.
+    conditions = () if spec.condition is None else parse_predicate(spec.condition)
+    until_terms = (
+        () if spec.until is None else metric_terms(parse_predicate(spec.until))
     )
+    iterations = tuple(spec.iterations) if spec.iterations is not None else ()
+    select: tuple[str, str] | None = None
+    if spec.select is not None:
+        metric_name, direction = spec.select.split()
+        select = (metric_name, direction)
+    resources = tuple(spec.resources)
 
     if spec.steps is not None:
         steps = []
@@ -186,6 +211,12 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
             # An inline job has no registration, so nothing has been exempted
             # from the registration-time view check on its behalf.
             native_views=(),
+            until_terms=until_terms,
+            iterations=iterations,
+            max_passes=spec.max_passes,
+            mode=spec.mode,
+            select=select,
+            resources=resources,
         )
 
     # An omitted 'uses' is the document's central convenience: a job whose id
@@ -241,4 +272,10 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
         steps=tuple(registration.steps),
         provider=provider,
         native_views=registration.native_views,
+        until_terms=until_terms,
+        iterations=iterations,
+        max_passes=spec.max_passes,
+        mode=spec.mode,
+        select=select,
+        resources=resources,
     )

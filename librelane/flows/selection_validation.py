@@ -106,12 +106,15 @@ naming the excluded job.
 from collections.abc import Mapping, Set
 from dataclasses import dataclass
 
+from loguru import logger
+
 from librelane.jobs import JobRegistry, JobResolutionError
 from librelane.state import State
 from librelane.steps.odb.base import OdbpyStep
 from librelane.steps.openroad.base import OpenROADStep
 
 from librelane.flows.job import ResolvedJob, resolve_jobs
+from librelane.flows.predicates import MetricTerm, config_terms, metric_terms
 from librelane.flows.spec import FlowSpec
 from librelane.flows.spec_graph import ancestors, topological_order
 
@@ -240,7 +243,12 @@ def validate_selection(
         writers of one key on branches the graph runs concurrently. The message
         names the key or view, the jobs involved, and every provider that would
         work instead.
+
+    Also logs a warning, never a refusal, for every producer whose runtime
+    (``metric::``) term a consumer needing it does not repeat in its own
+    ``if``. See :func:`unrepeated_runtime_terms`.
     """
+    _warn_unrepeated_runtime_terms(jobs)
     lost = lost_views(spec, jobs, enabled, initial_views)
     if lost:
         raise JobResolutionError(
@@ -250,6 +258,66 @@ def validate_selection(
     if conflicts:
         raise JobResolutionError(
             _conflict_message(spec, jobs, enabled, initial_views, conflicts[0])
+        )
+
+
+def unrepeated_runtime_terms(
+    jobs: Mapping[str, ResolvedJob],
+) -> list[tuple[str, str, tuple[MetricTerm, ...]]]:
+    """
+    Every producer a job needs whose runtime term the job does not repeat.
+
+    Parameters
+    ----------
+    jobs : Mapping[str, ResolvedJob]
+        The document's resolved jobs.
+
+    Returns
+    -------
+    list[tuple[str, str, tuple[MetricTerm, ...]]]
+        One ``(consumer, producer, terms)`` triple per producer named in some
+        job's ``needs`` whose ``if`` carries a runtime (``metric::``) term the
+        consumer's own ``if`` does not carry, in document order over the
+        consumer and then over its ``needs``. ``terms`` is the producer's
+        runtime terms the consumer is missing, not the consumer's own.
+
+    A producer whose runtime term decides false fires as a pass-through and
+    writes nothing, so the state its consumer receives is whatever state the
+    producer's own predecessors gave it, unchanged. A consumer that repeats
+    the exact term in its own ``if`` -- :class:`~librelane.flows.predicates.MetricTerm`
+    compared by dataclass equality, so the same metric under a different
+    operator or literal does not count -- inherits the same disposition and
+    sees a coherent story either way. One that does not is silently exposed
+    to a state the document never says it is prepared for. This is not
+    refused: a document may intend exactly that, a consumer content with
+    whatever a pass-through leaves behind, so :func:`validate_selection` logs
+    a warning over this rather than raising.
+    """
+    findings: list[tuple[str, str, tuple[MetricTerm, ...]]] = []
+    for consumer_id, consumer in jobs.items():
+        consumer_terms = set(metric_terms(consumer.conditions))
+        for producer_id in consumer.needs:
+            producer_terms = metric_terms(jobs[producer_id].conditions)
+            missing = tuple(
+                term for term in producer_terms if term not in consumer_terms
+            )
+            if missing:
+                findings.append((consumer_id, producer_id, missing))
+    return findings
+
+
+def _warn_unrepeated_runtime_terms(jobs: Mapping[str, ResolvedJob]) -> None:
+    for consumer_id, producer_id, missing in unrepeated_runtime_terms(jobs):
+        names = " and ".join(
+            f"metric::{term.metric} {term.op} {term.literal}" for term in missing
+        )
+        logger.warning(
+            f"Job '{consumer_id}' needs '{producer_id}', whose 'if' has "
+            f"runtime term(s) {names} that '{consumer_id}' does not repeat "
+            f"in its own 'if'. A false term fires '{producer_id}' as a "
+            f"pass-through, which writes nothing, so '{consumer_id}' would "
+            f"then run against exactly the state '{producer_id}' itself "
+            f"received."
         )
 
 
@@ -294,8 +362,16 @@ def join_conflicts(
     this is the class of defect it cannot see: it subtracts the shared ancestors
     before intersecting, so a key produced in the shared prefix and *re-produced*
     on exactly one exclusive branch gives an empty intersection and passes.
+
+    Walks :meth:`~librelane.flows.spec.FlowSpec.collapsed_edges` rather than
+    :meth:`~librelane.flows.spec.FlowSpec.edges`, so a ring's back edge -- a
+    real cycle in the declared graph -- cannot reach
+    :func:`~librelane.flows.spec_graph.topological_order`, which refuses one.
+    Task 2's guard against rings still refuses every document that would
+    exercise the difference, so this is unobservable until later work lifts
+    it; it belongs with this file's edges-consuming calls regardless.
     """
-    edges = spec.edges()
+    edges = spec.collapsed_edges()
     produced = produced_keys(jobs, enabled)
 
     conflicts: list[JoinConflict] = []
@@ -386,8 +462,12 @@ def lost_views(
     precisely because it crosses job boundaries rather than being named in the
     job's tool-neutral ``requires``; this is where that exemption is answered
     for, over the steps a run actually resolved.
+
+    Walks :meth:`~librelane.flows.spec.FlowSpec.collapsed_edges`, for the
+    reason :func:`join_conflicts` gives: ``ancestors`` below cannot run over a
+    graph with a real cycle in it.
     """
-    edges = spec.edges()
+    edges = spec.collapsed_edges()
     baseline = resolve_jobs(spec)
     selected_views = _produced_views(jobs, enabled)
     baseline_views = _produced_views(baseline, enabled)
@@ -655,11 +735,14 @@ def _remedies(
     because they read alike in the output. A provider remedy is *measured*:
     the document is re-resolved under it, both checks are re-run, and it is
     dropped if it is not runnable. A gating remedy is *enumerated*: every
-    variable in the job's ``if`` is listed, because any one of them being false
-    removes the job, which settles a collision by construction and settles a
-    lost view whenever the consumer is what is dropped. Nothing re-runs the
-    checks for it, so a gating remedy is a claim about this failure and not,
-    as a provider remedy is, about the whole document.
+    configuration variable in the job's ``if`` is listed, because any one of
+    them being false removes the job, which settles a collision by
+    construction and settles a lost view whenever the consumer is what is
+    dropped. A runtime (``metric::``) term is not offered here: nobody can
+    "set" a metric comparison the way a configuration variable is set, so it
+    names nothing a caller could act on. Nothing re-runs the checks for it,
+    so a gating remedy is a claim about this failure and not, as a provider
+    remedy is, about the whole document.
     """
     lines = []
     for job_id in sorted(swappable):
@@ -668,7 +751,7 @@ def _remedies(
         ):
             lines.append(f"set TOOLS['{job_id}'] to '{provider}'")
     for job_id in sorted(gateable):
-        for condition in jobs[job_id].conditions:
+        for condition in config_terms(jobs[job_id].conditions):
             lines.append(
                 f"set '{condition}' to false, which takes '{job_id}' out of the run"
             )

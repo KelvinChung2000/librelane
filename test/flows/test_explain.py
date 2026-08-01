@@ -56,6 +56,78 @@ def test_explain_names_the_condition_that_stops_a_job(
 
 
 @mock_variables([flow_module, step_module])
+def test_explain_reports_condition_runtime_for_an_undecided_runtime_term(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    A runtime term's verdict is genuinely unknown before the run: it is
+    evaluated against the job's actual input state, which explain never
+    constructs. The optimistic reading -- the same one _enabled_jobs gives a
+    job with only runtime terms -- has this row report a job that would run,
+    with a mechanism distinct from every other row that also reports
+    ``will_run`` true, so a reader can tell 'decided' from 'pending'.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {"first": {"steps": ["Test.EngineFirst"], "if": "metric::x == 0"}},
+        }
+    )
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain()
+
+    first = explanation.jobs[0]
+    assert first.job_id == "first"
+    assert first.will_run is True
+    assert first.mechanism == "condition (runtime)"
+    assert "metric::x == 0" in first.reason
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_prefers_skip_and_a_false_configuration_term_over_a_runtime_term(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    '--skip' and a false configuration term are both decided at explain time;
+    a runtime term is not. Mixing all three on one job proves the two
+    decided mechanisms still win the row, exactly as the scheduling loop
+    only asks the runtime term once the configuration half has already
+    passed.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "config": [_bool_var("RUN_FIRST", False)],
+            "jobs": {
+                "first": {
+                    "steps": ["Test.EngineFirst"],
+                    "if": "RUN_FIRST and metric::x == 0",
+                },
+                "second": {
+                    "steps": ["Test.EngineSecond"],
+                    "if": "RUN_FIRST and metric::x == 0",
+                },
+            },
+        }
+    )
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(skip=["second"])
+
+    by_id = {d.job_id: d for d in explanation.jobs}
+    assert by_id["first"].will_run is False
+    assert by_id["first"].mechanism == "condition"
+    assert "RUN_FIRST" in by_id["first"].reason
+    assert by_id["second"].will_run is False
+    assert by_id["second"].mechanism == "skip"
+
+
+@mock_variables([flow_module, step_module])
 def test_explain_marks_jobs_outside_the_target_subgraph(
     counting_steps, minimal_design, mock_pdk
 ):

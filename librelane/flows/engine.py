@@ -44,6 +44,7 @@ from librelane.flows.explanation import (
 )
 from librelane.flows.flow import Flow, FlowError, FlowException
 from librelane.flows.job import ResolvedJob, ToolSelection, resolve_jobs
+from librelane.flows import predicates
 from librelane.flows.join import join_sink_states, join_states
 from librelane.flows.net import Net
 from librelane.flows.resume import resume_key, reusable_state, write_entry
@@ -713,6 +714,8 @@ class Workflow(Flow):
                         self.progress_bar.start_stage(name)
                         started = True
                         reason = self._pass_through_reason(job, name in plan.skipped)
+                        if reason is None:
+                            reason = self._runtime_pass_through_reason(job, state_in)
                         if reason is not None:
                             logger.info(f"Skipping job '{name}': {reason}.")
                             net.fire(name, state_in)
@@ -971,6 +974,29 @@ class Workflow(Flow):
                 # because this run would never execute the step.
                 dispositions.append(
                     self._reproducible_disposition(job, needs, plan.reproducible_at[1])
+                )
+                continue
+            runtime_terms = predicates.metric_terms(job.conditions)
+            if runtime_terms:
+                # --skip and a false configuration term are decided now, and
+                # both already took the two 'continue's above; a runtime term
+                # is not decided until the run reads the job's actual input
+                # state, so the job counts as enabled here -- the same
+                # optimistic reading _enabled_jobs gives it -- and this row
+                # says so rather than claiming the answer either way.
+                terms_text = " and ".join(
+                    f"metric::{term.metric} {term.op} {term.literal}"
+                    for term in runtime_terms
+                )
+                dispositions.append(
+                    JobDisposition(
+                        job_id,
+                        needs,
+                        True,
+                        f"runtime term(s) {terms_text} are decided at run "
+                        f"time against the job's input state",
+                        "condition (runtime)",
+                    )
                 )
                 continue
             dispositions.append(JobDisposition(job_id, needs, True, "will run", None))
@@ -1543,12 +1569,50 @@ class Workflow(Flow):
         if skipped:
             return "named by --skip"
         false_variables = [
-            variable for variable in job.conditions if not self.config[variable]
+            name
+            for name in predicates.config_terms(job.conditions)
+            if not self.config[name]
         ]
         if false_variables:
-            names = ", ".join(f"'{variable}'" for variable in false_variables)
+            names = ", ".join(f"'{name}'" for name in false_variables)
             verb = "is" if len(false_variables) == 1 else "are"
             return f"{names} {verb} false"
+        return None
+
+    def _runtime_pass_through_reason(
+        self, job: ResolvedJob, state_in: State
+    ) -> str | None:
+        """
+        Returns
+        -------
+        Why this job fires as a pass-through on account of a runtime
+        (``metric::``) term in its ``if``, or ``None`` if every one holds.
+
+        Asked only once :meth:`_pass_through_reason` has already answered
+        ``None`` for this job: ``--skip`` and a false configuration term are
+        decided at construction and win outright, so the scheduling loop asks
+        this second, and only when nothing already stopped the job. A runtime
+        term is decided only now, against the joined input state, which is
+        why this takes ``state_in`` and :meth:`_pass_through_reason` does not.
+
+        Raises
+        ------
+        FlowError
+            Propagated from
+            :func:`~librelane.flows.predicates.evaluate_metric_term`: the
+            term's metric is absent from ``state_in.metrics``, or its
+            observed value is not numeric.
+        """
+        for term in predicates.metric_terms(job.conditions):
+            if predicates.evaluate_metric_term(
+                term, state_in.metrics, f"Job '{job.id}'"
+            ):
+                continue
+            observed = state_in.metrics[term.metric]
+            return (
+                f"metric::{term.metric} {term.op} {term.literal} is false: "
+                f"observed {observed}"
+            )
         return None
 
     def _run_job(

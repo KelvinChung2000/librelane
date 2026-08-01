@@ -32,12 +32,14 @@ import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
 from librelane.flows import flow as flow_module
 from librelane.flows.job import resolve_jobs
+from librelane.flows.predicates import config_terms
 from librelane.flows.selection_validation import (
     SINK_JOIN,
     join_conflicts,
     lost_views,
     produced_keys,
     supplied_views,
+    unrepeated_runtime_terms,
     validate_selection,
 )
 from librelane.jobs import JobResolutionError
@@ -81,7 +83,7 @@ def _default_enabled(document: str) -> set[str]:
     return {
         job_id
         for job_id, job in resolve_jobs(spec).items()
-        if all(defaults[condition] for condition in job.conditions)
+        if all(defaults[name] for name in config_terms(job.conditions))
     }
 
 
@@ -371,6 +373,7 @@ def test_a_remedy_never_names_a_commercial_scaffold():
         from importlib.resources import files
 
         from librelane.flows.job import resolve_jobs
+        from librelane.flows.predicates import config_terms
         from librelane.flows.selection_validation import validate_selection
         from librelane.flows.spec import load_flow_spec
         from librelane.flows.spec_validation import validate_against_registry
@@ -388,7 +391,9 @@ def test_a_remedy_never_names_a_commercial_scaffold():
         enabled = {
             job_id
             for job_id, job in resolve_jobs(spec).items()
-            if all(defaults[condition] for condition in job.conditions)
+            if all(
+                defaults[name] for name in config_terms(job.conditions)
+            )
         }
 
         try:
@@ -674,6 +679,84 @@ def test_a_remedy_is_measured_under_the_initial_state_too():
     assert refusal is not None
     assert "both write 'klayout__drc_error__count'" in refusal
     assert "set TOOLS['magic_drc'] to 'magic'" in refusal
+
+
+def test_unrepeated_runtime_terms_finds_an_unrepeated_producer_term(counting_steps):
+    """
+    'producer' fires as a pass-through whenever 'metric::x == 0' is false, and
+    writes nothing when it does; 'consumer' does not repeat the term, so it is
+    exposed to whatever state 'producer' passed through unchanged, silently.
+    """
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "producer": {"steps": ["Test.EngineFirst"], "if": "metric::x == 0"},
+                "consumer": {"needs": ["producer"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+    jobs = resolve_jobs(spec)
+
+    findings = unrepeated_runtime_terms(jobs)
+
+    assert len(findings) == 1
+    consumer_id, producer_id, missing = findings[0]
+    assert consumer_id == "consumer"
+    assert producer_id == "producer"
+    assert [term.metric for term in missing] == ["x"]
+
+
+def test_unrepeated_runtime_terms_stays_silent_for_a_repeated_term(counting_steps):
+    """
+    Dataclass equality, not just the metric name: the consumer here repeats
+    the exact term -- same operator, same literal -- so it inherits the
+    producer's own disposition and sees a coherent story either way.
+    """
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "producer": {"steps": ["Test.EngineFirst"], "if": "metric::x == 0"},
+                "consumer": {
+                    "needs": ["producer"],
+                    "steps": ["Test.EngineSecond"],
+                    "if": "metric::x == 0",
+                },
+            },
+        }
+    )
+    jobs = resolve_jobs(spec)
+
+    assert unrepeated_runtime_terms(jobs) == []
+
+
+def test_validate_selection_warns_for_an_unrepeated_runtime_term(
+    caplog, counting_steps
+):
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "producer": {"steps": ["Test.EngineFirst"], "if": "metric::x == 0"},
+                "consumer": {"needs": ["producer"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+    jobs = resolve_jobs(spec)
+
+    validate_selection(spec, jobs, set(jobs))
+
+    message = caplog.text
+    assert "consumer" in message
+    assert "producer" in message
+    assert "metric::x == 0" in message
 
 
 #: A two-job document whose jobs run concurrently and whose providers write one

@@ -43,21 +43,28 @@ class JobDisposition:
         A sentence naming the cause, suitable for printing.
     mechanism : str | None
         ``None`` when the job runs in full, and otherwise one of
-        ``condition``, ``skip``, ``not-in-target``, ``not-in-reproducible`` or
-        ``reproducible``.
+        ``condition``, ``skip``, ``not-in-target``, ``not-in-reproducible``,
+        ``reproducible`` or ``condition (runtime)``.
 
-        Those five are the only values a job entry can carry, because they are
-        the only mechanisms that stop a job the document declares from running
-        as it otherwise would. ``TOOLS`` is not among them: it re-points a job
-        at another provider and so changes which steps the job runs, never
-        whether the job is there. Every declared job therefore has an entry,
-        including the ones that will not run, which is the question an
-        explanation is asked.
+        The first five are the only values that stop a job the document
+        declares from running as it otherwise would. ``TOOLS`` is not among
+        them: it re-points a job at another provider and so changes which
+        steps the job runs, never whether the job is there. Every declared
+        job therefore has an entry, including the ones that will not run,
+        which is the question an explanation is asked.
 
-        ``reproducible`` is the one value that can accompany a true
-        :attr:`will_run`. It marks the job whose step ``--reproducible``
-        named: the steps ahead of that one run and the run then stops, so the
-        job neither runs in full nor is excluded.
+        ``reproducible`` and ``condition (runtime)`` are the two values that
+        can accompany a true :attr:`will_run`. ``reproducible`` marks the job
+        whose step ``--reproducible`` named: the steps ahead of that one run
+        and the run then stops, so the job neither runs in full nor is
+        excluded. ``condition (runtime)`` marks a job whose ``if`` has a
+        ``metric::`` term that neither ``--skip`` nor a false configuration
+        term already stopped: unlike every other mechanism, the verdict is
+        not known at explain time, only at the run's own scheduling instant,
+        against the job's actual input state -- so :attr:`will_run` reads
+        optimistically true, the same reading
+        :meth:`~librelane.flows.engine.Workflow._enabled_jobs` gives it, and
+        :attr:`reason` says the verdict is still pending.
     """
 
     job_id: str

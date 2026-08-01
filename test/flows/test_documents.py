@@ -28,6 +28,7 @@ import pytest
 import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
 from librelane.flows.job import resolve_jobs
+from librelane.flows.predicates import config_terms
 from librelane.flows.selection_validation import (
     FRAMEWORK_METRICS,
     JoinConflict,
@@ -123,11 +124,17 @@ def _gating_variables(name: str) -> list[tuple[str, str, tuple[str, ...]]]:
     ``jobs[job_id].conditions`` mean exactly what they meant there; only its
     former counterpart, ``_flow_gating_variables``, is gone for good, because
     there is no longer a Python flow to derive it from.
+
+    ``conditions`` is projected through :func:`~librelane.flows.predicates.config_terms`
+    since spec 3 retyped ``ResolvedJob.conditions`` to carry parsed predicate
+    terms rather than bare names: no shipped document declares a ``metric::``
+    term, so this is the same set of names it always was, read off the
+    configuration half of the (possibly mixed) conjunction.
     """
     spec = _document(name)
     jobs = resolve_jobs(spec)
     return [
-        (job_id, step.get_implementation_id(), jobs[job_id].conditions)
+        (job_id, step.get_implementation_id(), config_terms(jobs[job_id].conditions))
         for job_id in spec.jobs
         for step in jobs[job_id].steps
     ]

@@ -346,6 +346,225 @@ def test_a_conjunction_whose_variables_are_all_true_runs_the_job(
     assert order == ["Test.EngineFirst"]
 
 
+@pytest.fixture
+def metric_producers():
+    """
+    Three trivially registered steps, each depositing a fixed value for
+    metric ``x`` and nothing else, so a runtime ``if`` term has something
+    concrete to compare against without going through
+    :meth:`~librelane.flows.flow.Flow.start`'s ``with_initial_state``, whose
+    ``with_initial_state or State()`` idiom silently drops a state carrying
+    only metrics (``bool()`` on a :class:`~librelane.state.State` reads its
+    view count, not its metrics). Reading the metric off an upstream job's
+    own output is also the shape every real runtime term is evaluated
+    against, per the design.
+
+    Returns
+    -------
+    ``(EmitsZero, EmitsThree, EmitsNothing)``, three step classes writing
+    ``x: 0``, ``x: 3`` and no metric at all, respectively.
+    """
+    from librelane.steps import Step
+
+    @Step.factory.register()
+    class EmitsZero(Step):
+        id = "Test.RuntimeEmitsZero"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {"x": 0}
+
+    @Step.factory.register()
+    class EmitsThree(Step):
+        id = "Test.RuntimeEmitsThree"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {"x": 3}
+
+    @Step.factory.register()
+    class EmitsNothing(Step):
+        id = "Test.RuntimeEmitsNothing"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {"y": 1}
+
+    return EmitsZero, EmitsThree, EmitsNothing
+
+
+@mock_variables([flow_module, step_module])
+def test_a_true_runtime_condition_runs_the_job(
+    metric_producers, counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, First, _ = counting_steps
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "producer": {"steps": ["Test.RuntimeEmitsZero"]},
+                "consumer": {
+                    "needs": ["producer"],
+                    "steps": ["Test.EngineFirst"],
+                    "if": "metric::x == 0",
+                },
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="t")
+
+    assert order == [First.id]
+
+
+@mock_variables([flow_module, step_module])
+def test_a_false_runtime_condition_passes_through_with_the_observed_value(
+    caplog, metric_producers, counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, _, Second = counting_steps
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "producer": {"steps": ["Test.RuntimeEmitsThree"]},
+                "consumer": {
+                    "needs": ["producer"],
+                    "steps": ["Test.EngineFirst"],
+                    "if": "metric::x == 0",
+                },
+                "downstream": {
+                    "needs": ["consumer"],
+                    "steps": ["Test.EngineSecond"],
+                },
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="t")
+
+    # 'consumer' did not run, but 'downstream' still did: the pass-through
+    # released the token exactly as a false configuration term does.
+    assert order == [Second.id]
+    assert "metric::x == 0 is false: observed 3" in caplog.text
+
+
+@mock_variables([flow_module, step_module])
+def test_a_runtime_condition_with_a_missing_metric_fails_the_job_naming_it(
+    metric_producers, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "producer": {"steps": ["Test.RuntimeEmitsNothing"]},
+                "consumer": {
+                    "needs": ["producer"],
+                    "steps": ["Test.EngineFirst"],
+                    "if": "metric::x == 0",
+                },
+            },
+        }
+    )
+
+    # The producer writes 'y', never 'x': absence is not false, so this fails
+    # the job rather than passing it through.
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowError) as exc_info:
+        flow.start(tag="t")
+
+    message = str(exc_info.value)
+    assert "consumer" in message
+    assert "x" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_a_mixed_conjunction_needs_both_the_configuration_and_the_runtime_term(
+    metric_producers, counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, First, _ = counting_steps
+
+    def _spec(producer_step: str) -> FlowSpec:
+        return FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "config": [_bool_var("RUN_A", True)],
+                "jobs": {
+                    "producer": {"steps": [producer_step]},
+                    "consumer": {
+                        "needs": ["producer"],
+                        "steps": ["Test.EngineFirst"],
+                        "if": "RUN_A and metric::x == 0",
+                    },
+                },
+            }
+        )
+
+    # The configuration half alone is not enough: RUN_A is true but the
+    # runtime term is false, so the job still passes through.
+    flow = Workflow(_spec("Test.RuntimeEmitsThree"), minimal_design, **mock_pdk)
+    flow.start(tag="t-half")
+    assert order == []
+
+    # Both halves true runs it.
+    flow = Workflow(_spec("Test.RuntimeEmitsZero"), minimal_design, **mock_pdk)
+    flow.start(tag="t-both")
+    assert order == [First.id]
+
+
+@mock_variables([flow_module, step_module])
+def test_a_false_configuration_term_short_circuits_before_the_runtime_term(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    '--skip' and a false configuration term are decided at construction and
+    win outright; the scheduling loop asks the runtime term only once the
+    configuration half has already passed. Pinned by a document whose runtime
+    term's metric the initial state does not carry at all: if the runtime
+    term were evaluated here, the missing metric would fail the job, so
+    running clean proves the short circuit rather than merely a lucky order.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, _, _ = counting_steps
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "config": [_bool_var("RUN_A", False)],
+            "jobs": {
+                "first": {
+                    "steps": ["Test.EngineFirst"],
+                    "if": "RUN_A and metric::x == 0",
+                },
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="t")
+
+    assert order == ["Test.EngineSecond"]
+
+
 @mock_variables([flow_module, step_module])
 def test_a_skipped_job_passes_state_through_without_running(
     counting_steps, minimal_design, mock_pdk
