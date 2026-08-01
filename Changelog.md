@@ -33,6 +33,24 @@ Style Notes
   over the document `Flow.factory.get` returns, rather than
   instantiating a flow class, so every flow-control option addresses the
   document's jobs.
+* Added `librelane open <viewer>`, which loads a finished run into a tool.
+  `klayout`, `magic` and `openroad` open a GUI; `openroad-console` and
+  `opensta-console` open an interactive console. It replaces the five
+  `OpenIn*` flows, which are deleted along with `--flow OpenInKLayout` and its
+  four siblings.
+  * Opening a run in a viewer was never a flow. It runs one step, produces no
+    view and no metric, advances nothing, and waits for a human. As documents
+    those five sat on the `--flow` list beside `Classic` and were given a run
+    directory, a net, a join and a resume key that none of them used.
+  * The run is named by `--run-tag` or `--last-run`, and there is no default:
+    a viewer opened on nothing is a window a user closes before finding out
+    they mistyped, so the command lists the runs that do exist instead.
+  * The state opened is the last one that run wrote, the same file
+    `librelane state latest` prints, unless `--with-initial-state` names
+    another. This is what `--flow OpenInKLayout` was documented to do.
+  * Only the viewer step's own configuration variables are resolved, plus the
+    universal ones. Nothing else is going to run, so a design whose unrelated
+    variable is malformed still opens.
 * Removed `--from` and `--to`. A step window is not expressible over a graph.
   * Added `--target`/`-T`, which runs a job and everything it transitively
     needs and nothing else. The run's final state is the named job's own
@@ -456,6 +474,33 @@ Style Notes
 
 ## Flows
 
+* Gave the `odb`-editing steps to the jobs whose `odb` they edit.
+  `OpenROAD.CutRows`, `Odb.AddRoutingObstructions` and
+  `Odb.ManualGlobalPlacement` were jobs of their own in all three shipped
+  documents, each needing only its predecessor, so the place-and-route chain
+  read as one job per step. Each edits an `odb`, OpenROAD's native database,
+  so none means anything unless its job resolved to OpenROAD, which makes
+  them members of the `macro_placement`, `power_grid` and `detailed_placement`
+  registrations rather than steps a document lists.
+  `Odb.RemoveRoutingObstructions` was already inside `detailed_routing` for
+  the same reason.
+  * `classic.yaml`, `vhdl_classic.yaml` and `chip.yaml` run the same 82, 74
+    and 83 steps in the same order as before, and lose four jobs each.
+  * `write_verilog_header` and `sta_mid_pnr_1` were adjacent, inline and
+    ungated in all three, and merge into one job named `post_gpl_checks` for
+    what it does rather than for its first step. `vhdl_classic.yaml` calls its
+    two-step version of that job the same thing, in place of the
+    `power_grid_check` it had to invent.
+  * `OpenROAD.AddBuffer` edits an `odb` too and stays a job a document lists,
+    because `chip.yaml` runs global placement and deliberately does not run
+    it: a chip's ports are the pad ring's bumps, and the pad cells have
+    buffered them already. A step two documents want and a third refuses is
+    the document's choice.
+  * Run directories move accordingly, since a step's directory is
+    `<run_dir>/<job id>/<n>-<step slug>`. `cut_rows/1-openroad-cutrows`
+    becomes `macro_placement/2-openroad-cutrows`, and `write_verilog_header/`
+    becomes `post_gpl_checks/`. A run started before this change therefore
+    re-runs those steps when resumed, having no entry under the new path.
 * Independent jobs run concurrently. A document orders jobs with `needs`, and
   two jobs with no path between them are scheduled together. In `Classic` the
   signoff tail fans out into four branches that previously ran one after
