@@ -85,7 +85,7 @@ def _validate(raw: Any) -> dict[str, str | list[str]]:
             continue
         raise JobResolutionError(
             f"TOOLS['{job}'] is {type(value).__name__}; a provider selection "
-            f"must be a string, or a list of strings for a multi-provider job."
+            f"must be a string naming one provider."
         )
     return result
 

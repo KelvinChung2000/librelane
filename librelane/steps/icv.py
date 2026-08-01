@@ -69,10 +69,12 @@ class DRC(ICValidatorStep):
     """
     Scaffold for design rule checking using IC Validator.
 
-    ``drc`` is a ``multi_provider`` job already served by Magic and
-    KLayout; this step slots in beside them as a third provider rather than
-    replacing either. Mirrors ``Magic.DRC``'s neutral contract, taking DEF
-    optionally and GDS.
+    The ``drc`` job is already served by Magic and KLayout; this step slots
+    in beside them as a third provider rather than replacing either. A
+    document runs one provider per job, so a flow that wants IC Validator
+    alongside one of the others declares a second ``drc`` job pinning it, as
+    ``classic.yaml`` does for Magic and KLayout. Mirrors ``Magic.DRC``'s
+    neutral contract, taking DEF optionally and GDS.
     """
 
     id = "ICValidator.DRC"

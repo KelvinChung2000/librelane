@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# The Classic flow's Stages list and gating table, as a graph.
+# The Classic flow, written as a graph of jobs.
+#
+# It replaces a Python class that held a flat list of steps beside a separate
+# table mapping step id to gating variable. Each job below carries its own
+# steps and its own 'if', so what were two declarations are one.
 #
 # Place and route is a chain and is written as one: each of those jobs really
 # does read the view the job before it wrote. The signoff tail is not. Six
@@ -164,9 +168,8 @@ jobs:
   lint:
     uses: lint
     if: RUN_LINTER
-  # No provider is pinned, because the Python flow does not pin one either:
-  # Classic.Stages declares a bare Job.synthesis and only VHDLClassic writes
-  # .using("yosys_vhdl"). This mirrors that and nothing more.
+  # No provider is pinned, so this job takes the synthesis template's default,
+  # yosys. Only vhdl_classic.yaml pins one, because only it needs the other.
   #
   # It is not what makes the job selectable. TOOLS re-points a job whether or
   # not its 'uses' names a provider -- a pin is this document's default, not a
@@ -309,9 +312,10 @@ jobs:
     needs: [signoff_sta]
     uses: ir_drop
     if: RUN_IRDROP_REPORT
-  # One job per streamout provider rather than one multi-provider job, because
-  # the two are switched by two independent booleans and a job-level 'if' is
-  # one condition. Likewise drc, below.
+  # One job per streamout provider. A job runs one provider, so two tools for
+  # one phase is two jobs -- and that is also what makes the two independent
+  # booleans expressible, since a job-level 'if' is one condition. Likewise
+  # drc, below.
   magic_streamout:
     needs: [ir_drop]
     uses: streamout/magic

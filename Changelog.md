@@ -456,6 +456,22 @@ Style Notes
 
 ## Flows
 
+* Independent jobs run concurrently. A document orders jobs with `needs`, and
+  two jobs with no path between them are scheduled together. In `Classic` the
+  signoff tail fans out into four branches that previously ran one after
+  another in list order, so `xor`, `magic_drc`, `klayout_drc` and the
+  `lvs`/`formal_equivalence` chain now overlap and meet again at
+  `final_checks`. The order a flat step list happened to be written in was
+  never a statement that the steps depended on each other; a graph is what
+  lets a flow say which ones do.
+  * The two stream-outs are deliberately *not* concurrent. `klayout_streamout`
+    needs `magic_streamout`, because each writes the neutral `gds` view if its
+    own tool is `PRIMARY_GDSII_STREAMOUT_TOOL` or if nothing has written one
+    yet. In series that reproduces "the primary tool owns `gds`" exactly. In
+    parallel both would see an empty incoming `gds` and both would write one,
+    and a join whose branches disagree on a key raises `JoinConflictError`
+    unless the job names a `source` to settle it, which no static entry can do
+    when the winner is whichever tool the PDK named.
 * Registered `klayout` as a second provider of the `lvs` job, selectable with
   `{"TOOLS": {"lvs": "klayout"}}`. Its sequence is `OpenROAD.WriteCDL`,
   `KLayout.LVS`, `Checker.LVS`. `KLayout.LVS` was previously reachable from no
@@ -485,16 +501,18 @@ Style Notes
     has no use for.
   * Issue #696 asked instead for `KLayout.LVS` to run *alongside* Netgen in the
     default `Classic` flow, behind a `RUN_KLAYOUT_LVS` gate. That shape was not
-    implemented. Running both would make `lvs` multi-provider, and two names
-    would then have two unconditional writers: `design__lvs_error__count`, and
-    the `spice` view that `Magic.SpiceExtraction` and `KLayout.LVS` both output.
-    Sharing a name is not itself the problem, and no rule against it is being
-    proposed: `streamout` is multi-provider and both its providers write `gds`
-    deliberately. What makes that one safe is the explicit precedence rule the
-    two stream-out steps implement on the PDK's `PRIMARY_GDSII_STREAMOUT_TOOL`.
+    implemented. Running both means two `lvs` jobs, one per provider, and two
+    names would then have two unconditional writers:
+    `design__lvs_error__count`, and the `spice` view that
+    `Magic.SpiceExtraction` and `KLayout.LVS` both output. Sharing a name is
+    not itself the problem, and no rule against it is being proposed:
+    `Classic` runs two `streamout` jobs and both write `gds` deliberately.
+    What makes that one safe is the explicit precedence rule the two
+    stream-out steps implement on the PDK's `PRIMARY_GDSII_STREAMOUT_TOOL`.
     Neither of the `lvs` overlaps has an equivalent, so the winner would be
-    decided by registration order and be invisible. A multi-provider `lvs`
-    therefore needs an explicit statement of which contributor wins.
+    decided by job order and be invisible. Two co-running `lvs` jobs therefore
+    need an explicit statement of which contributor wins, which is what a
+    document's `source` key is for.
   * Co-running both tools would also put a step supporting two IHP PDKs into
     the default flow for every PDK. The maintainer's reply on the issue
     proposes substitution instead, driven by PDK-supplied flow configuration,
@@ -507,7 +525,7 @@ Style Notes
   upstream pull request it comes from moved critical metrics on twelve of the
   CI designs (#558).
 
-* Sequential flows resume within an existing run tag. A step whose own
+* Runs resume within an existing run tag. A step whose own
   configuration, the contents of every file that configuration names, and whose
   entire input state including metrics are all unchanged reuses the result it
   recorded, provided the views it produced still exist. Everything else
@@ -522,39 +540,36 @@ Style Notes
     miss. Anything that cannot be proven is a miss, including an entry
     truncated by `kill -9`.
   * A tool upgraded in place, or a script edited in a development checkout,
-    under an unchanged LibreLane version is not detected. `--from` and
+    under an unchanged LibreLane version is not detected. `--invalidate` and
     `--overwrite` are the remedies, and {doc}`/usage/resuming_runs` says so.
-  * `Optimizing` and `SynthesisExploration` build their steps in
-    data-dependent loops and do not participate.
+  * `Optimizing` and `SynthesisExploration` built their steps in
+    data-dependent loops and did not participate. Both are removed.
 * **Behaviour change:** re-invoking a flow on an existing run tag no longer
   appends a second full pass to it. It previously re-executed every step into
   the same directory under fresh ordinals, seeded with whichever
   `state_out.json` had the latest modification time, which also meant metrics
   accumulated across passes and a step could receive a state produced
   downstream of it. `--overwrite` remains the way to discard a tag.
-* **Behaviour change:** `--from` now forces re-execution of the named step and
-  every step after it, ignoring their recorded results, and takes the steps
-  before it from theirs. If one of those has no reusable result the run stops
-  and names it, rather than proceeding on a state it cannot justify. Supplying
-  `--with-initial-state` skips the earlier steps instead, since that state is
-  what stands in for them, which is what the ECO guide's workflow relies on.
-* Sequential step directories are named for the step's position in the flow
-  rather than for how many steps happened to run, so a gated or skipped step
-  leaves a gap in the numbering. A step keeps its directory whether or not the
-  steps before it ran, which is what lets a resumed run find its own previous
-  result. A full run with nothing gated is named exactly as before.
+* A run directory holds one directory per job, and each of those one directory
+  per step numbered by its position within that job, as
+  `runs/TAG/<job>/<n>-<step>`. Jobs run concurrently, so there is no global
+  step order to number against, and a position counted across the whole run
+  would move whenever an unrelated edge was added to the document, renaming
+  every directory after it and invalidating every result recorded in one. A
+  job that is gated off or skipped contributes no directory, and the numbering
+  inside the jobs that did run is unaffected.
 * Migrated the `Classic` flow's configuration declarations to a nested typed
   `Config` model.
-* Created `StagedFlow`, a `SequentialFlow` whose step list is expanded from a
-  list of jobs drawn from a 27-job taxonomy, so the tool used for a phase
-  can be selected rather than hardcoded. `Classic`, `VHDLClassic` and `Chip`
-  produce the same step lists as before, except for the DRC step reorder
+* Created a 27-job taxonomy, so the tool used for a phase can be selected
+  rather than hardcoded. A flow names a job and the job expands into whichever
+  steps implement it for the provider selected. `Classic`, `VHDLClassic` and
+  `Chip` run the same steps as before, except for the DRC step reorder
   described below.
 * Moved gating from individual step IDs to the job that owns them, so a
-  gating variable applies whichever tool implements the job. Fifteen of
-  `Classic`'s twenty-five step-level gates are now generated from the
-  taxonomy; the ten that address one tool inside a multi-tool job, such as
-  `RUN_MAGIC_DRC`, remain declared on the flow.
+  gating variable applies whichever tool implements the job. A document writes
+  one `if` on the job rather than a table mapping step ids to variables, and a
+  gate that used to address one tool inside a two-tool phase, such as
+  `RUN_MAGIC_DRC`, now sits on that tool's own job.
   * Three gating variables now reach further, each covering a step that was
     previously left running with nothing to consume its output:
     * `RUN_ANTENNA_REPAIR` also skips `Odb.DiodesOnPorts`. Setting it false
@@ -566,10 +581,10 @@ Style Notes
       The extraction exists to feed LVS, and disabling LVS used to still pay
       for it and still fail the run on a check nobody asked for.
 * Added `TOOLS`, a mapping from job id to the provider implementing it, so a
-  phase's tool can be chosen from configuration instead of by subclassing the
-  flow. `{"streamout": "klayout"}` drops Magic's streamout;
-  `{"streamout": ["magic", "klayout"]}` runs both. Unknown jobs and providers
-  are rejected by name, with a suggestion for a near miss.
+  phase's tool can be chosen from configuration instead of by editing the
+  flow. `{"lvs": "klayout"}` runs KLayout's LVS sequence where `Classic` would
+  have run Netgen's. Unknown jobs and providers are rejected by name, with a
+  suggestion for a near miss.
   * `TOOLS` must be a literal mapping. It is read by a pre-pass ahead of full
     configuration resolution, because a flow's step set has to be known before
     the configuration those steps declare can be validated, so `expr::`,
@@ -577,14 +592,9 @@ Style Notes
   * `TOOLS` is not read from Tcl configuration files, which need process
     information that is not resolved that early. Such a file is reported as
     unconsulted rather than silently treated as empty.
-  * Selecting one tool of a multi-tool job drops the other's hand-written
-    gates, since the steps they name are no longer in the flow. A dead gate is
-    still an error when a flow class declares one, which is where a typo is.
-  * `TOOLS` composes with `Substitutions`. Job expansion happens first and the
-    flow's substitutions are replayed onto the result, so setting `TOOLS` on a
-    flow such as `Chip` keeps the steps it substitutes in and out. A
-    substitution naming a step the selected provider removed is an error, the
-    same as one naming a step that was never there.
+  * Re-pointing a job at a different provider does not disturb its gating. A
+    document's `if` is a property of the job, not of the steps the provider
+    happened to contribute, so it applies to whichever tool runs.
 * Job contracts are enforced at run time. When the last step of a job
   completes, every view in the job's `provides` must be in the state and every
   metric in its `metrics` must have been emitted, or the run fails. There is no
@@ -593,11 +603,11 @@ Style Notes
   compared on base names, so a provider emitting only per-net or per-corner
   variants of a contracted metric still satisfies it.
   * A run that did not execute every step it covers, because they were gated,
-    skipped, or excluded by `--from`/`--to`, is not checked. Its views and
+    skipped, or left outside a `--target`, is not checked. Its views and
     metrics were never attempted.
-  * Each provider of a multi-tool job additionally answers for the `provides`
-    and `metrics` its own registration declares, checked once its own steps
-    complete rather than once the job does. So `RUN_MAGIC_DRC=false` leaves
+  * A provider additionally answers for the `provides` and `metrics` its own
+    registration declares, checked once its own steps complete rather than
+    once the job does. So `RUN_MAGIC_DRC=false` leaves
     KLayout still answerable for `klayout__drc_error__count`, where a single
     job-wide check would have excused it along with Magic. The job's own
     `provides` stay a joint obligation, which is what lets both `streamout`
@@ -611,20 +621,17 @@ Style Notes
   `TOOLS` selection safe to attempt: picking a synthesis frontend that emits no
   Verilog header now says so immediately instead of crashing once floorplanning
   reaches for it.
-  * Two configurations that were already broken now fail at startup rather than
+  * A configuration that was already broken now fails at startup rather than
     part-way through a run. `{"synthesis": "yosys_vhdl"}` on `Classic` is
     rejected, because `Classic` runs steps that hard-require the Verilog header
     only Verilog synthesis emits; use the `VHDLClassic` flow, which does not.
-    `{"streamout": "klayout"}` is rejected unless `RUN_KLAYOUT_XOR` is false,
-    because the XOR compares Magic's GDSII against KLayout's and there is no
-    longer a Magic GDSII to compare.
   * The error names the provider that declares the missing view, so it says
     which tool was dropped rather than leaving that to be worked out.
 * Audited step ownership across every provider, against one rule: a step that
   only makes sense when a particular tool was selected belongs inside that
   tool's provider registration, so deselecting the tool removes the step with
-  it. A step whose inclusion is the flow's choice, independent of the tool, is a
-  plain step in the flow's `Stages` list.
+  it. A step whose inclusion is the flow's choice, independent of the tool, is
+  a step a document lists directly with `steps`.
   * **Fixed:** `Checker.MagicDRC` and `Checker.KLayoutDRC` now belong to the
     `drc` job's `magic` and `klayout` providers. As plain steps of `Classic`,
     `{"drc": "klayout"}` removed `Magic.DRC` but left `Checker.MagicDRC` running
@@ -647,45 +654,40 @@ Style Notes
     on OpenROAD implementing the surrounding jobs. They cannot move into a
     registration, because they sit between jobs: `OpenROAD.STAMidPNR` appears
     four times at different points. A flow selecting a non-OpenROAD place-and-
-    route provider must declare its own `Stages` without them, and the view
-    preflight is what says so.
-* Added `Job.using`, which pins the tool a job runs from inside a flow's
-  `Stages` list, for example `Job.synthesis.using("yosys_vhdl")`. A pin is the
-  flow's default rather than a lock: a `TOOLS` entry still overrides it.
-* `VHDLClassic` declares its own `Stages` list instead of a `Substitutions` map
-  over `Classic`'s steps. It still subclasses `Classic` for the configuration
-  variables, which are genuinely shared, but what it runs is now written down in
-  one place rather than expressed as edits to another flow's list. The step list
-  is unchanged.
+    route provider must be written as a document that does not list them, and
+    the view preflight is what says so.
+* A document pins the tool a job runs by writing `uses: synthesis/yosys_vhdl`
+  rather than `uses: synthesis`. A pin is the document's default rather than a
+  lock: a `TOOLS` entry still overrides it.
+* `vhdl_classic.yaml` writes out what `VHDLClassic` runs, rather than deriving
+  it from `Classic` by substitution. It repeats `Classic`'s configuration
+  declarations, which are genuinely shared, but what it runs is written down in
+  one place rather than expressed as edits to another flow's list. The step
+  list is unchanged.
   * `Odb.SetPowerConnections` moved out of the `floorplan` job's `openroad`
-    provider and into `Classic`'s own `Stages` list. It hard-requires the
+    provider and into a job `classic.yaml` lists directly. It hard-requires the
     Verilog header, so as a mandatory member of a tool-neutral job it made
-    floorplanning impossible for any flow without Verilog sources. As a plain
-    step, a flow that cannot run it simply omits it. The step list is unchanged.
-  * `RUN_LINTER` and `RUN_EQY` are still declared on `VHDLClassic`, inherited
-    from `Classic`, but have no effect there, since it runs neither job. Their
-    descriptions say so.
-* A gating key matching no step in a flow is now an error rather than being
-  ignored. Such a key silently fails to gate anything, which becomes a
-  correctness problem once a job can be implemented by a tool whose step IDs
-  differ. This surfaced one long-dead gate: `Chip` substitutes out
-  `Magic.WriteLEF` but inherited `Classic`'s gate for it.
-* Added `StagedFlow.describe_jobs`, pairing each job in a flow's `Stages`
-  list with the provider selected for it by default. `StagedFlow.get_help_md`
-  now renders this as a job table, so `librelane help Classic` and the
-  documentation build show every job alongside its default provider and its
-  registered alternatives, with a pointer to the new tool-swapping guide.
-  There is no `--list-jobs` CLI flag; the CLI is being restructured on this
-  branch and `get_help_md` is what both `librelane help` and the documentation
+    floorplanning impossible for any flow without Verilog sources. Listed
+    directly, a flow that cannot run it simply omits it. The step list is
+    unchanged.
+  * `RUN_LINTER` and `RUN_EQY` are still declared by `vhdl_classic.yaml`, so a
+    configuration setting either one keeps loading, but have no effect there,
+    since it runs neither job. Their descriptions say so.
+* `Workflow.get_help_md` renders the flow's resolved job table, so
+  `librelane help Classic` and the documentation build show every job
+  alongside the provider selected for it and its registered alternatives, with
+  a pointer to the new tool-swapping guide. There is no `--list-jobs` CLI
+  flag; `get_help_md` is what both `librelane help` and the documentation
   build already consult, so the same information needs no new CLI surface.
 * A provider registration names exactly one job. Gating, contract checking
   and provider selection are all per-job, so a registration covering several
   had no meaning in any of them. See {doc}`/usage/writing_tool_backends` for
   the reasoning and for what a tool with a long-lived session does instead.
-* Removed `Substitutions`, `Substitute` and `meta.substituting_steps`. Declare
-  an explicit `Stages` list, as `VHDLClassic` and `Chip` do. The
-  `hold_eco_demo` example and the ECO usage guide are removed with them; a
-  flow that inserts `Odb.InsertECOBuffers` is now written as a flow class.
+* Removed `Substitutions`, `Substitute` and `meta.substituting_steps`. Write a
+  document that declares what it runs, as `vhdl_classic.yaml` and `chip.yaml`
+  do. The `hold_eco_demo` example and the ECO usage guide are removed with
+  them; a flow that inserts `Odb.InsertECOBuffers` is now written as its own
+  document.
 * `meta.flow` no longer accepts a list of step IDs, and a list is now rejected
   with an error rather than silently falling through to `Classic`. Name a
   registered flow.
@@ -693,17 +695,13 @@ Style Notes
   their steps in data-dependent loops, which is the one shape per-step resume
   cannot serve; the multi-threading pattern they demonstrated is now written
   out inline in {doc}`/usage/writing_custom_flows`.
-* Added `SequentialFlow.explain`, which reports what a prospective invocation
-  would do without running it, and `StagedFlow.explain`, which additionally
-  names the jobs that contributed no steps. Resume is deliberately not
-  reported: a resume verdict depends on content fingerprints of files that
-  later steps in the same run will rewrite, so it cannot be known beforehand.
-* Fixed `--from` naming a step whose gating variable is off. Gating and
-  skipping are now decided before reuse in the run loop, so the two mechanisms
-  no longer interfere.
-* Fixed a gating key matching a step another key also matches. The two lists
-  now union rather than the later one overwriting the earlier, so a wildcard a
-  flow author wrote can no longer silently displace a generated job gate.
+* Added `Workflow.explain`, which reports what a prospective invocation would
+  do without running it, one row per job the document declares. Resume is
+  deliberately not reported, because a resume verdict depends on content
+  fingerprints of files that later steps in the same run will rewrite and so
+  cannot be known beforehand.
+* Gating and skipping are decided before reuse in the run loop, so the two
+  mechanisms no longer interfere.
 * `--reproducible` naming a step this configuration would never execute,
   because it is gated off or named by `--skip`, now raises rather than
   silently producing nothing.
@@ -835,6 +833,48 @@ Style Notes
 
 ## API Breaks
 
+* Flows are YAML documents rather than Python classes. `SequentialFlow` and
+  `StagedFlow` are deleted, along with `Classic`, `VHDLClassic`, `Chip`,
+  `OpenInKLayout`, `OpenInMagic`, `OpenInOpenROAD`, `OpenInOpenROADConsole`
+  and `OpenInOpenSTAConsole` as importable classes. The eight flows now ship
+  as `librelane/flows/*.yaml`, namely `chip.yaml`, `classic.yaml`,
+  `open_in_klayout.yaml`, `open_in_magic.yaml`, `open_in_openroad.yaml`,
+  `open_in_openroad_console.yaml`, `open_in_opensta_console.yaml` and
+  `vhdl_classic.yaml`. Each registers under the name its class carried, so
+  `--flow`, `meta.flow` and the `{flow}` documentation role are unaffected.
+  * `Flow.factory.get(name)` returns the
+    {class}`librelane.flows.spec.FlowSpec` the document parsed into, rather
+    than a `Flow` subclass, and {class}`librelane.flows.engine.Workflow` is
+    what runs it. `Flow.factory.list` is unchanged.
+  * `Flow.factory.register` takes a `FlowSpec` and is no longer a decorator.
+    `@Flow.factory.register()` over a class raises `TypeError`. Register a
+    document with `Flow.factory.register(load_flow_spec("./my_flow.yaml"))`.
+  * `Flow` itself remains, as machinery rather than as a declaration base. It
+    is still an abstract base class whose one abstract method is `run`, and
+    `Flow.Steps`, `Flow.start_step`, `Flow.start_step_async` and
+    `Flow.dir_for_step` are unchanged. A flow that has to decide what to run
+    next from what a step just produced is still written in Python against it,
+    which a document cannot yet express; see
+    {doc}`/usage/writing_custom_flows`. Such a flow has no registered name and
+    is constructed and started directly.
+* `SequentialFlow.gating_config_vars` is deleted along with the class, and no
+  gating table replaces it. A job carries `if: SOME_VARIABLE`, so a gate names
+  the job it turns off rather than a step id or a wildcard over step ids, and
+  it applies whichever tool implements that job.
+* For code written against the development branch only, since none of these
+  names appear in a released version: `Job.using`, `Job.multi_provider`,
+  `Job.optional`, `Job.gating_config_var` and `Job.default_providers` are
+  deleted, and `Job.default_provider` is one provider name or `None`. A
+  document pins with `uses: job/provider`, declares two jobs where two tools
+  run the same phase, and omits a job it does not want.
+  * Under the same qualifier, `StepDisposition` and the `steps` field of
+    `Explanation` are deleted. `Explanation.jobs` is a tuple of
+    `JobDisposition`, one per job the document declares, in topological order.
+  * `streamout` and `drc` now default to the `magic` provider, where both
+    previously defaulted to Magic and KLayout together. A bare
+    `uses: streamout` therefore runs Magic alone. `classic.yaml` and
+    `chip.yaml` declare `magic_streamout`/`klayout_streamout` and
+    `magic_drc`/`klayout_drc`, so what those flows run is unchanged.
 * `TOOLS` is keyed by job id rather than by stage id when a flow is run from a
   workflow document. A document names its own jobs, and one stage may run
   under several names, so the stage id is no longer a key any document
@@ -854,8 +894,8 @@ Style Notes
     "klayout"]}}` has no single-job replacement; declare both jobs.
   * A key naming a job that lists its steps inline is rejected. Such a job has
     no provider to override.
-  * A `TOOLS` entry still overrides a provider the flow pinned, whether pinned
-    with `Job.using` or with a document's `uses: stage/provider`.
+  * A `TOOLS` entry still overrides a provider a document pinned with
+    `uses: job/provider`. A pin is the document's default, not a lock.
 * `KLAYOUT_DENSITY_OPTIONS`, `KLAYOUT_ANTENNA_OPTIONS`, `KLAYOUT_DRC_OPTIONS`,
   `KLAYOUT_LVS_OPTIONS` and `KLAYOUT_FILLER_OPTIONS` read a `1` or a `0`
   written in a PDK's `config.tcl` as the number rather than as `True` or
@@ -871,8 +911,6 @@ Style Notes
 * `Flow.start` passes `initial_state_given` to `Flow.run` alongside
   `initial_state` and `starting_ordinal`. A `run` override that accepts
   `**kwargs`, as the abstract signature declares, is unaffected.
-* `Flow.dir_for_step` takes an optional `position`. Sequential flows pass it to
-  name a step's directory by its index; omitting it keeps the running counter.
 * `Flow.start` no longer pre-populates `step_objects` from a resumed run's
   directories, and no longer seeds the initial state from the most recently
   modified `state_out.json`. `Step.load_finished` and
@@ -934,24 +972,28 @@ Style Notes
   `librelane.jobs`. `Stage` is `Job`, `StageRegistry` is `JobRegistry`,
   `StageError` is `JobDefinitionError`, `StageResolutionError` is
   `JobResolutionError` and `StageContractError` is `JobContractError`.
-  `Registration.stage` is `Registration.job`, `STAGE_ORDER` is `JOB_ORDER` and
-  `StageEntry` is `JobEntry`. No compatibility aliases are provided: a stage and
+  `Registration.stage` is `Registration.job` and `STAGE_ORDER` is `JOB_ORDER`.
+  No compatibility aliases are provided: a stage and
   a job were the same thing under two names, and keeping both names would
   preserve the defect.
   Under the same qualifier, `JobRegistry.register` takes `job="x"` rather than
   `stages=["x"]`, and `Registration.stages`/`Registration.spanning` are removed
-  in favour of `Registration.job`.
+  in favour of `Registration.job`. `Registration.tagged_steps`, `Resolution`
+  and `ResolvedSpan` are removed with them. They existed so that a flow could
+  recover which steps belonged to which job from tags attached to the step
+  classes; a document's job owns its step list, so there is nothing to
+  recover.
 * Removed `Job.config_vars` and `Registration.requires_pdk_vars`. Both were
   empty on every shipped job and registration, so the checks reading them
   never checked anything. Provider variable portability is still enforced by
   the `namespaces` allowlist.
 * A `Step` that defines `flow_control_variable` now raises `TypeError`.
   Nothing had read the attribute since 2.0, so such a step appeared to gate and
-  did not. Gate it from the flow's `gating_config_vars` instead.
+  did not. Gate it from the workflow document instead, with an `if` on the job
+  that runs the step.
 * A `Step` that assigns `config_vars` in its class body now raises
   `TypeError`. A nested `class Config` is the only spelling an author writes;
   `config_vars` is derived from it.
-* Removed `SequentialFlow.make`. Use `SequentialFlow.Make`.
 * Removed `Flow.init_with_config`, `Flow.set_max_stage_count`,
   `Flow.start_stage`, `Flow.end_stage` and `Toolbox.aggregate_metrics`. Use the
   constructor, `flow.progress_bar.*`, and `aggregate_metrics` from
@@ -968,8 +1010,8 @@ Style Notes
   supported but documented nowhere, so the only way to find it was to read the
   variable list (#793).
 * Added {doc}`/usage/resuming_runs`, covering what resuming a run tag reuses,
-  that invalidation cascades, why step directory numbering leaves gaps, and
-  that a tool upgraded in place is not detected.
+  that invalidation cascades, how a run directory is laid out, and that a tool
+  upgraded in place is not detected.
 * Removed the clock period from the arrival-time equations in the timing
   closure guide; arrival time is measured from the launch edge (#974).
 * Finished the LVS mismatch guide and added it to the usage toctree; it was
@@ -984,16 +1026,18 @@ Style Notes
   `config_vars` lists and `self.config[KEY]` reads the typed configuration
   redesign left behind.
 * Added {doc}`/usage/swapping_tools`, covering the `TOOLS` configuration
-  variable, `Job.using`, multi-provider jobs, configuration layering
-  across several jobs at once, and the job table now rendered by
-  `get_help_md`.
+  variable, a document's `uses` pin, how a flow runs two tools for one phase,
+  configuration layering across several jobs at once, and the job table now
+  rendered by `get_help_md`.
 * Added {doc}`/usage/writing_tool_backends`, the provider-authoring reference:
   a minimal `JobRegistry.register` call, the four enforcement points
   (registration, resolution, startup time, run time), `namespaces`,
   `native_views`, and why a registration names exactly one job.
-* Added a "Declaring a Flow as Jobs" section to {doc}`/usage/writing_custom_flows`,
-  describing `StagedFlow` and its `Stages` list as a second way to build a
-  sequential flow, alongside listing steps directly.
+* Rewrote {doc}`/usage/writing_custom_flows` around the workflow document. It
+  now opens on a document that lists steps, then on one that names job
+  templates with `uses`, then on gating a job with `if`, and treats a Python
+  `Flow` subclass as the escape hatch for the one thing a document cannot
+  express, a decision taken during a run on data that run produced.
 * Added a "Commercial CAD tool scaffolds" section to
   {doc}`/usage/writing_tool_backends`, covering the sixteen unimplemented
   vendor step scaffolds and the opt-in `librelane.jobs.providers_vendor`
@@ -1006,6 +1050,10 @@ Style Notes
 * Replaced the multi-threading example in {doc}`/usage/writing_custom_flows`,
   which included the source of a now-removed flow, with an example written out
   in the page, so a future flow deletion cannot break the documentation build.
+* Rewrote the "Step directory numbering" section of
+  {doc}`/usage/resuming_runs` as "Step directory layout", since a run
+  directory now holds one directory per job and numbers steps within their own
+  job rather than across the whole run.
 
 # 3.0.4
 

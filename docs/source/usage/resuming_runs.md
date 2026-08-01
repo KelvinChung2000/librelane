@@ -54,22 +54,32 @@ The cascade follows contents rather than executions. If a re-run step produces
 byte-identical output, the steps after it are still valid and are still reused.
 Restoring a deleted `.def` costs you that one step, not the rest of the flow.
 
-## Step directory numbering
+## Step directory layout
 
-A step's directory under `runs/TAG/` is named for its position in the flow, not
-for how many steps happened to run:
+A run directory holds one directory per job, and each of those holds one
+directory per step, numbered by that step's position within its own job:
 
 ```
 runs/my_run/
-├── 1-verilator-lint
-├── 2-checker-linttimingconstructs
-├── 4-yosys-synthesis
+├── lint
+│   ├── 1-verilator-lint
+│   ├── 2-checker-linttimingconstructs
+│   ├── 3-checker-linterrors
+│   └── 4-checker-lintwarnings
+├── synthesis
+│   ├── 1-yosys-jsonheader
+│   ├── 2-yosys-synthesis
 ...
 ```
 
-Position `3` is missing there because that step was skipped or gated off. The
-gap is deliberate. A step keeps the same directory whether or not the steps
-before it ran, which is what lets a resumed run find its own previous result.
+Numbering per job rather than per run is what keeps a resumed run able to find
+its own previous result. Jobs run concurrently, so there is no global step
+order to number against, and a position counted across the whole run would move
+the moment an unrelated edge was added to the document, renaming every
+directory after it and losing every recorded result with it.
+
+A job that was gated off or skipped contributes no directory at all, and the
+numbering inside the jobs that did run is unaffected.
 
 ## Forcing a step to re-run
 
@@ -101,9 +111,9 @@ rather not reason about it.
 
 ## Which flows participate
 
-Every flow LibreLane ships. Resume needs a step's position in the flow to be
-knowable before the flow runs, which is true of any flow built from a fixed list
-of steps, and every built-in flow is built that way.
+Every flow LibreLane ships. Resume needs a step's position in its job to be
+knowable before the flow runs, which is true of any job built from a fixed list
+of steps, and every job a shipped document declares is built that way.
 
 A flow that builds its steps in a data-dependent loop, deciding what to run next
 from what the last step produced, has no such position and cannot be resumed.

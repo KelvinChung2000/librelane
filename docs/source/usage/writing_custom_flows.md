@@ -154,9 +154,9 @@ rather than `uses: synthesis`, as `vhdl_classic.yaml` does. A pin is the
 document's default, not a lock: a matching `TOOLS` entry still overrides it.
 
 See [Swapping Tools](./swapping_tools.md) for the full `TOOLS` reference,
-including multi-provider jobs and its limitations, and
-[Writing Tool Backends](./writing_tool_backends.md) for how to register a new
-provider.
+including how a flow runs two tools for one phase and what `TOOLS` cannot do,
+and [Writing Tool Backends](./writing_tool_backends.md) for how to register a
+new provider.
 
 ### Turning a job off
 
@@ -187,7 +187,19 @@ own `config` section.
 
 ## Fully Customized Flows
 
-Each `Flow` subclass must:
+A document declares a graph and the engine runs it, which is how every flow
+LibreLane ships is written. What a document cannot yet express is a decision
+taken *during* a run, on data that run produced -- running two variants and
+keeping the better one, or retrying a step with different settings after it
+failed. For that there is still Python, and {class}`librelane.flows.Flow` is
+still the abstract base to write it against.
+
+Treat this as an escape hatch rather than as the flow surface. `--flow` takes
+the name of a registered *document*, and `Flow.factory.register` takes a
+{class}`librelane.flows.spec.FlowSpec`, so a `Flow` subclass has no registered
+name and is constructed and started directly from your own code.
+
+A `Flow` subclass must:
 
 * Declare the steps used in the `Steps` attribute.
   * The steps are examined so their configuration variables can be validated ahead of time.
@@ -236,7 +248,7 @@ Correctly-written steps will by default output a log to the terminal, but, runni
 in a flow, there will always be a progress bar at the bottom of the terminal:
 
 ```
-Classic - Stage 17 - CTS ━━━━━━━━━━━━━━━━━╺━━━━━━━━━━━━━━━━━━━━━━ 16/37 0:00:20
+Classic - Stage 19 - cts ━━━━━━━━━━━━━━━━━╺━━━━━━━━━━━━━━━━━━━━━━ 18/43 0:00:20
 ```
 
 The Flow object has methods to manage this progress bar:
@@ -246,10 +258,13 @@ The Flow object has methods to manage this progress bar:
 * {py:meth}`librelane.flows.Flow.progress_bar.end_stage`.
 
 They are to be called from inside the `run` method. A workflow advances the bar
-once per step, so {math}`|Steps| = n`, but in a custom flow one bar stage can
-incorporate any number of steps. This is useful for example when running series
-of steps in parallel as shown in the next section, where incrementing by step is
-not exactly viable.
+once per job it selects and labels each stage with that job's name, so a stage
+covers however many steps that job owns. The denominator counts *selected*
+jobs, which is why `Classic` shows 43 above rather than the forty-eight its
+document declares; the other five are gated off at the default configuration.
+A custom flow chooses its own granularity, which is what makes
+the next section's parallel steps expressible at all -- incrementing once per
+step is not viable when several are in flight.
 
 ### Multi-Threading
 
@@ -269,8 +284,12 @@ run the required steps, in parallel if need be.
 Here is a flow built on exactly this principle. It runs two floorplanning
 attempts concurrently and keeps whichever produced the smaller die.
 
+This is the case a document cannot express today. `needs` orders jobs but
+carries no branch, so a document has no way to say "run both of these and
+continue from the one whose metric is lower". The choice below is made in
+Python, on metrics that only exist once both attempts have finished.
+
 ```python
-@Flow.factory.register()
 class TryTwoUtilizations(Flow):
     Steps = [Yosys.Synthesis, OpenROAD.Floorplan]
 
@@ -300,7 +319,26 @@ class TryTwoUtilizations(Flow):
 A flow whose steps depend on each other's results this way is what the
 {meth}`librelane.flows.Flow.start_step_async` seam exists for. Note that the
 `Flow` object is not thread-safe, so everything above happens on one thread and
-only the steps themselves run concurrently.
+only the steps themselves run concurrently. `start_step_async` submits to the
+same process-wide pool the workflow engine fills with whole jobs, which is why
+it must be called from the flow's own thread and never from inside a step.
+
+Since the class has no registered name, run it the way you would any other
+Python object.
+
+```python
+flow = TryTwoUtilizations(
+    {
+        "PDK": "sky130A",
+        "DESIGN_NAME": "spm",
+        "VERILOG_FILES": ["./src/spm.v"],
+        "CLOCK_PORT": "clk",
+        "CLOCK_PERIOD": 10,
+    },
+    design_dir=".",
+)
+flow.start()
+```
 
 ## Error Throwing and Handling
 

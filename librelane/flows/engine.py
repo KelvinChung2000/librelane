@@ -215,19 +215,17 @@ def _document_help_md(
         # means the template its own id names, which _require_implementation
         # has already checked.
         template_id = (spec.jobs[job_id].uses or job_id).partition("/")[0]
-        # One job may run several providers -- resolve_jobs joins their names
-        # with '+' -- and each of them is selected, so none of them is an
-        # alternative to itself.
-        selected = job.provider.split("+")
+        # The selected provider is not an alternative to itself, so the last
+        # column is every other registration for the same template -- what a
+        # TOOLS entry for this job could name instead.
         others = [
             provider
             for provider in JobRegistry.providers(template_id)
-            if provider not in selected
+            if provider != job.provider
         ]
-        selected_cell = ", ".join(f"`{name}`" for name in selected)
         others_cell = ", ".join(f"`{name}`" for name in others) if others else "none"
         result += (
-            f"| `{job_id}` | `{template_id}` | {selected_cell} | {others_cell} |\n"
+            f"| `{job_id}` | `{template_id}` | `{job.provider}` | {others_cell} |\n"
         )
 
     result += "\n#### Included Steps\n\n"

@@ -595,9 +595,10 @@ def test_each_open_in_document_names_its_one_job_for_what_it_opens(document, job
 
 def test_vhdl_classic_pins_the_vhdl_synthesis_provider():
     """
-    ``VHDLClassic.Stages`` writes ``Job.synthesis.using("yosys_vhdl")`` where
-    ``Classic.Stages`` writes a bare ``Job.synthesis``. Each is mirrored
-    faithfully; the bare form in ``classic.yaml`` is not an oversight.
+    A VHDL front end is the whole reason this document exists, so it names the
+    provider rather than leaving it to ``TOOLS``. ``classic.yaml`` leaves the
+    same job bare and takes the template's default, ``yosys``; that is not an
+    oversight, and this pins the difference.
     """
     assert _document("vhdl_classic.yaml").jobs["synthesis"].uses == (
         "synthesis/yosys_vhdl"
@@ -718,8 +719,8 @@ def test_chip_runs_its_xor_against_the_unfinished_stream_outs():
     """
     KLayout.XOR consumes 'mag_gds' and 'klayout_gds', which the seal ring and
     filler neither read nor write. So the XOR compares the two raw stream-outs,
-    exactly as it did in ``Chip.Stages``, where it ran before the six finishing
-    steps.
+    exactly as it did in the ``Chip`` flow this document replaced, where it ran
+    before the six finishing steps.
 
     ``xor`` nonetheless runs *in series* before ``chip_finishing`` rather than
     beside it. The edge is an ordering edge, not a data edge: no view XOR reads
@@ -767,9 +768,9 @@ def test_chip_omits_the_three_entries_a_chip_does_not_need():
 
 def test_chip_declares_run_rmp_without_running_rmp():
     """
-    ``Chip`` inherited ``Classic.Config``, so RUN_RMP and RUN_MAGIC_WRITE_LEF
-    were accepted configuration keys, but it declared its own ``Stages`` with
-    neither OpenROAD.RMP nor OpenROAD.AddBuffer in it. The variables stay
+    The ``Chip`` flow this document replaced inherited ``Classic``'s
+    configuration, so RUN_RMP and RUN_MAGIC_WRITE_LEF were accepted keys, but
+    it ran neither OpenROAD.RMP nor OpenROAD.AddBuffer. The variables stay
     declared so an existing configuration keeps loading; the jobs stay absent so
     the document runs what the flow ran.
     """
@@ -1031,23 +1032,18 @@ def test_help_documents_the_tools_variable_for_a_document_declaring_none():
     assert "`TOOLS`" in _variables_section(Workflow.help_md_for_document(spec))
 
 
-def test_help_for_a_multi_provider_job_names_every_selected_provider():
+def test_help_names_the_other_provider_of_a_template_as_an_alternative():
     """
-    ``ResolvedJob.provider`` is every selected provider joined by ``+``, which
-    is one string and not one provider. No shipped document leaves a
-    two-default template unpinned -- ``classic.yaml`` splits ``streamout`` and
-    ``drc`` into a job per tool -- so this is written against a document
-    constructed here, and it pins that the Alternatives column subtracts *both*
-    selected providers rather than listing them as alternatives to themselves.
+    The Alternatives column is every registration for the job's template other
+    than the selected one, so a job never appears as an alternative to itself.
+    ``classic.yaml`` runs ``streamout`` under two jobs, each pinning one of the
+    template's two providers, so each row names the other tool -- which is
+    exactly what a reader needs to write a ``TOOLS`` entry for that job.
     """
     from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
 
-    spec = FlowSpec(
-        name="TwoProviderStreamOut",
-        jobs={"streamout": {"uses": "streamout"}},
-    )
+    help_md = Workflow.help_md_for_document(_document("classic.yaml"))
 
-    help_md = Workflow.help_md_for_document(spec)
-
-    assert "| `streamout` | `streamout` | `magic`, `klayout` | none |" in help_md
+    assert "| `magic_streamout` | `streamout` | `magic` | `klayout` |" in help_md
+    assert "| `klayout_streamout` | `streamout` | `klayout` | `magic` |" in help_md
+    assert "| `lint` | `lint` | `verilator` | none |" in help_md

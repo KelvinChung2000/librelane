@@ -88,9 +88,11 @@ class DRC(PegasusStep):
     writing the script would not be sufficient by itself; see
     :meth:`PegasusStep.get_command`.
 
-    Slots in beside ``Magic.DRC`` and ``KLayout.DRC``: the ``drc`` job is
-    ``multi_provider``, so Pegasus does not replace either open-source
-    provider, it adds a third selectable one.
+    Slots in beside ``Magic.DRC`` and ``KLayout.DRC``: Pegasus does not
+    replace either open-source provider, it adds a third selectable one. A
+    document runs one provider per job, so a flow that wants Pegasus
+    alongside one of the others declares a second ``drc`` job pinning it, as
+    ``classic.yaml`` does for Magic and KLayout.
     """
 
     id = "Pegasus.DRC"
@@ -112,8 +114,8 @@ class LVS(PegasusStep):
     writing the script would not be sufficient by itself; see
     :meth:`PegasusStep.get_command`.
 
-    An alternative to ``Netgen.LVS``: the ``lvs`` job is not
-    ``multi_provider``, so a flow selects one of the two via ``TOOLS``.
+    An alternative to ``Netgen.LVS``: every shipped document declares ``lvs``
+    once, so a flow selects one of the two via ``TOOLS``.
     """
 
     id = "Pegasus.LVS"

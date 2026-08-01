@@ -112,7 +112,7 @@ def _check_uses(job: str, uses: str) -> None:
             f"{sorted(Job.factory.list())}."
         )
     if len(parts) == 1:
-        if not template.default_providers:
+        if template.default_provider is None:
             raise FlowSpecError(
                 f"Job '{job}' declares uses '{uses}', but job '{job_id}' "
                 f"has no default provider, so the document must name one. "
@@ -138,16 +138,16 @@ def _check_steps(job: str, steps: list[str]) -> None:
             )
 
 
-def _providers_of(uses: str) -> tuple[str, tuple[str, ...]]:
+def _provider_of(uses: str) -> tuple[str, str]:
     job_id, _, provider = uses.partition("/")
+    if provider:
+        return job_id, provider
     template = Job.factory.get(job_id)
     assert template is not None, "checked by _check_uses"
-    if provider:
-        return job_id, (provider,)
-    # A bare 'uses' means the template's default provider, which is a tuple for
-    # a multi_provider template. Every one of them, rather than the first,
-    # which would silently drop the rest.
-    return job_id, tuple(template.default_providers)
+    # A bare 'uses' means the template's default provider, which _check_uses
+    # has already refused to let be absent.
+    assert template.default_provider is not None, "checked by _check_uses"
+    return job_id, template.default_provider
 
 
 def _produced_views(job_id: str, job: JobSpec) -> set[str]:
@@ -172,14 +172,13 @@ def _produced_views(job_id: str, job: JobSpec) -> set[str]:
             assert step is not None, "checked by _check_steps"
             views.update(str(view) for view in step.outputs)
         return views
-    job_id, providers = _providers_of(uses)
+    job_id, provider = _provider_of(uses)
     template = Job.factory.get(job_id)
     assert template is not None, "checked by _check_uses"
     views.update(str(view) for view in template.provides)
-    for each in providers:
-        registration = JobRegistry.get(job_id, each)
-        if registration is not None:
-            views.update(str(view) for view in registration.provides)
+    registration = JobRegistry.get(job_id, provider)
+    if registration is not None:
+        views.update(str(view) for view in registration.provides)
     return views
 
 
@@ -201,14 +200,13 @@ def _produced_metrics(job_id: str, job: JobSpec) -> set[str]:
     uses = _resolved_uses(job_id, job)
     if uses is None:
         return set()
-    job_id, providers = _providers_of(uses)
+    job_id, provider = _provider_of(uses)
     template = Job.factory.get(job_id)
     assert template is not None, "checked by _check_uses"
     metrics = set(template.metrics)
-    for each in providers:
-        registration = JobRegistry.get(job_id, each)
-        if registration is not None:
-            metrics.update(registration.metrics)
+    registration = JobRegistry.get(job_id, provider)
+    if registration is not None:
+        metrics.update(registration.metrics)
     return metrics
 
 
@@ -379,11 +377,10 @@ def _steps_of(job_id: str, job: JobSpec) -> list[type[Step]]:
             assert step is not None, "checked by _check_steps"
             resolved.append(step)
         return resolved
-    job_id, providers = _providers_of(uses)
-    for each in providers:
-        registration = JobRegistry.get(job_id, each)
-        if registration is not None:
-            resolved.extend(registration.steps)
+    job_id, provider = _provider_of(uses)
+    registration = JobRegistry.get(job_id, provider)
+    if registration is not None:
+        resolved.extend(registration.steps)
     return resolved
 
 

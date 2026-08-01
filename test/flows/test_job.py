@@ -53,18 +53,6 @@ def test_a_bare_uses_takes_the_template_default_provider():
     assert bare["floorplan"].provider == "openroad"
 
 
-def test_a_bare_uses_on_a_multi_provider_job_concatenates_every_default():
-    # 'streamout' is multi_provider with default_providers ('magic', 'klayout'),
-    # so a bare 'uses' means both, in order. Taking only the first would drop
-    # KLayout.StreamOut and with it the klayout_gds view the XOR job reads.
-    bare = resolve_jobs(_spec({"streamout": {"uses": "streamout"}}))["streamout"]
-
-    assert bare.steps == tuple(JobRegistry.get("streamout", "magic").steps) + tuple(
-        JobRegistry.get("streamout", "klayout").steps
-    )
-    assert bare.provider == "magic+klayout"
-
-
 def test_a_job_that_omits_uses_resolves_against_its_own_id():
     # The document's central convenience rule, and the reason the spec's own
     # sample 'classic.yaml' writes 'lint:' and 'floorplan:' with nothing under
@@ -79,15 +67,6 @@ def test_a_job_that_omits_uses_resolves_against_its_own_id():
     assert implicit["floorplan"].provider == explicit["floorplan"].provider
     assert implicit["floorplan"].provides == explicit["floorplan"].provides
     assert implicit["floorplan"].metrics == explicit["floorplan"].metrics
-
-
-def test_a_job_that_omits_uses_may_still_be_a_multi_provider_job():
-    # 'streamout' defaults to two providers, so the implicit rule has to route
-    # through the same default_providers path a bare 'uses' does rather than
-    # treating the id as a single 'job/provider' string.
-    implicit = resolve_jobs(_spec({"streamout": {}}))["streamout"]
-
-    assert implicit.provider == "magic+klayout"
 
 
 def test_a_uses_job_inherits_the_template_contract():
@@ -165,11 +144,10 @@ def test_a_conjunction_becomes_one_entry_per_conjunct():
 
 def test_tools_overrides_the_provider_half_of_uses():
     """
-    The pin is the document's default, not a lock. ``Job.using`` has the same
-    property in the Python flow -- it returns a copy keeping the same id, so a
-    ``TOOLS`` entry naming that id still wins -- and the document's ``uses``
-    inherits it. The stage half is never overridden: the job keeps the name the
-    document gave it.
+    The pin is the document's default, not a lock. The Python flows' own pin
+    had the same property -- it kept the job's id, so a ``TOOLS`` entry naming
+    that id still won -- and the document's ``uses`` inherits it. The template
+    half is never overridden: the job keeps the name the document gave it.
     """
     jobs = resolve_jobs(
         _spec({"magic_streamout": {"uses": "streamout/magic"}}),

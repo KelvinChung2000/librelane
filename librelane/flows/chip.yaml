@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# The Chip flow's Stages list and gating table, as a graph.
+# The Chip flow, written as a graph of jobs.
 #
 # Written out in full rather than derived from classic.yaml, for the reason
-# given on VHDLClassic.Stages and repeated in vhdl_classic.yaml.
+# vhdl_classic.yaml gives at the same place.
 #
 # The differences from Classic are OpenROAD.PadRing after
 # Odb.SetPowerConnections, the six chip finishing steps after Checker.XOR, and
@@ -28,11 +28,13 @@ description: >-
   A flow used to implement complete chip designs. This includes pad ring
   generation, seal ring generation, filler insertion, and density check.
 
-# Identical to classic.yaml's, because Chip inherits Classic.Config: every one
-# of these is an accepted configuration key today and has to stay accepted.
+# Identical to classic.yaml's, because the Chip flow this document replaces
+# inherited Classic's configuration model. Every one of these is an accepted
+# configuration key today and has to stay accepted.
 # That includes RUN_RMP and RUN_MAGIC_WRITE_LEF, which gate nothing here because
-# Chip declares its own Stages with neither OpenROAD.RMP nor Magic.WriteLEF in
-# it. Declaring the variable is what keeps an existing configuration loading;
+# this document declares no job that runs OpenROAD.RMP or Magic.WriteLEF, just
+# as the Chip flow it replaces left both steps out of its own step list.
+# Declaring the variable is what keeps an existing configuration loading;
 # adding the job would make this document run something the flow does not.
 config:
   - name: RUN_TAP_ENDCAP_INSERTION
@@ -170,7 +172,9 @@ jobs:
   lint:
     uses: lint
     if: RUN_LINTER
-  # No provider pinned, mirroring Chip.Stages' bare Job.synthesis.
+  # No provider pinned, so the synthesis template's own default_provider
+  # decides, which is what the bare Job.synthesis in the Chip flow this
+  # document replaces did too.
   synthesis:
     needs: [lint]
     uses: synthesis
@@ -307,9 +311,10 @@ jobs:
     needs: [signoff_sta]
     uses: ir_drop
     if: RUN_IRDROP_REPORT
-  # One job per streamout provider rather than one multi-provider job, because
-  # the two are switched by two independent booleans and a job-level 'if' is
-  # one condition. Likewise drc, below.
+  # One job per streamout provider. A job runs one provider, so two tools for
+  # one phase is two jobs -- and that is also what makes the two independent
+  # booleans expressible, since a job-level 'if' is one condition. Likewise
+  # drc, below.
   magic_streamout:
     needs: [ir_drop]
     uses: streamout/magic
@@ -336,9 +341,10 @@ jobs:
   # mag_gds from one stream-out and klayout_gds from the other and cannot run
   # unless both fired.
   #
-  # In series after render and before chip_finishing, which is Chip.Stages'
-  # real order (Render, XOR, Checker.XOR, then the six finishing steps) and is
-  # not a relaxation this document may make. chip_finishing rewrites 'gds';
+  # In series after render and before chip_finishing, which is the order the
+  # Chip flow this document replaces ran them in (Render, XOR, Checker.XOR,
+  # then the six finishing steps) and is not a relaxation this document may
+  # make. chip_finishing rewrites 'gds';
   # render and xor read the stream-out's. Run in parallel, the branches reach
   # final_checks holding two different 'gds' values and join_states raises
   # JoinConflictError -- it compares values, not declarations, so a key written
@@ -366,8 +372,8 @@ jobs:
   # The one place Chip's signoff differs from Classic's in shape: these three
   # hang off chip_finishing rather than off the last stream-out, because
   # Magic.DRC, KLayout.DRC and Magic.SpiceExtraction all consume 'gds' and ran
-  # after the seal ring and filler in Chip.Stages. They read the finished
-  # layout, not the raw stream-out.
+  # after the seal ring and filler in the flow this document replaces. They
+  # read the finished layout, not the raw stream-out.
   magic_drc:
     needs: [chip_finishing]
     uses: drc/magic

@@ -182,34 +182,36 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
     template_id, _, named = uses.partition("/")
     template = Job.factory.get(template_id)
     assert template is not None, "checked by _check_uses"
-    # TOOLS first, then the document's pin, then the template's defaults. The
-    # order is the one the Python flow has: Job.using() returns a copy keeping
-    # the same id precisely so a TOOLS entry naming that id still overrides the
-    # pin, and a document's 'uses' is that pin written down.
-    providers: tuple[str, ...]
+    # TOOLS first, then the document's pin, then the template's default. That
+    # order is what makes a pin a default rather than a lock: 'uses:
+    # job/provider' leaves the job under the id the document gave it, TOOLS is
+    # keyed by that same id, so a user's TOOLS entry re-points a pinned job
+    # exactly as it re-points one that took the template's default.
+    provider: str | None
     if override is not None:
-        providers = (override,)
+        provider = override
     elif named:
-        providers = (named,)
+        provider = named
     else:
-        providers = template.default_providers
+        provider = template.default_provider
+    # _check_uses refuses a bare 'uses' on a template with no default provider,
+    # naming the providers the document could have written instead.
+    assert provider is not None, "checked by _check_uses"
 
-    steps = []
-    provides = set(template.provides)
-    metrics = set(template.metrics)
-    for provider in providers:
-        registration = JobRegistry.get(template_id, provider)
-        if registration is None:
-            # Not an assertion: validate_against_registry checks the providers
-            # the *document* names, and a TOOLS-supplied one has passed nothing.
-            raise JobResolutionError(
-                f"Job '{name}': no provider named '{provider}' is registered "
-                f"for '{template_id}'. Registered providers: "
-                f"{JobRegistry.providers(template_id)}."
-            )
-        steps.extend(registration.steps)
-        provides.update(registration.provides)
-        metrics.update(registration.metrics)
+    registration = JobRegistry.get(template_id, provider)
+    if registration is None:
+        # Not an assertion: validate_against_registry checks the provider the
+        # *document* names, and a TOOLS-supplied one has passed nothing.
+        raise JobResolutionError(
+            f"Job '{name}': no provider named '{provider}' is registered "
+            f"for '{template_id}'. Registered providers: "
+            f"{JobRegistry.providers(template_id)}."
+        )
+
+    # The union of what the phase owes whichever tool implements it and what
+    # only this tool can be held to. One provider, so one union.
+    provides = set(template.provides) | set(registration.provides)
+    metrics = set(template.metrics) | set(registration.metrics)
 
     return ResolvedJob(
         id=name,
@@ -219,6 +221,6 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
         requires=tuple(template.requires),
         provides=tuple(sorted(provides, key=str)),
         metrics=tuple(sorted(metrics)),
-        steps=tuple(steps),
-        provider="+".join(providers),
+        steps=tuple(registration.steps),
+        provider=provider,
     )

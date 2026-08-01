@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# The VHDLClassic flow's Stages list and gating table, as a graph.
+# The VHDLClassic flow, written as a graph of jobs.
 #
-# Written out in full rather than derived from classic.yaml, deliberately, for
-# the reason the VHDLClassic class gave: a flow is a self-contained declaration
-# of what it runs, and a filter expression over another flow's list is a
-# substitution map wearing a different hat. That is also why the document
-# schema has no 'extends' key.
+# Written out in full rather than derived from classic.yaml, deliberately, and
+# for the reason the VHDLClassic class it replaces gave. A flow is a
+# self-contained declaration of what it runs, and a filter expression over
+# another flow's list is a substitution map wearing a different hat. That is
+# also why the document schema has no 'extends' key.
 #
 # The differences from Classic are the pinned synthesis provider and four
 # omitted entries: the lint stage, Odb.SetPowerConnections,
@@ -31,11 +31,11 @@ description: >-
   files, and drops the Verilog linting, equivalence-checking and power-header
   steps, none of which can run without Verilog sources.
 
-# Identical to classic.yaml's, including RUN_LINTER and RUN_EQY. Both are
-# inherited from Classic.Config today, so a configuration setting either one is
-# accepted by VHDLClassic today and has to stay accepted: dropping them would
-# turn an accepted key into an unknown-key error. Their descriptions already say
-# they have no effect here.
+# Identical to classic.yaml's, including RUN_LINTER and RUN_EQY. The
+# VHDLClassic flow this document replaces inherited both from Classic's
+# configuration model, so a configuration setting either one was accepted and
+# has to stay accepted. Dropping them would turn an accepted key into an
+# unknown-key error. Their descriptions already say they have no effect here.
 config:
   - name: RUN_TAP_ENDCAP_INSERTION
     type: bool
@@ -170,10 +170,9 @@ config:
 # conflict would arise is the pair of stream-outs, and the comment on
 # klayout_streamout says why they are not parallel.
 jobs:
-  # The one provider this flow pins, mirroring Job.synthesis.using("yosys_vhdl")
-  # in VHDLClassic.Stages. Classic writes a bare Job.synthesis and classic.yaml
-  # mirrors that; the difference between the two documents is the difference
-  # between the two flows.
+  # The one provider this flow pins. classic.yaml leaves synthesis bare and
+  # takes the template's default, yosys; a VHDL front end is the whole reason
+  # this document exists, so it names yosys_vhdl rather than relying on TOOLS.
   synthesis:
     uses: synthesis/yosys_vhdl
   pre_pnr_sta:
@@ -309,9 +308,10 @@ jobs:
     needs: [signoff_sta]
     uses: ir_drop
     if: RUN_IRDROP_REPORT
-  # One job per streamout provider rather than one multi-provider job, because
-  # the two are switched by two independent booleans and a job-level 'if' is
-  # one condition. Likewise drc, below.
+  # One job per streamout provider. A job runs one provider, so two tools for
+  # one phase is two jobs -- and that is also what makes the two independent
+  # booleans expressible, since a job-level 'if' is one condition. Likewise
+  # drc, below.
   magic_streamout:
     needs: [ir_drop]
     uses: streamout/magic

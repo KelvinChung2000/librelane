@@ -12,18 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# 'name' is the registration key, which is the class name and the string a user
-# types after --flow, so it survives the migration character for character.
+# 'name' is the registration key and the string a user types after --flow. It
+# is the name the Python class carried, character for character.
 #
-# What does NOT survive is the display string. OpenInKLayout and its four
-# siblings are the only flows that set the class attribute 'name' to prose --
-# "Opening in KLayout" here -- and Flow.start logs it: "Starting a new run of
-# the '<name>' flow with the tag ...". A document has no field for it. 'name'
-# is the registration key and 'description' below is a paraphrase of the class
-# docstring, not that string, so those log lines will read "OpenInKLayout"
-# once the class is gone. Recorded rather than worked around: adding a display
-# field to FlowSpec is a schema change, and it belongs with the decision to
-# delete the classes, not with the translation of them.
+# What did not survive the migration is the display string. OpenInKLayout and
+# its four siblings were the only flows that set the class attribute 'name' to
+# prose -- "Opening in KLayout" here -- and Flow.start logs it, as "Starting a
+# new run of the '<name>' flow with the tag ...". A document has no field for
+# it. 'name' is the registration key and 'description' below paraphrases the
+# class docstring rather than that string, so the log line now reads
+# "OpenInKLayout". Recorded rather than worked around, because adding a display
+# field to FlowSpec is a schema change and belonged with neither the
+# translation of these flows nor the deletion of the classes.
 name: OpenInKLayout
 description: >-
   Opens the LEF/DEF from the initial state object in the KLayout GUI. Intended

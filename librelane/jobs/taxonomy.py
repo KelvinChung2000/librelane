@@ -14,13 +14,20 @@
 """
 The job taxonomy.
 
-Job boundaries were derived from the 22 distinct ``RUN_*`` variables the
+Job boundaries were derived from the 23 distinct ``RUN_*`` variables the
 ``Classic`` flow class used to gate its steps with. (The class is gone;
-``librelane/flows/classic.yaml`` is what ships those variables now.) Each is a
-place where users already demanded the ability to turn one phase off
-independently, which makes it a place where they would plausibly want to change
-tools or re-enter the flow. Fifteen of those variables become job gates here;
-the remaining seven gate one tool within a job and stay step-level.
+``librelane/flows/classic.yaml`` is what ships those variables now, one for
+one.) Each is a place where users already demanded the ability to turn one
+phase off independently, which makes it a place where they would plausibly want
+to change tools or re-enter the flow.
+
+No gating is declared here. A template says what a phase requires, provides,
+contracts and defaults to; whether a particular flow runs it is that flow's to
+say, in the job's ``if`` key. This file used to record a split -- fifteen of
+the variables becoming job gates, the rest staying step-level -- and that split
+no longer exists: ``classic.yaml`` gives all 23 a job of their own to gate,
+including the ones that turn on a single step, which it declares as jobs
+listing their steps inline.
 
 ``requires`` and ``provides`` values are literals, not computed. See the
 implementation plan for how they were derived.
@@ -44,8 +51,6 @@ Job(
         "design__lint_warning__count",
         "design__lint_timing_construct__count",
     ),
-    gating_config_var="RUN_LINTER",
-    optional=True,
 ).register()
 
 Job(
@@ -99,8 +104,6 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
-    gating_config_var="RUN_TAP_ENDCAP_INSERTION",
-    optional=True,
 ).register()
 
 Job(
@@ -134,8 +137,6 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
-    gating_config_var="RUN_POST_GPL_DESIGN_REPAIR",
-    optional=True,
 ).register()
 
 Job(
@@ -152,8 +153,6 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
-    gating_config_var="RUN_CTS",
-    optional=True,
 ).register()
 
 Job(
@@ -162,8 +161,6 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
-    gating_config_var="RUN_POST_CTS_RESIZER_TIMING",
-    optional=True,
 ).register()
 
 Job(
@@ -182,8 +179,6 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
-    gating_config_var="RUN_POST_GRT_DESIGN_REPAIR",
-    optional=True,
 ).register()
 
 Job(
@@ -192,8 +187,6 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
-    gating_config_var="RUN_ANTENNA_REPAIR",
-    optional=True,
 ).register()
 
 Job(
@@ -202,8 +195,6 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
-    gating_config_var="RUN_POST_GRT_RESIZER_TIMING",
-    optional=True,
 ).register()
 
 Job(
@@ -213,8 +204,6 @@ Job(
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
     metrics=("route__drc_errors",),
-    gating_config_var="RUN_DRT",
-    optional=True,
 ).register()
 
 Job(
@@ -223,7 +212,6 @@ Job(
     default_provider=None,
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
-    optional=True,
 ).register()
 
 Job(
@@ -232,8 +220,6 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=PNR_IN_PLACE_PROVIDES,
-    gating_config_var="RUN_FILL_INSERTION",
-    optional=True,
 ).register()
 
 Job(
@@ -242,8 +228,6 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=(DesignFormat.spef,),
-    gating_config_var="RUN_SPEF_EXTRACTION",
-    optional=True,
 ).register()
 
 Job(
@@ -258,8 +242,6 @@ Job(
         "design__max_slew_violation__count",
         "design__max_cap_violation__count",
     ),
-    gating_config_var="RUN_MCSTA",
-    optional=True,
 ).register()
 
 Job(
@@ -268,27 +250,33 @@ Job(
     default_provider="openroad",
     requires=PNR_IN_PLACE_REQUIRES + (DesignFormat.spef,),
     provides=_NO_VIEWS,
-    gating_config_var="RUN_IRDROP_REPORT",
-    optional=True,
 ).register()
 
+# Both phases below have two providers, and the default names one of them
+# because a job runs one tool. Magic is that one: it is what pdk_compat fills
+# PRIMARY_GDSII_STREAMOUT_TOOL with for a PDK that does not name a primary, so
+# a lone `uses: streamout` streams out with the tool that then owns `gds`, and
+# `drc`, which has no primary concept, follows it rather than disagreeing.
+#
+# A flow that wants both tools declares two jobs, each pinning its own
+# provider, which is what classic.yaml, chip.yaml and vhdl_classic.yaml do and
+# what the two RUN_*_STREAMOUT and RUN_*_DRC booleans then switch
+# independently. None of them reaches the default here.
 Job(
     id="streamout",
     full_name="Layout Stream-Out",
-    default_provider=("magic", "klayout"),
+    default_provider="magic",
     requires=PNR_IN_PLACE_REQUIRES,
     provides=(DesignFormat.gds,),
-    multi_provider=True,
 ).register()
 
 Job(
     id="drc",
     full_name="Design Rule Checking",
-    default_provider=("magic", "klayout"),
+    default_provider="magic",
     # Magic.DRC reads the DEF alongside the stream; KLayout.DRC needs only gds.
     requires=(DesignFormat.def_, DesignFormat.gds),
     provides=_NO_VIEWS,
-    multi_provider=True,
 ).register()
 
 Job(
@@ -300,8 +288,6 @@ Job(
     requires=(DesignFormat.def_, DesignFormat.gds, DesignFormat.pnl),
     provides=_NO_VIEWS,
     metrics=("design__lvs_error__count",),
-    gating_config_var="RUN_LVS",
-    optional=True,
 ).register()
 
 Job(
@@ -310,8 +296,6 @@ Job(
     default_provider="yosys",
     requires=(DesignFormat.nl,),
     provides=_NO_VIEWS,
-    gating_config_var="RUN_EQY",
-    optional=True,
 ).register()
 
 

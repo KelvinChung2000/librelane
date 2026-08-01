@@ -46,29 +46,22 @@ def test_duplicate_registration_raises():
         make().register()
 
 
-def test_optional_job_may_have_no_default_provider():
+def test_a_job_may_register_with_no_default_provider():
+    """
+    A phase the taxonomy names but no provider package implements yet, which
+    is what ``post_route_opt`` is. Registration does not refuse it: a document
+    that tries to declare such a job is what gets refused, at load time, by
+    ``_check_uses``.
+    """
     from librelane.jobs import Job
     from librelane.state import DesignFormat
 
-    Job(
-        id="test_job_optional",
-        full_name="Test Job Optional",
+    job = Job(
+        id="test_job_unimplemented",
+        full_name="Test Job Unimplemented",
         default_provider=None,
         requires=(DesignFormat.def_,),
         provides=(DesignFormat.def_,),
-        optional=True,
     ).register()
 
-
-def test_non_optional_job_without_default_provider_raises():
-    from librelane.jobs import Job, JobDefinitionError
-    from librelane.state import DesignFormat
-
-    with pytest.raises(JobDefinitionError, match="marked optional"):
-        Job(
-            id="test_job_bad",
-            full_name="Test Job Bad",
-            default_provider=None,
-            requires=(DesignFormat.def_,),
-            provides=(DesignFormat.def_,),
-        ).register()
+    assert Job.factory.get("test_job_unimplemented") is job

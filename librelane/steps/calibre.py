@@ -81,9 +81,11 @@ class DRC(CalibreStep):
     """
     Scaffold for design rule checking using Calibre.
 
-    ``drc`` is a ``multi_provider`` job already served by Magic and
-    KLayout; this step slots in beside them (and beside IC Validator) as
-    another provider rather than replacing any of them. Mirrors
+    The ``drc`` job is already served by Magic and KLayout; this step slots
+    in beside them (and beside IC Validator) as another provider rather than
+    replacing any of them. A document runs one provider per job, so a flow
+    that wants Calibre alongside one of the others declares a second ``drc``
+    job pinning it, as ``classic.yaml`` does for Magic and KLayout. Mirrors
     ``Magic.DRC``'s neutral contract, taking DEF optionally and GDS.
     """
 

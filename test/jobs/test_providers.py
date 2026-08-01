@@ -10,10 +10,11 @@ def test_every_selectable_job_has_its_default_provider_registered():
 
     for job_id in JOB_ORDER:
         job = Job.factory.get(job_id)
-        for provider in job.default_providers:
-            assert JobRegistry.get(job_id, provider) is not None, (
-                f"{job_id}: default provider '{provider}' is not registered"
-            )
+        if job.default_provider is None:
+            continue
+        assert JobRegistry.get(job_id, job.default_provider) is not None, (
+            f"{job_id}: default provider '{job.default_provider}' is not registered"
+        )
 
 
 def test_post_route_opt_has_no_provider():
@@ -22,7 +23,11 @@ def test_post_route_opt_has_no_provider():
     assert JobRegistry.providers("post_route_opt") == []
 
 
-def test_multi_provider_jobs_have_two_providers():
+def test_streamout_and_drc_each_have_two_providers():
+    """
+    Both are registered for both phases, which is what lets a document declare
+    two jobs against one template and run both tools.
+    """
     from librelane.jobs import JobRegistry
 
     assert sorted(JobRegistry.providers("streamout")) == ["klayout", "magic"]
@@ -37,10 +42,10 @@ def test_synthesis_has_two_providers():
 
 def test_lvs_offers_klayout_as_an_alternative_to_netgen():
     """
-    ``lvs`` is single-provider, so its two providers are alternatives and
-    exactly one runs. That is what lets both write the job's contracted
-    ``design__lvs_error__count`` without either overwriting the other, the same
-    licence ``Pegasus.LVS`` takes.
+    Every shipped document declares ``lvs`` once, so its two providers are
+    alternatives and exactly one runs. That is what lets both write the job's
+    contracted ``design__lvs_error__count`` without either overwriting the
+    other, the same licence ``Pegasus.LVS`` takes.
 
     The klayout sequence carries ``OpenROAD.WriteCDL`` for the same reason the
     netgen sequence carries ``Magic.SpiceExtraction``: the comparison needs a
@@ -171,48 +176,6 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
             f"{sorted(tool_specific - checked)}, which nothing in the sequence "
             f"checks. A checker for it elsewhere in a flow would outlive the "
             f"tool it checks."
-        )
-
-
-def test_providers_that_run_together_do_not_declare_the_same_metric():
-    """
-    On a ``multi_provider`` job every provider runs, so two of them declaring
-    the same metric key means whichever finishes last silently wins and the
-    other tool's result is lost. That is the metric-side twin of two steps
-    writing the same view.
-
-    Single-provider jobs are exempt on purpose: exactly one provider runs, so
-    its providers are alternatives and are *expected* to share the job's
-    contracted key. That is why ``Pegasus.LVS`` reuses
-    ``design__lvs_error__count`` rather than inventing a name, and why
-    ``KLayout.LVS`` may keep it while it remains an alternative. Issue 696 wants
-    KLayout LVS to run *alongside* Netgen, which would make ``lvs``
-    multi_provider -- and this test is what will then require the rename.
-    """
-    from collections import defaultdict
-
-    from librelane.jobs import Job, JobRegistry
-    from librelane.jobs.taxonomy import JOB_ORDER
-
-    for job_id in JOB_ORDER:
-        job = Job.factory.get(job_id)
-        if not job.multi_provider:
-            continue
-
-        owners = defaultdict(list)
-        for provider in JobRegistry.providers(job_id):
-            registration = JobRegistry.get(job_id, provider)
-            for metric in registration.metrics:
-                owners[metric].append(provider)
-
-        clashing = {
-            metric: providers
-            for metric, providers in owners.items()
-            if len(providers) > 1
-        }
-        assert not clashing, (
-            f"{job_id} runs every provider, but {clashing} declare the same "
-            f"metric. The last one to finish would silently overwrite the other."
         )
 
 

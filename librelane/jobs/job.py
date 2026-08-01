@@ -14,8 +14,7 @@
 """The :class:`Job` dataclass, its factory, and the shared contract constants."""
 
 import builtins
-from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import ClassVar
 
 from librelane.common.errors import FlowError
@@ -74,12 +73,17 @@ class Job(metaclass=JobMetaclass):
         the document's names that all four options take.
     full_name : str
         A human-readable name.
-    default_provider : str | tuple[str, ...] | None
-        The provider used when ``TOOLS`` does not name
-        one. A tuple of provider names is legal only for a
-        :attr:`multi_provider` job. ``None`` is legal only when
-        :attr:`optional` is ``True``, in which case the job is unselected and
-        contributes no steps.
+    default_provider : str | None
+        The provider a document's bare ``uses`` selects, and the one a
+        ``uses: job/provider`` or a ``TOOLS`` entry overrides. Exactly one,
+        because one job runs one tool: a phase a flow wants to run under two
+        tools is two jobs in the document, as ``classic.yaml`` does for
+        ``streamout`` and ``drc``.
+
+        ``None`` is for a phase the taxonomy names but no provider package
+        implements yet. A document cannot declare such a job at all -- a bare
+        ``uses`` has no default to take and a named one matches no
+        registration -- and load-time validation says so by name.
     requires : tuple[DesignFormat, ...]
         The neutral views the job consumes at its boundary.
         A provider may additionally consume its own native views, declared on
@@ -90,26 +94,14 @@ class Job(metaclass=JobMetaclass):
     metrics : tuple[str, ...]
         The metric names every provider of this job must have
         produced by the time it completes. Enforced at runtime.
-    gating_config_var : str | None
-        A Boolean flow configuration variable that, when
-        false, skips every step of this job.
-    multi_provider : bool
-        Whether ``TOOLS`` may name a list of providers for
-        this job, whose sequences are concatenated in listed order.
-    optional : bool
-        Whether the job may be left unselected. Only legal for
-        jobs whose :attr:`provides` no later job requires.
     """
 
     id: str
     full_name: str
-    default_provider: str | tuple[str, ...] | None
+    default_provider: str | None
     requires: tuple[DesignFormat, ...]
     provides: tuple[DesignFormat, ...]
     metrics: tuple[str, ...] = field(default=())
-    gating_config_var: str | None = None
-    multi_provider: bool = False
-    optional: bool = False
 
     def __hash__(self):
         return hash(self.id)
@@ -117,88 +109,11 @@ class Job(metaclass=JobMetaclass):
     def __str__(self) -> str:
         return self.id
 
-    @property
-    def default_providers(self) -> tuple[str, ...]:
-        """
-        Returns
-        -------
-        tuple[str, ...]
-            :attr:`default_provider` normalized to a tuple. Empty when
-            the job is unselected by default.
-        """
-        if self.default_provider is None:
-            return ()
-        if isinstance(self.default_provider, str):
-            return (self.default_provider,)
-        return tuple(self.default_provider)
-
-    def using(self, provider: "str | Sequence[str]") -> "Job":
-        """
-        Pins the tool this job runs, for use in a flow's ``Stages`` list::
-
-            Stages = [..., Job.synthesis.using("yosys_vhdl"), ...]
-
-        Parameters
-        ----------
-        provider : str | Sequence[str]
-            The provider name, or several for a
-            :attr:`multi_provider` job, whose sequences are concatenated in
-            listed order.
-
-        Returns
-        -------
-        Job
-            A copy of this job whose :attr:`default_provider` is
-            ``provider``. The copy is deliberately *not* registered: it keeps
-            this job's ``id``, so a ``TOOLS`` entry naming that id still
-            overrides the pin, because resolution consults ``TOOLS`` before
-            ``default_provider``. A pin is a flow's default, not a lock.
-
-        Raises
-        ------
-        JobDefinitionError
-            If several providers are named for a job that runs
-            exactly one tool, or if no provider is named at all.
-
-        Naming a list is the multi-provider idiom, and is how a flow pins several
-        tools to one job. It is legal only for a :attr:`multi_provider` job.
-
-        The provider is not checked against the registry here. Registration
-        order follows import order, so a check at flow-definition time would be
-        fragile; resolution rejects an unknown provider naming the registered
-        alternatives instead.
-        """
-        if not isinstance(provider, str):
-            provider = tuple(provider)
-            if not self.multi_provider:
-                raise JobDefinitionError(
-                    f"Job '{self.id}' does not accept a list of providers: it "
-                    f"runs exactly one tool. Got {list(provider)}."
-                )
-            if len(provider) == 0:
-                raise JobDefinitionError(
-                    f"Job '{self.id}': 'using' was given an empty provider "
-                    f"list. To skip a job, use its gating variable; there is "
-                    f"no way to select nothing."
-                )
-        return replace(self, default_provider=provider)
-
     def register(self) -> "Job":
         """
-        Adds this job to the registry. Raises :class:`JobDefinitionError` if a job
-        with the same id is already registered, or if the job is internally
-        inconsistent.
+        Adds this job to the registry. Raises :class:`JobDefinitionError` if a
+        job with the same id is already registered.
         """
-        if self.default_provider is None and not self.optional:
-            raise JobDefinitionError(
-                f"Job '{self.id}' has no default_provider but is not marked "
-                f"optional. Only optional jobs may be left unselected."
-            )
-        if len(self.default_providers) > 1 and not self.multi_provider:
-            raise JobDefinitionError(
-                f"Job '{self.id}' defaults to several providers "
-                f"{list(self.default_providers)} but is not multi_provider."
-            )
         self.__class__.factory.register(self)
         return self
 

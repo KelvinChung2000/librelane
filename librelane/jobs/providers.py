@@ -165,8 +165,9 @@ _REGISTRATIONS: list[dict] = [
         # this registration to declare json_h as a native view. That made a
         # Verilog-only step a mandatory member of a tool-neutral job: a VHDL
         # flow needs floorplanning but has no Verilog header, and had no way to
-        # say "floorplan, but not that step". It is a plain step in Classic's
-        # Stages list now, so a flow that cannot run it simply omits it.
+        # say "floorplan, but not that step". classic.yaml gives it a job of
+        # its own listing that one step inline, so vhdl_classic.yaml simply
+        # does not declare that job.
         "steps": [
             OpenROAD.Floorplan,
             OpenROAD.DumpRCValues,
@@ -362,30 +363,32 @@ _REGISTRATIONS: list[dict] = [
         + ("NETGEN_", "LVS_", "ERROR_ON_ILLEGAL_OVERLAPS", "ERROR_ON_LVS_ERROR"),
         "metrics": ["magic__illegal_overlap__count"],
     },
-    # The alternative to the sequence above, not an addition to it. `lvs` is
-    # single-provider, so exactly one of the two runs and both are free to write
-    # the job's contracted `design__lvs_error__count`. That licence ends the
-    # moment the job goes multi_provider, where every provider runs and the
-    # last to finish silently wins. Issue 696 asks for exactly that change, and
-    # it would land on two shared names, not one: the metric, and the `spice`
-    # view that `Magic.SpiceExtraction` and `KLayout.LVS` both output.
+    # The alternative to the sequence above, not an addition to it. Every
+    # shipped document declares `lvs` once, so exactly one of the two providers
+    # runs and both are free to write the job's contracted
+    # `design__lvs_error__count`. That licence ends the moment a document
+    # declares two `lvs` jobs pinning a provider each, the way classic.yaml
+    # declares `magic_drc` and `klayout_drc`: both would run and the last to
+    # finish would silently win. Issue 696 asks for exactly that, and it would
+    # land on two shared names, not one: the metric, and the `spice` view that
+    # `Magic.SpiceExtraction` and `KLayout.LVS` both output.
     #
-    # A shared name between co-running providers is not itself the hazard, and a
-    # registration-time prohibition on one would be wrong. `streamout` is
-    # multi_provider today and both its providers output `gds`, which shipped
-    # flows depend on: every later consumer, Magic.WriteLEF and the signoff
+    # A shared name between jobs that run together is not itself the hazard,
+    # and a registration-time prohibition on one would be wrong. classic.yaml's
+    # `magic_streamout` and `klayout_streamout` both output `gds`, which the
+    # flow depends on: every later consumer, Magic.WriteLEF and the signoff
     # steps included, reads the neutral view. What makes that safe is that the
     # two steps implement an explicit precedence rule, keyed on the PDK's
     # `PRIMARY_GDSII_STREAMOUT_TOOL` -- the primary tool always writes `gds`, a
-    # non-primary one only when nothing has (steps/magic.py:363,
-    # steps/klayout/views.py:217), so the outcome does not depend on which
-    # provider ran last.
+    # non-primary one only when nothing has (steps/magic.py:368,
+    # steps/klayout/views.py:236), so the outcome does not depend on which job
+    # ran last.
     #
     # Neither the `spice` view nor `design__lvs_error__count` has such a rule:
-    # both writers write unconditionally, so a multi_provider `lvs` really would
-    # be decided by position, invisibly. The missing piece is an explicit
-    # statement of which contributor wins, which is what the workflow engine
-    # specs give a `source:` key for, not a ban on sharing.
+    # both writers write unconditionally, so two `lvs` jobs running together
+    # really would be decided by position, invisibly. The missing piece is an
+    # explicit statement of which contributor wins, which is what a document's
+    # `source:` key is for, not a ban on sharing.
     #
     # OpenROAD.WriteCDL is inside the sequence for the same reason
     # Magic.SpiceExtraction is inside netgen's: KLayout.LVS compares the layout

@@ -239,12 +239,28 @@ two right-hand cells are empty.
 provider, so no document declares a job for it, and a template no job uses
 cannot appear in a table of jobs.
 
-## Multi-provider jobs
+## Two tools for one phase
 
-`streamout` and `drc` are the two jobs where `Classic` runs two tools by
-default rather than one. Both entries in `Job.streamout.default_provider`
-and `Job.drc.default_provider` are lists, and `TOOLS` may name a list for
-either, whose sequences are concatenated in listed order.
+A job runs one provider. A template has one `default_provider`, `uses` names
+one, and `TOOLS` overrides it with one; a list value is rejected with a message
+saying so. A flow that wants two tools for the same phase declares **two jobs**
+against the same template, pinning a provider on each, which is what `Classic`
+does for `streamout` and `drc`:
+
+```yaml
+  magic_streamout:
+    uses: streamout/magic
+    if: RUN_MAGIC_STREAMOUT
+  klayout_streamout:
+    needs: [magic_streamout]
+    uses: streamout/klayout
+    if: RUN_KLAYOUT_STREAMOUT
+```
+
+Two jobs rather than one is what makes `RUN_MAGIC_STREAMOUT` and
+`RUN_KLAYOUT_STREAMOUT` independent: an `if` is a property of a job, so one
+job could carry only one of them. It is also what puts both tools in the job
+table under their own names, each separately re-pointable by `TOOLS`.
 
 For `streamout`, both Magic and KLayout convert the routed `DEF` into a GDSII
 stream, but only one of the two results becomes the neutral `gds` view that
@@ -253,27 +269,21 @@ signoff) actually consumes; the other stays only as `mag_gds` or
 `klayout_gds`. The `PRIMARY_GDSII_STREAMOUT_TOOL` configuration variable
 decides which one is copied into `gds`. `KLayout.XOR` then compares the two
 tools' GDSII outputs against each other, which is why dropping one streamout
-provider without also disabling `RUN_KLAYOUT_XOR` fails the view preflight:
-there is no second GDSII left to compare.
+job without also disabling `RUN_KLAYOUT_XOR` fails the view preflight: there
+is no second GDSII left to compare.
 
-For `drc`, both providers run their own independent DRC deck and each
-contracts its own metric (`magic__drc_error__count`,
-`klayout__drc_error__count`). There is no "primary" concept here: dropping one
-provider from `TOOLS` simply runs one deck instead of two, with no downstream
-comparison step depending on the other.
+For `drc`, both jobs run their own independent DRC deck and each contracts its
+own metric (`magic__drc_error__count`, `klayout__drc_error__count`). There is
+no "primary" concept here: turning one off simply runs one deck instead of
+two, with no downstream comparison step depending on the other.
 
-```{note}
-A workflow document runs one provider per job and expresses two tools as two
-jobs, so `TOOLS` names exactly one provider and a list is rejected with a
-message saying so. The multi-provider job templates below keep their list-valued
-`default_provider` because that is what makes both tools' steps available; it is
-the `TOOLS` *override* that must name one.
-```
+Both templates default to `magic`, so a document that declares `streamout` or
+`drc` once and pins nothing gets Magic. No shipped document does that.
 
 ## The two `lvs` providers write the same metric key
 
-`lvs` is *not* a multi-provider job. Its two providers are alternatives, so
-exactly one of them runs, and both write the job's contracted
+Every shipped document declares `lvs` once, so its two providers are
+alternatives: exactly one of them runs, and both write the job's contracted
 `design__lvs_error__count`. That is what makes the key safe to share, and it
 is also what makes the number's meaning depend on which provider ran.
 
