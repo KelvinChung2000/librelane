@@ -874,6 +874,15 @@ Style Notes
   flows behind `OpenROAD.OpenConsole` and `OpenROAD.OpenSTAConsole`. They are
   used the same way the GUI ones are, i.e.
   `librelane --last-run --flow OpenInOpenSTAConsole` (#532).
+* **Fixed:** the `PDK`/`SCL`/`PAD`/`meta` reserved-key refusal only walked a
+  document's own `with` block, so a job's `with` block could still set `PDK`.
+  After the `TOOLS` pre-pass became PDK-aware, that job value would be layered
+  into the job's own configuration resolution and could select a different
+  process than the one the pre-pass had matched `pdk::`/`scl::` sections
+  against, reopening the selector/loader divergence that pre-pass exists to
+  rule out. `_check_values_are_not_reserved` now walks the document's `with`
+  block and every job's, the same structural pattern
+  `_check_values_do_not_select_tools` already used for `TOOLS` (#47).
 
 ## Tool Updates
 

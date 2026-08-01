@@ -389,3 +389,40 @@ def test_a_document_with_naming_a_process_selection_key_is_rejected(key):
     message = str(exc_info.value)
     assert key in message
     assert "PDK" in message
+
+
+@pytest.mark.parametrize("key", ["PDK", "SCL", "PAD", "meta"])
+def test_a_job_with_naming_a_process_selection_key_is_rejected(key):
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "synthesis": {
+                        "uses": "synthesis/yosys",
+                        "with": {key: "whatever"},
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert key in message
+    assert "synthesis" in message
+    assert "PDK" in message
+
+
+def test_a_job_with_an_ordinary_variable_is_accepted():
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "synthesis": {
+                    "uses": "synthesis/yosys",
+                    "with": {"SYNTH_STRATEGY": "AREA 0"},
+                }
+            },
+        }
+    )
+
+    assert spec.jobs["synthesis"].values == {"SYNTH_STRATEGY": "AREA 0"}

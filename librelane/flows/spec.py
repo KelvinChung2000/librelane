@@ -64,10 +64,11 @@ _JOB_KEYS = ("needs", "uses", "steps", "source", "if", "with")
 #: ``JobSpec(condition=..., values=...)`` works from Python.
 _JOB_FIELD_NAMES = ("condition", "values")
 
-#: Keys a document-level ``with`` may never set. They select the process before
-#: any other value is resolved, so a document setting one would override the
-#: command-line argument rather than layer under it. A literal tuple rather
-#: than a derived set: only ``PDK`` is a configuration variable at all.
+#: Keys no ``with`` block at either level may set. They select the process
+#: before any other value is resolved, so a document setting one would
+#: override the command-line argument rather than layer under it. A literal
+#: tuple rather than a derived set: only ``PDK`` is a configuration variable
+#: at all.
 _RESERVED_VALUE_KEYS = ("PDK", "SCL", "PAD", "meta")
 
 #: The key no ``with`` block at either level may set. ``TOOLS`` decides which
@@ -335,10 +336,15 @@ class FlowSpec(BaseModel):
             )
 
     def _check_values_are_not_reserved(self) -> None:
-        for key in self.values:
-            if key in _RESERVED_VALUE_KEYS:
+        blocks = [("Flow", self.name, self.values)] + [
+            ("Job", name, job.values) for name, job in self.jobs.items()
+        ]
+        for kind, owner, values in blocks:
+            for key in values:
+                if key not in _RESERVED_VALUE_KEYS:
+                    continue
                 raise FlowSpecError(
-                    f"Flow '{self.name}' sets '{key}' in its 'with' block. "
+                    f"{kind} '{owner}' sets '{key}' in its 'with' block. "
                     f"{list(_RESERVED_VALUE_KEYS)} select the process before "
                     f"any other value is resolved, so a document setting one "
                     f"would override the command line rather than layer under "
