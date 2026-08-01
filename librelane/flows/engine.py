@@ -28,13 +28,14 @@ from librelane.config import AnyConfig, AnyConfigs, Config, variable
 from librelane.jobs import JobContractError, extract_tools
 from librelane.state import State
 from librelane.steps import DeferredStepError, Step, StepError, StepException
+from librelane.flows.explanation import Explanation, JobDisposition
 from librelane.flows.flow import Flow, FlowError, FlowException
 from librelane.flows.job import ResolvedJob, ToolSelection, resolve_jobs
 from librelane.flows.join import join_sink_states, join_states
 from librelane.flows.net import Net
 from librelane.flows.resume import resume_key, reusable_state, write_entry
 from librelane.flows.spec import FlowSpec
-from librelane.flows.spec_graph import ancestors, descendants
+from librelane.flows.spec_graph import ancestors, descendants, topological_order
 from librelane.flows.spec_validation import validate_against_registry
 
 
@@ -252,15 +253,8 @@ class Workflow(Flow):
         # about it.
         edges = self.spec.edges()
 
-        selected = set(self.jobs)
+        selected = self._target_subgraph(edges, target)
         restricted_by = "--target"
-        if target is not None:
-            targets = list(target)
-            self._require_declared(targets, "--target")
-            selected = set()
-            for name in targets:
-                selected.add(name)
-                selected |= ancestors(edges, name)
 
         skipped = set(skip or ())
         self._require_declared(sorted(skipped), "--skip")
@@ -304,17 +298,7 @@ class Workflow(Flow):
             reproducible_at = (job_id, step_index)
             restricted_by = "--reproducible"
 
-        outside = (skipped | invalidated) - selected
-        if outside:
-            names = sorted(outside)
-            # Names whichever option narrowed the graph. Both --target and
-            # --reproducible do, so a fixed '--target' here would tell a user
-            # who passed only --reproducible about an option they never used.
-            raise FlowException(
-                f"{names} {'lies' if len(names) == 1 else 'lie'} outside the "
-                f"{restricted_by} subgraph {sorted(selected)}, so naming "
-                f"{'it' if len(names) == 1 else 'them'} would do nothing."
-            )
+        self._reject_outside(skipped | invalidated, selected, restricted_by)
 
         # Forwards only. A cache entry is invalid because its inputs are not
         # the ones it was written from -- an edited TCL script, a rebuilt tool
@@ -508,6 +492,145 @@ class Workflow(Flow):
             )
         logger.success("Flow complete.")
         return final, steps_run
+
+    def explain(
+        self,
+        *,
+        target: Iterable[str] | None = None,
+        skip: Iterable[str] | None = None,
+    ) -> Explanation:
+        """
+        Parameters
+        ----------
+        target : Iterable[str] | None
+            As :meth:`run`.
+        skip : Iterable[str] | None
+            As :meth:`run`.
+
+        Returns
+        -------
+        Explanation
+            One entry per job the document declares, in topological order,
+            stating whether the job will run under this configuration and
+            these arguments, and if not, which mechanism excluded it.
+
+            Every declared job gets an entry, including the ones that will not
+            run. A job missing from the run is the question this is asked, so
+            reporting only the jobs that will run would answer everything
+            except it.
+
+        Raises
+        ------
+        FlowException
+            If any named job is not declared, or if ``skip`` names a job
+            ``target`` already excluded. :meth:`run` refuses the same
+            arguments, and an explanation that answered where the run would
+            raise would be describing an invocation that cannot happen.
+
+        Resume is deliberately not reported, for the reason given on
+        :meth:`librelane.flows.SequentialFlow.explain`. A resume verdict depends
+        on content fingerprints of files that later jobs in the same run will
+        rewrite, so it cannot be known before the run.
+        """
+        edges = self.spec.edges()
+        selected = self._target_subgraph(edges, target)
+        skipped = set(skip or ())
+        self._require_declared(sorted(skipped), "--skip")
+        self._reject_outside(skipped, selected, "--target")
+
+        dispositions: list[JobDisposition] = []
+        for job_id in topological_order(edges):
+            job = self.jobs[job_id]
+            needs = tuple(job.needs)
+            if job_id not in selected:
+                dispositions.append(
+                    JobDisposition(
+                        job_id,
+                        needs,
+                        False,
+                        "not in the --target subgraph",
+                        "not-in-target",
+                    )
+                )
+                continue
+            # The same call the run makes, so the two cannot disagree about
+            # which variable stopped a job or how its absence is worded.
+            reason = self._pass_through_reason(job, job_id in skipped)
+            if reason is None:
+                dispositions.append(
+                    JobDisposition(job_id, needs, True, "will run", None)
+                )
+            else:
+                mechanism = "skip" if job_id in skipped else "condition"
+                dispositions.append(
+                    JobDisposition(job_id, needs, False, reason, mechanism)
+                )
+        return Explanation(steps=(), unselected_jobs=(), jobs=tuple(dispositions))
+
+    def _target_subgraph(
+        self, edges: dict[str, list[str]], target: Iterable[str] | None
+    ) -> set[str]:
+        """
+        Parameters
+        ----------
+        edges : dict[str, list[str]]
+            This document's job dependency map.
+        target : Iterable[str] | None
+            The jobs ``--target`` named, or ``None`` for the whole graph.
+
+        Returns
+        -------
+        The named jobs and their transitive ancestors, or every job when
+        nothing was named. Shared with :meth:`explain` rather than written
+        twice, because an explanation that drew a different subgraph from the
+        run it describes would be worse than no explanation.
+
+        Raises
+        ------
+        FlowException
+            If any named job is not declared.
+        """
+        if target is None:
+            return set(self.jobs)
+        targets = list(target)
+        self._require_declared(targets, "--target")
+        selected: set[str] = set()
+        for name in targets:
+            selected.add(name)
+            selected |= ancestors(edges, name)
+        return selected
+
+    def _reject_outside(
+        self, named: set[str], selected: set[str], restricted_by: str
+    ) -> None:
+        """
+        Parameters
+        ----------
+        named : set[str]
+            The jobs the narrowing-sensitive options named.
+        selected : set[str]
+            The jobs the run was restricted to.
+        restricted_by : str
+            Whichever option narrowed the graph. Both ``--target`` and
+            ``--reproducible`` do, so a fixed ``--target`` here would tell a
+            user who passed only ``--reproducible`` about an option they never
+            used.
+
+        Raises
+        ------
+        FlowException
+            If any named job lies outside ``selected``, because the option
+            would otherwise do nothing at all and say nothing about it.
+        """
+        outside = named - selected
+        if not outside:
+            return
+        names = sorted(outside)
+        raise FlowException(
+            f"{names} {'lies' if len(names) == 1 else 'lie'} outside the "
+            f"{restricted_by} subgraph {sorted(selected)}, so naming "
+            f"{'it' if len(names) == 1 else 'them'} would do nothing."
+        )
 
     def _save_final_snapshot(self, final: State) -> None:
         """

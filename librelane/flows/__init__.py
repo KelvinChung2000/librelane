@@ -22,7 +22,7 @@ as a number of built-in flows.
 from importlib.resources import files
 
 from librelane.flows.flow import FlowError, FlowException, FlowProgressBar, Flow
-from librelane.flows.explanation import Explanation, StepDisposition
+from librelane.flows.explanation import Explanation, JobDisposition, StepDisposition
 from librelane.flows.sequential import SequentialFlow
 from librelane.flows.spec import load_flow_spec
 from librelane.flows.staged import Boundary, StagedFlow
