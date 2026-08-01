@@ -316,3 +316,80 @@ def test_unrecognized_double_colon_is_literal():
     from librelane.config.preprocessor import parse_directive
 
     assert parse_directive("pkg::type") is None
+
+
+def _overlaid(mapping, pdk="tiny", scl="tiny_scl"):
+    from librelane.config.preprocessor import apply_overlays
+
+    return apply_overlays(mapping, pdk=pdk, scl=scl)
+
+
+def test_a_matching_section_beats_a_plain_key_written_below_it():
+    """
+    A scoped section is a statement about the mapping that carried it, not a
+    line in a script, so where in the file it is written cannot decide what a
+    key resolves to. Merging in document order makes moving the block above the
+    key silently change the answer.
+    """
+    assert _overlaid(
+        {
+            "pdk::tiny": {"A": "from the section"},
+            "A": "from the top level",
+        }
+    ) == {"A": "from the section"}
+
+
+def test_a_matching_section_still_beats_a_plain_key_written_above_it():
+    """The other half, which the shipped configurations all happen to be."""
+    assert _overlaid(
+        {
+            "A": "from the top level",
+            "pdk::tiny": {"A": "from the section"},
+        }
+    ) == {"A": "from the section"}
+
+
+def test_two_matching_sections_are_merged_in_document_order():
+    """
+    Sections do not outrank each other by specificity: the last matching one
+    wins, so a general block written after a specific one overrides it.
+    """
+    assert _overlaid(
+        {
+            "pdk::tiny": {"A": "from the specific section"},
+            "pdk::tin*": {"A": "from the general section"},
+        }
+    ) == {"A": "from the general section"}
+
+
+def test_a_nested_section_beats_its_enclosing_sections_plain_key():
+    """
+    An ``scl::`` block inside a matching ``pdk::`` block is one level further
+    in, and the same rule applies there: it wins wherever it is written.
+    """
+    assert _overlaid(
+        {
+            "pdk::tiny": {
+                "scl::tiny_scl": {"A": "from the scl"},
+                "A": "from the pdk",
+            }
+        }
+    ) == {"A": "from the scl"}
+
+
+def test_a_non_matching_section_is_dropped_with_everything_under_it():
+    assert _overlaid(
+        {
+            "A": "from the top level",
+            "pdk::other": {"A": "from another pdk", "B": "not this pdk's"},
+            "scl::other_scl": {"C": "not this scl's"},
+        }
+    ) == {"A": "from the top level"}
+
+
+def test_a_section_key_whose_value_is_not_a_mapping_is_left_alone():
+    """
+    ``pdk::`` is only a section marker in front of a block. Anything else is a
+    key like any other and is not this expansion's business.
+    """
+    assert _overlaid({"pdk::tiny": "not a section"}) == {"pdk::tiny": "not a section"}

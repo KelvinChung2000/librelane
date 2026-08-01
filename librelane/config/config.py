@@ -47,7 +47,11 @@ from librelane.config.flow import (
     flow_common_variables,
 )
 from librelane.config.pdk_compat import migrate_old_config
-from librelane.config.preprocessor import preprocess_dict, Keys as SpecialKeys
+from librelane.config.preprocessor import (
+    apply_overlays,
+    preprocess_dict,
+    Keys as SpecialKeys,
+)
 from librelane.config.validation import translate_deprecated_names, validate_mapping
 from librelane.__version__ import __version__
 from librelane.common import (
@@ -685,6 +689,10 @@ class Config(GenericImmutableDict[str, Any]):
             A list of "overrides" in the form of
             NAME=VALUE strings. These are primarily for running LibreLane from
             the command-line and strictly speaking should not be used in the API.
+
+            They are a layer of their own, applied after every configuration
+            source, so an override beats a value any file supplies -- including
+            one a file supplies from a ``pdk::`` or ``scl::`` section.
         design_dir : str | None
             The design directory for said configuration(s).
 
@@ -800,21 +808,22 @@ class Config(GenericImmutableDict[str, Any]):
                 )
             )
 
-        layered = layer_mappings(sources)
-        mutable = GenericDict(layered.mapping)
-        provenance = dict(layered.provenance)
         config_override_strings = config_override_strings or []
         permissive_keys = {
             key for source in sources if source.kind == "tcl" for key in source.mapping
         }
+        overrides: dict[str, Any] = {}
         for string in config_override_strings:
             key, value = string.split("=", 1)
-            mutable[key] = value
-            provenance[key] = "<command line>"
+            overrides[key] = value
             permissive_keys.add(key)
+        # Last, and a source of its own rather than an edit to the merged
+        # mapping: an override has to outrank every file, including a scoped
+        # section one of them wrote.
+        sources.append(ConfigSource(overrides, "<command line>", "mapping"))
 
         config_obj = Self.__load_dict(
-            mutable,
+            sources,
             design_dir,
             flow_config_vars=flow_config_vars,
             pdk_root=pdk_root,
@@ -824,7 +833,6 @@ class Config(GenericImmutableDict[str, Any]):
             meta=meta,
             permissive_typing=meta.version < 2,
             permissive_keys=frozenset(permissive_keys),
-            provenance=provenance,
             _load_pdk_configs=_load_pdk_configs,
         )
 
@@ -857,7 +865,7 @@ class Config(GenericImmutableDict[str, Any]):
     @classmethod
     def __load_dict(
         Self,
-        mapping_in: Mapping[str, Any],
+        sources_in: Sequence[ConfigSource],
         design_dir: str,
         flow_config_vars: Sequence[Variable],
         *,
@@ -869,22 +877,35 @@ class Config(GenericImmutableDict[str, Any]):
         full_pdk_warnings: bool = False,
         permissive_typing: bool = False,
         permissive_keys: frozenset[str] = frozenset(),
-        provenance: Mapping[str, str] | None = None,
         _load_pdk_configs: bool = True,
     ) -> "Config":
-        raw = dict(mapping_in)
-
-        if "meta" in raw:
-            del raw["meta"]
+        # The sources arrive unmerged because their 'pdk::'/'scl::' sections
+        # have to be expanded into each source separately, and that cannot
+        # happen until the PDK and the SCL below are resolved.
+        #
+        # 'meta' describes the file rather than the design, and Config.load has
+        # already read it, so no source's copy of it survives into the values.
+        sources = [
+            ConfigSource(
+                {key: value for key, value in source.mapping.items() if key != "meta"},
+                source.name,
+                source.kind,
+            )
+            for source in sources_in
+        ]
 
         flow_pdk_vars = []
         for variable in flow_config_vars:
             if variable.pdk:
                 flow_pdk_vars.append(variable)
 
+        # Reads the sources as written, sections and all: this pass is what
+        # supplies the PDK the sections are matched against. It passes an empty
+        # PDK to 'apply_overlays', so a section cannot name the PDK that
+        # selects it, and every section is dropped here unresolved.
         mutable = GenericDict(
             preprocess_dict(
-                raw,
+                layer_mappings(sources).mapping,
                 only_extract_process_info=True,
                 design_dir=design_dir,
             )
@@ -897,12 +918,14 @@ class Config(GenericImmutableDict[str, Any]):
 
         mutable["PDK_ROOT"] = pdk_root
 
+        if pdk is None:
+            raise ValueError(
+                "The pdk argument is required as the configuration object lacks a 'PDK' key."
+            )
+
+        pdk_provenance: Mapping[str, str] = {}
         if _load_pdk_configs:
             pdk_root = Self.__resolve_pdk_root(pdk_root)
-            if pdk is None:
-                raise ValueError(
-                    "The pdk argument is required as the configuration object lacks a 'PDK' key."
-                )
 
             mutable, pdkpath, scl, pad, pdk_provenance = Self.__get_pdk_config(
                 pdk=pdk,
@@ -912,20 +935,37 @@ class Config(GenericImmutableDict[str, Any]):
                 full_pdk_warnings=full_pdk_warnings,
                 flow_pdk_vars=flow_pdk_vars,
             )
-            # Under the caller's map, because 'mutable.update(design_values)'
-            # below layers the design over the PDK and the attribution has to
-            # follow the value. A key only the PDK wrote keeps '<pdk>'.
-            provenance = {**pdk_provenance, **(provenance or {})}
         else:
             if pdk_root is not None:
                 pdkpath = os.path.join(pdk_root, mutable["PDK"])
 
+        # Each source's sections are expanded into that source and only then
+        # are the sources layered, so a section outranks the file that carried
+        # it and nothing else. Expanding after the merge instead makes one
+        # dict's insertion order decide precedence between files -- and lets a
+        # section in the first file overwrite a command-line override.
+        scl_resolved = mutable[SpecialKeys.scl]
+        layered = layer_mappings(
+            [
+                ConfigSource(
+                    apply_overlays(source.mapping, pdk=pdk, scl=scl_resolved),
+                    source.name,
+                    source.kind,
+                )
+                for source in sources
+            ]
+        )
+        # Under the design's map, because 'mutable.update(design_values)' below
+        # layers the design over the PDK and the attribution has to follow the
+        # value. A key only the PDK wrote keeps '<pdk>'.
+        provenance = {**pdk_provenance, **layered.provenance}
+
         design_values, deprecations, design_renames = translate_deprecated_names(
             preprocess_dict(
-                raw,
+                layered.mapping,
                 pdk=pdk,
                 pdkpath=pdkpath,
-                scl=mutable[SpecialKeys.scl],
+                scl=scl_resolved,
                 pad=mutable.get(SpecialKeys.pad, None),
                 design_dir=design_dir,
             ),
@@ -934,7 +974,6 @@ class Config(GenericImmutableDict[str, Any]):
         mutable.update(design_values)
         # Before validate_mapping rather than after, so a diagnostic about a
         # renamed key names the layer that actually wrote it too.
-        provenance = dict(provenance or {})
         _follow_renames(provenance, design_renames)
 
         processed, diagnostics, merged_renames = validate_mapping(

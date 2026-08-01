@@ -47,6 +47,10 @@ _VARIABLES = [
     Variable("TEST_FROM_SCL", str, description="x", pdk=True),
     Variable("TEST_LAYERED", str, description="x", pdk=True),
     Variable("TEST_UNSET", Optional[str], description="x"),
+    # A variable a design writes inside a 'pdk::'/'scl::' block. The block is a
+    # section of the file that carried it and not a layer of its own, so the
+    # file is what an origin has to name.
+    Variable("TEST_SCOPED", Optional[str], description="x"),
     # The three shapes ``migrate_old_config`` produces: a key it renames from
     # one the PDK wrote, one it renames from a key the SCL wrote, and one it
     # synthesises from the PDK tree. None of the three exists under the name
@@ -194,6 +198,19 @@ def _provenance(tiny_pdk, design, tmp_path, **load) -> Mapping[str, str]:
     Mapping[str, str]
         The resolved configuration's own key-to-origin map.
     """
+    return _resolve(tiny_pdk, design, tmp_path, **load).provenance
+
+
+def _resolve(tiny_pdk, design, tmp_path, **load):
+    """
+    The same call as :func:`_provenance`, returning the whole configuration
+    for the tests that assert on a value as well as on where it came from.
+
+    Returns
+    -------
+    librelane.config.Config
+        The resolved configuration.
+    """
     from librelane.config import Config
 
     resolved, _ = Config.load(
@@ -204,7 +221,7 @@ def _provenance(tiny_pdk, design, tmp_path, **load) -> Mapping[str, str]:
         pdk_root=tiny_pdk,
         **load,
     )
-    return resolved.provenance
+    return resolved
 
 
 def test_a_pdk_supplied_value_is_attributed_to_the_pdk(tiny_pdk, tmp_path):
@@ -545,3 +562,154 @@ def test_every_value_the_design_supplied_is_attributed_to_the_design(
         current: provenance.get(current, "<<ABSENT -- reads as default>>")
         for current in aliases.values()
     } == {current: "<mapping>" for current in aliases.values()}
+
+
+def _yaml_source(path, body):
+    """
+    Parameters
+    ----------
+    path : pathlib.Path
+        Where to write the file.
+    body : str
+        Its contents, dedented before writing.
+
+    Returns
+    -------
+    str
+        The path as :meth:`librelane.config.Config.load` takes it, which is
+        also the name it attributes the file's keys to.
+    """
+    path.write_text(textwrap.dedent(body))
+    return str(path)
+
+
+def test_a_value_from_a_scoped_section_is_attributed_to_the_file(tiny_pdk, tmp_path):
+    """
+    ``pdk::``/``scl::`` sections are the common idiom -- the shipped spm
+    configuration writes four of them -- and a key promoted out of one belongs
+    to the file that carried the section. Attributing under the section's own
+    key instead leaves the promoted key with no origin, and absence is how
+    ``default`` is spelled, so a user is told nobody set a value their own file
+    sets.
+    """
+    resolved = _resolve(
+        tiny_pdk,
+        {
+            "DESIGN_NAME": "x",
+            "pdk::tiny": {"TEST_SCOPED": "from the section"},
+        },
+        tmp_path,
+    )
+
+    assert resolved["TEST_SCOPED"] == "from the section"
+    assert resolved.provenance["TEST_SCOPED"] == "<mapping>"
+
+
+def test_a_deprecated_name_inside_a_scoped_section_keeps_its_origin(tiny_pdk, tmp_path):
+    """
+    The two migrations compose: the key is promoted out of the section under
+    the name the file wrote, and the rename then moves both the value and the
+    origin onto the current name.
+    """
+    resolved = _resolve(
+        tiny_pdk,
+        {
+            "DESIGN_NAME": "x",
+            "scl::tiny_scl": {"TEST_RENAMED_UNSET_LEGACY": "from the section"},
+        },
+        tmp_path,
+    )
+
+    assert resolved["TEST_RENAMED_UNSET"] == "from the section"
+    assert resolved.provenance["TEST_RENAMED_UNSET"] == "<mapping>"
+
+
+def test_a_command_line_override_beats_a_scoped_section(tiny_pdk, tmp_path):
+    """
+    The shipped spm configuration's shape: a key written both at the top level
+    and inside a matching ``pdk::`` block. An override lands on the existing
+    top-level key and so keeps its position, above the section -- and expanding
+    the section over the merged mapping then overwrites it. The user is given
+    neither the value they asked for nor an origin that admits it.
+    """
+    resolved = _resolve(
+        tiny_pdk,
+        {
+            "DESIGN_NAME": "x",
+            "TEST_SCOPED": "from the top level",
+            "pdk::tiny": {"TEST_SCOPED": "from the section"},
+        },
+        tmp_path,
+        config_override_strings=["TEST_SCOPED=from the command line"],
+    )
+
+    assert resolved["TEST_SCOPED"] == "from the command line"
+    assert resolved.provenance["TEST_SCOPED"] == "<command line>"
+
+
+def test_a_scoped_section_beats_its_own_files_top_level_value(tiny_pdk, tmp_path):
+    """
+    Within one file the section wins wherever it is written. Every shipped
+    configuration puts its sections last, so this is only observable when one
+    is moved -- which is exactly when a silent change of meaning is worst.
+    """
+    resolved = _resolve(
+        tiny_pdk,
+        {
+            "DESIGN_NAME": "x",
+            "pdk::tiny": {"TEST_SCOPED": "from the section"},
+            "TEST_SCOPED": "from the top level",
+        },
+        tmp_path,
+    )
+
+    assert resolved["TEST_SCOPED"] == "from the section"
+    assert resolved.provenance["TEST_SCOPED"] == "<mapping>"
+
+
+def test_a_later_files_plain_value_beats_an_earlier_files_scoped_one(
+    tiny_pdk, tmp_path
+):
+    """
+    Precedence between two sources is the order they were given in, and a
+    section is not a way for an earlier file to outrank a later one. Expanding
+    sections over the merged mapping decides this by where the merge happened
+    to put each key instead.
+    """
+    first = _yaml_source(
+        tmp_path / "first.yaml",
+        """\
+        DESIGN_NAME: x
+        TEST_SCOPED: from the first file
+        pdk::tiny:
+          TEST_SCOPED: from the first file's section
+        """,
+    )
+    second = _yaml_source(
+        tmp_path / "second.yaml",
+        """\
+        TEST_SCOPED: from the second file
+        """,
+    )
+
+    resolved = _resolve(tiny_pdk, [first, second], tmp_path)
+
+    assert resolved["TEST_SCOPED"] == "from the second file"
+    assert resolved.provenance["TEST_SCOPED"] == second
+
+
+def test_a_section_matching_neither_the_pdk_nor_the_scl_is_dropped(tiny_pdk, tmp_path):
+    resolved = _resolve(
+        tiny_pdk,
+        {
+            "DESIGN_NAME": "x",
+            "TEST_SCOPED": "from the top level",
+            "pdk::other": {"TEST_SCOPED": "from another pdk"},
+            "scl::other_scl": {"TEST_UNSET": "from another scl"},
+        },
+        tmp_path,
+    )
+
+    assert resolved["TEST_SCOPED"] == "from the top level"
+    assert resolved["TEST_UNSET"] is None
+    assert "TEST_UNSET" not in resolved.provenance
