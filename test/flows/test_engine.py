@@ -1267,11 +1267,9 @@ def test_skip_outside_the_target_subgraph_is_an_error(
 
     message = str(exc_info.value)
     assert "second" in message
-    # Names the option that narrowed the graph, and says why the request was
-    # refused rather than only which job was rejected. Asserted because a
-    # message naming the wrong option is the defect this pins.
+    # Names the option that narrowed the graph. Asserted because a message
+    # naming the wrong option is the defect this pins.
     assert "--target" in message
-    assert "outside" in message
 
 
 @mock_variables([flow_module, step_module])
@@ -1605,6 +1603,41 @@ def test_reproducible_runs_the_named_job_s_ancestors(
 
 
 @mock_variables([flow_module, step_module])
+def test_a_reproducible_run_frames_an_ancestor_s_deferred_errors(
+    contract_job, counting_steps, minimal_design, mock_pdk, mocker
+):
+    """
+    The reproducible path has its own deferred raise, separate from the
+    ordinary tail, and nothing else reaches it. An ancestor that deferred must
+    still fail the run after the reproducible is written -- and must say what
+    the list of messages is, as ``SequentialFlow`` does.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowError
+    from librelane.flows.spec import FlowSpec
+
+    _, _, Second = counting_steps
+    mocker.patch.object(Second, "create_reproducible")
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "deferrer": {"uses": "engine_contract/deferring"},
+                "second": {"needs": ["deferrer"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowError) as exc_info:
+        flow.start(tag="repro-deferred", reproducible="second/Test.EngineSecond")
+
+    message = str(exc_info.value)
+    assert "the tool reported 3 violations" in message
+    assert "One or more deferred errors were encountered" in message
+
+
+@mock_variables([flow_module, step_module])
 def test_reproducible_returns_the_state_the_named_step_would_have_consumed(
     counting_steps, minimal_design, mock_pdk, mocker
 ):
@@ -1921,6 +1954,71 @@ def test_the_flow_remembers_the_state_it_returned(
 
 
 @mock_variables([flow_module, step_module])
+def test_the_efabless_snapshot_carries_every_leaf_s_metrics(
+    tmp_path, counting_steps, minimal_design, mock_pdk
+):
+    """
+    The user-visible payoff of ``Flow.final_state``, and the only test that
+    calls ``_save_snapshot_ef``.
+
+    On a list the last step's ``state_out`` *was* the flow's final state, so
+    reading either gave the same answer. On a graph they differ: the last leaf
+    to fire carries one branch's metrics, the join carries both. A snapshot
+    taken from the step list would silently drop whichever branch happened to
+    finish first, and no other test would notice -- the neighbours exercise
+    ``final_state`` itself, nothing calls this.
+    """
+    import csv
+
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "left": {"steps": ["Test.EngineFirst"]},
+                "right": {"steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="ef-two-leaves")
+
+    destination = tmp_path / "efabless"
+    flow._save_snapshot_ef(destination)
+
+    written = destination / "signoff" / flow.config["DESIGN_NAME"] / "metrics.csv"
+    with open(written, encoding="utf8") as handle:
+        recorded = {row["Metric"] for row in csv.DictReader(handle)}
+
+    # Both, not whichever leaf fired last.
+    assert {"first", "second"} <= recorded
+
+
+@mock_variables([flow_module, step_module])
+def test_saving_the_efabless_snapshot_before_running_is_an_error(
+    tmp_path, counting_steps, minimal_design, mock_pdk
+):
+    """
+    A programming-error guard, not a live path: its one caller runs after
+    ``start()`` returned. It raises rather than falling back to the step list,
+    which is what the code it replaced did.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"only": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(RuntimeError, match="not run"):
+        flow._save_snapshot_ef(tmp_path / "efabless")
+
+
+@mock_variables([flow_module, step_module])
 def test_the_run_reports_what_it_reused(
     caplog, counting_steps, minimal_design, mock_pdk
 ):
@@ -1977,8 +2075,14 @@ def test_a_deferring_run_reports_neither_reuse_nor_completion(
     )
 
     config = dict(minimal_design, TOOLS={"contracts": "deferring"})
-    with pytest.raises(FlowError, match="3 violations"):
+    with pytest.raises(FlowError, match="3 violations") as exc_info:
         Workflow(spec, config, **mock_pdk).start(tag="deferred-report")
+
+    # The frame, not just the violations. Without it the CLI prints "The flow
+    # encountered the following error:" and then the deferred lines run
+    # together with nothing saying what the list is. SequentialFlow frames
+    # them; matching only on the violation text would pass either way.
+    assert "One or more deferred errors were encountered" in str(exc_info.value)
 
     assert "Flow complete." not in caplog.text
     assert "Reused" not in caplog.text

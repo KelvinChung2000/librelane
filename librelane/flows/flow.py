@@ -1229,7 +1229,14 @@ class Flow(ABC):
 
         # 3. SDF
         #   (This one, as with many things in the Efabless format, is special)
-        if sdf := final_state[DesignFormat.SDF]:
+        #
+        # get_by_df rather than subscripting: a state that never carried an SDF
+        # has no such key, and subscripting raises KeyError instead of yielding
+        # the None this 'if' is written to test. A full run always produces one,
+        # which is why it went unnoticed -- but --target can now stop the flow
+        # before STA, and asking for an Efabless snapshot of that run should
+        # write what exists rather than crash.
+        if sdf := final_state.get_by_df(DesignFormat.SDF):
             assert isinstance(sdf, dict), "SDF is not a dictionary"
             for corner, view in sdf.items():
                 assert isinstance(view, pathlib.Path), (

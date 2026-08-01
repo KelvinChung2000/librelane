@@ -443,7 +443,10 @@ class Workflow(Flow):
                         # an error still failed and dropping it here would be
                         # the silent failure --reproducible was moved onto the
                         # engine to avoid.
-                        raise FlowError("\n".join(deferred)) from None
+                        raise FlowError(
+                            "One or more deferred errors were encountered:\n"
+                            + "\n".join(deferred)
+                        ) from None
                     return created.state, steps_run
                 except Exception as e:
                     # Collected rather than raised, because raising here would
@@ -483,7 +486,9 @@ class Workflow(Flow):
         self._save_final_snapshot(final)
 
         if deferred:
-            raise FlowError("\n".join(deferred))
+            raise FlowError(
+                "One or more deferred errors were encountered:\n" + "\n".join(deferred)
+            )
 
         if reused_count:
             logger.info(
