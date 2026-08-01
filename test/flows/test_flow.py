@@ -149,30 +149,8 @@ def test_flow_abc_init():
     assert e is not None, "Flow ABC instantiated successfully"
 
 
-def test_console_flows_run_the_console_steps():
-    """Issue 532: the interactive sessions are reachable the same way the GUI
-    ones are, i.e. `librelane --last-run --flow ...`."""
-    from librelane.flows import Flow
-
-    assert [step.id for step in Flow.factory.get("OpenInOpenROADConsole").Steps] == [
-        "OpenROAD.OpenConsole"
-    ]
-    assert [step.id for step in Flow.factory.get("OpenInOpenSTAConsole").Steps] == [
-        "OpenROAD.OpenSTAConsole"
-    ]
-
-
 def test_factory(DummyFlow: type[flow.Flow]):
     from librelane.flows import Flow
-
-    assert all(
-        flow in Flow.factory.list()
-        for flow in [
-            "Classic",
-            "OpenInKLayout",
-            "OpenInOpenROAD",
-        ]
-    ), "One or more built-in flows missing from factory list"
 
     Flow.factory.register()(DummyFlow)
 

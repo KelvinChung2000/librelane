@@ -14,9 +14,10 @@
 """
 Provider registrations for the open-source toolchain.
 
-Every sequence here is a partition of today's ``Classic.Steps``. The golden
-equivalence test in ``test/flows/test_staged_equivalence.py`` is what pins
-them down; if a sequence is wrong, that test fails.
+Every sequence here is a partition of what the ``Classic`` flow class ran. A
+golden equivalence test pinned them down against that class; the class and the
+test went with phase 5, and ``test/flows/test_documents.py`` is what exercises
+these sequences now, through the documents that resolve to them.
 
 The registrations are declared as data and applied in a loop at the bottom of
 the module. Keeping them as data is what let the ``namespaces`` and

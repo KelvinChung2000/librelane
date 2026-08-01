@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-The no-regression pin for the migration. Each document must resolve to the same
-steps, under the same gates, as the Python flow it replaces.
+The shipped workflow documents' own test file.
+
+Until phase 5 this pinned each document against the Python flow it replaced.
+Those flows are gone, so what is pinned here now is the documents themselves:
+that each one resolves, that its graph orders and gates what it claims to, and
+that the registry answers for every document the package ships.
 """
 
 import itertools
@@ -131,88 +135,6 @@ def _gating_variables(name: str) -> list[tuple[str, str, tuple[str, ...]]]:
         for job_id in spec.jobs
         for step in jobs[job_id].steps
     ]
-
-
-def _flow_gating_variables(
-    name: str,
-    flow,
-) -> list[tuple[str, str, tuple[str, ...]]]:
-    """
-    The same list, derived from the Python flow's expanded gating table by
-    pairing it with the document's jobs position by position.
-    """
-    gating = flow._expand_gating_config_vars(
-        flow.gating_config_vars, [step.id for step in flow.Steps]
-    )
-    return [
-        (job_id, implementation, tuple(gating.get(step.id, [])))
-        for (job_id, implementation), step in zip(_jobs_of_each_step(name), flow.Steps)
-    ]
-
-
-def _flow_gated_pairs(name: str, flow) -> set[tuple[str, str]]:
-    """
-    The same set, derived from the Python flow, by pairing its flat step list
-    with the document's jobs position by position.
-    """
-    pairs = _jobs_of_each_step(name)
-    assert [implementation for _, implementation in pairs] == [
-        step.get_implementation_id() for step in flow.Steps
-    ], "the document and the flow do not run the same steps in the same order"
-
-    gating = flow._expand_gating_config_vars(
-        flow.gating_config_vars, [step.id for step in flow.Steps]
-    )
-    return {
-        (job_id, implementation)
-        for (job_id, implementation), step in zip(pairs, flow.Steps)
-        if step.id in gating
-    }
-
-
-def _assert_orders_its_steps_as_the_flow_did(name: str, flow) -> None:
-    """
-    Asserts that the document runs the flow's steps, and that every pair of
-    jobs its graph still orders is ordered the way the Python flow ordered it.
-
-    The step list is expanded by walking ``topological_order`` rather than the
-    document's job map. That is not a reachability check -- ``edges()`` returns
-    an entry per job and ``static_order`` returns every node it is given, so the
-    two node sets are identical by construction -- it is so that the sequence
-    being checked is the one the engine would actually run.
-    """
-    spec = _document(name)
-    jobs = resolve_jobs(spec)
-    edges = spec.edges()
-
-    reached = [
-        (job_id, step.get_implementation_id())
-        for job_id in topological_order(edges)
-        for step in jobs[job_id].steps
-    ]
-    assert sorted(reached) == sorted(_jobs_of_each_step(name))
-    assert sorted(implementation for _, implementation in reached) == sorted(
-        step.get_implementation_id() for step in flow.Steps
-    )
-
-    # Which job owns each entry of the flow's list. Asserted rather than
-    # assumed, so that 'index' below is an index into flow.Steps and this
-    # helper does not lean on _flow_gated_pairs to make that true.
-    attribution = _jobs_of_each_step(name)
-    assert [implementation for _, implementation in attribution] == [
-        step.get_implementation_id() for step in flow.Steps
-    ]
-
-    position: dict[str, int] = {}
-    for index, (job_id, _) in enumerate(attribution):
-        position.setdefault(job_id, index)
-
-    for job_id, needs in edges.items():
-        for need in needs:
-            assert position[need] < position[job_id], (
-                f"'{job_id}' needs '{need}', which the {flow.__name__} flow ran "
-                f"after it"
-            )
 
 
 #: The metrics every OpenROAD invocation writes and nothing declares.
@@ -465,59 +387,83 @@ def _assert_gds_writers_are_ordered(name: str, expected: list[str]) -> None:
         )
 
 
-def test_the_classic_document_runs_the_same_steps_as_the_classic_flow():
-    from librelane.flows import Flow
+#: The eight documents that replaced the eight Python flow classes, written out
+#: rather than discovered, so that a document *disappearing* fails here too.
+#: :func:`test_the_document_list_names_every_shipped_document` is what stops the
+#: literal going stale in the other direction.
+_SHIPPED_DOCUMENTS = [
+    "classic.yaml",
+    "vhdl_classic.yaml",
+    "chip.yaml",
+    "open_in_klayout.yaml",
+    "open_in_openroad.yaml",
+    "open_in_openroad_console.yaml",
+    "open_in_opensta_console.yaml",
+    "open_in_magic.yaml",
+]
 
-    Classic = Flow.factory.get("Classic")
 
-    assert sorted(_implementation_ids("classic.yaml")) == sorted(
-        step.get_implementation_id() for step in Classic.Steps
-    )
-
-
-def test_the_classic_document_orders_its_steps_as_the_classic_flow_did():
+@pytest.mark.parametrize("document", _SHIPPED_DOCUMENTS)
+def test_every_shipped_document_resolves(document):
     """
-    The document is a graph, so it no longer claims the flow's exact sequence:
-    six signoff branches leave the last stream-out together and the flow's list
-    had to put them in some arbitrary order. What survives the relaxation, and
-    is what the migration actually owes, is the weaker claim: every pair of
-    jobs the graph *still* orders is ordered the way the Python flow ordered
-    it. A 'needs' edge pointing backwards through ``Classic.Steps`` fails here.
-    Two jobs the graph leaves independent are free, which is the whole point.
+    What is left of the comparison tests this file used to carry, now that
+    there is no Python flow to compare against: every shipped document loads,
+    validates against the registries, and resolves to jobs that all have steps.
+
+    Deliberately weaker than what it replaces. With one mechanism, the thing
+    worth pinning is that the document is valid, not that it matches something
+    that no longer exists.
     """
-    from librelane.flows import Flow
+    spec = _document(document)
+    jobs = resolve_jobs(spec)
 
-    _assert_orders_its_steps_as_the_flow_did(
-        "classic.yaml", Flow.factory.get("Classic")
-    )
-
-
-def test_the_classic_document_gates_exactly_what_the_classic_flow_gates():
-    from librelane.flows import Flow
-
-    Classic = Flow.factory.get("Classic")
-
-    assert _gated_pairs("classic.yaml") == _flow_gated_pairs("classic.yaml", Classic)
+    assert jobs
+    assert all(job.steps for job in jobs.values())
 
 
-def test_the_classic_document_gates_on_the_same_variables_as_the_classic_flow():
-    from librelane.flows import Flow
+def test_the_document_list_names_every_shipped_document():
+    """
+    A literal cannot fail for a document nobody remembered to add to it, which
+    is exactly the hole that left two Open-In flows without documents until
+    phase 4. Until phase 5 the derived guard against that was
+    ``test_every_registered_flow_class_has_a_document_standing_in_for_it``,
+    which compared the class registry against the document registry; with no
+    flow classes left there is nothing to compare against, so what is derived
+    here instead is the package's own contents.
+    """
+    assert set(_SHIPPED_DOCUMENTS) == set(_shipped_documents())
 
-    Classic = Flow.factory.get("Classic")
 
-    assert _gating_variables("classic.yaml") == _flow_gating_variables(
-        "classic.yaml", Classic
-    )
+def test_classic_declares_the_jobs_it_is_known_for():
+    jobs = _document("classic.yaml").jobs
+
+    for name in [
+        "synthesis",
+        "floorplan",
+        "cts",
+        "detailed_routing",
+        "magic_streamout",
+        "klayout_streamout",
+        "magic_drc",
+        "lvs",
+        "signoff_sta",
+    ]:
+        assert name in jobs
 
 
-def test_the_classic_document_declares_the_classic_flow_s_variables():
-    from librelane.flows import Flow
-
-    Classic = Flow.factory.get("Classic")
-    declared = {variable.name for variable in _document("classic.yaml").config}
-
-    # TOOLS is declared by the engine, not by any document.
-    assert declared | {"TOOLS"} == {v.name for v in Classic.config_vars}
+def test_the_console_documents_run_the_console_steps():
+    """
+    Issue 532: the interactive sessions are reachable the same way the GUI ones
+    are, i.e. `librelane --last-run --flow ...`. Read off the resolved
+    documents; until phase 5 this was read off ``OpenInOpenROADConsole.Steps``
+    and ``OpenInOpenSTAConsole.Steps`` in ``test/flows/test_flow.py``.
+    """
+    assert _implementation_ids("open_in_openroad_console.yaml") == [
+        "OpenROAD.OpenConsole"
+    ]
+    assert _implementation_ids("open_in_opensta_console.yaml") == [
+        "OpenROAD.OpenSTAConsole"
+    ]
 
 
 def test_the_classic_document_omits_the_unimplemented_post_route_opt_job():
@@ -637,96 +583,8 @@ def test_classic_s_final_checks_waits_for_every_metric_it_reports():
     } <= ancestors(edges, "final_checks")
 
 
-#: Every document shipped so far, paired with the flow class it replaces. The
-#: five Open-In flows are single-job documents; the three place-and-route flows
-#: carry a config block and a gating table, so the tests below that need one
-#: take a narrower list.
-_DOCUMENTS = [
-    ("classic.yaml", "Classic"),
-    ("vhdl_classic.yaml", "VHDLClassic"),
-    ("chip.yaml", "Chip"),
-    ("open_in_klayout.yaml", "OpenInKLayout"),
-    ("open_in_openroad.yaml", "OpenInOpenROAD"),
-    ("open_in_openroad_console.yaml", "OpenInOpenROADConsole"),
-    ("open_in_opensta_console.yaml", "OpenInOpenSTAConsole"),
-    ("open_in_magic.yaml", "OpenInMagic"),
-]
-
-_CONFIGURED_DOCUMENTS = [
-    ("classic.yaml", "Classic"),
-    ("vhdl_classic.yaml", "VHDLClassic"),
-    ("chip.yaml", "Chip"),
-]
-
-
-@pytest.mark.parametrize(("document", "flow_name"), _DOCUMENTS)
-def test_each_document_runs_the_same_steps_as_the_flow_it_replaces(document, flow_name):
-    from librelane.flows import Flow
-
-    flow = Flow.factory.get(flow_name)
-
-    assert sorted(_implementation_ids(document)) == sorted(
-        step.get_implementation_id() for step in flow.Steps
-    )
-
-
-@pytest.mark.parametrize(("document", "flow_name"), _CONFIGURED_DOCUMENTS)
-def test_each_document_gates_exactly_what_the_flow_it_replaces_gates(
-    document, flow_name
-):
-    from librelane.flows import Flow
-
-    flow = Flow.factory.get(flow_name)
-
-    assert _gated_pairs(document) == _flow_gated_pairs(document, flow)
-
-
-@pytest.mark.parametrize(("document", "flow_name"), _CONFIGURED_DOCUMENTS)
-def test_each_document_gates_on_the_same_variables_as_the_flow_it_replaces(
-    document, flow_name
-):
-    """
-    Stronger than the pair test above, which says only *which* steps are gated:
-    a job gated on the wrong boolean, or on the right two in the wrong order, is
-    indistinguishable there and visible here.
-    """
-    from librelane.flows import Flow
-
-    flow = Flow.factory.get(flow_name)
-
-    assert _gating_variables(document) == _flow_gating_variables(document, flow)
-
-
-@pytest.mark.parametrize(("document", "flow_name"), _CONFIGURED_DOCUMENTS)
-def test_each_document_declares_the_flow_s_variables(document, flow_name):
-    from librelane.flows import Flow
-
-    flow = Flow.factory.get(flow_name)
-    declared = {variable.name for variable in _document(document).config}
-
-    # TOOLS is declared by the engine, not by any document.
-    assert declared | {"TOOLS"} == {v.name for v in flow.config_vars}
-
-
 @pytest.mark.parametrize(
-    ("document", "flow_name"),
-    [("vhdl_classic.yaml", "VHDLClassic"), ("chip.yaml", "Chip")],
-)
-def test_each_document_orders_its_steps_as_the_flow_it_replaces_did(
-    document, flow_name
-):
-    """
-    The same relaxation the Classic document made, held to the same standard:
-    the graph no longer claims the flow's exact sequence, but every pair of jobs
-    it *still* orders is ordered the way the Python flow ordered it.
-    """
-    from librelane.flows import Flow
-
-    _assert_orders_its_steps_as_the_flow_did(document, Flow.factory.get(flow_name))
-
-
-@pytest.mark.parametrize(
-    ("document", "flow_name"),
+    ("document", "registered_name"),
     [
         ("open_in_klayout.yaml", "OpenInKLayout"),
         ("open_in_openroad.yaml", "OpenInOpenROAD"),
@@ -735,17 +593,20 @@ def test_each_document_orders_its_steps_as_the_flow_it_replaces_did(
         ("open_in_magic.yaml", "OpenInMagic"),
     ],
 )
-def test_each_open_in_document_registers_under_its_class_name(document, flow_name):
+def test_each_open_in_document_registers_under_the_name_users_type(
+    document, registered_name
+):
     """
-    ``SequentialFlow.name`` on these five carries a display string such as
-    "Opening in KLayout", but the registration key, and so the string a user
-    types after ``--flow``, is the class name. A document's ``name`` is the
-    registration key, so it has to survive the migration character for
-    character; the display string becomes ``description``.
+    The five Open-In flows used to be ``SequentialFlow`` subclasses whose
+    ``name`` carried a display string such as "Opening in KLayout", while the
+    registration key -- the string a user types after ``--flow`` -- was the
+    class name. A document's ``name`` is the registration key, so these had to
+    survive the migration character for character; the display string became
+    ``description``.
     """
     spec = _document(document)
 
-    assert spec.name == flow_name
+    assert spec.name == registered_name
     assert spec.description != ""
 
 
@@ -784,7 +645,7 @@ def test_vhdl_classic_pins_the_vhdl_synthesis_provider():
 
 def test_vhdl_classic_omits_the_four_jobs_it_cannot_run():
     """
-    classic.py's note above ``VHDLClassic.Stages`` names them: the lint stage,
+    The ``VHDLClassic`` class named them: the lint stage,
     Odb.SetPowerConnections, Odb.WriteVerilogHeader and the formal equivalence
     stage. Checker.PowerGridViolations is NOT among them and must survive; it
     sat with Odb.WriteVerilogHeader in Classic, so it gets a job of its own.
@@ -800,10 +661,9 @@ def test_vhdl_classic_omits_the_four_jobs_it_cannot_run():
 
 def test_vhdl_classic_still_declares_the_variables_its_jobs_no_longer_read():
     """
-    RUN_LINTER and RUN_EQY are inherited from ``Classic.Config`` today, so a
-    configuration setting either one is accepted by VHDLClassic today and must
-    stay accepted. Dropping them would turn an accepted key into an unknown-key
-    error.
+    ``VHDLClassic`` inherited RUN_LINTER and RUN_EQY from ``Classic.Config``, so
+    a configuration setting either one was accepted and must stay accepted.
+    Dropping them would turn an accepted key into an unknown-key error.
     """
     declared = {variable.name for variable in _document("vhdl_classic.yaml").config}
 
@@ -946,11 +806,11 @@ def test_chip_omits_the_three_entries_a_chip_does_not_need():
 
 def test_chip_declares_run_rmp_without_running_rmp():
     """
-    ``Chip`` inherits ``Classic.Config``, so RUN_RMP and RUN_MAGIC_WRITE_LEF are
-    accepted configuration keys today, but ``Chip`` declares its own ``Stages``
-    with neither OpenROAD.RMP nor OpenROAD.AddBuffer in it. The variables stay
+    ``Chip`` inherited ``Classic.Config``, so RUN_RMP and RUN_MAGIC_WRITE_LEF
+    were accepted configuration keys, but it declared its own ``Stages`` with
+    neither OpenROAD.RMP nor OpenROAD.AddBuffer in it. The variables stay
     declared so an existing configuration keeps loading; the jobs stay absent so
-    the document runs what the flow runs.
+    the document runs what the flow ran.
     """
     spec = _document("chip.yaml")
     declared = {variable.name for variable in spec.config}
@@ -1101,21 +961,15 @@ def test_the_factory_lists_documents_and_classes_together():
     assert len(listed) == len(set(listed)), "a name was listed twice"
 
 
-def test_a_document_and_a_class_of_the_same_name_are_looked_up_separately():
+def test_a_name_no_document_claims_is_looked_up_as_none():
     """
-    Throughout this phase every document shares its name with the flow class it
-    replaces, so the two registries are keyed identically and neither lookup may
-    answer for the other. ``get`` returns the class and only the class;
-    ``get_document`` returns the document and only the document; a name in
-    neither is ``None`` from both rather than a silent hand-off.
+    ``get_document`` answers for the document registry and for nothing else. A
+    name it does not hold is ``None`` rather than a silent hand-off to the class
+    registry.
     """
     from librelane.flows import Flow
-    from librelane.flows.classic import Classic
 
-    assert Flow.factory.get("Classic") is Classic
     assert isinstance(Flow.factory.get_document("Classic"), FlowSpec)
-
-    assert Flow.factory.get("NoSuchFlow") is None
     assert Flow.factory.get_document("NoSuchFlow") is None
 
 
@@ -1132,44 +986,6 @@ def test_registering_a_document_twice_is_an_error():
 
     with pytest.raises(FlowException, match="already"):
         Flow.factory.register_document(spec)
-
-
-def test_every_registered_flow_class_has_a_document_standing_in_for_it():
-    """
-    The completeness guard, derived from the registries rather than from a
-    literal list, because a literal list cannot fail for a flow nobody
-    remembered to add to it.
-
-    A class with no document is the one failure this phase and the next are
-    arranged to prevent: this phase would convert every flow but that one, and
-    the next would delete its class with nothing in its place, removing a
-    working flow from the product. The test above pins the names that exist;
-    this one pins that no name is missing.
-
-    Scoped to classes defined inside :mod:`librelane.flows`, because that is the
-    claim: every flow LibreLane *ships* must have a document. The class registry
-    is process-global and ``test_flow.py`` registers a ``DummyFlow`` into it,
-    so an unscoped guard would pass or fail on test ordering.
-    """
-    import librelane.flows.builtins  # noqa: F401  registers every flow class
-
-    from librelane.flows import Flow
-
-    listed = Flow.factory.list()
-    classes = set()
-    for name in listed:
-        registered = Flow.factory.get(name)
-        if registered is not None and registered.__module__.startswith(
-            "librelane.flows."
-        ):
-            classes.add(name)
-    documents = {name for name in listed if Flow.factory.get_document(name) is not None}
-
-    assert classes, "enumeration collapsed; the guard would be vacuous"
-    assert classes - documents == set(), (
-        "these flow classes have no document standing in for them, so phase 5 "
-        "would delete them with nothing in their place"
-    )
 
 
 def test_a_document_is_rejected_at_import_if_it_is_malformed(tmp_path):

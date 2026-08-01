@@ -22,6 +22,7 @@ import re
 
 from librelane.common import slugify
 from librelane.flows import Flow
+from librelane.flows.engine import Workflow
 from librelane.steps import Step
 from librelane.config import universal_flow_config_variables
 
@@ -38,11 +39,15 @@ def librelane_object_reference_role(
         link_text = match[1]
         target = match[2]
 
-    factory = Flow.factory
+    # A flow is a workflow document; the Python flow classes this used to read
+    # were deleted in phase 5. Only the existence of the name is checked here:
+    # the anchor below is built from the name itself, exactly as
+    # generate_configvar_docs.py builds the page it points into.
     if role == "step":
-        factory = Step.factory
-    Target = factory.get(target)
-    if Target is None:
+        exists = Step.factory.get(target) is not None
+    else:
+        exists = Flow.factory.get_document(target) is not None
+    if not exists:
         msg = inliner.reporter.warning(
             f"Referenced {role} '{target}' not found.",
             line=lineno,
@@ -86,12 +91,21 @@ def librelane_var_reference_role(
 
     parent, variable = split
 
-    Parent = Flow.factory.get(parent) or Step.factory.get(parent)
+    document = Flow.factory.get_document(parent)
+    ParentStep = Step.factory.get(parent)
     config_var_list = universal_flow_config_variables
     if parent == "":
         parent = None
-    elif Parent is not None:
-        config_var_list = Parent.config_vars
+    elif document is not None:
+        # The engine's own variables ahead of the document's, exactly as
+        # Workflow.__init__ composes the two: TOOLS is the whole of the
+        # engine's half and no document declares it.
+        config_var_list = [
+            *Workflow.config_vars,
+            *(declared.to_variable() for declared in document.config),
+        ]
+    elif ParentStep is not None:
+        config_var_list = ParentStep.config_vars
     else:
         msg = inliner.reporter.warning(
             f"Referenced flow/step '{parent}' not found.",

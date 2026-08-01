@@ -31,10 +31,9 @@ from librelane.flows.explanation import (
 from librelane.flows.sequential import SequentialFlow
 from librelane.flows.spec import load_flow_spec
 from librelane.flows.staged import Boundary, StagedFlow
-from librelane.flows import builtins
 
-# Every workflow document shipped inside this package, registered the way the
-# flow classes above register themselves: by importing the package.
+# Every workflow document shipped inside this package, registered by importing
+# the package.
 #
 # Sorted by name so the registration order is the same on every machine, which
 # makes a duplicate-name error name the same document everywhere.

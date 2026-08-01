@@ -14,9 +14,10 @@
 """
 The job taxonomy.
 
-Job boundaries are derived from ``Classic.gating_config_vars``
-(``librelane/flows/classic.py:245-287``), which contains 22 distinct ``RUN_*``
-variables. Each is a place where users already demanded the ability to turn one
+Job boundaries were derived from the ``Classic`` flow class's
+``gating_config_vars``, which contained 22 distinct ``RUN_*`` variables. (The
+class is gone; ``librelane/flows/classic.yaml`` is what ships those variables
+now.) Each is a place where users already demanded the ability to turn one
 phase off independently, which makes it a place where they would plausibly want
 to change tools or re-enter the flow. Fifteen of those variables become job
 gates here; the remaining seven gate one tool within a job and stay

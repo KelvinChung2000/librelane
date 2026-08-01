@@ -260,10 +260,17 @@ def test_rmp_target_matches_what_openroad_accepts():
 
 
 def test_rmp_is_off_by_default_in_classic():
-    from librelane.flows.classic import Classic
+    """RMP is experimental and rewrites the netlist every later step works on,
+    so the Classic document has to ship it gated off. Read off the document
+    since phase 5 deleted the ``Classic`` class it used to be read off."""
+    from librelane.flows import Flow
 
-    assert Classic.Config.model_fields["RUN_RMP"].default is False
-    assert Classic.gating_config_vars["OpenROAD.RMP"] == ["RUN_RMP"]
+    classic = Flow.factory.get_document("Classic")
+
+    [run_rmp] = [entry for entry in classic.config if entry.name == "RUN_RMP"]
+    assert run_rmp.default is False
+    assert classic.jobs["rmp"].steps == ["OpenROAD.RMP"]
+    assert classic.jobs["rmp"].condition == "RUN_RMP"
 
 
 _CORNERS = ["nom_tt_025C_1v80", "min_ff_n40C_1v95", "max_ss_100C_1v60"]

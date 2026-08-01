@@ -113,67 +113,6 @@ def test_skip_and_window_attribute_correctly(
     assert "--to" in by_id["Test.ExplainFourth"].reason
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow_module, sequential_module, step_module])
-def test_a_deselected_provider_s_steps_are_absent_not_excluded(mock_config):
-    """
-    A step dropped by TOOLS is not in the resolved list at all, so it has no
-    entry. Provider selection is therefore not among the mechanisms a step
-    entry can carry.
-    """
-    from librelane.flows import Flow
-
-    Classic = Flow.factory.get("Classic")
-    values = {v.name: v.default for v in Classic.config_vars}
-    values.update({"RUN_KLAYOUT_XOR": False, "TOOLS": {"streamout": "klayout"}})
-    flow = Classic(mock_config.copy(**values))
-
-    explanation = flow.explain()
-    ids = [d.step_id for d in explanation.steps]
-    assert "Magic.StreamOut" not in ids
-    assert "KLayout.StreamOut" in ids
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow_module, sequential_module, step_module])
-def test_turning_off_run_cts_excludes_every_step_of_the_job(mock_config):
-    """
-    A job gate is lowered onto each step of the job, so every step of the
-    cts job reports the same gate. This is the case a user actually hits,
-    and the one describe_jobs cannot answer.
-    """
-    from librelane.flows import Flow
-
-    Classic = Flow.factory.get("Classic")
-    values = {v.name: v.default for v in Classic.config_vars}
-    values["RUN_CTS"] = False
-    flow = Classic(mock_config.copy(**values))
-
-    cts = [
-        d
-        for d in flow.explain().steps
-        if d.mechanism == "gate" and "RUN_CTS" in d.reason
-    ]
-    assert [d.step_id for d in cts] == ["OpenROAD.CTS"]
-    assert all(d.will_run is False for d in cts)
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow_module, sequential_module, step_module])
-def test_an_unselected_job_is_reported_separately(mock_config):
-    """
-    Job.post_route_opt has a None default provider, so it contributes no
-    steps and cannot be a step entry.
-    """
-    from librelane.flows import Flow
-
-    Classic = Flow.factory.get("Classic")
-    values = {v.name: v.default for v in Classic.config_vars}
-    flow = Classic(mock_config.copy(**values))
-
-    assert "post_route_opt" in flow.explain().unselected_jobs
-
-
 def test_format_explanation_renders_every_row():
     from librelane.cli.run import format_explanation
     from librelane.flows import Explanation, StepDisposition
@@ -682,9 +621,16 @@ def _classic_workflow(mock_conf_dir: MockConfTree):
         scl="dummy_scl",
         pdk_root=mock_conf_dir.pdk_root,
     )
-    Classic = Flow.factory.get("Classic")
-    defaults = {variable.name: variable.default for variable in Classic.config_vars}
-    return Workflow(Flow.factory.get_document("Classic"), base.copy(**defaults))
+    spec = Flow.factory.get_document("Classic")
+    # The engine's own variables ahead of the document's, exactly as
+    # Workflow.__init__ composes the two: TOOLS is the whole of the engine's
+    # half and no document declares it.
+    declared = [
+        *Workflow.config_vars,
+        *(entry.to_variable() for entry in spec.config),
+    ]
+    defaults = {variable.name: variable.default for variable in declared}
+    return Workflow(spec, base.copy(**defaults))
 
 
 @mock_variables([flow_module, sequential_module, step_module])

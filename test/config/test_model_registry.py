@@ -3,6 +3,29 @@ import ast
 import pathlib
 
 
+def _document_config_variables():
+    """
+    Every configuration variable a shipped workflow document accepts, in the
+    order :meth:`librelane.flows.engine.Workflow.__init__` composes them.
+
+    The engine's own variables come first because ``TOOLS`` is declared by the
+    engine and by no document, exactly as ``Workflow.__init__`` and
+    ``help_md_for_document`` compose the two halves. Until phase 5 this was read
+    off ``Flow.factory.get(flow_id).config_vars``; the flow classes are gone and
+    the documents that replaced them are what declare these variables now.
+    """
+    from librelane.flows import Flow
+    from librelane.flows.engine import Workflow
+
+    yield from Workflow.config_vars
+    for flow_id in Flow.factory.list():
+        document = Flow.factory.get_document(flow_id)
+        if document is None:
+            continue
+        for declared in document.config:
+            yield declared.to_variable()
+
+
 def test_every_registered_variable_builds_a_model_field():
     import librelane.steps  # noqa: F401
     from librelane.config import BaseConfigModel, model_to_variables, variables_to_model
@@ -63,16 +86,14 @@ def test_every_registered_variable_has_a_json_schema():
     """
     import librelane.steps  # noqa: F401
     from librelane.config import variables_to_model
-    from librelane.flows import Flow
     from librelane.steps import Step
 
     variables = {}
     for step_id in Step.factory.list():
         for variable in Step.factory.get(step_id).config_vars:
             variables.setdefault(variable.name, variable)
-    for flow_id in Flow.factory.list():
-        for variable in Flow.factory.get(flow_id).config_vars:
-            variables.setdefault(variable.name, variable)
+    for variable in _document_config_variables():
+        variables.setdefault(variable.name, variable)
 
     assert len(variables) > 300, "enumeration collapsed; the gate would be vacuous"
 
@@ -91,11 +112,18 @@ def test_every_registered_variable_has_a_json_schema():
     )
 
 
-def test_every_step_and_flow_config_model_has_a_json_schema():
+def test_every_step_and_document_config_model_has_a_json_schema():
     """The per-variable gate above would not catch a model whose *combination*
-    of fields is undescribable."""
+    of fields is undescribable.
+
+    A step carries its combination as a nested ``Config`` model. A document
+    carries no model at all: the engine builds one per run out of its declared
+    variables and its own, so the model is built the same way here.
+    """
     import librelane.steps  # noqa: F401
+    from librelane.config import variables_to_model
     from librelane.flows import Flow
+    from librelane.flows.engine import Workflow
     from librelane.steps import Step
 
     failed = {}
@@ -105,8 +133,17 @@ def test_every_step_and_flow_config_model_has_a_json_schema():
         except Exception as e:
             failed[step_id] = f"{type(e).__name__}: {str(e).splitlines()[0]}"
     for flow_id in Flow.factory.list():
+        document = Flow.factory.get_document(flow_id)
+        if document is None:
+            continue
+        variables = [
+            *Workflow.config_vars,
+            *(declared.to_variable() for declared in document.config),
+        ]
         try:
-            Flow.factory.get(flow_id).Config.model_json_schema()
+            variables_to_model(
+                f"DocumentConfig_{flow_id}", variables
+            ).model_json_schema()
         except Exception as e:
             failed[flow_id] = f"{type(e).__name__}: {str(e).splitlines()[0]}"
 
@@ -164,12 +201,17 @@ def test_registered_variable_defaults_match_legacy_compiler():
     assert differences == []
 
 
-def test_builtin_steps_and_classic_flow_use_typed_declarations():
+def test_builtin_steps_use_typed_declarations():
+    """
+    Swept ``librelane/flows/classic.py`` too until phase 5 deleted it. The
+    shipped flows are YAML documents now, which have no Python declaration to
+    sweep: ``FlowSpec`` parses their ``config`` block into typed declarations at
+    load, and ``test/flows/test_documents.py`` is what exercises that.
+    """
     import librelane
 
     package = pathlib.Path(librelane.__file__).parent
     paths = list((package / "steps").rglob("*.py"))
-    paths.append(package / "flows" / "classic.py")
     legacy_declarations = []
     static_mapping_accesses = []
 
@@ -195,14 +237,3 @@ def test_builtin_steps_and_classic_flow_use_typed_declarations():
 
     assert legacy_declarations == []
     assert static_mapping_accesses == []
-
-
-def test_classic_flow_config_model_bridge():
-    from librelane.config import BaseConfigModel, model_to_variables
-    from librelane.flows.classic import Classic
-
-    assert issubclass(Classic.Config, BaseConfigModel)
-    assert [(item.name, item.type, item.default) for item in Classic.config_vars] == [
-        (item.name, item.type, item.default)
-        for item in model_to_variables(Classic.Config)
-    ]
