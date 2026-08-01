@@ -372,7 +372,7 @@ the string reading is always available and so nothing can be rejected:
 | Source | A string for a `str`-or-list variable |
 | --- | --- |
 | `.tcl` file | A string. Every Tcl value is a word list, so `clk_a clk_b` cannot be told from a one-word list, and the declared string wins -- as it has since these variables existed. A `.tcl` file cannot set the list reading. |
-| `--config-override` | A JSON array when the text starts with `[`, the string otherwise. |
+| `--config-override` | A JSON array when the text starts with `[`, and the string otherwise. A `{` also begins a document, so `CLOCK_PORT={"a": 1}` is an error and not a clock port with a curly brace in its name: no member of the union takes a JSON object. |
 | `.json` or `.yaml` file, or an API mapping | Whichever was written: a string is a string and an array is a list. |
 
 The last source to write a key decides, so a `--config-override` on a key a Tcl

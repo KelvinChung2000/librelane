@@ -122,21 +122,33 @@ def _product_origin(annotation: Any) -> Any:
     return origin if origin in _PRODUCT_ORIGINS else None
 
 
-def _sole_member(candidates: list, description: str) -> Any:
+def _sole_member(candidates: list, description: str, value: Any) -> Any:
     """
     The one union member a value's shape calls for.
 
     A value that fits several members is not resolved by picking one: the
     union declares both readings as equally intended, so there is nothing here
     that knows which was meant.
+
+    Parameters
+    ----------
+    candidates : list
+        The members whose shape the value could be read into.
+    description : str
+        What the value was read as, named as the source's own grammar names
+        it, e.g. ``a JSON object``.
+    value : Any
+        The text as the source wrote it, quoted back for the same reason
+        :func:`_parse_json` quotes it: the key alone does not say which of
+        several layered sources wrote the value that failed.
     """
     if not candidates:
-        raise CoercionError(f"no member of the union takes {description}")
+        raise CoercionError(f"no member of the union takes {description}: {value}")
     if len(candidates) > 1:
         members = ", ".join(str(unwrap_annotated(item)) for item in candidates)
         raise CoercionError(
             f"{description} fits more than one member of the union"
-            f" ({members}); it cannot be told which was meant"
+            f" ({members}), so it cannot be told which was meant: {value}"
         )
     return candidates[0]
 
@@ -151,6 +163,18 @@ def _shape_union(value: Any, args: tuple, syntax: CoercionSyntax) -> Any:
     string reaches Pydantic, whose smart union keeps it a string and quietly
     makes ``'["a","b"]'`` the name of one clock port. The member is therefore
     chosen here, before validation, as it is for every other annotation.
+
+    The syntaxes deliberately disagree on which members may claim a bare
+    string, because their grammars do. Under JSON a value with no leading
+    bracket is unambiguously not a document, so *any* scalar member may take
+    it as written, exactly as a non-union scalar would -- a union offering
+    ``int`` may not be stricter than ``int`` alone. Under Tcl every value is a
+    word list, so a bare token and a one-word list are the same text, and only
+    a declared ``str`` can claim it; a non-``str`` scalar cannot, because
+    nothing distinguishes the two readings. ``None | int | list[str]``
+    therefore reads ``4`` as the text ``'4'`` from the command line but as
+    ``['4']`` from a ``.tcl`` file. No shipped variable has that shape; both
+    cases are pinned in ``test/config/test_union_coercion.py``.
     """
     members = [member for member in args if member is not type(None)]
     products = [member for member in members if _product_origin(member)]
@@ -191,16 +215,18 @@ def _shape_union(value: Any, args: tuple, syntax: CoercionSyntax) -> Any:
         wanted = (dict,) if isinstance(parsed, dict) else (list, tuple)
         kind = "a JSON object" if isinstance(parsed, dict) else "a JSON array"
         member = _sole_member(
-            [item for item in products if _product_origin(item) in wanted], kind
+            [item for item in products if _product_origin(item) in wanted],
+            kind,
+            value,
         )
         return _shape(parsed, member, syntax)
     if syntax is CoercionSyntax.TCL:
-        if str in members:
-            # Every Tcl value is a word list, so a one-word list and the word
-            # itself are the same text and only the declaration tells them
-            # apart. A union that declares ``str`` has declared the text.
+        if any(unwrap_annotated(member) is str for member in members):
+            # A union that declares ``str`` has declared the text itself. The
+            # alias is unwrapped because ``Annotated[str, ...]`` is still a
+            # string to every source; ``Path``, which is also an alias, is not.
             return value
-        return _shape(value, _sole_member(products, "a Tcl word list"), syntax)
+        return _shape(value, _sole_member(products, "a Tcl word list", value), syntax)
     if scalars:
         return value
     raise CoercionError(

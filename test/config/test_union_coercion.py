@@ -25,10 +25,11 @@ and never guess: a string that enters a parse either parses or raises.
 
 import textwrap
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Annotated, Optional, Union
 
 import pytest
 
+from librelane.common import Path
 from librelane.config.loading.sources import CoercionSyntax
 from librelane.config.types import CoercionError, _shape
 
@@ -82,8 +83,12 @@ def test_broken_json_after_a_product_prefix_never_falls_back_to_the_scalar():
 
 
 def test_a_json_object_no_member_takes_is_an_error():
-    with pytest.raises(CoercionError, match="no member"):
+    """Every coercion error quotes the text, not only the grammar."""
+    with pytest.raises(CoercionError) as raised:
         _shape('{"a": "b"}', WITH_STR, CoercionSyntax.JSON)
+
+    assert "no member" in str(raised.value)
+    assert '{"a": "b"}' in str(raised.value)
 
 
 def test_a_json_object_chooses_the_dictionary_member_over_the_list_member():
@@ -96,8 +101,11 @@ def test_a_json_array_chooses_the_list_member_over_the_dictionary_member():
 
 
 def test_two_members_of_the_same_shape_are_ambiguous_rather_than_guessed():
-    with pytest.raises(CoercionError, match="cannot be told"):
+    with pytest.raises(CoercionError) as raised:
         _shape("[1, 2]", Union[list[int], tuple[int, int]], CoercionSyntax.JSON)
+
+    assert "cannot be told" in str(raised.value)
+    assert "[1, 2]" in str(raised.value)
 
 
 def test_a_union_with_no_scalar_member_refuses_a_non_product_string():
@@ -145,6 +153,42 @@ def test_a_tcl_string_splits_when_the_union_offers_no_string_member():
 def test_a_tcl_string_is_ambiguous_between_two_product_members():
     with pytest.raises(CoercionError, match="cannot be told"):
         _shape("a b", ONLY_PRODUCTS, CoercionSyntax.TCL)
+
+
+def test_an_annotated_string_member_is_still_a_string_member():
+    """
+    ``Annotated[str, ...]`` is a string to every source, so it must claim Tcl
+    text exactly as a bare ``str`` does. The alias has to be unwrapped to see
+    it: ``librelane.common.Path`` is an ``Annotated`` alias too, which is why
+    the test is worth having.
+    """
+    annotated = Union[None, Annotated[str, "meta"], list[str]]
+
+    assert _shape("a b", annotated, CoercionSyntax.TCL) == "a b"
+    assert _shape("a b", WITH_STR, CoercionSyntax.TCL) == "a b"
+
+
+def test_a_path_member_does_not_claim_tcl_text_the_way_a_string_does():
+    """``Path`` is an alias for ``pathlib.Path``, not for ``str``."""
+    assert _shape("a b", Union[None, Path, list[Path]], CoercionSyntax.TCL) == [
+        "a",
+        "b",
+    ]
+
+
+# --- the two syntaxes disagree about non-string scalars, on purpose ---------
+
+
+def test_a_non_string_scalar_claims_command_line_text_but_not_tcl_text():
+    """
+    The grammars are the reason. A command-line value with no leading bracket
+    is unambiguously not a document, so ``int`` may take it as written -- a
+    union offering ``int`` may not be stricter than ``int`` alone. Every Tcl
+    value is a word list, so ``4`` and the one-word list ``4`` are the same
+    text and only a declared ``str`` can claim it.
+    """
+    assert _shape("4", WITHOUT_STR, CoercionSyntax.JSON) == "4"
+    assert _shape("4", WITHOUT_STR, CoercionSyntax.TCL) == ["4"]
 
 
 # --- typed sources ----------------------------------------------------------

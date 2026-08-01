@@ -974,11 +974,15 @@ Style Notes
     declared string is what these variables have always resolved to there.
   * From a `.json` or `.yaml` file or an API mapping, a string is a string and
     an array is a list, as those grammars already say which was meant.
-  * A union that declares no string member at all now reports a value it
-    cannot place as an error naming the variable, rather than passing it on
-    for Pydantic to describe as a bare type mismatch. A value that fits two
-    members equally -- a JSON array where both `list` and `tuple` are declared
-    -- is likewise an error, since nothing knows which was intended.
+  * A union that declares no scalar member at all -- every member a `list`,
+    `tuple` or `dict` -- now reports a value it cannot place as an error
+    naming the variable and quoting the text, rather than passing it on for
+    Pydantic to describe as a bare type mismatch. A union that does offer a
+    scalar is unaffected: `None | int | list[str]` still takes
+    `-c 'N=4'` as written, because a union offering `int` may not be stricter
+    than `int` alone. A value that fits two members equally -- a JSON array
+    where both `list` and `tuple` are declared -- is likewise an error, since
+    nothing knows which was intended.
 * Reworked configuration loading around typed Pydantic models and a staged
   read/layer/process/preprocess/validate pipeline.
 * Added structured configuration diagnostics, replayed after flow log sinks

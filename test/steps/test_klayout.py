@@ -401,9 +401,7 @@ def test_sys_executable_imports_klayout_without_a_propagated_pythonpath():
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip().endswith(
-        os.path.join("klayout", "db", "__init__.py")
-    )
+    assert result.stdout.strip().endswith(os.path.join("klayout", "db", "__init__.py"))
 
 
 def _density_argv(mocker, **config_overrides):
