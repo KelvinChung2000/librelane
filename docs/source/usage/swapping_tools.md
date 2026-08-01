@@ -35,18 +35,15 @@ phase can be turned off independently of every other phase. `Classic` and
 ## The `TOOLS` configuration variable
 
 `TOOLS` is a mapping from job id to the provider that should implement it.
-An entry you do not list keeps the job's default provider; you only need to
-name the jobs you are changing.
+An entry you do not list keeps the provider the flow already chose; you only
+need to name the jobs you are changing.
 
-Dropping Magic's stream-out and keeping only KLayout's:
-
-```json
-{
-  "TOOLS": {
-    "streamout": "klayout"
-  }
-}
-```
+**A job id is the id the flow gives the job, which is not always the id of the
+stage it runs.** A `StagedFlow` names each job after its stage, so the two
+coincide there. A workflow document names its own jobs, and `classic.yaml`
+runs the `streamout` stage under two of them, `magic_streamout` and
+`klayout_streamout`. See
+[Job ids in a workflow document](#job-ids-in-a-workflow-document).
 
 Synthesizing from VHDL sources instead of Verilog:
 
@@ -59,7 +56,7 @@ Synthesizing from VHDL sources instead of Verilog:
 ```
 
 ```{important}
-This second example only resolves on a flow whose `Stages` list has no plain
+This only resolves on a flow whose `Stages` list has no plain
 step that hard-requires a Verilog-only view. `Classic` does: several of its
 steps consume the Verilog header that only `Yosys.JsonHeader` produces, so
 `{"synthesis": "yosys_vhdl"}` on `Classic` is rejected at startup, naming the
@@ -79,6 +76,52 @@ declare can be validated. Two consequences follow from that ordering:
 
 An unknown job id or an unknown provider name is rejected by name, with a
 suggested correction for a near miss.
+
+(job-ids-in-a-workflow-document)=
+
+## Job ids in a workflow document
+
+A workflow document (`librelane/flows/*.yaml`) declares a graph of named jobs,
+each naming the stage it runs with a `uses` key. The name and the stage are
+two different things, and `TOOLS` keys on the name:
+
+```yaml
+magic_streamout:
+  uses: streamout/magic
+  if: RUN_MAGIC_STREAMOUT
+klayout_streamout:
+  needs: [magic_streamout]
+  uses: streamout/klayout
+  if: RUN_KLAYOUT_STREAMOUT
+```
+
+`TOOLS: {magic_streamout: klayout}` runs the `streamout` stage's `klayout`
+provider under the job still named `magic_streamout`. The job keeps its name,
+because that name is what its `needs` edges, its `if` and its run directory
+refer to.
+
+`TOOLS: {streamout: klayout}` is rejected: `streamout` is a stage, and no job
+of the document is called that. Two jobs for one stage is how a document
+expresses two tools switched by two independent Booleans, which one job with a
+list of providers could not: a job carries one `if`.
+
+**So the way to run one stream-out rather than both is the Boolean, not
+`TOOLS`.** To keep only KLayout's:
+
+```json
+{
+  "RUN_MAGIC_STREAMOUT": false
+}
+```
+
+The same holds for DRC, whose two jobs are `magic_drc` and `klayout_drc`,
+gated by `RUN_MAGIC_DRC` and `RUN_KLAYOUT_DRC`. Re-pointing one of the pair at
+the other's tool with `TOOLS` does not drop a tool, it runs the same deck
+twice.
+
+A `TOOLS` key naming a job that lists its steps inline is also rejected: an
+inline job has no provider to override, and accepting the key would silently
+do nothing.
 
 ## `VHDLClassic`: a flow declared entirely as jobs
 
@@ -114,6 +157,10 @@ template whose default provider is pinned to `yosys_vhdl`, for use inside this
 one flow's list. A pin is the flow's default, not a lock on what a user can
 still request: a `TOOLS` entry for the same job overrides the pin, because
 resolution consults `TOOLS` before a job's `default_provider`.
+
+A document's `uses: synthesis/yosys_vhdl` is the same pin written in YAML, and
+`TOOLS` overrides it the same way. What `TOOLS` never overrides is the stage
+half of `uses`: a job keeps both its name and the stage it runs.
 
 ## The job table
 
@@ -176,6 +223,12 @@ contracts its own metric (`magic__drc_error__count`,
 `klayout__drc_error__count`). There is no "primary" concept here: dropping one
 provider from `TOOLS` simply runs one deck instead of two, with no downstream
 comparison step depending on the other.
+
+```{note}
+A list is a `StagedFlow` value only. A workflow document runs one provider per
+job and expresses two tools as two jobs, so `TOOLS` names exactly one provider
+there and a list is rejected with a message saying so.
+```
 
 ## The two `lvs` providers write the same metric key
 
@@ -262,6 +315,16 @@ last source for each top-level key as a whole; if `config.json` also sets
   naming the step ID of whichever tool is currently selected. Resuming a run
   therefore still means naming a step, and the step to name changes when
   `TOOLS` changes.
+* A selection can put two writers of one key on two branches that a workflow
+  document runs concurrently, and nothing rejects it before the run. Selecting
+  `{"lvs": "klayout"}` is the shipped example: that provider opens with
+  `OpenROAD.WriteCDL`, whose framework warning and error counts the `lvs` job's
+  concurrent signoff peers carry unchanged from further up, so the join that
+  merges them has two values and no rule for choosing. The run stops with a
+  `JoinConflictError` naming the key. Re-pointing `magic_drc` at `klayout`, or
+  `klayout_drc` at `magic`, does the same thing with that tool's DRC metric.
+  `test/flows/test_documents.py` enumerates every such selection for the
+  shipped documents.
 * View-level compatibility across a provider boundary is guaranteed; semantic
   compatibility is not. The view preflight confirms that the `DEF`, netlist,
   or `SDC` a provider hands off is present, but it cannot confirm that two

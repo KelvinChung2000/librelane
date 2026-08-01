@@ -17,7 +17,7 @@ import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
 from librelane.flows.job import resolve_jobs
 from librelane.flows.spec import FlowSpec
-from librelane.jobs import Job, JobRegistry
+from librelane.jobs import Job, JobRegistry, JobResolutionError
 from librelane.state import DesignFormat
 from librelane.steps import Step
 
@@ -161,6 +161,123 @@ def test_a_conjunction_becomes_one_entry_per_conjunct():
         "RUN_MAGIC_STREAMOUT",
         "RUN_KLAYOUT_STREAMOUT",
     )
+
+
+def test_tools_overrides_the_provider_half_of_uses():
+    """
+    The pin is the document's default, not a lock. ``Job.using`` has the same
+    property in the Python flow -- it returns a copy keeping the same id, so a
+    ``TOOLS`` entry naming that id still wins -- and the document's ``uses``
+    inherits it. The stage half is never overridden: the job keeps the name the
+    document gave it.
+    """
+    jobs = resolve_jobs(
+        _spec({"magic_streamout": {"uses": "streamout/magic"}}),
+        {"magic_streamout": "klayout"},
+    )
+
+    assert jobs["magic_streamout"].provider == "klayout"
+    assert [step.id for step in jobs["magic_streamout"].steps] == ["KLayout.StreamOut"]
+
+
+def test_tools_overrides_a_job_that_omits_uses():
+    # An omitted 'uses' resolves against the job id, so the override has to
+    # reach that path too rather than only the explicit one.
+    jobs = resolve_jobs(_spec({"lvs": {}}), {"lvs": "klayout"})
+
+    assert jobs["lvs"].provider == "klayout"
+    assert [step.id for step in jobs["lvs"].steps] == [
+        "OpenROAD.WriteCDL",
+        "KLayout.LVS",
+        "Checker.LVS",
+    ]
+
+
+def test_a_job_tools_does_not_name_keeps_the_provider_it_declared():
+    jobs = resolve_jobs(
+        _spec(
+            {
+                "magic_streamout": {"uses": "streamout/magic"},
+                "klayout_streamout": {"uses": "streamout/klayout"},
+            }
+        ),
+        {"klayout_streamout": "klayout"},
+    )
+
+    assert jobs["magic_streamout"].provider == "magic"
+
+
+def test_tools_naming_an_undeclared_job_is_rejected():
+    with pytest.raises(JobResolutionError) as exc_info:
+        resolve_jobs(
+            _spec({"synthesis": {"uses": "synthesis/yosys"}}),
+            {"synthesys": "yosys_vhdl"},
+        )
+
+    assert "synthesys" in str(exc_info.value)
+    assert "synthesis" in str(exc_info.value)
+
+
+def test_tools_naming_a_stage_id_that_is_no_job_of_the_document_is_rejected():
+    """
+    The consequence of one stage running under two job names. ``classic.yaml``
+    declares ``magic_streamout`` and ``klayout_streamout``, so the template id
+    ``streamout`` is no job's id and a configuration written against the old
+    stage-keyed TOOLS names nothing. Rejected with the near-miss suggestion,
+    rather than being spread over both jobs: the two are gated by two
+    independent booleans and re-pointing both at one tool is not what the
+    old key meant.
+    """
+    with pytest.raises(JobResolutionError) as exc_info:
+        resolve_jobs(
+            _spec(
+                {
+                    "magic_streamout": {"uses": "streamout/magic"},
+                    "klayout_streamout": {"uses": "streamout/klayout"},
+                }
+            ),
+            {"streamout": "klayout"},
+        )
+
+    message = str(exc_info.value)
+    assert "streamout" in message
+    assert "Did you mean" in message
+
+
+def test_tools_naming_an_inline_job_is_rejected():
+    with pytest.raises(JobResolutionError) as exc_info:
+        resolve_jobs(_spec({"xor": {"steps": ["KLayout.XOR"]}}), {"xor": "klayout"})
+
+    assert "xor" in str(exc_info.value)
+    assert "steps" in str(exc_info.value)
+
+
+def test_tools_naming_a_list_is_rejected():
+    with pytest.raises(JobResolutionError) as exc_info:
+        resolve_jobs(
+            _spec({"streamout": {"uses": "streamout/magic"}}),
+            {"streamout": ["magic", "klayout"]},
+        )
+
+    assert "streamout" in str(exc_info.value)
+
+
+def test_tools_naming_an_unregistered_provider_is_rejected():
+    """
+    Nothing validates a TOOLS-supplied provider before this point:
+    ``validate_against_registry`` checks the providers the *document* names.
+    So the lookup raises rather than asserting, and never falls back to the
+    provider the document declared.
+    """
+    with pytest.raises(JobResolutionError) as exc_info:
+        resolve_jobs(
+            _spec({"synthesis": {"uses": "synthesis/yosys"}}),
+            {"synthesis": "no_such_tool"},
+        )
+
+    message = str(exc_info.value)
+    assert "no_such_tool" in message
+    assert "yosys" in message
 
 
 def test_source_keys_carry_through_as_declared_strings():

@@ -1322,3 +1322,102 @@ def test_a_targeted_run_joins_its_own_sinks_when_final_is_outside_it(
     # final state is the join of its own leaves.
     assert final.metrics["first"] == 1
     assert "second" not in final.metrics
+
+
+@mock_variables([flow_module, step_module])
+def test_the_engine_reads_tools_before_resolving_its_configuration(
+    contract_job, minimal_design, mock_pdk
+):
+    """
+    The pre-pass exists because the step set has to be known before the
+    configuration is validated: the steps are what declare the variables. This
+    pins that TOOLS taken from the raw configuration mapping, which is not a
+    resolved Config yet, is what self.Steps is built from.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"contract": {"uses": "engine_contract/honest"}}}
+    )
+
+    flow = Workflow(
+        spec,
+        dict(minimal_design, TOOLS={"contract": "no_metric"}),
+        **mock_pdk,
+    )
+
+    assert [step.id for step in flow.Steps] == ["Test.ContractNoMetric"]
+    assert flow.jobs["contract"].provider == "no_metric"
+
+
+@mock_variables([flow_module, step_module])
+def test_the_engine_declares_tools_itself(contract_job, minimal_design, mock_pdk):
+    """
+    No document declares TOOLS, so the engine's own Config must reach the
+    resolved configuration alongside the document's variables. Assigning only
+    the document's would make a configuration setting TOOLS an unknown key.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "config": [{"name": "RUN_IT", "type": "bool", "description": "x"}],
+            "jobs": {"contract": {"uses": "engine_contract/honest"}},
+        }
+    )
+
+    flow = Workflow(
+        spec,
+        dict(minimal_design, RUN_IT=True, TOOLS={"contract": "no_metric"}),
+        **mock_pdk,
+    )
+
+    assert flow.config["TOOLS"] == {"contract": "no_metric"}
+    assert flow.config["RUN_IT"] is True
+
+
+@mock_variables([flow_module, step_module])
+def test_the_engine_reads_tools_out_of_an_already_resolved_configuration(
+    contract_job, minimal_design, mock_pdk
+):
+    """
+    A resolved Config skips the pre-pass, because the value is already there
+    and typed. The two paths must agree, or a flow reconstructed from a
+    resolved configuration -- which is how a reproducible re-runs -- would
+    silently run the default provider.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"contract": {"uses": "engine_contract/honest"}}}
+    )
+
+    resolved = Workflow(
+        spec,
+        dict(minimal_design, TOOLS={"contract": "no_metric"}),
+        **mock_pdk,
+    ).config
+
+    assert [step.id for step in Workflow(spec, resolved).Steps] == [
+        "Test.ContractNoMetric"
+    ]
+
+
+@mock_variables([flow_module, step_module])
+def test_the_engine_rejects_a_tools_key_naming_no_job(
+    contract_job, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+    from librelane.jobs import JobResolutionError
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"contract": {"uses": "engine_contract/honest"}}}
+    )
+
+    with pytest.raises(JobResolutionError, match="contracts"):
+        Workflow(spec, dict(minimal_design, TOOLS={"contracts": "honest"}), **mock_pdk)

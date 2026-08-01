@@ -119,7 +119,10 @@ What a `Stages` list buys over a plain `Steps` list is that the tool behind
 each job becomes a configuration choice instead of a hardcoded step class.
 A user sets the `TOOLS` configuration variable to pick a different provider
 for one or more jobs, for example `{"streamout": "klayout"}` to run only
-KLayout's stream-out instead of both Magic's and KLayout's. A flow author can
+KLayout's stream-out instead of both Magic's and KLayout's. The key is a job
+id, which for a `Stages` list is the stage id because that is what the job is
+called there; a workflow document names its own jobs and `TOOLS` follows those
+names instead. A flow author can
 also pin a job to a specific provider from inside the `Stages` list itself
 with `Job.using`, as `VHDLClassic` does for `synthesis`; a pin is the flow's
 default, not a lock, since a matching `TOOLS` entry still overrides it.

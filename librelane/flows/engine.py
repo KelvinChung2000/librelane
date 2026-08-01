@@ -13,20 +13,23 @@
 # limitations under the License.
 """The engine that runs a workflow document on a Petri net."""
 
+import os
 import pathlib
 import shutil
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass, field
+from typing import Optional, Union
 
 from loguru import logger
 
 from librelane.common import get_tpe, slugify
-from librelane.jobs import JobContractError
+from librelane.config import AnyConfig, AnyConfigs, Config, variable
+from librelane.jobs import JobContractError, extract_tools
 from librelane.state import State
 from librelane.steps import DeferredStepError, Step, StepError, StepException
 from librelane.flows.flow import Flow, FlowError, FlowException
-from librelane.flows.job import ResolvedJob, resolve_jobs
+from librelane.flows.job import ResolvedJob, ToolSelection, resolve_jobs
 from librelane.flows.join import join_sink_states, join_states
 from librelane.flows.net import Net
 from librelane.flows.resume import resume_key, reusable_state, write_entry
@@ -71,21 +74,100 @@ class Workflow(Flow):
     spec
         The document to run. Validated against the registries here, so
         a document constructed in Python gets the same checks a loaded one does.
+    config
+        As :meth:`librelane.flows.Flow.__init__`.
+    config_override_strings
+        As :meth:`librelane.flows.Flow.__init__`. Read twice, once here for
+        ``TOOLS`` and once by the loader, for the reason given on
+        :mod:`librelane.jobs.tools`.
     """
 
     Steps: list[type[Step]] = []
 
-    def __init__(self, spec: FlowSpec, *args, **kwargs) -> None:
+    class Config(Flow.Config):
+        TOOLS: Optional[dict[str, Union[str, list[str]]]] = variable(
+            None,
+            description=(
+                "A mapping from job id to the provider (tool) implementing "
+                "it, for example {'synthesis': 'yosys_vhdl'}. The key is the "
+                "id the document gives the job, which is not always the id of "
+                "the stage it uses: classic.yaml runs the 'streamout' stage "
+                "under 'magic_streamout' and 'klayout_streamout'. Only "
+                "overrides need listing; an unnamed job uses the provider its "
+                "'uses' key names. Must be a literal mapping, as it is read "
+                "before the configuration preprocessor runs, and so cannot "
+                "come from the PDK."
+            ),
+        )
+
+    def __init__(
+        self,
+        spec: FlowSpec,
+        config: AnyConfigs,
+        *,
+        config_override_strings: Sequence[str] | None = None,
+        **kwargs,
+    ) -> None:
         validate_against_registry(spec)
         self.spec = spec
-        self.jobs = resolve_jobs(spec)
+        self.jobs = resolve_jobs(
+            spec,
+            self._selected_tools(config, config_override_strings),
+        )
         self.Steps = [step for job in self.jobs.values() for step in job.steps]
         # Flow.__init__ builds the Config from get_all_config_variables(), which
         # reads config_vars, and resolves the flow name from the class when the
         # instance has not set one. Both assignments must precede it.
-        self.config_vars = [variable.to_variable() for variable in spec.config]
+        #
+        # The class's own variables come first, because TOOLS is declared by
+        # the engine and by no document: assigning only the document's would
+        # leave it out of the model the configuration is validated against, and
+        # a configuration that set it would be an unknown key.
+        self.config_vars = [
+            *type(self).config_vars,
+            *(declared.to_variable() for declared in spec.config),
+        ]
         self.name = spec.name
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            config,
+            config_override_strings=config_override_strings,
+            **kwargs,
+        )
+
+    @staticmethod
+    def _selected_tools(
+        config: AnyConfigs,
+        config_override_strings: Sequence[str] | None,
+    ) -> Mapping[str, ToolSelection]:
+        """
+        Returns
+        -------
+        The ``TOOLS`` mapping, taken straight from an already-resolved
+        configuration, or read out of the raw sources by the pre-pass.
+
+        The pre-pass exists because the step set has to be known before the
+        configuration can be validated, since the steps declare the variables.
+        A document fixes the *job* set at load, not the step set: ``TOOLS``
+        re-points a job at another provider, whose registration is a different
+        step sequence declaring different variables. So the circularity is the
+        same one, and this runs before ``super().__init__``.
+        """
+        if isinstance(config, Config):
+            # Already validated, so TOOLS is present and typed. Checked before
+            # Mapping, which a resolved Config also satisfies.
+            return dict(config.get("TOOLS") or {})
+        # One source or a layered sequence of them, split the way
+        # Config.load splits the same argument, so the pre-pass reads exactly
+        # the sources the loader will.
+        sources: list[AnyConfig]
+        if isinstance(config, (Mapping, str, os.PathLike)):
+            sources = [config]
+        else:
+            sources = list(config)
+        return extract_tools(
+            sources,
+            config_override_strings=config_override_strings,
+        )
 
     def run(
         self,

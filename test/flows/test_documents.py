@@ -29,11 +29,8 @@ from librelane.steps.openroad.base import OpenROADStep
 from librelane.flows.job import resolve_jobs
 from librelane.flows.spec import FlowSpec, load_flow_spec
 from librelane.flows.spec_graph import ancestors, topological_order
-from librelane.flows.spec_validation import (
-    _produced_keys,
-    _steps_of,
-    validate_against_registry,
-)
+from librelane.flows.spec_validation import validate_against_registry
+from librelane.jobs import JobRegistry
 
 pytestmark = pytest.mark.all
 
@@ -234,15 +231,16 @@ _FRAMEWORK_METRICS = (
 )
 
 
-def _produced_by(name: str) -> dict[str, set[str]]:
+def _produced_by(name: str, tools: dict[str, str] | None = None) -> dict[str, set[str]]:
     """
-    Every key each job writes.
+    Every key each job writes, under the provider selection ``tools`` names.
 
     Three sources, because no one of them is complete:
 
-    * the job's declared contract, via ``_produced_keys``;
+    * the job's declared contract, which for a ``uses:`` job is its template's
+      ``provides`` and ``metrics`` unioned with its selected registration's;
     * **every step's own ``outputs``**, which the contract does not cover. For
-      a ``uses:`` job ``_produced_keys`` reads the *template*, so 19 of the
+      a ``uses:`` job the contract reads the *template*, so 19 of the
       ~46 jobs in each shipped document write views it cannot see -- ``odb``
       and ``pnl`` across the PNR chain, ``sdf`` and ``lib`` from the STA jobs,
       ``mag`` from ``magic_streamout``, ``spice`` from ``lvs``. Declaring less
@@ -255,25 +253,32 @@ def _produced_by(name: str) -> dict[str, set[str]]:
     phase's defects. The union is measured to change no verdict today; it is
     here so that it still holds when a later document is not so lucky.
 
+    Read off :func:`librelane.flows.job.resolve_jobs` rather than off the
+    document, so that every key it reports is a key the *selected* provider
+    writes. ``TOOLS`` is what makes the distinction load-bearing: the ``lvs``
+    job's ``klayout`` provider opens with ``OpenROAD.WriteCDL``, so a selection
+    naming it puts framework metrics on a branch that carries none by default.
+    A guard reading the document's declared providers would never see it.
+
     The metric half stays incomplete and cannot be fixed here: steps carry no
     metric declaration at all, so an inline ``steps:`` job is modelled as
     writing none. ``librelane.flows.spec_validation``'s own
     ``_check_fan_in_is_unambiguous`` shares that blind spot.
     """
-    spec = _document(name)
     produced = {}
-    for job_id, job in spec.jobs.items():
-        keys = set(_produced_keys(job_id, job))
-        steps = _steps_of(job_id, job)
-        for step in steps:
+    for job_id, job in resolve_jobs(_document(name), tools).items():
+        keys = {str(view) for view in job.provides} | set(job.metrics)
+        for step in job.steps:
             keys.update(view.id for view in step.outputs)
-        if any(issubclass(step, (OpenROADStep, OdbpyStep)) for step in steps):
+        if any(issubclass(step, (OpenROADStep, OdbpyStep)) for step in job.steps):
             keys.update(_FRAMEWORK_METRICS)
         produced[job_id] = keys
     return produced
 
 
-def _join_conflicts(name: str) -> list[tuple[str, str, list[str]]]:
+def _join_conflicts(
+    name: str, tools: dict[str, str] | None = None
+) -> list[tuple[str, str, list[str]]]:
     """
     Replays :mod:`librelane.flows.join`'s rule symbolically over a document.
 
@@ -307,7 +312,7 @@ def _join_conflicts(name: str) -> list[tuple[str, str, list[str]]]:
     """
     spec = _document(name)
     edges = spec.edges()
-    produced = _produced_by(name)
+    produced = _produced_by(name, tools)
 
     conflicts: list[tuple[str, str, list[str]]] = []
     carried: dict[str, dict[str, str]] = {}
@@ -351,6 +356,71 @@ def _join_conflicts(name: str) -> list[tuple[str, str, list[str]]]:
         merge("<the final state>", sinks, {})
 
     return conflicts
+
+
+def _alternate_providers(name: str) -> list[tuple[str, str]]:
+    """
+    Returns
+    -------
+    list[tuple[str, str]]
+        One ``(job id, provider)`` pair per ``TOOLS`` entry that would change
+        something: every registered provider of every ``uses`` job's stage,
+        other than the one the document already resolves to.
+
+    Derived from the registries rather than written down, so a provider
+    registered later is covered without anyone remembering to name it. An
+    inline ``steps`` job is excluded because ``TOOLS`` rejects it outright.
+    """
+    spec = _document(name)
+    resolved = resolve_jobs(spec)
+    alternates = []
+    for job_id, job in spec.jobs.items():
+        if job.steps is not None:
+            continue
+        uses = job.uses if job.uses is not None else job_id
+        template_id = uses.partition("/")[0]
+        for provider in JobRegistry.providers(template_id):
+            if provider != resolved[job_id].provider:
+                alternates.append((job_id, provider))
+    return alternates
+
+
+#: The single-key ``TOOLS`` selections a shipped document does not survive,
+#: measured with :func:`_join_conflicts` rather than predicted, mapped to the
+#: keys each one collides on.
+#:
+#: Every entry is a property of the *document*, not of ``TOOLS``: the selection
+#: puts a second writer of some key onto one of two concurrent branches, and
+#: ``join_states`` has no way to choose between them. Two shapes appear.
+#:
+#: Re-pointing one ``drc`` job at the other's tool makes both jobs run the same
+#: deck and write the same metric, concurrently. A configuration migrated from
+#: the old stage-keyed ``TOOLS`` is the likely way to write one by accident:
+#: ``{"drc": "klayout"}`` does not become ``{"magic_drc": "klayout"}``, it
+#: becomes ``RUN_MAGIC_DRC: false``, because the two jobs are what the two
+#: booleans gate.
+#:
+#: Selecting the ``klayout`` provider of ``lvs`` opens that job with
+#: ``OpenROAD.WriteCDL``, whose framework metrics its concurrent peers inherit
+#: unchanged from the last OpenROAD-backed job above the fan-out. Neither
+#: ``librelane.flows.spec_validation`` nor this guard's pre-selection form
+#: could see it: the metrics are declared nowhere, and the provider is named
+#: nowhere in the document.
+#:
+#: Pinned rather than left to be discovered on a real run, and pinned as an
+#: equality so that a selection becoming safe fails here too. Nothing in the
+#: engine rejects these at load time; that check does not exist yet.
+_SELECTIONS_A_DOCUMENT_DOES_NOT_SURVIVE = {
+    ("chip.yaml", "klayout_drc", "magic"): ["magic__drc_error__count"],
+    ("chip.yaml", "magic_drc", "klayout"): ["klayout__drc_error__count"],
+    ("chip.yaml", "lvs", "klayout"): list(sorted(_FRAMEWORK_METRICS)),
+    ("classic.yaml", "klayout_drc", "magic"): ["magic__drc_error__count"],
+    ("classic.yaml", "magic_drc", "klayout"): ["klayout__drc_error__count"],
+    ("classic.yaml", "lvs", "klayout"): list(sorted(_FRAMEWORK_METRICS)),
+    ("vhdl_classic.yaml", "klayout_drc", "magic"): ["magic__drc_error__count"],
+    ("vhdl_classic.yaml", "magic_drc", "klayout"): ["klayout__drc_error__count"],
+    ("vhdl_classic.yaml", "lvs", "klayout"): list(sorted(_FRAMEWORK_METRICS)),
+}
 
 
 def _assert_no_join_conflicts(name: str) -> None:
@@ -926,6 +996,54 @@ def test_no_shipped_document_has_a_join_conflict(document):
     concurrency to violate.
     """
     _assert_no_join_conflicts(document)
+
+
+def test_which_alternate_tools_selections_a_shipped_document_survives():
+    """
+    The same replay, run once per selection ``TOOLS`` can express.
+
+    It has to be the *resolved* jobs that are walked, not the document's own
+    ``uses`` providers, because that is the only place a selection is visible.
+    See :data:`_SELECTIONS_A_DOCUMENT_DOES_NOT_SURVIVE` for what each failing
+    entry means and why nothing catches it earlier.
+    """
+    measured = {}
+    for document in _shipped_documents():
+        for job_id, provider in _alternate_providers(document):
+            conflicts = _join_conflicts(document, {job_id: provider})
+            if conflicts:
+                measured[(document, job_id, provider)] = sorted(
+                    {key for _, key, _ in conflicts}
+                )
+
+    assert measured == _SELECTIONS_A_DOCUMENT_DOES_NOT_SURVIVE
+
+
+def test_the_alternate_selection_guard_has_selections_to_run_over():
+    """
+    The enumeration above is derived, so this pins that it found something. A
+    helper returning nothing would make the equality vacuous, and a vacuous
+    guard reads as coverage.
+    """
+    enumerated = {
+        (document, job_id, provider)
+        for document in _shipped_documents()
+        for job_id, provider in _alternate_providers(document)
+    }
+
+    # Exercised: the swap that is safe because the two jobs are in series, the
+    # one that is safe because nothing else writes what it writes, and one that
+    # is not safe at all.
+    assert ("classic.yaml", "magic_streamout", "klayout") in enumerated
+    assert ("classic.yaml", "synthesis", "yosys_vhdl") in enumerated
+    assert ("classic.yaml", "lvs", "klayout") in enumerated
+    # The five open_in documents have one single-provider job each, so they
+    # contribute nothing and the three configured documents are the whole set.
+    assert {document for document, _, _ in enumerated} == {
+        "chip.yaml",
+        "classic.yaml",
+        "vhdl_classic.yaml",
+    }
 
 
 def test_the_shipped_document_guard_covers_every_document():

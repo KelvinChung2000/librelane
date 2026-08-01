@@ -81,10 +81,13 @@ import rather than quietly at run time:
   `native_views`. Every view your registration or its job promises in
   `provides` must actually appear in some step's `outputs`.
 
-**Resolution time**, inside `resolve()`, runs once a flow's `Stages` list and
-its `TOOLS` selection are both known, and before any configuration exists. It
-rejects an unknown provider name, a list supplied for a job that is not
-`multi_provider`, and an unknown key in `TOOLS`.
+**Resolution time** runs once a flow's job set and its `TOOLS` selection are
+both known, and before any configuration exists. It rejects an unknown
+provider name and an unknown key in `TOOLS`. For a `StagedFlow` this is
+`resolve()`, working from a `Stages` list, which also rejects a list supplied
+for a job that is not `multi_provider`. For a workflow document it is
+`resolve_jobs()`, working from the document's jobs, which rejects a list
+outright and rejects a key naming a job that lists its steps inline.
 
 **Startup time**, inside `StagedFlow.__init__` once `Config.load` has produced
 a resolved configuration, runs the preflight. It needs a configuration and so

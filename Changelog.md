@@ -797,6 +797,27 @@ Style Notes
 
 ## API Breaks
 
+* `TOOLS` is keyed by job id rather than by stage id when a flow is run from a
+  workflow document. A document names its own jobs, and one stage may run
+  under several names, so the stage id is no longer a key any document
+  answers to.
+  * `{"TOOLS": {"streamout": "klayout"}}` and `{"TOOLS": {"drc": "klayout"}}`
+    named a stage and ran one of its two providers. A document declares
+    `magic_streamout`/`klayout_streamout` and `magic_drc`/`klayout_drc`
+    instead, each gated by its own Boolean, so the replacement is
+    `{"RUN_MAGIC_STREAMOUT": false}` and `{"RUN_MAGIC_DRC": false}`.
+    Re-pointing `magic_streamout` at `klayout` is accepted and is not the same
+    thing: it runs KLayout's stream-out twice.
+  * A key that names no job of the flow is rejected with a near-miss
+    suggestion, so a stage-keyed configuration fails at startup rather than
+    being ignored.
+  * A list value is no longer accepted. A list is how one stage ran two tools,
+    and two tools is now two jobs. `{"TOOLS": {"streamout": ["magic",
+    "klayout"]}}` has no single-job replacement; declare both jobs.
+  * A key naming a job that lists its steps inline is rejected. Such a job has
+    no provider to override.
+  * A `TOOLS` entry still overrides a provider the flow pinned, whether pinned
+    with `Job.using` or with a document's `uses: stage/provider`.
 * `KLAYOUT_DENSITY_OPTIONS`, `KLAYOUT_ANTENNA_OPTIONS`, `KLAYOUT_DRC_OPTIONS`,
   `KLAYOUT_LVS_OPTIONS` and `KLAYOUT_FILLER_OPTIONS` read a `1` or a `0`
   written in a PDK's `config.tcl` as the number rather than as `True` or
