@@ -236,17 +236,38 @@ _FRAMEWORK_METRICS = (
 
 def _produced_by(name: str) -> dict[str, set[str]]:
     """
-    Every key each job writes: its declared views and metrics, plus the
-    framework metrics if any of its steps is OpenROAD-backed.
+    Every key each job writes.
+
+    Three sources, because no one of them is complete:
+
+    * the job's declared contract, via ``_produced_keys``;
+    * **every step's own ``outputs``**, which the contract does not cover. For
+      a ``uses:`` job ``_produced_keys`` reads the *template*, so 19 of the
+      ~46 jobs in each shipped document write views it cannot see -- ``odb``
+      and ``pnl`` across the PNR chain, ``sdf`` and ``lib`` from the STA jobs,
+      ``mag`` from ``magic_streamout``, ``spice`` from ``lvs``. Declaring less
+      than you write is allowed (``Step.outputs`` is a permission, not an
+      obligation), so the contract is a floor;
+    * the framework metrics, if any step is OpenROAD-backed.
+
+    Modelling only the first would make this guard a subset of the rule it
+    exists to enforce -- which is the mistake that produced two of this
+    phase's defects. The union is measured to change no verdict today; it is
+    here so that it still holds when a later document is not so lucky.
+
+    The metric half stays incomplete and cannot be fixed here: steps carry no
+    metric declaration at all, so an inline ``steps:`` job is modelled as
+    writing none. ``librelane.flows.spec_validation``'s own
+    ``_check_fan_in_is_unambiguous`` shares that blind spot.
     """
     spec = _document(name)
     produced = {}
     for job_id, job in spec.jobs.items():
         keys = set(_produced_keys(job_id, job))
-        if any(
-            issubclass(step, (OpenROADStep, OdbpyStep))
-            for step in _steps_of(job_id, job)
-        ):
+        steps = _steps_of(job_id, job)
+        for step in steps:
+            keys.update(view.id for view in step.outputs)
+        if any(issubclass(step, (OpenROADStep, OdbpyStep)) for step in steps):
             keys.update(_FRAMEWORK_METRICS)
         produced[job_id] = keys
     return produced
