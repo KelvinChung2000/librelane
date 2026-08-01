@@ -609,16 +609,21 @@ def test_vhdl_classic_omits_the_four_jobs_it_cannot_run():
     """
     The ``VHDLClassic`` class named them: the lint stage,
     Odb.SetPowerConnections, Odb.WriteVerilogHeader and the formal equivalence
-    stage. Checker.PowerGridViolations is NOT among them and must survive; it
-    sat with Odb.WriteVerilogHeader in Classic, so it gets a job of its own.
+    stage. Only the one step is dropped from ``post_gpl_checks``, which
+    otherwise runs here exactly as it does in ``classic.yaml``: neither
+    Checker.PowerGridViolations nor OpenROAD.STAMidPNR is a Verilog step.
     """
     jobs = _document("vhdl_classic.yaml").jobs
 
     assert "lint" not in jobs
     assert "set_power_connections" not in jobs
-    assert "write_verilog_header" not in jobs
     assert "formal_equivalence" not in jobs
-    assert jobs["power_grid_check"].steps == ["Checker.PowerGridViolations"]
+
+    assert jobs["post_gpl_checks"].steps == [
+        "Checker.PowerGridViolations",
+        "OpenROAD.STAMidPNR",
+    ]
+    assert "Odb.WriteVerilogHeader" not in jobs["post_gpl_checks"].steps
 
 
 def test_vhdl_classic_still_declares_the_variables_its_jobs_no_longer_read():

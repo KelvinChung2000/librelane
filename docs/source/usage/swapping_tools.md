@@ -185,17 +185,13 @@ Classic`, current as of this page:
 | `rmp` | inline steps | | |
 | `set_power_connections` | inline steps | | |
 | `macro_placement` | `macro_placement` | `openroad` | none |
-| `cut_rows` | inline steps | | |
 | `tapcell_insertion` | `tapcell_insertion` | `openroad` | none |
 | `power_grid` | `power_grid` | `openroad` | none |
-| `add_routing_obstructions` | inline steps | | |
 | `io_placement` | `io_placement` | `openroad` | none |
 | `add_buffer` | inline steps | | |
 | `global_placement` | `global_placement` | `openroad` | none |
-| `write_verilog_header` | inline steps | | |
-| `sta_mid_pnr_1` | inline steps | | |
+| `post_gpl_checks` | inline steps | | |
 | `post_gpl_repair` | `post_gpl_repair` | `openroad` | none |
-| `manual_global_placement` | inline steps | | |
 | `detailed_placement` | `detailed_placement` | `openroad` | none |
 | `cts` | `cts` | `openroad` | none |
 | `sta_mid_pnr_2` | inline steps | | |

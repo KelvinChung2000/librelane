@@ -85,6 +85,7 @@ _OPENROAD_NAMESPACES = (
     "CORE_AREA",
     "EXTRA_SITES",
     "MACRO_PLACEMENT_CFG",
+    "MANUAL_GLOBAL_PLACEMENTS",
     "ERRORS_ON_UNMATCHED_IO",
     "HEURISTIC_ANTENNA_THRESHOLD",
     "ERROR_ON_TR_DRC",
@@ -178,7 +179,11 @@ _REGISTRATIONS: list[dict] = [
     {
         "job": "macro_placement",
         "provider": "openroad",
-        "steps": [Odb.ManualMacroPlacement],
+        # OpenROAD.CutRows consumes odb, so it only means anything when this
+        # job resolved to OpenROAD, which is what makes it a member of this
+        # registration rather than a step a document lists. Every document that
+        # placed macros ran it immediately afterwards.
+        "steps": [Odb.ManualMacroPlacement, OpenROAD.CutRows],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
@@ -192,10 +197,14 @@ _REGISTRATIONS: list[dict] = [
     {
         "job": "power_grid",
         "provider": "openroad",
+        # Odb.AddRoutingObstructions joins its two PDN siblings for the same
+        # reason they are here: it edits an odb. Its partner
+        # Odb.RemoveRoutingObstructions already sits inside detailed_routing.
         "steps": [
             Odb.AddPDNObstructions,
             OpenROAD.GeneratePDN,
             Odb.RemovePDNObstructions,
+            Odb.AddRoutingObstructions,
         ],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
@@ -229,7 +238,10 @@ _REGISTRATIONS: list[dict] = [
     {
         "job": "detailed_placement",
         "provider": "openroad",
-        "steps": [OpenROAD.DetailedPlacement],
+        # Odb.ManualGlobalPlacement first, as every document ran it
+        # immediately before detailed placement. It edits an odb, so it is
+        # OpenROAD's to run.
+        "steps": [Odb.ManualGlobalPlacement, OpenROAD.DetailedPlacement],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },

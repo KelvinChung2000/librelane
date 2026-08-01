@@ -210,3 +210,51 @@ def test_openroad_carries_odb_across_pnr_boundaries():
     )
     # pre_pnr_sta runs before any odb exists, so it must not claim one.
     assert JobRegistry.get("pre_pnr_sta", "openroad").native_views == ()
+
+
+def test_the_odb_editing_steps_belong_to_the_job_whose_odb_they_edit():
+    """
+    Each of these three edits an odb, OpenROAD's native database, so none of
+    them means anything unless its job resolved to OpenROAD. Every shipped
+    document ran each one immediately beside the job it is registered with, so
+    membership costs no document its ordering and buys the ownership rule: point
+    the job at another tool and the step goes with it, rather than being left
+    behind demanding an odb nothing produced.
+    """
+    from librelane.jobs import JobRegistry
+    from librelane.steps import Odb, OpenROAD
+
+    assert JobRegistry.get("macro_placement", "openroad").steps == (
+        Odb.ManualMacroPlacement,
+        OpenROAD.CutRows,
+    )
+    assert JobRegistry.get("power_grid", "openroad").steps == (
+        Odb.AddPDNObstructions,
+        OpenROAD.GeneratePDN,
+        Odb.RemovePDNObstructions,
+        Odb.AddRoutingObstructions,
+    )
+    assert JobRegistry.get("detailed_placement", "openroad").steps == (
+        Odb.ManualGlobalPlacement,
+        OpenROAD.DetailedPlacement,
+    )
+
+
+def test_add_buffer_is_not_a_member_of_the_global_placement_provider():
+    """
+    The counter-case, and the reason consuming an odb is not on its own enough
+    to make a step a provider's.
+
+    OpenROAD.AddBuffer edits an odb like the three above, but chip.yaml runs
+    global placement and deliberately does not run it: a chip's ports are the
+    pad ring's bumps, which the pad cells have already buffered. A step two
+    documents want and a third refuses is the document's choice, so it stays a
+    job the document lists. Fold it in here and Chip silently starts buffering
+    its bumps.
+    """
+    from librelane.jobs import JobRegistry
+    from librelane.steps import OpenROAD
+
+    assert (
+        OpenROAD.AddBuffer not in JobRegistry.get("global_placement", "openroad").steps
+    )

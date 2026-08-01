@@ -191,21 +191,15 @@ jobs:
   macro_placement:
     needs: [rmp]
     uses: macro_placement
-  cut_rows:
-    needs: [macro_placement]
-    steps: [OpenROAD.CutRows]
   tapcell_insertion:
-    needs: [cut_rows]
+    needs: [macro_placement]
     uses: tapcell_insertion
     if: RUN_TAP_ENDCAP_INSERTION
   power_grid:
     needs: [tapcell_insertion]
     uses: power_grid
-  add_routing_obstructions:
-    needs: [power_grid]
-    steps: [Odb.AddRoutingObstructions]
   io_placement:
-    needs: [add_routing_obstructions]
+    needs: [power_grid]
     uses: io_placement
   # Before global placement, deliberately: the port buffers exist by the time
   # placement runs, so the logic is placed around them (#917).
@@ -215,24 +209,19 @@ jobs:
   global_placement:
     needs: [add_buffer]
     uses: global_placement
-  # classic.yaml's write_verilog_header job, minus the step it is named after.
-  # Odb.WriteVerilogHeader cannot run here; Checker.PowerGridViolations, which
-  # shared that job, can and does.
-  power_grid_check:
+  # classic.yaml's post_gpl_checks job, minus the step this flow cannot run.
+  # Odb.WriteVerilogHeader needs the Verilog header only Verilog synthesis
+  # emits; the other two are unaffected, so the job keeps its name and its
+  # place.
+  post_gpl_checks:
     needs: [global_placement]
-    steps: [Checker.PowerGridViolations]
-  sta_mid_pnr_1:
-    needs: [power_grid_check]
-    steps: [OpenROAD.STAMidPNR]
+    steps: [Checker.PowerGridViolations, OpenROAD.STAMidPNR]
   post_gpl_repair:
-    needs: [sta_mid_pnr_1]
+    needs: [post_gpl_checks]
     uses: post_gpl_repair
     if: RUN_POST_GPL_DESIGN_REPAIR
-  manual_global_placement:
-    needs: [post_gpl_repair]
-    steps: [Odb.ManualGlobalPlacement]
   detailed_placement:
-    needs: [manual_global_placement]
+    needs: [post_gpl_repair]
     uses: detailed_placement
   cts:
     needs: [detailed_placement]

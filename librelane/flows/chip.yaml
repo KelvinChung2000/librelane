@@ -195,19 +195,13 @@ jobs:
   macro_placement:
     needs: [pad_ring]
     uses: macro_placement
-  cut_rows:
-    needs: [macro_placement]
-    steps: [OpenROAD.CutRows]
   tapcell_insertion:
-    needs: [cut_rows]
+    needs: [macro_placement]
     uses: tapcell_insertion
     if: RUN_TAP_ENDCAP_INSERTION
   power_grid:
     needs: [tapcell_insertion]
     uses: power_grid
-  add_routing_obstructions:
-    needs: [power_grid]
-    steps: [Odb.AddRoutingObstructions]
   # The io_placement job is omitted. The two steps of it a chip still needs are
   # listed inline: OpenROAD.GlobalPlacementSkipIO seeds placement before the
   # pins exist, and Odb.ApplyDEFTemplate copies a pin arrangement from a
@@ -218,26 +212,24 @@ jobs:
   # a chip's ports are the pad ring's bumps and are already buffered by pad
   # cells.
   placement_seed:
-    needs: [add_routing_obstructions]
+    needs: [power_grid]
     steps: [OpenROAD.GlobalPlacementSkipIO, Odb.ApplyDEFTemplate]
   global_placement:
     needs: [placement_seed]
     uses: global_placement
-  write_verilog_header:
+  # classic.yaml's job of the same name, identical here.
+  post_gpl_checks:
     needs: [global_placement]
-    steps: [Odb.WriteVerilogHeader, Checker.PowerGridViolations]
-  sta_mid_pnr_1:
-    needs: [write_verilog_header]
-    steps: [OpenROAD.STAMidPNR]
+    steps:
+      - Odb.WriteVerilogHeader
+      - Checker.PowerGridViolations
+      - OpenROAD.STAMidPNR
   post_gpl_repair:
-    needs: [sta_mid_pnr_1]
+    needs: [post_gpl_checks]
     uses: post_gpl_repair
     if: RUN_POST_GPL_DESIGN_REPAIR
-  manual_global_placement:
-    needs: [post_gpl_repair]
-    steps: [Odb.ManualGlobalPlacement]
   detailed_placement:
-    needs: [manual_global_placement]
+    needs: [post_gpl_repair]
     uses: detailed_placement
   cts:
     needs: [detailed_placement]

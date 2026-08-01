@@ -198,45 +198,46 @@ jobs:
   macro_placement:
     needs: [set_power_connections]
     uses: macro_placement
-  cut_rows:
-    needs: [macro_placement]
-    steps: [OpenROAD.CutRows]
   tapcell_insertion:
-    needs: [cut_rows]
+    needs: [macro_placement]
     uses: tapcell_insertion
     if: RUN_TAP_ENDCAP_INSERTION
   power_grid:
     needs: [tapcell_insertion]
     uses: power_grid
-  add_routing_obstructions:
-    needs: [power_grid]
-    steps: [Odb.AddRoutingObstructions]
   io_placement:
-    needs: [add_routing_obstructions]
+    needs: [power_grid]
     uses: io_placement
   # Before global placement, deliberately: the port buffers exist by the time
   # placement runs, so the logic is placed around them (#917).
+  #
+  # A job of its own rather than a member of global_placement's provider,
+  # unlike the odb-editing steps folded into their neighbours: chip.yaml runs
+  # global placement and deliberately does not run this, because a chip's
+  # ports are the pad ring's bumps and the pad cells have buffered them
+  # already. So this one really is the flow's choice.
   add_buffer:
     needs: [io_placement]
     steps: [OpenROAD.AddBuffer]
   global_placement:
     needs: [add_buffer]
     uses: global_placement
-  write_verilog_header:
+  # What the flow does once the cells have a global position: hand the netlist
+  # to whatever reads a Verilog header later, check the grid it was placed on,
+  # and take a timing snapshot. Three steps, one job, because none of them is
+  # gated and no tool selection reaches any of them.
+  post_gpl_checks:
     needs: [global_placement]
-    steps: [Odb.WriteVerilogHeader, Checker.PowerGridViolations]
-  sta_mid_pnr_1:
-    needs: [write_verilog_header]
-    steps: [OpenROAD.STAMidPNR]
+    steps:
+      - Odb.WriteVerilogHeader
+      - Checker.PowerGridViolations
+      - OpenROAD.STAMidPNR
   post_gpl_repair:
-    needs: [sta_mid_pnr_1]
+    needs: [post_gpl_checks]
     uses: post_gpl_repair
     if: RUN_POST_GPL_DESIGN_REPAIR
-  manual_global_placement:
-    needs: [post_gpl_repair]
-    steps: [Odb.ManualGlobalPlacement]
   detailed_placement:
-    needs: [manual_global_placement]
+    needs: [post_gpl_repair]
     uses: detailed_placement
   cts:
     needs: [detailed_placement]
