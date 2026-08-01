@@ -568,10 +568,13 @@ Style Notes
     and a join whose branches disagree on a key raises `JoinConflictError`
     unless the job names a `source` to settle it, which no static entry can do
     when the winner is whichever tool the PDK named.
-* Registered `klayout` as a second provider of the `lvs` job, selectable with
-  `{"TOOLS": {"lvs": "klayout"}}`. Its sequence is `OpenROAD.WriteCDL`,
-  `KLayout.LVS`, `Checker.LVS`. `KLayout.LVS` was previously reachable from no
-  built-in flow at all (#696).
+* Registered `klayout` as a second provider of the `lvs` job, selected with
+  `{"TOOLS": {"lvs": "klayout"}}` by a document written for it. On the three
+  shipped documents that selection is refused at load — see the selection
+  validation entry below — because `OpenROAD.WriteCDL` writes the framework
+  metrics onto a branch whose siblings inherit them. Its sequence is
+  `OpenROAD.WriteCDL`, `KLayout.LVS`, `Checker.LVS`. `KLayout.LVS` was
+  previously reachable from no built-in flow at all (#696).
   * It is an *alternative* to the `netgen` provider, not an addition beside it.
     `lvs` is single-provider, so exactly one of the two runs. No default
     changes: `Classic` and `VHDLClassic` still run Magic plus Netgen unless
@@ -678,9 +681,11 @@ Style Notes
       for it and still fail the run on a check nobody asked for.
 * Added `TOOLS`, a mapping from job id to the provider implementing it, so a
   phase's tool can be chosen from configuration instead of by editing the
-  flow. `{"lvs": "klayout"}` runs KLayout's LVS sequence where `Classic` would
-  have run Netgen's. Unknown jobs and providers are rejected by name, with a
-  suggestion for a near miss.
+  flow. `{"synthesis": "yosys"}` on `VHDLClassic` runs the Verilog sequence
+  where that document would have run the VHDL one. Unknown jobs and providers
+  are rejected by name, with a suggestion for a near miss, and a selection
+  the document cannot run is refused at load — see the selection validation
+  entry.
   * `TOOLS` must be a literal mapping. It is read by a pre-pass ahead of full
     configuration resolution, because a flow's step set has to be known before
     the configuration those steps declare can be validated, so `expr::`,
@@ -929,7 +934,7 @@ Style Notes
   JSON, which is what `--override-config`'s own help text and the `TOOLS`
   reader in `librelane.jobs.tools` have always said it is. Every such variable
   was unusable from the command line before: the value was split as a Tcl
-  list, so `-c 'TOOLS={"lvs": "klayout"}'` died with `uneven Tcl dictionary`.
+  list, so `-c 'TOOLS={"lvs": "netgen"}'` died with `uneven Tcl dictionary`.
   * A scalar variable still takes the text exactly as written, so
     `-c CLOCK_PERIOD=15` is unchanged. A space-separated list, which the
     command line used to accept for a list variable, is now an error naming

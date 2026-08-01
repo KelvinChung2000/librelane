@@ -304,8 +304,9 @@ layered after every configuration file, so it beats all of them, including a
 matching `pdk::`/`scl::` section one of them wrote. It may be given more than
 once.
 
-The text after the first `=` is read according to the variable's declared type,
-and the type alone decides which grammar applies:
+The command line is one source, so it has one grammar: JSON, for values that
+need structure. The variable's declared type decides only whether the text is
+parsed as a JSON document or taken as written:
 
 * A **scalar** variable -- a string, a number, a Boolean, a path, an
   enumeration -- takes the text exactly as written. Nothing needs quoting for

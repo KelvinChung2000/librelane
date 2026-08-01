@@ -362,6 +362,15 @@ provider for you.
 }
 ```
 
+```{important}
+On all three shipped documents this selection is refused at load, before any
+tool runs: `OpenROAD.WriteCDL` writes the framework metrics onto a branch
+whose siblings inherit them, and the final join would receive two values (see
+[Selections the shipped documents refuse](#selections-the-shipped-documents-refuse)).
+Select it from a document written for it, or set `RUN_LVS` to `false` on the
+shipped ones — the refusal message lists the working alternatives.
+```
+
 `OpenROAD.WriteCDL` is part of the `klayout` sequence rather than a plain step
 of `Classic`, for the same reason `Magic.SpiceExtraction` is part of the
 `netgen` sequence: `KLayout.LVS` hard-requires the `cdl` view, no job
