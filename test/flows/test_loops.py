@@ -66,6 +66,12 @@ def loop_steps():
       or presence is checkable.
     - ``Downstream``: a plain step for a job outside the ring, so exhaustion
       and pass-through tests have something to prove still ran.
+    - ``GateIfSeed``/``GateIfBody``/``GateIfGate``: the gate-own-``if``
+      regression fixture. ``GateIfSeed`` seeds ``gate_ok: 1`` from outside
+      the ring; ``GateIfBody`` flips it to ``0`` starting its second
+      invocation; ``GateIfGate`` increments ``y`` and touches nothing else,
+      so whether ``y`` reaches ``until``'s bound is a direct observation of
+      whether the gate's own step ran on a given pass.
     """
     from librelane.config import variable
     from librelane.state import DesignFormat
@@ -160,6 +166,51 @@ def loop_steps():
             ns.calls.append(self.id)
             return {}, {"x": 0}
 
+    @Step.factory.register()
+    class GateIfSeed(Step):
+        id = "Test.GateIfSeed"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            ns.calls.append(self.id)
+            return {}, {"gate_ok": 1}
+
+    @Step.factory.register()
+    class GateIfBody(Step):
+        """
+        Runs unconditionally every pass. True on its own first invocation
+        (tracked via 'body_runs', not the pass index, so this step needs no
+        knowledge of which pass it is on) and false on every one after,
+        which is what flips the gate's own 'if' term underneath it.
+        """
+
+        id = "Test.GateIfBody"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            ns.calls.append(self.id)
+            runs = state_in.metrics.get("body_runs", 0)
+            gate_ok = 1 if runs == 0 else 0
+            return {}, {"body_runs": runs + 1, "gate_ok": gate_ok}
+
+    @Step.factory.register()
+    class GateIfGate(Step):
+        """
+        The gate's own step: increments 'y'. Nothing else in the ring
+        touches 'y', so whether 'y' reaches the 'until' bound is a direct
+        observation of whether this step ran on a given pass.
+        """
+
+        id = "Test.GateIfGate"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            ns.calls.append(self.id)
+            return {}, {"y": state_in.metrics.get("y", 0) + 1}
+
     ns.Increment = Increment
     ns.Measure = Measure
     ns.NeverConverges = NeverConverges
@@ -167,6 +218,9 @@ def loop_steps():
     ns.Require = Require
     ns.SeedZero = SeedZero
     ns.Downstream = Downstream
+    ns.GateIfSeed = GateIfSeed
+    ns.GateIfBody = GateIfBody
+    ns.GateIfGate = GateIfGate
     return ns
 
 
@@ -602,3 +656,109 @@ def test_a_false_gate_config_term_fires_the_whole_ring_as_one_pass_through(
     assert "Test.LoopIncrement" not in "".join(loop_steps.calls)
     assert "Test.LoopMeasure" not in "".join(loop_steps.calls)
     assert "Test.LoopDownstream (downstream)" in loop_steps.calls
+
+
+@mock_variables([flow_module, step_module])
+def test_the_gate_s_own_if_is_decided_once_at_entry_not_re_evaluated_per_pass(
+    loop_steps, minimal_design, mock_pdk
+):
+    """
+    Regression: the gate's own 'if' must be decided once, at entry, by
+    run()'s pre-submission check (the join of every member's external
+    tokens under the gate's own source) -- never re-asked inside
+    _run_loop. 'body' flips 'gate_ok' false starting its second pass; 'y'
+    is incremented only by the gate's own step, so if _run_loop wrongly
+    re-checked the gate's 'if' every pass, 'y' would freeze at 1 once
+    'gate_ok' went false and the loop would exhaust instead of converging.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "GateIf",
+            "jobs": {
+                "seed": {"steps": ["Test.GateIfSeed"]},
+                "body": {
+                    "needs": ["seed", "gate"],
+                    "steps": ["Test.GateIfBody"],
+                },
+                "gate": {
+                    "needs": ["body"],
+                    "steps": ["Test.GateIfGate"],
+                    "if": "metric::gate_ok == 1",
+                    "until": "metric::y >= 2",
+                    "max": 3,
+                },
+            },
+        }
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    final = flow.start(tag="t")
+
+    # Converges on pass 2: the gate's own step ran on both passes, despite
+    # 'gate_ok' going false between them.
+    assert final.metrics["y"] == 2
+    assert loop_steps.calls.count("Test.GateIfGate (gate/1)") == 1
+    assert loop_steps.calls.count("Test.GateIfGate (gate/2)") == 1
+    assert "Test.GateIfGate (gate/3)" not in loop_steps.calls
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_variables_reports_each_pass_of_a_scheduled_variable(
+    loop_steps, minimal_design, mock_pdk
+):
+    """
+    The design spec promises that '--explain-variables' attributes a
+    scheduled value to the pass that set it. A variable the schedule does
+    not touch (here, the universal 'DESIGN_NAME') is unaffected: still one
+    row, reach unchanged.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "ScheduledExplain",
+            "jobs": {
+                "resize": {"needs": ["sta"], "steps": ["Test.LoopIncrement"]},
+                "sta": {
+                    "needs": ["resize"],
+                    "steps": ["Test.LoopMeasure"],
+                    "until": "metric::x >= 2",
+                    "iterations": [
+                        {"TEST_LOOP_KNOB": 1},
+                        {"TEST_LOOP_KNOB": 2},
+                        {"TEST_LOOP_KNOB": 3},
+                    ],
+                },
+            },
+        }
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    explanation = flow.explain(variables=True)
+
+    knob_rows = {
+        row.reach: (row.value, row.origin)
+        for row in explanation.variables
+        if row.name == "TEST_LOOP_KNOB"
+    }
+    assert knob_rows[("resize (pass 1)",)] == (
+        1,
+        "<flow document: sta, iteration 1>",
+    )
+    assert knob_rows[("resize (pass 2)",)] == (
+        2,
+        "<flow document: sta, iteration 2>",
+    )
+    assert knob_rows[("resize (pass 3)",)] == (
+        3,
+        "<flow document: sta, iteration 3>",
+    )
+
+    design_name_rows = [
+        row for row in explanation.variables if row.name == "DESIGN_NAME"
+    ]
+    assert len(design_name_rows) == 1
+    assert design_name_rows[0].reach == ("resize", "sta")
+    assert design_name_rows[0].value == "WHATEVER"

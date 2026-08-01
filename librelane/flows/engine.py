@@ -1346,24 +1346,73 @@ class Workflow(Flow):
             A variable no job reads is answered by the flow's configuration
             alone, reaching nothing: ``TOOLS`` and the variables a job's ``if``
             names are read by the engine before any job exists to read them.
+
+            A member of a ring whose gate schedules (:meth:`_iteration_bound`
+            answers non-``None``) is resolved pass by pass, against
+            :attr:`iteration_configs` rather than :attr:`job_configs`, because
+            that is the configuration each pass actually runs under. If every
+            pass resolves ``name`` identically -- true for every variable the
+            schedule does not name -- this reports one ordinary entry, exactly
+            as a non-ring job's does, rather than the same row repeated once
+            per pass. Only a variable the schedule actually changes expands
+            into one entry per distinct value, each reached by
+            ``"<job> (pass <k>)"`` rather than by the bare job id, so
+            ``--explain-variables`` attributes a scheduled value to the pass
+            that set it -- the promise the design spec makes for it.
         """
+
+        def resolved_at(config: _ResolvedConfig) -> tuple[Any, str]:
+            return (config[name], config.provenance.get(name, "default"))
+
         groups: list[tuple[Any, str, list[str]]] = []
-        for job_id in reach:
-            # A job that declares no 'with' block has no configuration of its
-            # own, exactly as in _run_job.
-            config = self.job_configs.get(job_id, self.config)
-            resolved = (config[name], config.provenance.get(name, "default"))
+
+        def add(resolved: tuple[Any, str], label: str) -> None:
             for value, origin, group in groups:
                 if (value, origin) == resolved:
-                    group.append(job_id)
-                    break
-            else:
-                groups.append((*resolved, [job_id]))
+                    group.append(label)
+                    return
+            groups.append((*resolved, [label]))
+
+        for job_id in reach:
+            bound = self._iteration_bound(job_id)
+            if bound is None:
+                # A job that declares no 'with' block has no configuration of
+                # its own, exactly as in _run_job.
+                add(resolved_at(self.job_configs.get(job_id, self.config)), job_id)
+                continue
+            per_pass = [
+                resolved_at(self.iteration_configs[(job_id, k)])
+                for k in range(1, bound + 1)
+            ]
+            if all(item == per_pass[0] for item in per_pass):
+                add(per_pass[0], job_id)
+                continue
+            for k, resolved in enumerate(per_pass, start=1):
+                add(resolved, f"{job_id} (pass {k})")
         if not groups:
             return [
                 (self.config[name], self.config.provenance.get(name, "default"), ())
             ]
         return [(value, origin, tuple(group)) for value, origin, group in groups]
+
+    def _iteration_bound(self, job_id: str) -> int | None:
+        """
+        Returns
+        -------
+        The pass bound for ``job_id``, if it is a member of a ring whose
+        gate declares a non-empty ``iterations`` schedule -- meaning its
+        true per-pass configuration lives in :attr:`iteration_configs`
+        rather than :attr:`job_configs`. ``None`` for an ordinary job and for
+        a member of a ``max``-gated ring, where no pass changes any value
+        and :attr:`job_configs` already answers correctly for every pass.
+        """
+        gate = self.member_of.get(job_id)
+        if gate is None:
+            return None
+        gate_job = self.jobs[gate]
+        if not gate_job.iterations:
+            return None
+        return len(gate_job.iterations)
 
     def _plan(
         self,
@@ -1960,9 +2009,25 @@ class Workflow(Flow):
                     )
                 else:
                     input_state = circulating
-                reason = self._pass_through_reason(member_job, skipped=False)
-                if reason is None:
-                    reason = self._runtime_pass_through_reason(member_job, input_state)
+                if member == gate:
+                    # The gate's own 'if' is not asked again here: it was
+                    # already decided once, at entry, by run()'s
+                    # pre-submission check -- the join of every member's
+                    # external tokens under the gate's own source, gating
+                    # the whole loop instance rather than this one pass.
+                    # Asking a second time, per pass, would silently drop
+                    # the gate's own steps (and with them the gate's
+                    # output 'until' reads) the moment a runtime term in
+                    # the gate's own 'if' changes truth value as the ring's
+                    # circulating state evolves -- which is the ordinary
+                    # case for a ring, not an edge case.
+                    reason = None
+                else:
+                    reason = self._pass_through_reason(member_job, skipped=False)
+                    if reason is None:
+                        reason = self._runtime_pass_through_reason(
+                            member_job, input_state
+                        )
                 if reason is not None:
                     logger.info(
                         f"Skipping '{member}' (loop '{gate}', pass {k}): {reason}."
