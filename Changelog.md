@@ -693,6 +693,26 @@ Style Notes
   * `TOOLS` is not read from Tcl configuration files, which need process
     information that is not resolved that early. Such a file is reported as
     unconsulted rather than silently treated as empty.
+  * `TOOLS` may be written inside a `pdk::` or `scl::` section, which is how
+    one configuration selects a different tool per process. Tool selection
+    resolves the PDK and the standard cell library first, by calling
+    `Config.expand_sources` — the same method `Config.load` calls, and the
+    only implementation of that resolution, so the provider a run uses and the
+    `TOOLS` `--explain-variables` prints cannot differ. It reads the process
+    from `--pdk`, `--scl`, `--pdk-root` and the sources, ranking them as the
+    loader does, and an `scl::` section is matched against the library the PDK
+    defaults to when nothing names one.
+    * Previously the pre-pass read the sources as written, so a scoped `TOOLS`
+      was invisible to selection while the loader promoted it: the run used
+      one provider and the resolved configuration reported another.
+    * Where a source scopes `TOOLS` and a `.tcl` configuration file is passed
+      alongside it, the section is refused by name. A Tcl file may itself
+      declare the `PDK` and cannot be evaluated this early, so which process
+      the section applies under would be a guess.
+    * Where no source scopes `TOOLS`, no PDK is resolved and none has to
+      exist. `TOOLS` is the only key this pass reads, so a section that cannot
+      reach it — `pdk::sky130A: {FP_CORE_UTIL: 40}`, the ordinary use — leaves
+      tool selection asking the filesystem nothing.
   * Re-pointing a job at a different provider does not disturb its gating. A
     document's `if` is a property of the job, not of the steps the provider
     happened to contribute, so it applies to whichever tool runs.

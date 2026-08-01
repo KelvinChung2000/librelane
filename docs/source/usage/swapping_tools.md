@@ -101,6 +101,43 @@ declare can be validated. Two consequences follow from that ordering:
   information that is not resolved this early. Such a file is reported as
   unconsulted for tool selection rather than silently treated as empty.
 
+(pdk-scoped-tools)=
+
+### Selecting a tool per process
+
+`TOOLS` may be written inside a `pdk::` or `scl::` section, which is how one
+configuration selects a different tool per process:
+
+```json
+{
+  "pdk::sky130A": {
+    "TOOLS": { "lvs": "klayout" }
+  },
+  "pdk::gf180mcu*": {
+    "TOOLS": { "lvs": "netgen" }
+  }
+}
+```
+
+Sections behave here exactly as they do for any other key, and
+[Conditional Execution](../reference/configuration.md#conditional-execution) is
+the reference for how they are matched and ranked. Selection resolves the PDK
+and the standard cell library first, by running the loader's own resolution, so
+what a section promotes is what the run uses and what `--explain-variables`
+reports. An `scl::` section is matched against the library the PDK defaults to
+when neither the configuration nor `--scl` names one.
+
+The process is resolved only where a section could actually move `TOOLS`.
+Scoping an ordinary variable such as `FP_CORE_UTIL` per PDK, which is the
+common use, costs tool selection nothing and needs no PDK installed.
+
+The resolution has one boundary, and it is Tcl's. A `.tcl` configuration file
+may itself declare the `PDK`, and it cannot be evaluated this early, so which
+process a section applies under would be a guess. Passing a Tcl configuration
+alongside a source that scopes `TOOLS` is refused by name rather than resolved
+against that guess. Migrate the Tcl file to JSON or YAML, or write `TOOLS`
+outside the section.
+
 An unknown job id or an unknown provider name is rejected by name, with a
 suggested correction for a near miss.
 
@@ -453,11 +490,15 @@ jobs are what the two Booleans gate. Each refusal names the Boolean.
 
 ## Limitations
 
-* `TOOLS` cannot come from the PDK. It is a literal mapping read ahead of the
-  configuration preprocessor that resolves PDK-supplied values, so a PDK
-  cannot express "use this vendor tool for floorplanning on this process."
-* `TOOLS` cannot come from a Tcl configuration file, for the same reason: Tcl
-  evaluation needs process information that is not available this early.
+* `TOOLS` cannot come *from* the PDK. It is a literal mapping read ahead of the
+  configuration preprocessor that resolves PDK-supplied values, so a PDK's own
+  configuration files cannot express "use this vendor tool for floorplanning on
+  this process." A design says that for itself with a `pdk::` section, which is
+  read: see [Selecting a tool per process](#pdk-scoped-tools).
+* `TOOLS` cannot come from a Tcl configuration file, whose evaluation needs
+  process information that is not available this early. A Tcl file passed
+  alongside a source carrying a `pdk::` or `scl::` section is refused, for the
+  reason given in that section.
 * A job id is what `--target`, `--invalidate` and `--skip` name, so those are
   unaffected by a `TOOLS` change: `--target detailed_routing` means the same
   thing whichever router is selected. `--reproducible` is the exception,

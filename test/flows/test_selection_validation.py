@@ -843,6 +843,90 @@ def test_constructing_a_workflow_accepts_the_same_selection_gated_off(
     assert workflow._enabled_jobs() == {"right"}
 
 
+@mock_variables([flow_module, step_module])
+def test_a_scoped_tools_selects_through_workflow_construction(
+    probe_job, minimal_design, mock_pdk
+):
+    """
+    A ``TOOLS`` written inside a ``pdk::`` section reaches selection, and the
+    run and the resolved configuration agree about it.
+
+    Both assertions are the point rather than one of them. Selection reads the
+    raw sources ahead of the loader, so before the pre-pass resolved the
+    process the section was invisible to it and visible to the loader: the flow
+    ran ``alpha`` while ``--explain-variables``, which prints the resolved
+    configuration, reported ``beta``.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    workflow = Workflow(
+        FlowSpec.model_validate(_PROBE_SPEC),
+        {
+            **minimal_design,
+            "RUN_LEFT": False,
+            "pdk::dummy": {"TOOLS": {"left": "beta"}},
+        },
+        **mock_pdk,
+    )
+
+    assert workflow.jobs["left"].provider == "beta"
+    assert workflow.config["TOOLS"] == {"left": "beta"}
+
+
+@mock_variables([flow_module, step_module])
+def test_a_section_naming_another_pdk_selects_nothing(
+    probe_job, minimal_design, mock_pdk
+):
+    """
+    The other half: the mock tree's second PDK is a real one, so this pins that
+    the section was matched and rejected rather than never looked at.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    workflow = Workflow(
+        FlowSpec.model_validate(_PROBE_SPEC),
+        {
+            **minimal_design,
+            "RUN_LEFT": False,
+            "pdk::dummy2": {"TOOLS": {"left": "beta"}},
+        },
+        **mock_pdk,
+    )
+
+    assert workflow.jobs["left"].provider == "alpha"
+    assert workflow.config["TOOLS"] is None
+
+
+@mock_variables([flow_module, step_module])
+def test_a_scoped_tools_selects_under_the_pdks_default_scl(
+    probe_job, minimal_design, mock_pdk
+):
+    """
+    The same, keyed on a standard cell library nobody named: ``--scl`` is
+    dropped from the constructor's arguments, so ``dummy_scl`` can only come
+    from the PDK's own configuration. This is the path where selection has to
+    fetch the PDK rather than merely read a key.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    without_scl = {key: value for key, value in mock_pdk.items() if key != "scl"}
+    workflow = Workflow(
+        FlowSpec.model_validate(_PROBE_SPEC),
+        {
+            **minimal_design,
+            "RUN_LEFT": False,
+            "scl::dummy_scl": {"TOOLS": {"left": "beta"}},
+        },
+        **without_scl,
+    )
+
+    assert workflow.jobs["left"].provider == "beta"
+    assert workflow.config["TOOLS"] == {"left": "beta"}
+
+
 #: A two-job chain whose first job has a provider that produces ``json_h`` and
 #: one that does not, and whose second job requires it. The shipped documents
 #: are where the ``json_h`` case is measured; this is the same shape small

@@ -33,6 +33,7 @@ from librelane.config.types import Instance, InstanceArray, Macro, Orientation
 from librelane.config.config import (
     Meta,
     Config,
+    ExpandedSources,
     InvalidConfig,
     AnyConfig,
     AnyConfigs,

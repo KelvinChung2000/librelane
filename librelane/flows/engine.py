@@ -378,7 +378,9 @@ class Workflow(Flow):
                 "overrides need listing; an unnamed job uses the provider its "
                 "'uses' key names. Must be a literal mapping, as it is read "
                 "before the configuration preprocessor runs, and so cannot "
-                "come from the PDK."
+                "come from the PDK's own configuration files -- though a "
+                "design may scope it per process by writing it inside a "
+                "'pdk::' or 'scl::' section, which selection expands."
             ),
         )
 
@@ -395,7 +397,7 @@ class Workflow(Flow):
         self.spec = spec
         self.jobs = resolve_jobs(
             spec,
-            self._selected_tools(config, config_override_strings),
+            self._selected_tools(config, config_override_strings, kwargs),
         )
         self.Steps = [step for job in self.jobs.values() for step in job.steps]
         # Flow.__init__ builds the Config from get_all_config_variables(), which
@@ -515,8 +517,26 @@ class Workflow(Flow):
     def _selected_tools(
         config: AnyConfigs,
         config_override_strings: Sequence[str] | None,
+        load_kwargs: Mapping[str, Any],
     ) -> Mapping[str, ToolSelection]:
         """
+        Parameters
+        ----------
+        config : AnyConfigs
+            The design configuration, exactly as ``Flow.__init__`` will receive
+            it.
+        config_override_strings : Sequence[str] | None
+            As :meth:`librelane.flows.Flow.__init__`.
+        load_kwargs : Mapping[str, Any]
+            The remaining keyword arguments this constructor received. The
+            process selection is read out of it and handed to the pre-pass,
+            because a ``pdk::`` or ``scl::`` section's ``TOOLS`` is scoped to
+            the process, and ``--pdk``, ``--scl`` and ``--pdk-root`` are how a
+            run names one without writing it into the configuration. Passing
+            them past this method into ``super().__init__``, as it once did,
+            left selection matching those sections against a process it could
+            not see.
+
         Returns
         -------
         The ``TOOLS`` mapping, taken straight from an already-resolved
@@ -530,8 +550,11 @@ class Workflow(Flow):
         same one, and this runs before ``super().__init__``.
         """
         if isinstance(config, Config):
-            # Already validated, so TOOLS is present and typed. Checked before
-            # Mapping, which a resolved Config also satisfies.
+            # Already validated, so TOOLS is present and typed -- and its
+            # sections were expanded on the way, by the same
+            # Config.expand_sources the pre-pass below runs, so this branch has
+            # nothing left to resolve. Checked before Mapping, which a resolved
+            # Config also satisfies.
             return dict(config.get("TOOLS") or {})
         # One source or a layered sequence of them, split the way
         # Config.load splits the same argument, so the pre-pass reads exactly
@@ -544,6 +567,11 @@ class Workflow(Flow):
         return extract_tools(
             sources,
             config_override_strings=config_override_strings,
+            design_dir=load_kwargs.get("design_dir"),
+            pdk=load_kwargs.get("pdk"),
+            pdk_root=load_kwargs.get("pdk_root"),
+            scl=load_kwargs.get("scl"),
+            pad=load_kwargs.get("pad"),
         )
 
     # An instance method, because a document's step list, its providers and its

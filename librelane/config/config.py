@@ -37,6 +37,7 @@ from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
 from librelane.config.loading import (
     CoercionSyntax,
     ConfigSource,
+    LayeredMapping,
     OpenLaneYAMLLoader,
     layer_mappings,
     read_source,
@@ -253,6 +254,42 @@ class Meta:
 #: Named rather than left out of the map, because absence is how ``default`` is
 #: spelled and a value somebody passed in is not a default.
 _API_OVERRIDE = "<override>"
+
+
+@dataclass(frozen=True)
+class ExpandedSources:
+    """
+    What :meth:`Config.expand_sources` produces: the process selection a set of
+    configuration sources resolves to, and those sources layered with their
+    ``pdk::``/``scl::`` sections expanded against it.
+
+    Attributes
+    ----------
+    layered : LayeredMapping
+        Every source expanded on its own and then layered in order.
+    pdk : str
+        The process design kit the sections were matched against.
+    scl : str
+        The standard cell library they were matched against, which the PDK's
+        own configuration supplies when the caller named none.
+    pad : str | None
+        The pad cell library, or ``None`` where the PDK declares none.
+    pdkpath : str
+        The directory the PDK lives in.
+    values : GenericDict[str, Any]
+        The PDK layer's own values, compiled against whichever variables the
+        caller asked for. Empty when the caller asked for none.
+    provenance : Mapping[str, str]
+        Each key of ``values`` mapped to ``<pdk>``, ``<scl>`` or ``<pad>``.
+    """
+
+    layered: LayeredMapping
+    pdk: str
+    scl: str | None
+    pad: str | None
+    pdkpath: str
+    values: GenericDict[str, Any]
+    provenance: Mapping[str, str]
 
 
 class Config(GenericImmutableDict[str, Any]):
@@ -843,6 +880,143 @@ class Config(GenericImmutableDict[str, Any]):
 
         return (config_obj, design_dir)
 
+    @classmethod
+    def expand_sources(
+        Self,
+        sources_in: Sequence[ConfigSource],
+        design_dir: str,
+        *,
+        pdk: str | None = None,
+        pdk_root: str | None = None,
+        scl: str | None = None,
+        pad: str | None = None,
+        flow_pdk_vars: Sequence[Variable] = (),
+        full_pdk_warnings: bool = False,
+        _load_pdk_configs: bool = True,
+    ) -> ExpandedSources:
+        """
+        The first phase of loading a configuration: resolve which process the
+        sources select, then expand their ``pdk::``/``scl::`` sections against
+        it and layer them.
+
+        This is a method of its own because two callers need it and neither may
+        get a different answer than the other.
+        :meth:`librelane.config.Config.load` runs it to build the mapping it
+        validates, and :func:`librelane.jobs.extract_tools` runs it to read
+        ``TOOLS`` before the step set -- and so the variable set -- exists. A
+        second implementation of the same dance would let tool selection see a
+        different ``TOOLS`` than the run resolves, which is precisely what
+        having one implementation rules out.
+
+        Parameters
+        ----------
+        sources_in : Sequence[ConfigSource]
+            The sources as written, unmerged: their sections have to be
+            expanded into each source separately, which cannot happen until the
+            PDK and the SCL are resolved.
+        design_dir : str
+            The design directory the process-info pass resolves ``dir::``
+            against.
+        pdk : str | None
+            A process design kit, from ``--pdk`` or an API caller. A ``PDK`` key
+            in the sources outranks it.
+        pdk_root : str | None
+            Where PDKs are installed. Resolved through Ciel when ``None``.
+        scl : str | None
+            A standard cell library. The PDK's own configuration supplies one
+            when neither this nor a ``STD_CELL_LIBRARY`` key names it.
+        pad : str | None
+            A pad cell library, handled as ``scl`` is.
+        flow_pdk_vars : Sequence[Variable]
+            The PDK-supplied variables to compile the PDK layer against. A
+            caller that only needs the process selection passes none, which
+            skips the compilation but not the read: the PDK's configuration
+            files are evaluated either way, and memoized, so the caller that
+            does need them pays for the evaluation once.
+        full_pdk_warnings : bool
+            Report every warning the PDK layer's compilation raises.
+
+        Raises
+        ------
+        ValueError
+            If no source and no argument names a PDK.
+        """
+        # 'meta' describes the file rather than the design, and Config.load has
+        # already read it, so no source's copy of it survives into the values.
+        sources = [
+            ConfigSource(
+                {key: value for key, value in source.mapping.items() if key != "meta"},
+                source.name,
+                source.kind,
+            )
+            for source in sources_in
+        ]
+
+        # Reads the sources as written, sections and all: this pass is what
+        # supplies the PDK the sections are matched against. It passes an empty
+        # PDK to 'apply_overlays', so a section cannot name the PDK that
+        # selects it, and every section is dropped here unresolved.
+        mutable = GenericDict(
+            preprocess_dict(
+                layer_mappings(sources).mapping,
+                only_extract_process_info=True,
+                design_dir=design_dir,
+            )
+        )
+
+        pdk = mutable.get(SpecialKeys.pdk) or pdk
+        scl = mutable.get(SpecialKeys.scl) or scl
+        pad = mutable.get(SpecialKeys.pad) or pad
+        pdkpath = ""
+
+        mutable["PDK_ROOT"] = pdk_root
+
+        if pdk is None:
+            raise ValueError(
+                "The pdk argument is required as the configuration object lacks a 'PDK' key."
+            )
+
+        pdk_provenance: Mapping[str, str] = {}
+        if _load_pdk_configs:
+            pdk_root = Self.__resolve_pdk_root(pdk_root)
+
+            mutable, pdkpath, scl, pad, pdk_provenance = Self.__get_pdk_config(
+                pdk=pdk,
+                scl=scl,
+                pad=pad,
+                pdk_root=pdk_root,
+                full_pdk_warnings=full_pdk_warnings,
+                flow_pdk_vars=list(flow_pdk_vars),
+            )
+        else:
+            if pdk_root is not None:
+                pdkpath = os.path.join(pdk_root, mutable["PDK"])
+
+        # Each source's sections are expanded into that source and only then
+        # are the sources layered, so a section outranks the file that carried
+        # it and nothing else. Expanding after the merge instead makes one
+        # dict's insertion order decide precedence between files -- and lets a
+        # section in the first file overwrite a command-line override.
+        layered = layer_mappings(
+            [
+                ConfigSource(
+                    apply_overlays(source.mapping, pdk=pdk, scl=scl),
+                    source.name,
+                    source.kind,
+                )
+                for source in sources
+            ]
+        )
+        return ExpandedSources(
+            layered=layered,
+            pdk=pdk,
+            scl=scl,
+            pad=pad,
+            pdkpath=pdkpath,
+            values=mutable,
+            provenance=pdk_provenance,
+        )
+
     ## For Jupyter
     def _repr_markdown_(self) -> str:  # pragma: no cover
         title = (
@@ -883,86 +1057,31 @@ class Config(GenericImmutableDict[str, Any]):
         permissive_typing: bool = False,
         _load_pdk_configs: bool = True,
     ) -> "Config":
-        # The sources arrive unmerged because their 'pdk::'/'scl::' sections
-        # have to be expanded into each source separately, and that cannot
-        # happen until the PDK and the SCL below are resolved.
-        #
-        # 'meta' describes the file rather than the design, and Config.load has
-        # already read it, so no source's copy of it survives into the values.
-        sources = [
-            ConfigSource(
-                {key: value for key, value in source.mapping.items() if key != "meta"},
-                source.name,
-                source.kind,
-            )
-            for source in sources_in
-        ]
-
         flow_pdk_vars = []
         for variable in flow_config_vars:
             if variable.pdk:
                 flow_pdk_vars.append(variable)
 
-        # Reads the sources as written, sections and all: this pass is what
-        # supplies the PDK the sections are matched against. It passes an empty
-        # PDK to 'apply_overlays', so a section cannot name the PDK that
-        # selects it, and every section is dropped here unresolved.
-        mutable = GenericDict(
-            preprocess_dict(
-                layer_mappings(sources).mapping,
-                only_extract_process_info=True,
-                design_dir=design_dir,
-            )
+        expanded = Self.expand_sources(
+            sources_in,
+            design_dir,
+            pdk=pdk,
+            pdk_root=pdk_root,
+            scl=scl,
+            pad=pad,
+            flow_pdk_vars=flow_pdk_vars,
+            full_pdk_warnings=full_pdk_warnings,
+            _load_pdk_configs=_load_pdk_configs,
         )
-
-        pdk = mutable.get(SpecialKeys.pdk) or pdk
-        scl = mutable.get(SpecialKeys.scl) or scl
-        pad = mutable.get(SpecialKeys.pad) or pad
-        pdkpath = ""
-
-        mutable["PDK_ROOT"] = pdk_root
-
-        if pdk is None:
-            raise ValueError(
-                "The pdk argument is required as the configuration object lacks a 'PDK' key."
-            )
-
-        pdk_provenance: Mapping[str, str] = {}
-        if _load_pdk_configs:
-            pdk_root = Self.__resolve_pdk_root(pdk_root)
-
-            mutable, pdkpath, scl, pad, pdk_provenance = Self.__get_pdk_config(
-                pdk=pdk,
-                scl=scl,
-                pad=pad,
-                pdk_root=pdk_root,
-                full_pdk_warnings=full_pdk_warnings,
-                flow_pdk_vars=flow_pdk_vars,
-            )
-        else:
-            if pdk_root is not None:
-                pdkpath = os.path.join(pdk_root, mutable["PDK"])
-
-        # Each source's sections are expanded into that source and only then
-        # are the sources layered, so a section outranks the file that carried
-        # it and nothing else. Expanding after the merge instead makes one
-        # dict's insertion order decide precedence between files -- and lets a
-        # section in the first file overwrite a command-line override.
-        scl_resolved = mutable[SpecialKeys.scl]
-        layered = layer_mappings(
-            [
-                ConfigSource(
-                    apply_overlays(source.mapping, pdk=pdk, scl=scl_resolved),
-                    source.name,
-                    source.kind,
-                )
-                for source in sources
-            ]
-        )
+        pdk = expanded.pdk
+        pdkpath = expanded.pdkpath
+        scl_resolved = expanded.scl
+        mutable = expanded.values
+        layered = expanded.layered
         # Under the design's map, because 'mutable.update(design_values)' below
         # layers the design over the PDK and the attribution has to follow the
         # value. A key only the PDK wrote keeps '<pdk>'.
-        provenance = {**pdk_provenance, **layered.provenance}
+        provenance = {**expanded.provenance, **layered.provenance}
         # 'meta.version' 1 declares the whole document openlane-era, whose
         # values are Tcl text whichever container carried them -- that is what
         # permissive typing has always meant, and a '.json' design file without
