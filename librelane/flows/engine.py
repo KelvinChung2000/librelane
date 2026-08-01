@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from loguru import logger
 
 from librelane.common import get_tpe, slugify
+from librelane.jobs import JobContractError
 from librelane.state import State
 from librelane.steps import DeferredStepError, Step, StepError, StepException
 from librelane.flows.flow import Flow, FlowError, FlowException
@@ -31,13 +32,6 @@ from librelane.flows.net import Net
 from librelane.flows.resume import resume_key, reusable_state, write_entry
 from librelane.flows.spec import FlowSpec
 from librelane.flows.spec_validation import validate_against_registry
-
-
-class JobContractError(FlowError):
-    """
-    Raised when a job completes without having produced a view or metric it
-    declared.
-    """
 
 
 @dataclass

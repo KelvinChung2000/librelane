@@ -113,7 +113,7 @@ def test_chip_expands_to_the_same_steps_the_substitution_map_produced():
     assert [step.id for step in Chip.Steps] == GOLDEN
 
 
-def test_chip_declares_its_own_stages_rather_than_patching_classic():
+def test_chip_declares_its_own_jobs_rather_than_patching_classic():
     from librelane.flows import Flow
 
     Chip = Flow.factory.get("Chip")
