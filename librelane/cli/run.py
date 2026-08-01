@@ -183,7 +183,8 @@ def select_flow(request: FlowRequest) -> FlowSpec:
                         f"'meta.flow' must name a registered flow, but got a "
                         f"{type(meta.flow).__name__}. Building an anonymous "
                         f"flow from a list of step IDs is no longer supported; "
-                        f"declare a flow class and name it here instead."
+                        f"name one of the registered flows instead: "
+                        f"{', '.join(Flow.factory.list())}."
                     )
                     raise typer.Exit(1)
                 if found := Flow.factory.get(meta.flow):

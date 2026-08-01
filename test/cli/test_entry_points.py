@@ -384,12 +384,20 @@ class TestMetaFlowSelection:
         config.write_text(json.dumps({"meta": meta}), encoding="utf8")
         return select_flow(make_request(tmp_path, config_files=(str(config),)))
 
-    def test_a_step_list_is_rejected(self, tmp_path: Path):
+    def test_a_step_list_is_rejected(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
         """
         A list of step IDs used to build an anonymous flow. `Meta` is a plain
         dataclass and validates nothing, so without an explicit rejection the
         list falls through the `isinstance` test and silently runs Classic --
         a different flow than the configuration named.
+
+        The rejection lists the registered flows, because naming one is the
+        only thing a user can do here: a flow is a document, and only the
+        documents this package ships are registered.
         """
         import typer
 
@@ -397,6 +405,8 @@ class TestMetaFlowSelection:
             self._select(tmp_path, {"version": 2, "flow": ["Yosys.Synthesis"]})
 
         assert raised.value.exit_code == 1
+        assert "Classic" in caplog.text
+        assert "VHDLClassic" in caplog.text
 
     def test_a_registered_flow_name_is_accepted(self, tmp_path: Path):
         selected = self._select(tmp_path, {"version": 2, "flow": "Classic"})
