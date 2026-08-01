@@ -161,24 +161,6 @@ def test_unprovided_view_raises(mock_steps):
         )
 
 
-def test_tagged_steps_carry_span_and_provider(alpha_job, mock_steps):
-    from librelane.jobs import JobRegistry
-
-    MockPlace, _ = mock_steps
-    registration = JobRegistry.register(
-        job="registry_alpha",
-        provider="tagged",
-        steps=[MockPlace],
-        namespaces=["MOCK_"],
-    )
-    tagged = registration.tagged_steps()
-
-    assert tagged[0]._job_span == ("registry_alpha",)
-    assert tagged[0]._job_provider == "tagged"
-    assert tagged[0].id == "Test.MockPlace"
-    assert tagged[0].get_implementation_id() == "Test.MockPlace"
-
-
 def test_registration_names_exactly_one_job(alpha_job, mock_steps):
     """
     The registry used to accept a jobs tuple the resolver rejected outright.

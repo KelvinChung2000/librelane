@@ -72,28 +72,6 @@ class Registration:
     metrics: tuple[str, ...] = ()
     native_views: tuple[DesignFormat, ...] = ()
 
-    def tagged_steps(self) -> builtins.list[type[Step]]:
-        """
-        Returns the step sequence with each class subclassed to carry
-        ``_job_span`` and ``_job_provider``.
-
-        Tagging by subclass rather than by index range is what makes the
-        boundary map survive duplicate-ID normalization:
-        ``Step.with_id`` also subclasses, so the tag is inherited, while an
-        untagged step class is correctly treated as a plain step.
-        """
-        return [
-            type(
-                step.__name__,
-                (step,),
-                {
-                    "_job_span": (self.job,),
-                    "_job_provider": self.provider,
-                },
-            )
-            for step in self.steps
-        ]
-
 
 class JobRegistry(object):
     """
