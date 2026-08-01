@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# A faithful translation of the Classic flow's Stages list and gating table.
-# Every job needs exactly the job before it, reproducing the linear order the
-# Python flow ran in. Relaxing those edges is a separate change, so that a
-# translation error and a parallelisation error cannot arrive in one diff.
+# The Classic flow's Stages list and gating table, as a graph.
+#
+# Place and route is a chain and is written as one: each of those jobs really
+# does read the view the job before it wrote. The signoff tail is not. Six
+# branches leave the last stream-out together and meet again at final_checks,
+# which is the flow's single sink, and the order the Python flow listed them in
+# was an artefact of a list having no way to say "independent".
 name: Classic
 description: >-
   The flow most similar to the original OpenLane flow, running the Verilog RTL
@@ -152,18 +155,20 @@ config:
       steps. Has no effect in VHDLClassic, which does not run that job.
     deprecated_names: [RUN_VERILATOR]
 
-# No job carries a 'source' key, deliberately. A 'source' entry may only name a
-# direct predecessor, because the join reads only the tokens on this job's own
-# input arcs; in a chain every job has exactly one, so a 'source' here could
-# only restate it. Last-writer-wins is reproduced by the chain itself:
-# klayout_streamout runs after magic_streamout, so its output state is the one
-# every later consumer of 'gds' reads.
+# No job carries a 'source' key, and that is a property of the graph rather
+# than an omission: no join in this document has two branches that write the
+# same view or metric, so there is nothing to tie-break. The one place a
+# conflict would arise is the pair of stream-outs, and the comment on
+# klayout_streamout says why they are not parallel.
 jobs:
   lint:
     uses: lint
     if: RUN_LINTER
-  # No provider is pinned: Classic's synthesis frontend is selectable through
-  # TOOLS, as it is in the Python flow. VHDLClassic is the one that pins it.
+  # No provider is pinned, because the Python flow does not pin one either:
+  # Classic.Stages declares a bare Job.synthesis and only VHDLClassic writes
+  # .using("yosys_vhdl"). This mirrors that and nothing more. Provider
+  # selection through TOOLS is task 7's, on the engine; resolve_jobs does not
+  # consult TOOLS today, so neither spelling would be selectable yet.
   synthesis:
     needs: [lint]
     uses: synthesis
@@ -307,6 +312,17 @@ jobs:
     needs: [ir_drop]
     uses: streamout/magic
     if: RUN_MAGIC_STREAMOUT
+  # In series with magic_streamout, and this is the one edge in the signoff
+  # tail that is not relaxed. Neither stream-out writes the neutral 'gds'
+  # unconditionally: each writes it if its own tool is
+  # PRIMARY_GDSII_STREAMOUT_TOOL, or if nothing has written one yet. In series
+  # that reproduces "the primary tool owns 'gds'" exactly, including on a
+  # magic-primary PDK, which is every sky130 and gf180mcu configuration. In
+  # parallel both would see an empty incoming 'gds', both would write one, and
+  # the join would need a 'source' to choose. A 'source' names a job, so no
+  # static entry can say "whichever tool the PDK named", and either choice
+  # would silently change what the five later consumers of 'gds' read on half
+  # the PDKs.
   klayout_streamout:
     needs: [magic_streamout]
     uses: streamout/klayout
@@ -319,9 +335,12 @@ jobs:
     needs: [klayout_streamout]
     steps: [KLayout.Render]
   write_lef:
-    needs: [render]
+    needs: [klayout_streamout]
     steps: [Magic.WriteLEF]
     if: RUN_MAGIC_WRITE_LEF
+  # The one data edge in the signoff tail that is not a stream-out edge:
+  # Odb.CheckDesignAntennaProperties consumes 'lef', and Magic.WriteLEF is the
+  # only step in Classic that produces one.
   check_antenna_properties:
     needs: [write_lef]
     steps: [Odb.CheckDesignAntennaProperties]
@@ -329,27 +348,44 @@ jobs:
   # mag_gds from one stream-out and klayout_gds from the other and cannot run
   # unless both fired.
   xor:
-    needs: [check_antenna_properties]
+    needs: [klayout_streamout]
     steps: [KLayout.XOR, Checker.XOR]
     if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
   magic_drc:
-    needs: [xor]
+    needs: [klayout_streamout]
     uses: drc/magic
     if: RUN_MAGIC_DRC
   klayout_drc:
-    needs: [magic_drc]
+    needs: [klayout_streamout]
     uses: drc/klayout
     if: RUN_KLAYOUT_DRC
   lvs:
-    needs: [klayout_drc]
+    needs: [klayout_streamout]
     uses: lvs
     if: RUN_LVS
+  # An ordering edge, not a data edge, and deliberately not moved to
+  # 'synthesis'. Yosys.EQY consumes 'nl', and the last writer of 'nl' before it
+  # is OpenROAD.FillInsertion: it compares the RTL against the
+  # post-place-and-route netlist, not the synthesised one.
   formal_equivalence:
     needs: [lvs]
     uses: formal_equivalence
     if: RUN_EQY
+  # Every leaf, so that the flow has one sink. Misc.ReportManufacturability
+  # reads the LVS, DRC and antenna metrics out of state_in.metrics and warns
+  # for each one it cannot find, so a narrower 'needs' would turn the
+  # manufacturability report into five warnings. Making this the only sink also
+  # means the flow's final state is the state the linear flow ended with, which
+  # is what runs/<tag>/final snapshots, and it costs nothing: final_checks ran
+  # last anyway.
   final_checks:
-    needs: [formal_equivalence]
+    needs:
+      - render
+      - check_antenna_properties
+      - xor
+      - magic_drc
+      - klayout_drc
+      - formal_equivalence
     steps:
       - Checker.SetupViolations
       - Checker.HoldViolations
