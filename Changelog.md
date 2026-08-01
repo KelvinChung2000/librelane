@@ -870,13 +870,15 @@ Style Notes
 * Removed the Nix shell arguments `extra-python-packages` and
   `include-librelane`. Plugins are supplied through `librelane-plugins`, and
   the shell's Python environment is selected with `python-env`.
-* `librelane.stages` is now `librelane.jobs`. `Stage` is `Job`, `StageRegistry`
-  is `JobRegistry`, `StageError` is `JobDefinitionError`,
-  `StageResolutionError` is `JobResolutionError` and `StageContractError` is
-  `JobContractError`. `Registration.stage` is `Registration.job`, `STAGE_ORDER`
-  is `JOB_ORDER` and `StageEntry` is `JobEntry`. No compatibility aliases are
-  provided: a stage and a job were the same thing under two names, and keeping
-  both names would preserve the defect.
+* For code written against the development branch only, since none of these
+  names appear in a released version: `librelane.stages` is now
+  `librelane.jobs`. `Stage` is `Job`, `StageRegistry` is `JobRegistry`,
+  `StageError` is `JobDefinitionError`, `StageResolutionError` is
+  `JobResolutionError` and `StageContractError` is `JobContractError`.
+  `Registration.stage` is `Registration.job`, `STAGE_ORDER` is `JOB_ORDER` and
+  `StageEntry` is `JobEntry`. No compatibility aliases are provided: a stage and
+  a job were the same thing under two names, and keeping both names would
+  preserve the defect.
 * `JobRegistry.register` takes `job="x"` rather than `jobs=["x"]`, and
   `Registration.jobs`/`Registration.spanning` are removed in favour of
   `Registration.job`.

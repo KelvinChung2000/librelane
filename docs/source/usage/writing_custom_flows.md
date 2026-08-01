@@ -189,8 +189,9 @@ The Flow object has methods to manage this progress bar:
 * {py:meth}`librelane.flows.Flow.progress_bar.start_stage`
 * {py:meth}`librelane.flows.Flow.progress_bar.end_stage`.
 
-They are to be called from inside the `run` method. In Sequential Flows,
-{math}`|Steps| = |Stages| = n`, but in custom flows, stages can incorporate any
+They are to be called from inside the `run` method. In Sequential Flows the bar
+advances once per step, so {math}`|Steps| = n`, but in custom flows one bar
+stage can incorporate any
 number of steps. This is useful for example when running series of steps in parallel
 as shown in the next section, where incrementing by step is not exactly viable.
 

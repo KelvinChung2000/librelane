@@ -98,7 +98,7 @@ slices in their own worktrees, merged branch by branch onto `sweep-merge`.
 | 636 | `c15b74c` | Every corner reported in mid-PnR STA |
 | 680 | `6c7cb9e` | A list of Verilator configuration files |
 | 683 | `ad7433d` | A non-primary stream-out writes the GDS if nothing else did |
-| 696 | `9a9cec0` | `KLayout.LVS` selectable as the `lvs` stage's second provider |
+| 696 | `9a9cec0` | `KLayout.LVS` selectable as the `lvs` job's second provider |
 | 790 | `b51db85` | Maximum frequency per STA corner |
 | 793 | `5c08c58` | The SystemVerilog frontend documented |
 | 824 | `5102dd6` | The synthesis check problems the count refers to are logged |
@@ -652,12 +652,12 @@ the type change and is still met after it, pinned by the two tests in
 Two findings.
 
 **1. The metric key is not a collision; it is the single-provider contract.**
-`lvs` is a **single-provider** stage (`stages/taxonomy.py:288-299`) with a
-stage-level contract `metrics=("design__lvs_error__count",)`. `drc` and
+`lvs` is a **single-provider** job (`librelane/jobs/taxonomy.py`) with a
+job-level contract `metrics=("design__lvs_error__count",)`. `drc` and
 `streamout` are `multi_provider=True`; `lvs` is not. So exactly one LVS provider
 runs, and its providers are *alternatives*. `Pegasus.LVS` reuses the same key on
 purpose, with the reason written at `steps/pegasus.py:158-161`: it "reuses that
-stage-level metric rather than inventing a Pegasus-specific name". `KLayout.LVS`
+job-level metric rather than inventing a Pegasus-specific name". `KLayout.LVS`
 doing the same is consistent, not a bug. Nothing can overwrite anything today:
 `KLayout.LVS` is registered in the step factory but appears in **no flow and no
 provider** (only hit is `test/steps/registry_snapshot.json:87`), so it and
@@ -669,7 +669,7 @@ model — which is what the issue asks for and what would make `lvs`
 multi_provider. Which naming is right is therefore downstream of a design
 decision that is not made yet. Pinned by
 `test_providers_that_run_together_do_not_declare_the_same_metric` in
-`test/jobs/test_providers.py`, which exempts single-provider stages and will
+`test/jobs/test_providers.py`, which exempts single-provider jobs and will
 fail loudly the moment `lvs` becomes multi_provider without the rename.
 
 **2. The participants explicitly asked not to rush it.** donn wants a PDK meta
@@ -681,7 +681,7 @@ redesign that already put **697** in section E.
 
 Implementing the `RUN_KLAYOUT_LVS` boolean as specced would also fight the
 architecture: adding `KLayout.LVS` to `Classic` as a plain step, emitting a
-stage-contracted metric outside any registration, is the exact anti-pattern
+job-contracted metric outside any registration, is the exact anti-pattern
 `test_a_tool_specific_metric_is_checked_inside_its_own_registration` and
 `test_each_drc_provider_owns_its_own_checker` were written to condemn.
 
@@ -695,7 +695,7 @@ A note on the analogy that produced the original triage line: "a metric written
 by two steps is the same class of problem as a view written by two steps" is
 only true when both steps can actually run. That holds for the `gds` fan-in,
 where `Magic.StreamOut` and `KLayout.StreamOut` genuinely both run on a
-`multi_provider` stage. It does not hold on a single-provider stage, where the
+`multi_provider` job. It does not hold on a single-provider job, where the
 providers are alternatives. The structural check — `multi_provider` true or
 false — is what distinguishes the two cases, and it is now enforced by
 `test_providers_that_run_together_do_not_declare_the_same_metric` rather than
@@ -705,7 +705,7 @@ left to judgement.
 
 `KLayout.Render` already existed but only ever runs at stream-out, because it
 needs a DEF or a GDS; it is registered in the `streamout`/klayout provider
-(`stages/providers.py:330`). The issue asks for images *throughout* the flow, so
+(`librelane/jobs/providers.py`). The issue asks for images *throughout* the flow, so
 the new `OpenROAD.SaveImage` reads the **ODB** instead and can be inserted at
 any point. It deliberately declares no outputs, so several instances in one flow
 cannot collide over a single state view.
@@ -830,11 +830,11 @@ instead of reasoning about it. When the next claim about this file starts with
 Best next candidate: **696**, investigated, with the exact files and call sites
 recorded below. Note `KLayout.LVS` **already exists** at
 `librelane/steps/klayout/lvs.py:33`; it is registered but appears in no flow and
-no stage provider, and its `run` only does real work for `ihp-sg13g2` /
+no job provider, and its `run` only does real work for `ihp-sg13g2` /
 `ihp-sg13cmos5l`. The metric collision is real and confirmed: `Netgen.LVS`
 writes `design__lvs_error__count` at `librelane/steps/netgen.py:97` and
 `KLayout.LVS` writes the same key at `librelane/steps/klayout/lvs.py:137`, while
-`librelane/jobs/taxonomy.py:302` contracts that key for the `lvs` stage. State
+`librelane/jobs/taxonomy.py:302` contracts that key for the `lvs` job. State
 metrics are a flat dict, so whichever runs second wins and `Checker.LVS`
 (`librelane/steps/checker.py:329`) only ever sees the survivor.
 
@@ -956,7 +956,7 @@ only reclassifies.
   step"), no `basic_mp.tcl` exists, and donn confirms upstream dropped the
   command. Nothing named `mpl`, `mpl2` or `rtl_macro_placer` exists in
   `librelane/`; the only registered `macro_placement` provider is
-  `Odb.ManualMacroPlacement` (`stages/providers.py:177-179`). The live work is
+  `Odb.ManualMacroPlacement` (`librelane/jobs/providers.py`). The live work is
   porting upstream PR 537, which is a different thing from what the issue asks.
 - **946** (relocatable tarball). The proposal's comparison table asserts the
   AppImage is "per-tool (one AppImage per binary)" and that "composition is on
@@ -1298,9 +1298,9 @@ Unreleased-branch breakage, i.e. introduced by work that lives only on
 `librelane-unstable`. None of it is a shipped regression and none of it has an
 upstream issue number.
 
-1. **`Classic` could not complete a run.** The `pre_pnr_sta` stage was
+1. **`Classic` could not complete a run.** The `pre_pnr_sta` job was
    contracted to produce an `sdc` that no OpenSTA script writes, so every run
-   died at that stage boundary with "completed without producing views
+   died at that job boundary with "completed without producing views
    ['sdc']". Reproduced on the bundled spm example with no local changes
    applied. Root cause was `MultiCornerSTA.outputs` declaring a view the class
    never writes, which `Job(pre_pnr_sta).provides` was then derived from and
@@ -1316,7 +1316,7 @@ upstream issue number.
 
 Found while implementing; none of them are written down anywhere else.
 
-- **A stage provider's config variables are namespace-checked at import time.**
+- **A job provider's config variables are namespace-checked at import time.**
   `librelane/jobs/registry.py` rejects a variable declared on a provider step
   that is neither a common flow variable nor prefixed with one of the provider's
   namespaces, raising `JobDefinitionError` when the module is imported. So an
@@ -1346,8 +1346,8 @@ Found while implementing; none of them are written down anywhere else.
   gated on `MAGIC_ADD_ISOSUB`, the same variable that gates the painting inside
   `Magic.StreamOut`, so enabling either enables both and the step's only reason
   to exist -- applying isosub after signoff DRC rather than before -- is
-  defeated. Where it would go here is also open: Classic is a stage list,
-  `Stage.drc` is atomic so upstream's "between `KLayout.DRC` and
+  defeated. Where it would go here is also open: Classic is a job list,
+  `Job.drc` is atomic so upstream's "between `KLayout.DRC` and
   `Checker.MagicDRC`" has no equivalent, and a full-die SUBCUT rectangle would
   reach LVS extraction and XOR. Issue 531's body is two sentences and the
   maintainer's request for a rationale was never answered.
