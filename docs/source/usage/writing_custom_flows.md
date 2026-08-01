@@ -74,14 +74,14 @@ does some incredibly important processing.
 You should not be overriding `start` either.
 ```
 
-## Declaring a Flow as Stages
+## Declaring a Flow as Jobs
 
 `Classic` and `VHDLClassic` are both built on {class}`librelane.flows.StagedFlow`,
 a `SequentialFlow` whose `Steps` list is expanded from a `Stages` list rather
 than written out directly. A `Stages` entry is either a `Job` object, which
 expands into whichever concrete steps implement it for the tool it selects, or
 a plain `Step` class, for a provider-neutral utility or a step that sits at a
-stage boundary. This is a third way to build a sequential flow, alongside
+job boundary. This is a third way to build a sequential flow, alongside
 substituting and listing steps above, and the one `Classic` itself uses.
 
 ```python
@@ -105,27 +105,27 @@ class MyStagedFlow(StagedFlow):
     ]
 ```
 
-Every stage here happens to have no gating variable of its own, which keeps
-the example self-contained. A stage that does declare one, such as `cts` or
+Every job here happens to have no gating variable of its own, which keeps
+the example self-contained. A job that does declare one, such as `cts` or
 `detailed_routing`, needs the matching Boolean declared in the flow's own
 `Config`, exactly as any other configuration variable a step reads would; see
 `Classic`'s `Config` in `librelane/flows/classic.py` for a complete example.
 
 `Steps` is populated from `Stages` at class-definition time, using each
-stage's default provider, so every existing `SequentialFlow` facility -
+job's default provider, so every existing `SequentialFlow` facility -
 `get_help_md`, step IDs and step directory names - keeps working unchanged.
 
 What a `Stages` list buys over a plain `Steps` list is that the tool behind
-each stage becomes a configuration choice instead of a hardcoded step class.
+each job becomes a configuration choice instead of a hardcoded step class.
 A user sets the `TOOLS` configuration variable to pick a different provider
-for one or more stages, for example `{"streamout": "klayout"}` to run only
+for one or more jobs, for example `{"streamout": "klayout"}` to run only
 KLayout's stream-out instead of both Magic's and KLayout's. A flow author can
-also pin a stage to a specific provider from inside the `Stages` list itself
+also pin a job to a specific provider from inside the `Stages` list itself
 with `Job.using`, as `VHDLClassic` does for `synthesis`; a pin is the flow's
 default, not a lock, since a matching `TOOLS` entry still overrides it.
 
 See [Swapping Tools](./swapping_tools.md) for the full `TOOLS` reference,
-including multi-provider stages and its limitations, and
+including multi-provider jobs and its limitations, and
 [Writing Tool Backends](./writing_tool_backends.md) for how to register a new
 provider.
 
@@ -271,7 +271,7 @@ its `StepError`s:
 ---
 language: python
 start-after: "step_list.append(step)"
-end-before: "self.progress_bar.end_stage(increment_ordinal=increment_ordinal)"
+end-before: "self.progress_bar.end_stage(increment_ordinal=executed)"
 ---
 ```
 

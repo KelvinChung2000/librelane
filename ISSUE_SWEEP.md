@@ -669,7 +669,7 @@ model — which is what the issue asks for and what would make `lvs`
 multi_provider. Which naming is right is therefore downstream of a design
 decision that is not made yet. Pinned by
 `test_providers_that_run_together_do_not_declare_the_same_metric` in
-`test/stages/test_providers.py`, which exempts single-provider stages and will
+`test/jobs/test_providers.py`, which exempts single-provider stages and will
 fail loudly the moment `lvs` becomes multi_provider without the rename.
 
 **2. The participants explicitly asked not to rush it.** donn wants a PDK meta
@@ -834,7 +834,7 @@ no stage provider, and its `run` only does real work for `ihp-sg13g2` /
 `ihp-sg13cmos5l`. The metric collision is real and confirmed: `Netgen.LVS`
 writes `design__lvs_error__count` at `librelane/steps/netgen.py:97` and
 `KLayout.LVS` writes the same key at `librelane/steps/klayout/lvs.py:137`, while
-`librelane/stages/taxonomy.py:297` contracts that key for the `lvs` stage. State
+`librelane/jobs/taxonomy.py:302` contracts that key for the `lvs` stage. State
 metrics are a flat dict, so whichever runs second wins and `Checker.LVS`
 (`librelane/steps/checker.py:329`) only ever sees the survivor.
 
@@ -1317,7 +1317,7 @@ upstream issue number.
 Found while implementing; none of them are written down anywhere else.
 
 - **A stage provider's config variables are namespace-checked at import time.**
-  `librelane/stages/registry.py` rejects a variable declared on a provider step
+  `librelane/jobs/registry.py` rejects a variable declared on a provider step
   that is neither a common flow variable nor prefixed with one of the provider's
   namespaces, raising `StageError` when the module is imported. So an unprefixed
   name on, say, `KLayout.StreamOut` is not merely bad style, it fails to import:

@@ -65,7 +65,7 @@ Style Notes
   saying whether this configuration would run it and, if not, which of gating,
   `--skip` or the `--from`/`--to` window excluded it, then exits without
   running. A step a `TOOLS` selection dropped has no row at all, since it is
-  not in the list; stages that contributed no steps are named separately below
+  not in the list; jobs that contributed no steps are named separately below
   the table. Requires a sequential flow.
 * Removed `--only`. `--from X --to X` is the same thing, one mechanism instead
   of two.
@@ -85,21 +85,21 @@ Style Notes
 * Added `OpenROADAlertMixin`, which carries the alert output processor and the
   `on_alert` logging that `OpenROADStep` and `OdbpyStep` previously duplicated.
   Subclasses suppress known-harmless alerts by setting `ignored_alert_codes`.
-* Added `librelane.stages.providers_vendor`, which registers the sixteen
-  commercial CAD tool scaffolds under `librelane/steps/` as stage providers.
-  Importing it is opt-in; nothing under `librelane.stages` imports it, so
-  `librelane help` and `StageRegistry.providers()` stay unaffected unless a
+* Added `librelane.jobs.providers_vendor`, which registers the sixteen
+  commercial CAD tool scaffolds under `librelane/steps/` as job providers.
+  Importing it is opt-in; nothing under `librelane.jobs` imports it, so
+  `librelane help` and `JobRegistry.providers()` stay unaffected unless a
   caller imports the module themselves. Every provider it registers is a
   scaffold whose steps raise `NotImplementedError`, and no vendor command is
   guessed anywhere in them.
 
 * `FC.Floorplan` and `ICC2.Floorplan`
 
-  * Fixed both steps declaring `DEF` as an input. The `floorplan` stage is
+  * Fixed both steps declaring `DEF` as an input. The `floorplan` job is
     where `DEF` is first produced, not carried in; its own contract requires
     only `NETLIST` and `SDC`, matching `OpenROAD.Floorplan`. The stale input
-    surfaced only once these scaffolds were registered as stage providers and
-    checked against the stage contract at import time.
+    surfaced only once these scaffolds were registered as job providers and
+    checked against the job contract at import time.
 
 * `Odb.RemovePDNObstructions`
 
@@ -418,7 +418,7 @@ Style Notes
 
 ## Flows
 
-* Registered `klayout` as a second provider of the `lvs` stage, selectable with
+* Registered `klayout` as a second provider of the `lvs` job, selectable with
   `{"TOOLS": {"lvs": "klayout"}}`. Its sequence is `OpenROAD.WriteCDL`,
   `KLayout.LVS`, `Checker.LVS`. `KLayout.LVS` was previously reachable from no
   built-in flow at all (#696).
@@ -442,7 +442,7 @@ Style Notes
     as absent.
   * `OpenROAD.WriteCDL` sits inside the provider sequence rather than in the
     flows, for the same reason `Magic.SpiceExtraction` sits inside the `netgen`
-    sequence: `KLayout.LVS` hard-requires the `cdl` view, no stage promises
+    sequence: `KLayout.LVS` hard-requires the `cdl` view, no job promises
     one, and a flow that never selects this provider should not write a CDL it
     has no use for.
   * Issue #696 asked instead for `KLayout.LVS` to run *alongside* Netgen in the
@@ -508,14 +508,14 @@ Style Notes
 * Migrated the `Classic` flow's configuration declarations to a nested typed
   `Config` model.
 * Created `StagedFlow`, a `SequentialFlow` whose step list is expanded from a
-  list of stages drawn from a 27-stage taxonomy, so the tool used for a phase
+  list of jobs drawn from a 27-job taxonomy, so the tool used for a phase
   can be selected rather than hardcoded. `Classic`, `VHDLClassic` and `Chip`
   produce the same step lists as before, except for the DRC step reorder
   described below.
-* Moved gating from individual step IDs to the stage that owns them, so a
-  gating variable applies whichever tool implements the stage. Fifteen of
+* Moved gating from individual step IDs to the job that owns them, so a
+  gating variable applies whichever tool implements the job. Fifteen of
   `Classic`'s twenty-five step-level gates are now generated from the
-  taxonomy; the ten that address one tool inside a multi-tool stage, such as
+  taxonomy; the ten that address one tool inside a multi-tool job, such as
   `RUN_MAGIC_DRC`, remain declared on the flow.
   * Three gating variables now reach further, each covering a step that was
     previously left running with nothing to consume its output:
@@ -527,10 +527,10 @@ Style Notes
     * `RUN_LVS` also skips `Magic.SpiceExtraction` and `Checker.IllegalOverlap`.
       The extraction exists to feed LVS, and disabling LVS used to still pay
       for it and still fail the run on a check nobody asked for.
-* Added `TOOLS`, a mapping from stage id to the provider implementing it, so a
+* Added `TOOLS`, a mapping from job id to the provider implementing it, so a
   phase's tool can be chosen from configuration instead of by subclassing the
   flow. `{"streamout": "klayout"}` drops Magic's streamout;
-  `{"streamout": ["magic", "klayout"]}` runs both. Unknown stages and providers
+  `{"streamout": ["magic", "klayout"]}` runs both. Unknown jobs and providers
   are rejected by name, with a suggestion for a near miss.
   * `TOOLS` must be a literal mapping. It is read by a pre-pass ahead of full
     configuration resolution, because a flow's step set has to be known before
@@ -539,16 +539,16 @@ Style Notes
   * `TOOLS` is not read from Tcl configuration files, which need process
     information that is not resolved that early. Such a file is reported as
     unconsulted rather than silently treated as empty.
-  * Selecting one tool of a multi-tool stage drops the other's hand-written
+  * Selecting one tool of a multi-tool job drops the other's hand-written
     gates, since the steps they name are no longer in the flow. A dead gate is
     still an error when a flow class declares one, which is where a typo is.
-  * `TOOLS` composes with `Substitutions`. Stage expansion happens first and the
+  * `TOOLS` composes with `Substitutions`. Job expansion happens first and the
     flow's substitutions are replayed onto the result, so setting `TOOLS` on a
     flow such as `Chip` keeps the steps it substitutes in and out. A
     substitution naming a step the selected provider removed is an error, the
     same as one naming a step that was never there.
-* Stage contracts are enforced at run time. When the last step of a stage
-  completes, every view in the stage's `provides` must be in the state and every
+* Job contracts are enforced at run time. When the last step of a job
+  completes, every view in the job's `provides` must be in the state and every
   metric in its `metrics` must have been emitted, or the run fails. There is no
   warn-and-continue: a backend that does not report `route__drc_errors` must not
   be able to let `Checker.TrDRC` pass on an unexamined design. Metrics are
@@ -557,18 +557,18 @@ Style Notes
   * A run that did not execute every step it covers, because they were gated,
     skipped, or excluded by `--from`/`--to`, is not checked. Its views and
     metrics were never attempted.
-  * Each provider of a multi-tool stage additionally answers for the `provides`
+  * Each provider of a multi-tool job additionally answers for the `provides`
     and `metrics` its own registration declares, checked once its own steps
-    complete rather than once the stage does. So `RUN_MAGIC_DRC=false` leaves
+    complete rather than once the job does. So `RUN_MAGIC_DRC=false` leaves
     KLayout still answerable for `klayout__drc_error__count`, where a single
-    stage-wide check would have excused it along with Magic. The stage's own
+    job-wide check would have excused it along with Magic. The job's own
     `provides` stay a joint obligation, which is what lets both `streamout`
     tools share the promise of a neutral `gds` view while
     `PRIMARY_GDSII_STREAMOUT_TOOL` decides which of them writes it.
 * View availability is checked before any tool runs. Every non-optional view a
   step consumes must be produced by an earlier step that the resolved
   configuration actually runs, or the flow fails at startup naming the view, the
-  step consuming it, and the last stage before it. An optional input is
+  step consuming it, and the last job before it. An optional input is
   satisfiable by absence and is not a failure. This is what makes a mixed-tool
   `TOOLS` selection safe to attempt: picking a synthesis frontend that emits no
   Verilog header now says so immediately instead of crashing once floorplanning
@@ -588,7 +588,7 @@ Style Notes
   it. A step whose inclusion is the flow's choice, independent of the tool, is a
   plain step in the flow's `Stages` list.
   * **Fixed:** `Checker.MagicDRC` and `Checker.KLayoutDRC` now belong to the
-    `drc` stage's `magic` and `klayout` providers. As plain steps of `Classic`,
+    `drc` job's `magic` and `klayout` providers. As plain steps of `Classic`,
     `{"drc": "klayout"}` removed `Magic.DRC` but left `Checker.MagicDRC` running
     under a default-true `RUN_MAGIC_DRC`, failing the run on
     `magic__drc_error__count` that Magic never emitted. **This reorders the DRC
@@ -602,46 +602,46 @@ Style Notes
     views rather than Magic's own, so it is Magic-implemented but not
     Magic-dependent, and whether a flow wants a LEF abstract at all is a
     flow-level choice. `Chip` deliberately does not.
-  * A checker for a metric its *stage* contracts, such as `Checker.TrDRC`, stays
+  * A checker for a metric its *job* contracts, such as `Checker.TrDRC`, stays
     inside its registration for a different reason: membership is what gives it
-    the stage's gating variable.
+    the job's gating variable.
   * Fourteen plain steps of `Classic` consume OpenROAD's `odb`, so they depend
-    on OpenROAD implementing the surrounding stages. They cannot move into a
-    registration, because they sit between stages: `OpenROAD.STAMidPNR` appears
+    on OpenROAD implementing the surrounding jobs. They cannot move into a
+    registration, because they sit between jobs: `OpenROAD.STAMidPNR` appears
     four times at different points. A flow selecting a non-OpenROAD place-and-
     route provider must declare its own `Stages` without them, and the view
     preflight is what says so.
-* Added `Stage.using`, which pins the tool a stage runs from inside a flow's
-  `Stages` list, for example `Stage.synthesis.using("yosys_vhdl")`. A pin is the
+* Added `Job.using`, which pins the tool a job runs from inside a flow's
+  `Stages` list, for example `Job.synthesis.using("yosys_vhdl")`. A pin is the
   flow's default rather than a lock: a `TOOLS` entry still overrides it.
 * `VHDLClassic` declares its own `Stages` list instead of a `Substitutions` map
   over `Classic`'s steps. It still subclasses `Classic` for the configuration
   variables, which are genuinely shared, but what it runs is now written down in
   one place rather than expressed as edits to another flow's list. The step list
   is unchanged.
-  * `Odb.SetPowerConnections` moved out of the `floorplan` stage's `openroad`
+  * `Odb.SetPowerConnections` moved out of the `floorplan` job's `openroad`
     provider and into `Classic`'s own `Stages` list. It hard-requires the
-    Verilog header, so as a mandatory member of a tool-neutral stage it made
+    Verilog header, so as a mandatory member of a tool-neutral job it made
     floorplanning impossible for any flow without Verilog sources. As a plain
     step, a flow that cannot run it simply omits it. The step list is unchanged.
   * `RUN_LINTER` and `RUN_EQY` are still declared on `VHDLClassic`, inherited
-    from `Classic`, but have no effect there, since it runs neither stage. Their
+    from `Classic`, but have no effect there, since it runs neither job. Their
     descriptions say so.
 * A gating key matching no step in a flow is now an error rather than being
   ignored. Such a key silently fails to gate anything, which becomes a
-  correctness problem once a stage can be implemented by a tool whose step IDs
+  correctness problem once a job can be implemented by a tool whose step IDs
   differ. This surfaced one long-dead gate: `Chip` substitutes out
   `Magic.WriteLEF` but inherited `Classic`'s gate for it.
-* Added `StagedFlow.describe_stages`, pairing each stage in a flow's `Stages`
+* Added `StagedFlow.describe_jobs`, pairing each job in a flow's `Stages`
   list with the provider selected for it by default. `StagedFlow.get_help_md`
-  now renders this as a stage table, so `librelane help Classic` and the
-  documentation build show every stage alongside its default provider and its
+  now renders this as a job table, so `librelane help Classic` and the
+  documentation build show every job alongside its default provider and its
   registered alternatives, with a pointer to the new tool-swapping guide.
-  There is no `--list-stages` CLI flag; the CLI is being restructured on this
+  There is no `--list-jobs` CLI flag; the CLI is being restructured on this
   branch and `get_help_md` is what both `librelane help` and the documentation
   build already consult, so the same information needs no new CLI surface.
-* A provider registration names exactly one stage. Gating, contract checking
-  and provider selection are all per-stage, so a registration covering several
+* A provider registration names exactly one job. Gating, contract checking
+  and provider selection are all per-job, so a registration covering several
   had no meaning in any of them. See {doc}`/usage/writing_tool_backends` for
   the reasoning and for what a tool with a long-lived session does instead.
 * Removed `Substitutions`, `Substitute` and `meta.substituting_steps`. Declare
@@ -657,7 +657,7 @@ Style Notes
   out inline in {doc}`/usage/writing_custom_flows`.
 * Added `SequentialFlow.explain`, which reports what a prospective invocation
   would do without running it, and `StagedFlow.explain`, which additionally
-  names the stages that contributed no steps. Resume is deliberately not
+  names the jobs that contributed no steps. Resume is deliberately not
   reported: a resume verdict depends on content fingerprints of files that
   later steps in the same run will rewrite, so it cannot be known beforehand.
 * Fixed `--from` naming a step whose gating variable is off. Gating and
@@ -665,7 +665,7 @@ Style Notes
   no longer interfere.
 * Fixed a gating key matching a step another key also matches. The two lists
   now union rather than the later one overwriting the earlier, so a wildcard a
-  flow author wrote can no longer silently displace a generated stage gate.
+  flow author wrote can no longer silently displace a generated job gate.
 * `--reproducible` naming a step this configuration would never execute,
   because it is gated off or named by `--skip`, now raises rather than
   silently producing nothing.
@@ -707,12 +707,12 @@ Style Notes
   Preprocessor directives work on the paths in `VERILOG_FLIST_FILES` but not
   inside an F-list. Only (System)Verilog is supported (#901, ported from
   upstream #902).
-* Fixed `Classic` and `VHDLClassic` failing at the `pre_pnr_sta` stage
-  boundary, which made them unable to complete a run on this branch. The stage
+* Fixed `Classic` and `VHDLClassic` failing at the `pre_pnr_sta` job
+  boundary, which made them unable to complete a run on this branch. The job
   was contracted to produce an `sdc`, but no OpenSTA script writes one: the
   SDC in the state is the floorplan's, and the SDC these steps read is the
   `PNR_SDC_FILE` configuration variable. The false claim originated in
-  `MultiCornerSTA.outputs`, which the stage's `provides` was then derived from,
+  `MultiCornerSTA.outputs`, which the job's `provides` was then derived from,
   and which the runtime never checks because a step's declared outputs are not
   enforced the way its inputs are.
   * `MultiCornerSTA` declares `SDF` only, `PrimeTime.STAPrePNR` and
@@ -722,7 +722,7 @@ Style Notes
   * `pre_pnr_sta` now provides nothing and `floorplan` requires only the
     netlist, both of which now describe what the steps do.
   * Two tests check the general form: an OpenROAD step may not declare an
-    output that neither its script nor its own `run` ever writes, and a stage
+    output that neither its script nor its own `run` ever writes, and a job
     contract may not promise a view whose only declared producer never writes
     it.
 * Reworked configuration loading around typed Pydantic models and a staged
@@ -820,9 +820,9 @@ Style Notes
   `librelane.common.get_latest_file` are unchanged and remain supported.
 * `CompositeStep` subclasses must declare a non-empty `Steps`. An empty one ran
   nothing and reported success. The class is also no longer marked internal: it
-  is the supported way to bind one stage to a multi-step tool sequence.
+  is the supported way to bind one job to a multi-step tool sequence.
 * `FlowError` and `FlowException` moved to `librelane.common.errors` so that
-  `librelane.stages` can derive from them without an import cycle. They are
+  `librelane.jobs` can derive from them without an import cycle. They are
   re-exported from `librelane.flows` and `librelane.flows.flow`, which remain
   their documented import sites.
 * Removed the Cloup-specific `librelane.flows.cloup_flow_opts` decorator and
@@ -870,11 +870,18 @@ Style Notes
 * Removed the Nix shell arguments `extra-python-packages` and
   `include-librelane`. Plugins are supplied through `librelane-plugins`, and
   the shell's Python environment is selected with `python-env`.
-* `StageRegistry.register` takes `stage="x"` rather than `stages=["x"]`, and
-  `Registration.stages`/`Registration.spanning` are removed in favour of
-  `Registration.stage`.
-* Removed `Stage.config_vars` and `Registration.requires_pdk_vars`. Both were
-  empty on every shipped stage and registration, so the checks reading them
+* `librelane.stages` is now `librelane.jobs`. `Stage` is `Job`, `StageRegistry`
+  is `JobRegistry`, `StageError` is `JobDefinitionError`,
+  `StageResolutionError` is `JobResolutionError` and `StageContractError` is
+  `JobContractError`. `Registration.stage` is `Registration.job`, `STAGE_ORDER`
+  is `JOB_ORDER` and `StageEntry` is `JobEntry`. No compatibility aliases are
+  provided: a stage and a job were the same thing under two names, and keeping
+  both names would preserve the defect.
+* `JobRegistry.register` takes `job="x"` rather than `jobs=["x"]`, and
+  `Registration.jobs`/`Registration.spanning` are removed in favour of
+  `Registration.job`.
+* Removed `Job.config_vars` and `Registration.requires_pdk_vars`. Both were
+  empty on every shipped job and registration, so the checks reading them
   never checked anything. Provider variable portability is still enforced by
   the `namespaces` allowlist.
 * A `Step` that defines `flow_control_variable` now raises `TypeError`.
@@ -916,20 +923,20 @@ Style Notes
   `config_vars` lists and `self.config[KEY]` reads the typed configuration
   redesign left behind.
 * Added {doc}`/usage/swapping_tools`, covering the `TOOLS` configuration
-  variable, `Stage.using`, multi-provider stages, configuration layering
-  across several stages at once, and the stage table now rendered by
+  variable, `Job.using`, multi-provider jobs, configuration layering
+  across several jobs at once, and the job table now rendered by
   `get_help_md`.
 * Added {doc}`/usage/writing_tool_backends`, the provider-authoring reference:
-  a minimal `StageRegistry.register` call, the four enforcement points
+  a minimal `JobRegistry.register` call, the four enforcement points
   (registration, resolution, startup time, run time), `namespaces`,
-  `native_views`, and why a registration names exactly one stage.
-* Added a "Declaring a Flow as Stages" section to {doc}`/usage/writing_custom_flows`,
+  `native_views`, and why a registration names exactly one job.
+* Added a "Declaring a Flow as Jobs" section to {doc}`/usage/writing_custom_flows`,
   describing `StagedFlow` and its `Stages` list as a second way to build a
   sequential flow, alongside listing steps directly.
 * Added a "Commercial CAD tool scaffolds" section to
   {doc}`/usage/writing_tool_backends`, covering the sixteen unimplemented
-  vendor step scaffolds and the opt-in `librelane.stages.providers_vendor`
-  import that registers them as stage providers.
+  vendor step scaffolds and the opt-in `librelane.jobs.providers_vendor`
+  import that registers them as job providers.
 * Removed {doc}`/usage/using_ecos` and the `hold_eco_demo` example, which
   documented step substitution.
 * Rewrote the "Which flows participate" section of {doc}`/usage/resuming_runs`:

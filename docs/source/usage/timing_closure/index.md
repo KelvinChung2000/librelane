@@ -478,7 +478,7 @@ closure:
 1. LibreLane assumes a single clock domain. Suppose you have multiple clock
    domains in the same design. In that case, it is your responsibility to adjust
    the constraints and other LibreLane components to handle them correctly.
-1. STA performed immediately after the synthesis stage will not report any hold
+1. STA performed immediately after the synthesis job will not report any hold
    violations as the clock is considered an ideal net; hence there will be no
    clock skews to cause hold violations. However, you may have setup violations.
    You can see hold violations at this stage only if your HDL model has an

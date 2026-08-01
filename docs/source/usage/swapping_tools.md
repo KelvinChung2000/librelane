@@ -20,23 +20,23 @@ limitations under the License.
 link](../reference/architecture.md). This page assumes you already know what a
 `Flow` and a `Step` are.
 
-## Stages
+## Jobs
 
 A `Flow` built on `StagedFlow`, such as `Classic`, is not written as one fixed
-list of steps. It is written as a list of **stages**. A stage is a named phase
+list of steps. It is written as a list of **jobs**. A job is a named phase
 of the flow, such as `detailed_routing` or `streamout`, and it never executes
-anything by itself. A *provider* registration binds a stage to the concrete
+anything by itself. A *provider* registration binds a job to the concrete
 steps that actually implement it for one tool. This split is what makes a
-stage the unit of two things at once, which tool runs a phase and whether that
+job the unit of two things at once, which tool runs a phase and whether that
 phase can be turned off independently of every other phase. `Classic` and
 `VHDLClassic` are both `StagedFlow`s; their `Stages` lists live in
 `librelane/flows/classic.py`.
 
 ## The `TOOLS` configuration variable
 
-`TOOLS` is a mapping from stage id to the provider that should implement it.
-An entry you do not list keeps the stage's default provider; you only need to
-name the stages you are changing.
+`TOOLS` is a mapping from job id to the provider that should implement it.
+An entry you do not list keeps the job's default provider; you only need to
+name the jobs you are changing.
 
 Dropping Magic's stream-out and keeping only KLayout's:
 
@@ -77,10 +77,10 @@ declare can be validated. Two consequences follow from that ordering:
   information that is not resolved this early. Such a file is reported as
   unconsulted for tool selection rather than silently treated as empty.
 
-An unknown stage id or an unknown provider name is rejected by name, with a
+An unknown job id or an unknown provider name is rejected by name, with a
 suggested correction for a near miss.
 
-## `VHDLClassic`: a flow declared entirely as stages
+## `VHDLClassic`: a flow declared entirely as jobs
 
 `VHDLClassic` is the canonical demonstration of what a `Stages` list looks
 like once tool selection is pulled out of it. It is not `Classic` with
@@ -109,15 +109,15 @@ Stages = [
 ]
 ```
 
-`Job.synthesis.using("yosys_vhdl")` returns a copy of the `synthesis` stage
-whose default provider is pinned to `yosys_vhdl`, for use inside this one
-flow's list. A pin is the flow's default, not a lock on what a user can still
-request: a `TOOLS` entry for the same stage overrides the pin, because
-resolution consults `TOOLS` before a stage's `default_provider`.
+`Job.synthesis.using("yosys_vhdl")` returns a copy of the `synthesis` job
+template whose default provider is pinned to `yosys_vhdl`, for use inside this
+one flow's list. A pin is the flow's default, not a lock on what a user can
+still request: a `TOOLS` entry for the same job overrides the pin, because
+resolution consults `TOOLS` before a job's `default_provider`.
 
-## The stage table
+## The job table
 
-Every `StagedFlow` renders its resolved stage table in `get_help_md`, which
+Every `StagedFlow` renders its resolved job table in `get_help_md`, which
 `librelane help <flow>` displays. This is `librelane help Classic`, current as
 of this page:
 
@@ -151,12 +151,12 @@ of this page:
 | `lvs` | `netgen` | `klayout` |
 | `formal_equivalence` | `yosys` | none |
 
-`post_route_opt` shows `none selected`: it is an optional stage with no
+`post_route_opt` shows `none selected`: it is an optional job with no
 default provider, so it contributes no steps unless `TOOLS` names one.
 
-## Multi-provider stages
+## Multi-provider jobs
 
-`streamout` and `drc` are the two stages where `Classic` runs two tools by
+`streamout` and `drc` are the two jobs where `Classic` runs two tools by
 default rather than one. Both entries in `Job.streamout.default_provider`
 and `Job.drc.default_provider` are lists, and `TOOLS` may name a list for
 either, whose sequences are concatenated in listed order.
@@ -179,8 +179,8 @@ comparison step depending on the other.
 
 ## The two `lvs` providers write the same metric key
 
-`lvs` is *not* a multi-provider stage. Its two providers are alternatives, so
-exactly one of them runs, and both write the stage's contracted
+`lvs` is *not* a multi-provider job. Its two providers are alternatives, so
+exactly one of them runs, and both write the job's contracted
 `design__lvs_error__count`. That is what makes the key safe to share, and it
 is also what makes the number's meaning depend on which provider ran.
 
@@ -216,11 +216,11 @@ this provider for you.
 
 `OpenROAD.WriteCDL` is part of the `klayout` sequence rather than a plain step
 of `Classic`, for the same reason `Magic.SpiceExtraction` is part of the
-`netgen` sequence: `KLayout.LVS` hard-requires the `cdl` view, no stage
+`netgen` sequence: `KLayout.LVS` hard-requires the `cdl` view, no job
 promises one, and a flow that never selects this provider should not be made
 to write a CDL it has no use for.
 
-## Setting many stages at once
+## Setting many jobs at once
 
 A `Flow` accepts a sequence of configuration sources, layered in order with
 later sources winning per top-level key
@@ -247,7 +247,7 @@ librelane config.json vendor_tools.json
 This replaces `config.json`'s `TOOLS` entirely rather than merging it
 key-by-key with `vendor_tools.json`'s, because `layer_mappings` records the
 last source for each top-level key as a whole; if `config.json` also sets
-`TOOLS`, put every stage override you want in whichever file is layered last.
+`TOOLS`, put every job override you want in whichever file is layered last.
 
 ## Limitations
 
@@ -256,7 +256,7 @@ last source for each top-level key as a whole; if `config.json` also sets
   cannot express "use this vendor tool for floorplanning on this process."
 * `TOOLS` cannot come from a Tcl configuration file, for the same reason: Tcl
   evaluation needs process information that is not available this early.
-* A stage id is not a `--from`/`--to` target. Those options resolve concrete
+* A job id is not a `--from`/`--to` target. Those options resolve concrete
   step IDs, so re-entering a flow at, say, `detailed_routing` is not
   implemented, and `--from detailed_routing` is rejected with a suggestion
   naming the step ID of whichever tool is currently selected. Resuming a run
@@ -271,7 +271,7 @@ last source for each top-level key as a whole; if `config.json` also sets
 
 ## The `antenna_repair` consequence
 
-Job selection governs which tool runs the *primary* flow of a stage, not
+Job selection governs which tool runs the *primary* flow of a job, not
 what a provider does internally to repair the perturbation its own tool
 caused. `OpenROAD.RepairAntennas`, the sole step behind the `openroad`
 provider of `antenna_repair` alongside diode insertion, re-runs OpenROAD's own
@@ -280,6 +280,6 @@ inserted. Selecting a different provider for `detailed_placement`, for
 example Innovus, while leaving `antenna_repair` on `openroad` therefore means
 OpenROAD's own detailed placement runs again inside antenna repair,
 regardless of which tool placed the design the rest of the way. There is no
-mechanism that routes a stage's internal legalization pass through a
-different stage's selected provider; each provider is responsible for
+mechanism that routes a job's internal legalization pass through a
+different job's selected provider; each provider is responsible for
 whatever internal repair its own tool's pass requires.

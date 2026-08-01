@@ -17,7 +17,7 @@ limitations under the License.
 # Writing Tool Backends
 
 This page is for whoever registers a new **provider** (a tool implementing
-one or more of the stages listed in [Swapping Tools](./swapping_tools.md)). It
+one or more of the jobs listed in [Swapping Tools](./swapping_tools.md)). It
 assumes you have already read that page and {doc}`/usage/writing_custom_steps`,
 since a provider is built out of ordinary `Step` subclasses.
 
@@ -40,26 +40,26 @@ JobRegistry.register(
 
 * `job`: the id of the one job this registration implements. A
   registration names exactly one; see
-  [One registration, one stage](#one-registration-one-stage) for why.
+  [One registration, one job](#one-registration-one-job) for why.
 * `provider`: the tool name, for example `genus`, not a vendor name. This is
   what a `TOOLS` entry names to select the registration.
-* `steps`: the ordered concrete `Step` classes that implement the stage. Must
-  be non-empty: a provider that runs nothing cannot satisfy a stage's
+* `steps`: the ordered concrete `Step` classes that implement the job. Must
+  be non-empty: a provider that runs nothing cannot satisfy a job's
   contract.
 * `namespaces`: the configuration variable prefixes this registration's steps
   are allowed to declare beyond the common flow variables. See
   [`namespaces`](#namespaces) below.
-* `provides`: neutral views this provider guarantees beyond what the stage
+* `provides`: neutral views this provider guarantees beyond what the job
   itself already promises. Most registrations leave this empty because the
-  stage's own `provides` already covers it; `synthesis`/`yosys` uses it to add
+  job's own `provides` already covers it; `synthesis`/`yosys` uses it to add
   `json_h`, a view only the Verilog frontend produces.
-* `metrics`: metric names this provider guarantees beyond the stage's own,
+* `metrics`: metric names this provider guarantees beyond the job's own,
   for a metric that is genuinely tool-specific rather than portable across
-  every provider of the stage. For example, `magic__drc_error__count` on the `drc` stage's
+  every provider of the job. For example, `magic__drc_error__count` on the `drc` job's
   `magic` provider is the existing example, since `klayout` could never
   promise the same name.
 * `native_views`: tool-native views this provider carries across its own
-  stage boundaries rather than through the neutral view contract. See
+  job boundaries rather than through the neutral view contract. See
   [`native_views`](#native_views) below.
 
 ## The four enforcement points
@@ -68,22 +68,22 @@ JobRegistry.register(
 moment your module is imported, so a broken registration fails loudly at
 import rather than quietly at run time:
 
-* *Canonical variable coverage.* Every configuration variable the stage
+* *Canonical variable coverage.* Every configuration variable the job
   declares as canonical must be declared by your step sequence. A user who
   set a canonical variable your steps never read would have that setting
   silently discarded, which this check exists to prevent.
 * *Namespace discipline.* Every variable your steps declare must be either
-  canonical for the stage, a common flow variable, or prefixed with one of
+  canonical for the job, a common flow variable, or prefixed with one of
   your declared `namespaces`. This is what stops one provider's variables
   from leaking into a name another provider might plausibly want.
 * *View plausibility.* Every non-optional input your steps consume must
-  either be in the stage's `requires` or declared as one of your
-  `native_views`. Every view your registration or its stage promises in
+  either be in the job's `requires` or declared as one of your
+  `native_views`. Every view your registration or its job promises in
   `provides` must actually appear in some step's `outputs`.
 
 **Resolution time**, inside `resolve()`, runs once a flow's `Stages` list and
 its `TOOLS` selection are both known, and before any configuration exists. It
-rejects an unknown provider name, a list supplied for a stage that is not
+rejects an unknown provider name, a list supplied for a job that is not
 `multi_provider`, and an unknown key in `TOOLS`.
 
 **Startup time**, inside `StagedFlow.__init__` once `Config.load` has produced
@@ -96,20 +96,20 @@ place to look.
   step, with steps whose gating variables are false excluded. This is what
   makes an untested `TOOLS` combination safe to attempt, because a provider
   selection that leaves a consumer stranded fails at flow construction, naming
-  the view, the step, and the last stage before it, rather than crashing once
+  the view, the step, and the last job before it, rather than crashing once
   some tool reaches for a file that was never written.
 
-**Run time**, inside `StagedFlow`, enforces the stage contract at two
+**Run time**, inside `StagedFlow`, enforces the job contract at two
 granularities. A backend that does not actually emit `route__drc_errors` must
 not be able to let a downstream checker pass on an unexamined design.
 
 * Once the last step of *your registration* completes, every view in your
   registration's own `provides` must be in the state and every metric in its
   own `metrics` must have been emitted. Your contract is yours alone, so on a
-  `multi_provider` stage it still holds when the other tool of that stage is
+  `multi_provider` job it still holds when the other tool of that job is
   gated off.
-* Once the last step of the *whole stage* completes, every view in the stage's
-  `provides` and every metric in the stage's `metrics` must likewise be there.
+* Once the last step of the *whole job* completes, every view in the job's
+  `provides` and every metric in the job's `metrics` must likewise be there.
   This one the selected providers satisfy jointly, which is what lets both
   `streamout` tools share the obligation to produce a neutral `gds` while
   `PRIMARY_GDSII_STREAMOUT_TOOL` decides which of them writes it.
@@ -141,13 +141,13 @@ previous step's live database as input rather than re-reading `DEF` and every
 LEF from scratch.
 
 Declaring a view as native is only an exemption from the registration-time
-*consumption* check: it lets your steps consume that view at a stage boundary
-without the stage's own `requires` naming it. It is never an exemption from
+*consumption* check: it lets your steps consume that view at a job boundary
+without the job's own `requires` naming it. It is never an exemption from
 the *production* side of the contract. The rule to hold onto is: **correctness
 must never depend on the native path.** Your registration must still emit
-every neutral view your stage promises (`DEF`, netlist, `SDC`) through the
+every neutral view your job promises (`DEF`, netlist, `SDC`) through the
 ordinary `outputs` mechanism, exactly as if the native shortcut did not exist,
-so that a flow which switches providers at the next stage boundary, or a
+so that a flow which switches providers at the next job boundary, or a
 `--from`/`--to` invocation that starts partway through your sequence, still
 has something to consume. The native view is a performance path between your
 own steps, not a second, silent contract with the rest of the flow.
@@ -161,18 +161,18 @@ every standard-cell LEF. Decomposing finely, one step per logical operation,
 is what makes gating, `--from`/`--to`, and native-view boundaries between
 different providers all work uniformly; it is also what pays that startup
 cost repeatedly. Weigh the two: a vendor tool with a fast, persistent-session
-mode should still expose that session as one subprocess per stage from
+mode should still expose that session as one subprocess per job from
 LibreLane's point of view. The session lives *inside* your step's `run()`,
-not across stage boundaries. Registering one provider across several stages is
+not across job boundaries. Registering one provider across several jobs is
 not an available way to avoid the cost. See the next section for why.
 
-(one-registration-one-stage)=
-## One registration, one stage
+(one-registration-one-job)=
+## One registration, one job
 
 `Registration.job` is a single job id, and there is no way to say that a
 provider covers several. Gating, contract checking and provider selection are
-all per-stage, so a registration covering more than one has no meaning in any
-of them. If you are tempted to register one provider across several stages to
+all per-job, so a registration covering more than one has no meaning in any
+of them. If you are tempted to register one provider across several jobs to
 avoid the subprocess cost above, this section explains why that shape was not
 built rather than merely deferred.
 
@@ -205,15 +205,15 @@ than presented as this project's own conclusion:
 
 The honest counter-argument: SiliconCompiler's fine granularity is partly
 driven by needs LibreLane does not share, particularly cloud-scale
-distribution and per-node caching. Starting a vendor tool once per stage is a
-real cost (one licence checkout and one technology/LEF read per stage) that
+distribution and per-node caching. Starting a vendor tool once per job is a
+real cost (one licence checkout and one technology/LEF read per job) that
 SiliconCompiler's own execution model is built to amortize across a cluster.
 For a single-machine flow, that cost is smaller in absolute terms, but the
 answer to it is a persistent tool session held open *inside* a step across
-however many stages that step's `run()` chooses to cover internally, not a
-registration covering several stages in LibreLane's own bookkeeping. The stage
+however many jobs that step's `run()` chooses to cover internally, not a
+registration covering several jobs in LibreLane's own bookkeeping. The job
 boundary, the gate, and the contract check all still need to know where one
-provider's responsibility ends and the next stage's begins.
+provider's responsibility ends and the next job's begins.
 
 ## Packaging
 
@@ -222,7 +222,7 @@ auto-imported by `librelane/plugins.py:17-21` alongside every other LibreLane
 plugin. Calling `JobRegistry.register` at import time, the same way
 `librelane/jobs/providers.py` does for the open-source toolchain, needs no
 new discovery mechanism: whatever your module's top level does at import
-already runs before anything asks for its stages.
+already runs before anything asks for its jobs.
 
 ## Commercial CAD tool scaffolds
 
@@ -234,7 +234,7 @@ anywhere in them. They exist to hold the shape of a real backend, for someone
 with a license and the tool's own documentation to fill in.
 
 These scaffolds register with `Step.factory` unconditionally, the same as
-any other step, but they do not register as stage providers by default. That
+any other step, but they do not register as job providers by default. That
 registration is opt-in, behind importing `librelane.jobs.providers_vendor`.
 Nothing under `librelane.jobs` imports that module for you; until your own
 code does, `JobRegistry.providers()` and `librelane help` know nothing
@@ -252,7 +252,7 @@ write a commercial backend against it should expect to find and correct parts
 of this contract that a purely open-source toolchain never exercised. For
 example, LibreLane
 currently has no step that imports a `DEF` file into a fresh OpenDB database,
-so an `openroad` stage cannot yet follow a non-OpenROAD stage: the `odb`
+so an `openroad` job cannot yet follow a non-OpenROAD job: the `odb`
 native view would be absent, and the view preflight correctly rejects such a
 configuration by name rather than failing silently. Closing that gap, by
 adding a `DEF`-to-`odb` import step to the head of the affected `openroad`
