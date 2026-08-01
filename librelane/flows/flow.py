@@ -104,7 +104,12 @@ def ensure_progress_started(method: T) -> Callable:
     """
 
     @wraps(method)
-    def _impl(obj: FlowProgressBar, *method_args, **method_kwargs):
+    # The annotation is quoted because this decorator is defined inside the
+    # FlowProgressBar class body, where the name does not exist yet. Every
+    # Python before 3.14 evaluates parameter annotations at definition time,
+    # so an unquoted name makes 'import librelane' itself a NameError there
+    # while passing on the 3.14 this repo develops against.
+    def _impl(obj: "FlowProgressBar", *method_args, **method_kwargs):
         if not obj.started:
             raise FlowException(
                 f"Attempted to call method '{method}' before initializing progress bar"
