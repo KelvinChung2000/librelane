@@ -40,11 +40,11 @@ from librelane.steps.vendor import VendorTclStep
 from librelane.state import DesignFormat
 
 # Mirrors PNR_IN_PLACE_REQUIRES / PNR_IN_PLACE_PROVIDES in
-# librelane/stages/stage.py: the view contract shared by every in-place
+# librelane/jobs/job.py: the view contract shared by every in-place
 # place-and-route transform. Restated here rather than imported, because
-# librelane.steps is the lower layer that librelane.stages is built on (no
-# module under librelane/steps/ imports librelane.stages, and
-# librelane/stages/providers.py imports librelane.steps at module load time,
+# librelane.steps is the lower layer that librelane.jobs is built on (no
+# module under librelane/steps/ imports librelane.jobs, and
+# librelane/jobs/providers.py imports librelane.steps at module load time,
 # so importing the other way round here would invert that layering and risk
 # a circular import).
 _PNR_IN_PLACE_REQUIRES = [DesignFormat.DEF, DesignFormat.NETLIST, DesignFormat.SDC]
@@ -82,7 +82,7 @@ class ICC2Step(VendorTclStep):
 class ICC2PNRStep(ICC2Step):
     """
     Shared input/output contract for the seventeen in-place place-and-route
-    stages IC Compiler II covers (``floorplan`` through ``fill_insertion``).
+    jobs IC Compiler II covers (``floorplan`` through ``fill_insertion``).
     A concrete subclass need only set ``id``, ``name`` and
     ``script_filename``.
     """
@@ -94,7 +94,7 @@ class ICC2PNRStep(ICC2Step):
 @Step.factory.register()
 class Floorplan(ICC2PNRStep):
     """
-    Scaffold for the ``floorplan`` stage using IC Compiler II. Unimplemented;
+    Scaffold for the ``floorplan`` job using IC Compiler II. Unimplemented;
     see ``librelane/scripts/icc2/floorplan.tcl``.
     """
 
@@ -102,11 +102,11 @@ class Floorplan(ICC2PNRStep):
     name = "Floorplan (ICC2)"
     script_filename: ClassVar[str] = "floorplan.tcl"
 
-    # Unlike every later stage in this span, floorplan is where DEF and SDC
-    # are produced for the first time, not carried in: the floorplan stage's
-    # own contract requires only DesignFormat.NETLIST (see librelane/stages/
+    # Unlike every later job in this span, floorplan is where DEF and SDC
+    # are produced for the first time, not carried in: the floorplan job's
+    # own contract requires only DesignFormat.NETLIST (see librelane/jobs/
     # taxonomy.py), matching OpenROAD.Floorplan. Inheriting the base step's
-    # inputs unmodified would claim DEF as an input the stage never promises,
+    # inputs unmodified would claim DEF as an input the job never promises,
     # which the registration-time view check correctly rejects.
     inputs = [DesignFormat.NETLIST]
 
@@ -114,7 +114,7 @@ class Floorplan(ICC2PNRStep):
 @Step.factory.register()
 class MacroPlacement(ICC2PNRStep):
     """
-    Scaffold for the ``macro_placement`` stage using IC Compiler II.
+    Scaffold for the ``macro_placement`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/macro_placement.tcl``.
     """
 
@@ -126,7 +126,7 @@ class MacroPlacement(ICC2PNRStep):
 @Step.factory.register()
 class TapcellInsertion(ICC2PNRStep):
     """
-    Scaffold for the ``tapcell_insertion`` stage using IC Compiler II.
+    Scaffold for the ``tapcell_insertion`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/tapcell.tcl``.
     """
 
@@ -138,7 +138,7 @@ class TapcellInsertion(ICC2PNRStep):
 @Step.factory.register()
 class PowerGrid(ICC2PNRStep):
     """
-    Scaffold for the ``power_grid`` stage using IC Compiler II.
+    Scaffold for the ``power_grid`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/pdn.tcl``.
     """
 
@@ -150,7 +150,7 @@ class PowerGrid(ICC2PNRStep):
 @Step.factory.register()
 class IOPlacement(ICC2PNRStep):
     """
-    Scaffold for the ``io_placement`` stage using IC Compiler II.
+    Scaffold for the ``io_placement`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/ioplacer.tcl``.
     """
 
@@ -162,7 +162,7 @@ class IOPlacement(ICC2PNRStep):
 @Step.factory.register()
 class GlobalPlacement(ICC2PNRStep):
     """
-    Scaffold for the ``global_placement`` stage using IC Compiler II.
+    Scaffold for the ``global_placement`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/gpl.tcl``.
     """
 
@@ -174,7 +174,7 @@ class GlobalPlacement(ICC2PNRStep):
 @Step.factory.register()
 class PostGPLRepair(ICC2PNRStep):
     """
-    Scaffold for the ``post_gpl_repair`` stage using IC Compiler II.
+    Scaffold for the ``post_gpl_repair`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/repair_design.tcl``.
     """
 
@@ -186,7 +186,7 @@ class PostGPLRepair(ICC2PNRStep):
 @Step.factory.register()
 class DetailedPlacement(ICC2PNRStep):
     """
-    Scaffold for the ``detailed_placement`` stage using IC Compiler II.
+    Scaffold for the ``detailed_placement`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/dpl.tcl``.
     """
 
@@ -198,7 +198,7 @@ class DetailedPlacement(ICC2PNRStep):
 @Step.factory.register()
 class CTS(ICC2PNRStep):
     """
-    Scaffold for the ``cts`` stage using IC Compiler II. Unimplemented; see
+    Scaffold for the ``cts`` job using IC Compiler II. Unimplemented; see
     ``librelane/scripts/icc2/cts.tcl``.
     """
 
@@ -210,7 +210,7 @@ class CTS(ICC2PNRStep):
 @Step.factory.register()
 class PostCTSOpt(ICC2PNRStep):
     """
-    Scaffold for the ``post_cts_opt`` stage using IC Compiler II.
+    Scaffold for the ``post_cts_opt`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/rsz_timing_postcts.tcl``.
     """
 
@@ -222,7 +222,7 @@ class PostCTSOpt(ICC2PNRStep):
 @Step.factory.register()
 class GlobalRouting(ICC2PNRStep):
     """
-    Scaffold for the ``global_routing`` stage using IC Compiler II.
+    Scaffold for the ``global_routing`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/grt.tcl``.
     """
 
@@ -234,7 +234,7 @@ class GlobalRouting(ICC2PNRStep):
 @Step.factory.register()
 class PostGRTRepair(ICC2PNRStep):
     """
-    Scaffold for the ``post_grt_repair`` stage using IC Compiler II.
+    Scaffold for the ``post_grt_repair`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/repair_design_postgrt.tcl``.
     """
 
@@ -246,7 +246,7 @@ class PostGRTRepair(ICC2PNRStep):
 @Step.factory.register()
 class AntennaRepair(ICC2PNRStep):
     """
-    Scaffold for the ``antenna_repair`` stage using IC Compiler II.
+    Scaffold for the ``antenna_repair`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/antenna_repair.tcl``.
     """
 
@@ -258,7 +258,7 @@ class AntennaRepair(ICC2PNRStep):
 @Step.factory.register()
 class PostGRTOpt(ICC2PNRStep):
     """
-    Scaffold for the ``post_grt_opt`` stage using IC Compiler II.
+    Scaffold for the ``post_grt_opt`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/rsz_timing_postgrt.tcl``.
     """
 
@@ -270,7 +270,7 @@ class PostGRTOpt(ICC2PNRStep):
 @Step.factory.register()
 class DetailedRouting(ICC2PNRStep):
     """
-    Scaffold for the ``detailed_routing`` stage using IC Compiler II.
+    Scaffold for the ``detailed_routing`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/drt.tcl``.
     """
 
@@ -282,7 +282,7 @@ class DetailedRouting(ICC2PNRStep):
 @Step.factory.register()
 class PostRouteOpt(ICC2PNRStep):
     """
-    Scaffold for the ``post_route_opt`` stage using IC Compiler II.
+    Scaffold for the ``post_route_opt`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/post_route_opt.tcl``.
     """
 
@@ -294,7 +294,7 @@ class PostRouteOpt(ICC2PNRStep):
 @Step.factory.register()
 class FillInsertion(ICC2PNRStep):
     """
-    Scaffold for the ``fill_insertion`` stage using IC Compiler II.
+    Scaffold for the ``fill_insertion`` job using IC Compiler II.
     Unimplemented; see ``librelane/scripts/icc2/fill.tcl``.
     """
 
@@ -303,14 +303,14 @@ class FillInsertion(ICC2PNRStep):
     script_filename: ClassVar[str] = "fill.tcl"
 
 
-#: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
+#: Registered by ``librelane/jobs/providers_vendor.py`` (owned by another
 #: agent), not by this module: opt-in to a commercial provider must be a
 #: separate, explicit step from importing this module. See
-#: ``librelane/stages/providers.py`` for the shape this list mirrors.
+#: ``librelane/jobs/providers.py`` for the shape this list mirrors.
 #:
 #: IC Compiler II carries a proprietary in-memory design database across
-#: stages, the same way OpenROAD's live ``odb`` database does (sixteen of the
-#: ``openroad`` provider's registrations in ``librelane/stages/providers.py``
+#: jobs, the same way OpenROAD's live ``odb`` database does (sixteen of the
+#: ``openroad`` provider's registrations in ``librelane/jobs/providers.py``
 #: declare ``native_views=(DesignFormat.odb,)`` for exactly that reason). No
 #: public source establishes ICC2's database's view name or on-disk format
 #: (see vendor-python-apis.md, section 13), so no ``DesignFormat`` is invented
@@ -319,106 +319,106 @@ class FillInsertion(ICC2PNRStep):
 #: determines the real format, is the correct future change: it is the
 #: mechanism that would let a real implementation pass a live database
 #: between ICC2's own steps instead of re-reading DEF and every LEF at each
-#: of the seventeen stage boundaries below.
+#: of the seventeen job boundaries below.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "floorplan",
+        "job": "floorplan",
         "provider": "icc2",
         "steps": [Floorplan],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "macro_placement",
+        "job": "macro_placement",
         "provider": "icc2",
         "steps": [MacroPlacement],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "tapcell_insertion",
+        "job": "tapcell_insertion",
         "provider": "icc2",
         "steps": [TapcellInsertion],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "power_grid",
+        "job": "power_grid",
         "provider": "icc2",
         "steps": [PowerGrid],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "io_placement",
+        "job": "io_placement",
         "provider": "icc2",
         "steps": [IOPlacement],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "global_placement",
+        "job": "global_placement",
         "provider": "icc2",
         "steps": [GlobalPlacement],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "post_gpl_repair",
+        "job": "post_gpl_repair",
         "provider": "icc2",
         "steps": [PostGPLRepair],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "detailed_placement",
+        "job": "detailed_placement",
         "provider": "icc2",
         "steps": [DetailedPlacement],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "cts",
+        "job": "cts",
         "provider": "icc2",
         "steps": [CTS],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "post_cts_opt",
+        "job": "post_cts_opt",
         "provider": "icc2",
         "steps": [PostCTSOpt],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "global_routing",
+        "job": "global_routing",
         "provider": "icc2",
         "steps": [GlobalRouting],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "post_grt_repair",
+        "job": "post_grt_repair",
         "provider": "icc2",
         "steps": [PostGRTRepair],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "antenna_repair",
+        "job": "antenna_repair",
         "provider": "icc2",
         "steps": [AntennaRepair],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "post_grt_opt",
+        "job": "post_grt_opt",
         "provider": "icc2",
         "steps": [PostGRTOpt],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "detailed_routing",
+        "job": "detailed_routing",
         "provider": "icc2",
         "steps": [DetailedRouting],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "post_route_opt",
+        "job": "post_route_opt",
         "provider": "icc2",
         "steps": [PostRouteOpt],
         "namespaces": ("ICC2_",),
     },
     {
-        "stage": "fill_insertion",
+        "job": "fill_insertion",
         "provider": "icc2",
         "steps": [FillInsertion],
         "namespaces": ("ICC2_",),

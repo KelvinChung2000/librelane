@@ -13,7 +13,7 @@
 # limitations under the License.
 from librelane.flows.flow import Flow
 from librelane.flows.classic import Classic
-from librelane.stages import Stage
+from librelane.jobs import Job
 from librelane.steps import (
     OpenROAD,
     KLayout,
@@ -39,58 +39,58 @@ class Chip(Classic):
     #: are ``OpenROAD.PadRing`` after ``Odb.SetPowerConnections``, the six
     #: finishing steps after ``Checker.XOR``, and three omissions:
     #: ``Magic.WriteLEF`` and ``Odb.CheckDesignAntennaProperties``, which a chip
-    #: does not need because it is not a macro, and ``Stage.io_placement``,
+    #: does not need because it is not a macro, and ``Job.io_placement``,
     #: whose pins are the pad ring's bumps.
     #:
-    #: ``Stage.io_placement`` is omitted rather than pinned to another provider,
+    #: ``Job.io_placement`` is omitted rather than pinned to another provider,
     #: and the two steps of it a chip still needs are listed here as plain
     #: steps. ``OpenROAD.GlobalPlacementSkipIO`` seeds placement before the pins
     #: exist and ``Odb.ApplyDEFTemplate`` copies a pin arrangement from a
     #: template, neither of which places a pin itself. The cost is that this
-    #: flow has no ``io_placement`` boundary and so cannot swap that stage's
+    #: flow has no ``io_placement`` boundary and so cannot swap that job's
     #: tool from ``TOOLS``.
     Stages = [
-        Stage.lint,
-        Stage.synthesis,
-        Stage.pre_pnr_sta,
-        Stage.floorplan,
+        Job.lint,
+        Job.synthesis,
+        Job.pre_pnr_sta,
+        Job.floorplan,
         Odb.SetPowerConnections,
         OpenROAD.PadRing,
-        Stage.macro_placement,
+        Job.macro_placement,
         OpenROAD.CutRows,
-        Stage.tapcell_insertion,
-        Stage.power_grid,
+        Job.tapcell_insertion,
+        Job.power_grid,
         Odb.AddRoutingObstructions,
         OpenROAD.GlobalPlacementSkipIO,
         Odb.ApplyDEFTemplate,
-        Stage.global_placement,
+        Job.global_placement,
         Odb.WriteVerilogHeader,
         Checker.PowerGridViolations,
         OpenROAD.STAMidPNR,
-        Stage.post_gpl_repair,
+        Job.post_gpl_repair,
         Odb.ManualGlobalPlacement,
-        Stage.detailed_placement,
-        Stage.cts,
+        Job.detailed_placement,
+        Job.cts,
         OpenROAD.STAMidPNR,
-        Stage.post_cts_opt,
+        Job.post_cts_opt,
         OpenROAD.STAMidPNR,
-        Stage.global_routing,
-        Stage.post_grt_repair,
-        Stage.antenna_repair,
-        Stage.post_grt_opt,
+        Job.global_routing,
+        Job.post_grt_repair,
+        Job.antenna_repair,
+        Job.post_grt_opt,
         OpenROAD.STAMidPNR,
-        Stage.detailed_routing,
+        Job.detailed_routing,
         Odb.ReportDisconnectedPins,
         Checker.DisconnectedPins,
         Odb.ReportWireLength,
         Checker.WireLength,
-        Stage.post_route_opt,
-        Stage.fill_insertion,
+        Job.post_route_opt,
+        Job.fill_insertion,
         Odb.CellFrequencyTables,
-        Stage.extraction,
-        Stage.signoff_sta,
-        Stage.ir_drop,
-        Stage.streamout,
+        Job.extraction,
+        Job.signoff_sta,
+        Job.ir_drop,
+        Job.streamout,
         KLayout.XOR,
         Checker.XOR,
         KLayout.Antenna,
@@ -99,9 +99,9 @@ class Chip(Classic):
         KLayout.Filler,
         KLayout.Density,
         Checker.KLayoutDensity,
-        Stage.drc,
-        Stage.lvs,
-        Stage.formal_equivalence,
+        Job.drc,
+        Job.lvs,
+        Job.formal_equivalence,
         Checker.SetupViolations,
         Checker.HoldViolations,
         Checker.MaxSlewViolations,

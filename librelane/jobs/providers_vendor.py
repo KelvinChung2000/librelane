@@ -15,13 +15,13 @@
 Provider registrations for the commercial ("vendor") CAD tool scaffolds.
 
 Importing this module is the opt-in gesture. Nothing under
-``librelane.stages`` registers these providers on its own: ``librelane/stages/
+``librelane.jobs`` registers these providers on its own: ``librelane/jobs/
 providers.py`` registers the open-source toolchain as a side effect of
-``librelane/stages/__init__.py`` importing it, every time LibreLane starts.
+``librelane/jobs/__init__.py`` importing it, every time LibreLane starts.
 This module is never imported from there, and must not be. A caller who wants
-one of the sixteen commercial tools scaffolded here to appear as a stage
-provider, for example in ``librelane help Classic`` or in ``StageRegistry.
-providers("synthesis")``, has to write ``import librelane.stages.
+one of the sixteen commercial tools scaffolded here to appear as a job
+provider, for example in ``librelane help Classic`` or in ``JobRegistry.
+providers("synthesis")``, has to write ``import librelane.jobs.
 providers_vendor`` themselves, once, before asking either question. Nothing
 else in the package does that for them.
 
@@ -42,7 +42,7 @@ that report, not this module, for the evidence behind any given tool's
 binary name or the presence or absence of a native Python API.
 
 The registrations themselves are declared as data by each tool module and
-applied here in a loop, the same shape ``librelane/stages/providers.py`` uses
+applied here in a loop, the same shape ``librelane/jobs/providers.py`` uses
 for the open-source set. Keeping them as data in the tool modules, rather
 than duplicating the shape here, is what let each tool's own module stay the
 single owner of what it registers.
@@ -67,7 +67,7 @@ from librelane.steps import (
     voltus,
 )
 
-from librelane.stages.registry import StageRegistry
+from librelane.jobs.registry import JobRegistry
 
 #: One module per commercial tool, each exporting its own ``REGISTRATIONS``.
 #: Order is alphabetical by module name and carries no other meaning.
@@ -96,4 +96,4 @@ _REGISTRATIONS: list[dict] = [
 
 
 for _entry in _REGISTRATIONS:
-    StageRegistry.register(**_entry)
+    JobRegistry.register(**_entry)

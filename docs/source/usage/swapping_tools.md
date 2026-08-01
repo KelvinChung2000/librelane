@@ -87,29 +87,29 @@ like once tool selection is pulled out of it. It is not `Classic` with
 `TOOLS` set: `Classic`'s own `Stages` list contains plain steps (the Verilog
 header handling above) that a VHDL-only flow cannot run, so `VHDLClassic`
 declares its own list rather than being reachable through `Classic`'s
-configuration. What it shares with `Classic` is the mechanism: a `Stage`
-object pinned to a provider with `Stage.using`.
+configuration. What it shares with `Classic` is the mechanism: a `Job`
+object pinned to a provider with `Job.using`.
 
 ```python
 Stages = [
-    Stage.synthesis.using("yosys_vhdl"),
-    Stage.pre_pnr_sta,
-    Stage.floorplan,
-    Stage.macro_placement,
+    Job.synthesis.using("yosys_vhdl"),
+    Job.pre_pnr_sta,
+    Job.floorplan,
+    Job.macro_placement,
     OpenROAD.CutRows,
-    Stage.tapcell_insertion,
-    Stage.power_grid,
+    Job.tapcell_insertion,
+    Job.power_grid,
     # ...
-    Stage.streamout,
+    Job.streamout,
     Magic.WriteLEF,
     # ...
-    Stage.drc,
-    Stage.lvs,
+    Job.drc,
+    Job.lvs,
     # ...
 ]
 ```
 
-`Stage.synthesis.using("yosys_vhdl")` returns a copy of the `synthesis` stage
+`Job.synthesis.using("yosys_vhdl")` returns a copy of the `synthesis` stage
 whose default provider is pinned to `yosys_vhdl`, for use inside this one
 flow's list. A pin is the flow's default, not a lock on what a user can still
 request: a `TOOLS` entry for the same stage overrides the pin, because
@@ -121,7 +121,7 @@ Every `StagedFlow` renders its resolved stage table in `get_help_md`, which
 `librelane help <flow>` displays. This is `librelane help Classic`, current as
 of this page:
 
-| Stage | Default provider | Alternatives |
+| Job | Default provider | Alternatives |
 | --- | --- | --- |
 | `lint` | `verilator` | none |
 | `synthesis` | `yosys` | `yosys_vhdl` |
@@ -157,8 +157,8 @@ default provider, so it contributes no steps unless `TOOLS` names one.
 ## Multi-provider stages
 
 `streamout` and `drc` are the two stages where `Classic` runs two tools by
-default rather than one. Both entries in `Stage.streamout.default_provider`
-and `Stage.drc.default_provider` are lists, and `TOOLS` may name a list for
+default rather than one. Both entries in `Job.streamout.default_provider`
+and `Job.drc.default_provider` are lists, and `TOOLS` may name a list for
 either, whose sequences are concatenated in listed order.
 
 For `streamout`, both Magic and KLayout convert the routed `DEF` into a GDSII
@@ -271,7 +271,7 @@ last source for each top-level key as a whole; if `config.json` also sets
 
 ## The `antenna_repair` consequence
 
-Stage selection governs which tool runs the *primary* flow of a stage, not
+Job selection governs which tool runs the *primary* flow of a stage, not
 what a provider does internally to repair the perturbation its own tool
 caused. `OpenROAD.RepairAntennas`, the sole step behind the `openroad`
 provider of `antenna_repair` alongside diode insertion, re-runs OpenROAD's own

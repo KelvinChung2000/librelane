@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `post_grt_opt` stage's Innovus.PostGRTOpt step.
+# Placeholder for the `post_grt_opt` job's Innovus.PostGRTOpt step.
 #
 # This file intentionally contains no executable Tcl. Innovus.PostGRTOpt
 # .run() (inherited from VendorTclStep) raises NotImplementedError before
@@ -32,4 +32,4 @@
 #     outputs.
 #
 # Mirrors librelane/scripts/openroad/rsz_timing_postgrt.tcl, which performs
-# the same stage with OpenROAD.
+# the same job with OpenROAD.

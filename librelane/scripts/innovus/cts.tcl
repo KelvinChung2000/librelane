@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `cts` stage's Innovus.CTS step.
+# Placeholder for the `cts` job's Innovus.CTS step.
 #
 # This file intentionally contains no executable Tcl. Innovus.CTS.run()
 # (inherited from VendorTclStep) raises NotImplementedError before this
@@ -30,5 +30,5 @@
 #     paths in SAVE_DEF, SAVE_NL and SAVE_SDC, which prepare_env() sets
 #     because Innovus.CTS declares all three as outputs.
 #
-# Mirrors librelane/scripts/openroad/cts.tcl, which performs the same stage
+# Mirrors librelane/scripts/openroad/cts.tcl, which performs the same job
 # with OpenROAD.

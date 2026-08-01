@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `extraction` stage's Quantus.Extraction step.
+# Placeholder for the `extraction` job's Quantus.Extraction step.
 #
 # This file intentionally contains no executable Tcl. Quantus.Extraction
 # .run() (inherited from VendorTclStep) raises NotImplementedError before
@@ -39,5 +39,5 @@
 #     per-corner files itself and report them as views, the way
 #     OpenROAD.RCX (librelane/steps/openroad/finishing.py) does.
 #
-# Mirrors librelane/scripts/openroad/rcx.tcl, which performs the same stage
+# Mirrors librelane/scripts/openroad/rcx.tcl, which performs the same job
 # with OpenROAD.

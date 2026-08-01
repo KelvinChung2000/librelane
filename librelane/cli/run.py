@@ -198,10 +198,10 @@ def format_explanation(explanation: Explanation) -> str:
             f"{disposition.step_id.ljust(width)}  {mark}  {mechanism}  "
             f"{disposition.reason}"
         )
-    if explanation.unselected_stages:
+    if explanation.unselected_jobs:
         lines.append("")
         lines.append(
-            "Stages contributing no steps: " + ", ".join(explanation.unselected_stages)
+            "Jobs contributing no steps: " + ", ".join(explanation.unselected_jobs)
         )
     return "\n".join(lines)
 

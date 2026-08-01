@@ -56,12 +56,12 @@ class Explanation:
     steps : tuple[StepDisposition, ...]
         One entry per step in the resolved step list, in execution
         order.
-    unselected_stages : tuple[str, ...]
-        Stages that contributed no steps, because
+    unselected_jobs : tuple[str, ...]
+        Jobs that contributed no steps, because
         ``TOOLS`` left them out or because their default provider is ``None``.
         These cannot be step entries, having no steps. Always empty for a flow
-        that declares ``Steps`` directly and so has no stages.
+        that declares ``Steps`` directly and so has no jobs.
     """
 
     steps: tuple[StepDisposition, ...]
-    unselected_stages: tuple[str, ...]
+    unselected_jobs: tuple[str, ...]

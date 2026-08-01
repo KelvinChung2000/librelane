@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `fill_insertion` stage's Innovus.FillInsertion step.
+# Placeholder for the `fill_insertion` job's Innovus.FillInsertion step.
 #
 # This file intentionally contains no executable Tcl.
 # Innovus.FillInsertion.run() (inherited from VendorTclStep) raises
@@ -31,4 +31,4 @@
 #     Innovus.FillInsertion declares all three as outputs.
 #
 # Mirrors librelane/scripts/openroad/fill.tcl, which performs the same
-# stage with OpenROAD.
+# job with OpenROAD.

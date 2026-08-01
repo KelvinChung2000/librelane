@@ -15,7 +15,7 @@
 The workflow document checks that need a populated registry.
 
 Kept apart from :mod:`librelane.flows.spec` so the document models stay
-testable without importing the step and stage packages, whose registries are
+testable without importing the step and job packages, whose registries are
 process-wide singletons populated by import side effect.
 """
 
@@ -23,7 +23,7 @@ from librelane.common.metrics import Metric
 from librelane.config import universal_flow_config_variables
 from librelane.flows.spec import FlowSpec, FlowSpecError, JobSpec
 from librelane.flows.spec_graph import ancestors, descendants
-from librelane.stages import Stage, StageRegistry
+from librelane.jobs import Job, JobRegistry
 from librelane.state import DesignFormat
 from librelane.steps import Step
 
@@ -40,7 +40,7 @@ def validate_against_registry(spec: FlowSpec) -> None:
     Raises
     ------
     FlowSpecError
-        If a stage, provider or step ID does not resolve.
+        If a job, provider or step ID does not resolve.
         The message names the legal alternatives.
     """
     for name, job in spec.jobs.items():
@@ -70,7 +70,7 @@ def _resolved_uses(job_id: str, job: JobSpec) -> str | None:
 
     Returns
     -------
-    The ``stage`` or ``stage/provider`` string this job resolves to, or
+    The ``job`` or ``job/provider`` string this job resolves to, or
     ``None`` for an inline ``steps`` job. An omitted ``uses`` resolves to the
     job id, which :func:`_require_implementation` has already confirmed names a
     registered template.
@@ -85,13 +85,13 @@ def _resolved_uses(job_id: str, job: JobSpec) -> str | None:
 def _require_implementation(job_id: str, job: JobSpec) -> str:
     if job.uses is not None:
         return job.uses
-    if Stage.factory.get(job_id) is None:
+    if Job.factory.get(job_id) is None:
         raise FlowSpecError(
             f"Job '{job_id}' declares neither 'uses' nor 'steps', and its id "
             f"is not a registered template id, so there is nothing to run. "
-            f"Add 'uses' to name a registered stage and provider, or 'steps' "
+            f"Add 'uses' to name a registered job and provider, or 'steps' "
             f"to list step IDs inline. Registered template ids: "
-            f"{sorted(Stage.factory.list())}."
+            f"{sorted(Job.factory.list())}."
         )
     return job_id
 
@@ -100,31 +100,31 @@ def _check_uses(job: str, uses: str) -> None:
     parts = uses.split("/")
     if len(parts) > 2:
         raise FlowSpecError(
-            f"Job '{job}' declares uses '{uses}', which is not a stage id or "
-            f"a 'stage/provider' pair."
+            f"Job '{job}' declares uses '{uses}', which is not a job id or "
+            f"a 'job/provider' pair."
         )
-    stage_id = parts[0]
-    stage = Stage.factory.get(stage_id)
-    if stage is None:
+    job_id = parts[0]
+    template = Job.factory.get(job_id)
+    if template is None:
         raise FlowSpecError(
-            f"Job '{job}' declares uses '{uses}', but no stage with id "
-            f"'{stage_id}' is registered. Registered stages: "
-            f"{sorted(Stage.factory.list())}."
+            f"Job '{job}' declares uses '{uses}', but no job with id "
+            f"'{job_id}' is registered. Registered jobs: "
+            f"{sorted(Job.factory.list())}."
         )
     if len(parts) == 1:
-        if not stage.default_providers:
+        if not template.default_providers:
             raise FlowSpecError(
-                f"Job '{job}' declares uses '{uses}', but stage '{stage_id}' "
+                f"Job '{job}' declares uses '{uses}', but job '{job_id}' "
                 f"has no default provider, so the document must name one. "
-                f"Available: {StageRegistry.providers(stage_id)}."
+                f"Available: {JobRegistry.providers(job_id)}."
             )
         return
     provider = parts[1]
-    available = StageRegistry.providers(stage_id)
+    available = JobRegistry.providers(job_id)
     if provider not in available:
         raise FlowSpecError(
             f"Job '{job}' declares uses '{uses}', but no provider "
-            f"'{provider}' is registered for stage '{stage_id}'. Available: "
+            f"'{provider}' is registered for job '{job_id}'. Available: "
             f"{available}."
         )
 
@@ -139,15 +139,15 @@ def _check_steps(job: str, steps: list[str]) -> None:
 
 
 def _providers_of(uses: str) -> tuple[str, tuple[str, ...]]:
-    stage_id, _, provider = uses.partition("/")
-    stage = Stage.factory.get(stage_id)
-    assert stage is not None, "checked by _check_uses"
+    job_id, _, provider = uses.partition("/")
+    template = Job.factory.get(job_id)
+    assert template is not None, "checked by _check_uses"
     if provider:
-        return stage_id, (provider,)
-    # A bare 'uses' means the stage's default provider, which is a tuple for a
-    # multi_provider stage. Every one of them, rather than the first, which
+        return job_id, (provider,)
+    # A bare 'uses' means the job's default provider, which is a tuple for a
+    # multi_provider job. Every one of them, rather than the first, which
     # would silently drop the rest.
-    return stage_id, tuple(stage.default_providers)
+    return job_id, tuple(template.default_providers)
 
 
 def _produced_views(job_id: str, job: JobSpec) -> set[str]:
@@ -172,12 +172,12 @@ def _produced_views(job_id: str, job: JobSpec) -> set[str]:
             assert step is not None, "checked by _check_steps"
             views.update(str(view) for view in step.outputs)
         return views
-    stage_id, providers = _providers_of(uses)
-    stage = Stage.factory.get(stage_id)
-    assert stage is not None, "checked by _check_uses"
-    views.update(str(view) for view in stage.provides)
+    job_id, providers = _providers_of(uses)
+    template = Job.factory.get(job_id)
+    assert template is not None, "checked by _check_uses"
+    views.update(str(view) for view in template.provides)
     for each in providers:
-        registration = StageRegistry.get(stage_id, each)
+        registration = JobRegistry.get(job_id, each)
         if registration is not None:
             views.update(str(view) for view in registration.provides)
     return views
@@ -201,12 +201,12 @@ def _produced_metrics(job_id: str, job: JobSpec) -> set[str]:
     uses = _resolved_uses(job_id, job)
     if uses is None:
         return set()
-    stage_id, providers = _providers_of(uses)
-    stage = Stage.factory.get(stage_id)
-    assert stage is not None, "checked by _check_uses"
-    metrics = set(stage.metrics)
+    job_id, providers = _providers_of(uses)
+    template = Job.factory.get(job_id)
+    assert template is not None, "checked by _check_uses"
+    metrics = set(template.metrics)
     for each in providers:
-        registration = StageRegistry.get(stage_id, each)
+        registration = JobRegistry.get(job_id, each)
         if registration is not None:
             metrics.update(registration.metrics)
     return metrics
@@ -252,9 +252,9 @@ def _consumed_views(job_id: str, job: JobSpec) -> set[str]:
             assert step is not None, "checked by _check_steps"
             views.update(str(view) for view in step.inputs)
         return views
-    stage = Stage.factory.get(uses.split("/")[0])
-    assert stage is not None, "checked by _check_uses"
-    return {str(view) for view in stage.requires}
+    template = Job.factory.get(uses.split("/")[0])
+    assert template is not None, "checked by _check_uses"
+    return {str(view) for view in template.requires}
 
 
 def _union(table: dict[str, set[str]], names: set[str]) -> set[str]:
@@ -317,7 +317,7 @@ def _check_requirements_are_reachable(
         # Views produced somewhere this job could actually have inherited from.
         # Two exclusions, both load-bearing.
         #
-        # The job itself, because 14 of the 27 stages both require and provide
+        # The job itself, because 14 of the 27 jobs both require and provide
         # the same views (the PNR_IN_PLACE contract, def/nl/sdc), so counting a
         # job's own output as evidence would reject every one of them whenever
         # no ancestor happens to restate the view.
@@ -379,9 +379,9 @@ def _steps_of(job_id: str, job: JobSpec) -> list[type[Step]]:
             assert step is not None, "checked by _check_steps"
             resolved.append(step)
         return resolved
-    stage_id, providers = _providers_of(uses)
+    job_id, providers = _providers_of(uses)
     for each in providers:
-        registration = StageRegistry.get(stage_id, each)
+        registration = JobRegistry.get(job_id, each)
         if registration is not None:
             resolved.extend(registration.steps)
     return resolved

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `drc` stage's Pegasus.DRC step.
+# Placeholder for the `drc` job's Pegasus.DRC step.
 #
 # This file intentionally contains no executable Tcl. Pegasus.DRC.run()
 # (inherited from VendorTclStep) raises NotImplementedError before this
@@ -36,7 +36,7 @@
 #     TECH_LEF, MACRO_LEFS, and one entry per accessible `self.config` key.
 #   - Run a Pegasus DRC deck against the layout and report the results.
 #     This step produces no views: Pegasus.DRC declares no outputs, and the
-#     `drc` stage itself contracts no metrics.
+#     `drc` job itself contracts no metrics.
 #
-# Mirrors librelane/scripts/magic/drc.tcl, which performs the same stage
+# Mirrors librelane/scripts/magic/drc.tcl, which performs the same job
 # with Magic.

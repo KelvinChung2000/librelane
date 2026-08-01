@@ -36,7 +36,7 @@ from librelane.steps.step import Step
 
 class StarRCStep(VendorTclStep):
     """
-    Shared base for StarRC's one covered stage, parasitic extraction.
+    Shared base for StarRC's one covered job, parasitic extraction.
 
     ``binary`` is left at :class:`VendorTclStep`'s default of ``None``. No
     public source establishes StarRC's invocation binary at all, so leaving
@@ -53,7 +53,7 @@ class Extraction(StarRCStep):
     Scaffold for parasitic extraction using StarRC.
 
     Mirrors ``OpenROAD.RCX``'s neutral contract for the ``extraction``
-    stage. Both consume the placed-and-routed DEF and produce SPEF.
+    job. Both consume the placed-and-routed DEF and produce SPEF.
     """
 
     id = "StarRC.Extraction"
@@ -83,10 +83,10 @@ _STARRC_NAMESPACES = ("STARRC_",)
 
 #: Registrations for the aggregator to fold into the opt-in vendor-provider
 #: module. Not applied here. This module does not call
-#: ``StageRegistry.register`` itself.
+#: ``JobRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "extraction",
+        "job": "extraction",
         "provider": "starrc",
         "steps": [Extraction],
         "namespaces": _STARRC_NAMESPACES,

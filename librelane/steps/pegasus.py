@@ -81,14 +81,14 @@ class PegasusStep(VendorTclStep):
 @Step.factory.register()
 class DRC(PegasusStep):
     """
-    Scaffold for the ``drc`` stage using Pegasus.
+    Scaffold for the ``drc`` job using Pegasus.
 
     Unimplemented; see ``librelane/scripts/pegasus/drc.tcl``. Beyond the
     usual scaffold gap, Pegasus's own invocation is unestablished, so
     writing the script would not be sufficient by itself; see
     :meth:`PegasusStep.get_command`.
 
-    Slots in beside ``Magic.DRC`` and ``KLayout.DRC``: the ``drc`` stage is
+    Slots in beside ``Magic.DRC`` and ``KLayout.DRC``: the ``drc`` job is
     ``multi_provider``, so Pegasus does not replace either open-source
     provider, it adds a third selectable one.
     """
@@ -105,14 +105,14 @@ class DRC(PegasusStep):
 @Step.factory.register()
 class LVS(PegasusStep):
     """
-    Scaffold for the ``lvs`` stage using Pegasus.
+    Scaffold for the ``lvs`` job using Pegasus.
 
     Unimplemented; see ``librelane/scripts/pegasus/lvs.tcl``. Beyond the
     usual scaffold gap, Pegasus's own invocation is unestablished, so
     writing the script would not be sufficient by itself; see
     :meth:`PegasusStep.get_command`.
 
-    An alternative to ``Netgen.LVS``: the ``lvs`` stage is not
+    An alternative to ``Netgen.LVS``: the ``lvs`` job is not
     ``multi_provider``, so a flow selects one of the two via ``TOOLS``.
     """
 
@@ -125,7 +125,7 @@ class LVS(PegasusStep):
     outputs = []
 
 
-#: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
+#: Registered by ``librelane/jobs/providers_vendor.py`` (owned by another
 #: agent), not by this module.
 _PEGASUS_NAMESPACES = (
     # The specific PEGASUS_* configuration variables a real Pegasus flow
@@ -138,11 +138,11 @@ _PEGASUS_NAMESPACES = (
 
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "drc",
+        "job": "drc",
         "provider": "pegasus",
         "steps": [DRC],
         "namespaces": _PEGASUS_NAMESPACES,
-        # The `drc` stage itself contracts no metrics (unlike `lvs`, see
+        # The `drc` job itself contracts no metrics (unlike `lvs`, see
         # below), so this registration declares none. Magic and KLayout
         # each contribute their own extra metric on top of their step's
         # DRC checker (magic__drc_error__count, klayout__drc_error__count);
@@ -151,12 +151,12 @@ REGISTRATIONS: list[dict] = [
         "metrics": [],
     },
     {
-        "stage": "lvs",
+        "job": "lvs",
         "provider": "pegasus",
         "steps": [LVS],
         "namespaces": _PEGASUS_NAMESPACES,
-        # The `lvs` stage itself already contracts "design__lvs_error__count"
-        # (see librelane/stages/taxonomy.py); this reuses that stage-level
+        # The `lvs` job itself already contracts "design__lvs_error__count"
+        # (see librelane/jobs/taxonomy.py); this reuses that job-level
         # metric rather than inventing a Pegasus-specific name.
         "metrics": ["design__lvs_error__count"],
     },

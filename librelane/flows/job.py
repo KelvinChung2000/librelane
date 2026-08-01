@@ -18,7 +18,7 @@ Binding a document's jobs to the registry, producing the units the engine runs.
 from dataclasses import dataclass
 
 from librelane.flows.spec import FlowSpec, JobSpec, parse_condition
-from librelane.stages import Stage, StageRegistry
+from librelane.jobs import Job, JobRegistry
 from librelane.state import DesignFormat
 from librelane.steps import Step
 
@@ -96,21 +96,21 @@ def _resolve(name: str, spec: JobSpec) -> ResolvedJob:
     # An omitted 'uses' is the document's central convenience: a job whose id
     # is a registered template id means that template, which is why the sample
     # 'lint' and 'floorplan' jobs carry no 'uses' at all. JobSpec deliberately
-    # does not reject the "neither" case -- the template ids live in the stage
+    # does not reject the "neither" case -- the template ids live in the job
     # registry, which the model layer does not import -- and
     # spec_validation._require_implementation admits it whenever the id
     # resolves, so a validated document reaches here with 'uses' still None.
     uses = spec.uses if spec.uses is not None else name
-    stage_id, _, named = uses.partition("/")
-    stage = Stage.factory.get(stage_id)
-    assert stage is not None, "checked by _check_uses"
-    providers = (named,) if named else stage.default_providers
+    job_id, _, named = uses.partition("/")
+    template = Job.factory.get(job_id)
+    assert template is not None, "checked by _check_uses"
+    providers = (named,) if named else template.default_providers
 
     steps = []
-    provides = set(stage.provides)
-    metrics = set(stage.metrics)
+    provides = set(template.provides)
+    metrics = set(template.metrics)
     for provider in providers:
-        registration = StageRegistry.get(stage_id, provider)
+        registration = JobRegistry.get(job_id, provider)
         assert registration is not None, "checked by _check_uses"
         steps.extend(registration.steps)
         provides.update(registration.provides)
@@ -121,7 +121,7 @@ def _resolve(name: str, spec: JobSpec) -> ResolvedJob:
         needs=tuple(spec.needs),
         source=dict(spec.source),
         conditions=conditions,
-        requires=tuple(stage.requires),
+        requires=tuple(template.requires),
         provides=tuple(sorted(provides, key=str)),
         metrics=tuple(sorted(metrics)),
         steps=tuple(steps),

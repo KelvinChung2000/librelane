@@ -33,7 +33,7 @@ from librelane.steps.step import Step
 
 class VCSpyGlassStep(VendorTclStep):
     """
-    Shared base for VC SpyGlass's one covered stage, RTL lint.
+    Shared base for VC SpyGlass's one covered job, RTL lint.
 
     ``binary`` is left at :class:`VendorTclStep`'s default of ``None``. No
     public source establishes VC SpyGlass's invocation binary at all, so
@@ -49,10 +49,10 @@ class Lint(VCSpyGlassStep):
     """
     Scaffold for RTL linting using VC SpyGlass.
 
-    Mirrors ``Verilator.Lint``'s neutral contract for the ``lint`` stage.
+    Mirrors ``Verilator.Lint``'s neutral contract for the ``lint`` job.
     The input RTL is read from the ``VERILOG_FILES`` (and equivalent)
     configuration variables rather than a design-format view, so this step
-    declares no ``inputs``, matching the stage's own empty ``requires``.
+    declares no ``inputs``, matching the job's own empty ``requires``.
     """
 
     id = "VCSpyGlass.Lint"
@@ -83,10 +83,10 @@ _VC_SPYGLASS_NAMESPACES = ("VC_SPYGLASS_",)
 
 #: Registrations for the aggregator to fold into the opt-in vendor-provider
 #: module. Not applied here. This module does not call
-#: ``StageRegistry.register`` itself.
+#: ``JobRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "lint",
+        "job": "lint",
         "provider": "vc_spyglass",
         "steps": [Lint],
         "namespaces": _VC_SPYGLASS_NAMESPACES,

@@ -36,15 +36,15 @@ from librelane.steps import (
     Yosys,
 )
 
-from librelane.stages.registry import StageRegistry
+from librelane.jobs.registry import JobRegistry
 
 #: Accepted configuration variable prefixes and names for the OpenROAD step
 #: family. The prefixes predate this design and are not renamed by it; the bare
 #: names are variables that never acquired a prefix. Declared once for the whole
-#: family rather than per stage, because these steps share a base config model.
+#: family rather than per job, because these steps share a base config model.
 #:
 #: Every entry was produced by enumerating what the sequences actually declare,
-#: not by guessing. A variable that is neither canonical for its stage nor a
+#: not by guessing. A variable that is neither canonical for its job nor a
 #: common flow variable nor matched here is rejected at registration.
 _OPENROAD_NAMESPACES = (
     # Legacy per-phase prefixes.
@@ -107,13 +107,13 @@ _YOSYS_NAMESPACES = (
 
 #: OpenROAD's ``odb`` is a tool-native database handed from one OpenROAD step to
 #: the next. It is not a neutral view, so it is declared rather than promoted
-#: into any stage's ``requires``; the static view availability preflight is what
-#: verifies an OpenROAD stage is actually preceded by one that produces it.
+#: into any job's ``requires``; the static view availability preflight is what
+#: verifies an OpenROAD job is actually preceded by one that produces it.
 _ODB = (DesignFormat.odb,)
 
 _REGISTRATIONS: list[dict] = [
     {
-        "stage": "lint",
+        "job": "lint",
         "provider": "verilator",
         "steps": [
             Verilator.Lint,
@@ -124,7 +124,7 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": ("LINTER_", "ERROR_ON_LINTER_", "VERILOG_"),
     },
     {
-        "stage": "synthesis",
+        "job": "synthesis",
         "provider": "yosys",
         "steps": [
             Yosys.JsonHeader,
@@ -137,7 +137,7 @@ _REGISTRATIONS: list[dict] = [
         "provides": [DesignFormat.json_h],
     },
     {
-        "stage": "synthesis",
+        "job": "synthesis",
         "provider": "yosys_vhdl",
         "steps": [
             Yosys.VHDLSynthesis,
@@ -148,7 +148,7 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": _YOSYS_NAMESPACES + ("GHDL_", "VHDL_"),
     },
     {
-        "stage": "pre_pnr_sta",
+        "job": "pre_pnr_sta",
         "provider": "openroad",
         "steps": [
             OpenROAD.CheckSDCFiles,
@@ -158,11 +158,11 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": _OPENROAD_NAMESPACES,
     },
     {
-        "stage": "floorplan",
+        "job": "floorplan",
         "provider": "openroad",
         # Odb.SetPowerConnections used to be the last step here, which forced
         # this registration to declare json_h as a native view. That made a
-        # Verilog-only step a mandatory member of a tool-neutral stage: a VHDL
+        # Verilog-only step a mandatory member of a tool-neutral job: a VHDL
         # flow needs floorplanning but has no Verilog header, and had no way to
         # say "floorplan, but not that step". It is a plain step in Classic's
         # Stages list now, so a flow that cannot run it simply omits it.
@@ -174,21 +174,21 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": _OPENROAD_NAMESPACES,
     },
     {
-        "stage": "macro_placement",
+        "job": "macro_placement",
         "provider": "openroad",
         "steps": [Odb.ManualMacroPlacement],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "tapcell_insertion",
+        "job": "tapcell_insertion",
         "provider": "openroad",
         "steps": [OpenROAD.TapEndcapInsertion],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "power_grid",
+        "job": "power_grid",
         "provider": "openroad",
         "steps": [
             Odb.AddPDNObstructions,
@@ -199,7 +199,7 @@ _REGISTRATIONS: list[dict] = [
         "native_views": _ODB,
     },
     {
-        "stage": "io_placement",
+        "job": "io_placement",
         "provider": "openroad",
         "steps": [
             OpenROAD.GlobalPlacementSkipIO,
@@ -211,56 +211,56 @@ _REGISTRATIONS: list[dict] = [
         "native_views": _ODB,
     },
     {
-        "stage": "global_placement",
+        "job": "global_placement",
         "provider": "openroad",
         "steps": [OpenROAD.GlobalPlacement],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "post_gpl_repair",
+        "job": "post_gpl_repair",
         "provider": "openroad",
         "steps": [OpenROAD.RepairDesignPostGPL],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "detailed_placement",
+        "job": "detailed_placement",
         "provider": "openroad",
         "steps": [OpenROAD.DetailedPlacement],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "cts",
+        "job": "cts",
         "provider": "openroad",
         "steps": [OpenROAD.CTS],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "post_cts_opt",
+        "job": "post_cts_opt",
         "provider": "openroad",
         "steps": [OpenROAD.ResizerTimingPostCTS],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "global_routing",
+        "job": "global_routing",
         "provider": "openroad",
         "steps": [OpenROAD.GlobalRouting, OpenROAD.CheckAntennas],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "post_grt_repair",
+        "job": "post_grt_repair",
         "provider": "openroad",
         "steps": [OpenROAD.RepairDesignPostGRT],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "antenna_repair",
+        "job": "antenna_repair",
         "provider": "openroad",
         "steps": [
             Odb.DiodesOnPorts,
@@ -271,14 +271,14 @@ _REGISTRATIONS: list[dict] = [
         "native_views": _ODB,
     },
     {
-        "stage": "post_grt_opt",
+        "job": "post_grt_opt",
         "provider": "openroad",
         "steps": [OpenROAD.ResizerTimingPostGRT],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "detailed_routing",
+        "job": "detailed_routing",
         "provider": "openroad",
         "steps": [
             OpenROAD.DetailedRouting,
@@ -290,42 +290,42 @@ _REGISTRATIONS: list[dict] = [
         "native_views": _ODB,
     },
     {
-        "stage": "fill_insertion",
+        "job": "fill_insertion",
         "provider": "openroad",
         "steps": [OpenROAD.FillInsertion],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "extraction",
+        "job": "extraction",
         "provider": "openroad",
         "steps": [OpenROAD.RCX],
         "namespaces": _OPENROAD_NAMESPACES,
     },
     {
-        "stage": "signoff_sta",
+        "job": "signoff_sta",
         "provider": "openroad",
         "steps": [OpenROAD.STAPostPNR],
         "namespaces": _OPENROAD_NAMESPACES,
         # OpenROAD.STAPostPNR takes odb only optionally, so it is not declared
-        # native here: this stage can run on a boundary that carries no odb.
+        # native here: this job can run on a boundary that carries no odb.
     },
     {
-        "stage": "ir_drop",
+        "job": "ir_drop",
         "provider": "openroad",
         "steps": [OpenROAD.IRDropReport],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },
     {
-        "stage": "streamout",
+        "job": "streamout",
         "provider": "magic",
         "steps": [Magic.StreamOut],
         "namespaces": _MAGIC_NAMESPACES,
         "provides": [DesignFormat.mag_gds],
     },
     {
-        "stage": "streamout",
+        "job": "streamout",
         "provider": "klayout",
         "steps": [KLayout.StreamOut, KLayout.Render],
         "namespaces": ("KLAYOUT_",),
@@ -335,21 +335,21 @@ _REGISTRATIONS: list[dict] = [
     # declares no inputs, so the view preflight cannot catch it being orphaned;
     # ownership is the only thing that removes it along with the tool it checks.
     {
-        "stage": "drc",
+        "job": "drc",
         "provider": "magic",
         "steps": [Magic.DRC, Checker.MagicDRC],
         "namespaces": _MAGIC_NAMESPACES + ("ERROR_ON_MAGIC_DRC",),
         "metrics": ["magic__drc_error__count"],
     },
     {
-        "stage": "drc",
+        "job": "drc",
         "provider": "klayout",
         "steps": [KLayout.DRC, Checker.KLayoutDRC],
         "namespaces": ("KLAYOUT_", "ERROR_ON_KLAYOUT_DRC"),
         "metrics": ["klayout__drc_error__count"],
     },
     {
-        "stage": "lvs",
+        "job": "lvs",
         "provider": "netgen",
         "steps": [
             Magic.SpiceExtraction,
@@ -363,8 +363,8 @@ _REGISTRATIONS: list[dict] = [
     },
     # The alternative to the sequence above, not an addition to it. `lvs` is
     # single-provider, so exactly one of the two runs and both are free to write
-    # the stage's contracted `design__lvs_error__count`. That licence ends the
-    # moment the stage goes multi_provider, where every provider runs and the
+    # the job's contracted `design__lvs_error__count`. That licence ends the
+    # moment the job goes multi_provider, where every provider runs and the
     # last to finish silently wins. Issue 696 asks for exactly that change, and
     # it would land on two shared names, not one: the metric, and the `spice`
     # view that `Magic.SpiceExtraction` and `KLayout.LVS` both output.
@@ -388,18 +388,18 @@ _REGISTRATIONS: list[dict] = [
     #
     # OpenROAD.WriteCDL is inside the sequence for the same reason
     # Magic.SpiceExtraction is inside netgen's: KLayout.LVS compares the layout
-    # against a CDL, no stage promises one, and `lvs.requires` must not grow a
+    # against a CDL, no job promises one, and `lvs.requires` must not grow a
     # view that only one of the two providers can use. It declares openroad's
     # namespaces to match, exactly as netgen's declares magic's.
     {
-        "stage": "lvs",
+        "job": "lvs",
         "provider": "klayout",
         "steps": [OpenROAD.WriteCDL, KLayout.LVS, Checker.LVS],
         "namespaces": _OPENROAD_NAMESPACES + ("KLAYOUT_", "ERROR_ON_LVS_ERROR"),
         "native_views": _ODB,
     },
     {
-        "stage": "formal_equivalence",
+        "job": "formal_equivalence",
         "provider": "yosys",
         "steps": [Yosys.EQY],
         "namespaces": _YOSYS_NAMESPACES
@@ -409,4 +409,4 @@ _REGISTRATIONS: list[dict] = [
 
 
 for _entry in _REGISTRATIONS:
-    StageRegistry.register(**_entry)
+    JobRegistry.register(**_entry)

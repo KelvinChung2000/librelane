@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `tapcell_insertion` stage's Innovus.TapEndcapInsertion
+# Placeholder for the `tapcell_insertion` job's Innovus.TapEndcapInsertion
 # step.
 #
 # This file intentionally contains no executable Tcl.
@@ -32,4 +32,4 @@
 #     because Innovus.TapEndcapInsertion declares all three as outputs.
 #
 # Mirrors librelane/scripts/openroad/tapcell.tcl, which performs the same
-# stage with OpenROAD.
+# job with OpenROAD.

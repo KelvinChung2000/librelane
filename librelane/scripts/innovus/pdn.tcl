@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `power_grid` stage's Innovus.PowerGrid step.
+# Placeholder for the `power_grid` job's Innovus.PowerGrid step.
 #
 # This file intentionally contains no executable Tcl. Innovus.PowerGrid
 # .run() (inherited from VendorTclStep) raises NotImplementedError before
@@ -31,5 +31,5 @@
 #     prepare_env() sets because Innovus.PowerGrid declares all three as
 #     outputs.
 #
-# Mirrors librelane/scripts/openroad/pdn.tcl, which performs the same stage
+# Mirrors librelane/scripts/openroad/pdn.tcl, which performs the same job
 # with OpenROAD.

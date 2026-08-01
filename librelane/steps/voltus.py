@@ -32,7 +32,7 @@ from typing import ClassVar
 
 from librelane.steps.step import Step
 from librelane.steps.vendor import VendorTclStep
-from librelane.stages.stage import PNR_IN_PLACE_REQUIRES
+from librelane.jobs.job import PNR_IN_PLACE_REQUIRES
 from librelane.state import DesignFormat
 
 
@@ -57,7 +57,7 @@ class VoltusStep(VendorTclStep):
 @Step.factory.register()
 class IRDrop(VoltusStep):
     """
-    Scaffold for the ``ir_drop`` stage using Voltus.
+    Scaffold for the ``ir_drop`` job using Voltus.
 
     Unimplemented; see ``librelane/scripts/voltus/irdrop.tcl``.
     """
@@ -71,11 +71,11 @@ class IRDrop(VoltusStep):
     outputs = []
 
 
-#: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
+#: Registered by ``librelane/jobs/providers_vendor.py`` (owned by another
 #: agent), not by this module.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "ir_drop",
+        "job": "ir_drop",
         "provider": "voltus",
         "steps": [IRDrop],
         # The specific VOLTUS_* configuration variables a real Voltus flow

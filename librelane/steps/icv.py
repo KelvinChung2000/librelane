@@ -44,7 +44,7 @@ from librelane.steps.step import Step
 
 class ICValidatorStep(VendorTclStep):
     """
-    Shared base for IC Validator's two covered stages, DRC and LVS.
+    Shared base for IC Validator's two covered jobs, DRC and LVS.
     """
 
     binary = "icv"
@@ -69,7 +69,7 @@ class DRC(ICValidatorStep):
     """
     Scaffold for design rule checking using IC Validator.
 
-    ``drc`` is a ``multi_provider`` stage already served by Magic and
+    ``drc`` is a ``multi_provider`` job already served by Magic and
     KLayout; this step slots in beside them as a third provider rather than
     replacing either. Mirrors ``Magic.DRC``'s neutral contract, taking DEF
     optionally and GDS.
@@ -90,7 +90,7 @@ class LVS(ICValidatorStep):
     """
     Scaffold for layout-versus-schematic checking using IC Validator.
 
-    Mirrors the ``lvs`` stage's neutral contract: DEF, GDS, and the powered
+    Mirrors the ``lvs`` job's neutral contract: DEF, GDS, and the powered
     netlist as the schematic side of the comparison, the same triple
     ``Netgen.LVS`` (by way of ``Magic.SpiceExtraction``) consumes.
     """
@@ -113,16 +113,16 @@ _ICV_NAMESPACES = ("ICV_",)
 
 #: Registrations for the aggregator to fold into the opt-in vendor-provider
 #: module. Not applied here. This module does not call
-#: ``StageRegistry.register`` itself.
+#: ``JobRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "drc",
+        "job": "drc",
         "provider": "icv",
         "steps": [DRC],
         "namespaces": _ICV_NAMESPACES,
     },
     {
-        "stage": "lvs",
+        "job": "lvs",
         "provider": "icv",
         "steps": [LVS],
         "namespaces": _ICV_NAMESPACES,

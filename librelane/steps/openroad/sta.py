@@ -355,7 +355,7 @@ class MultiCornerSTA(OpenSTAStep):
     # SDF only. The corner script writes no views: an SDF per corner is added
     # to the state by STAPrePNR.run, and a LIB per corner by STAPostPNR.run.
     # Declaring an SDC here claimed a view nothing in this class ever produces,
-    # which the pre-PnR STA stage contract then promised on its behalf.
+    # which the pre-PnR STA job contract then promised on its behalf.
     outputs = [DesignFormat.SDF]
 
     class Config(OpenSTAStep.Config):

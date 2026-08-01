@@ -78,7 +78,7 @@ You should not be overriding `start` either.
 
 `Classic` and `VHDLClassic` are both built on {class}`librelane.flows.StagedFlow`,
 a `SequentialFlow` whose `Steps` list is expanded from a `Stages` list rather
-than written out directly. A `Stages` entry is either a `Stage` object, which
+than written out directly. A `Stages` entry is either a `Job` object, which
 expands into whichever concrete steps implement it for the tool it selects, or
 a plain `Step` class, for a provider-neutral utility or a step that sits at a
 stage boundary. This is a third way to build a sequential flow, alongside
@@ -86,22 +86,22 @@ substituting and listing steps above, and the one `Classic` itself uses.
 
 ```python
 from librelane.flows import StagedFlow
-from librelane.stages import Stage
+from librelane.jobs import Job
 
 
 class MyStagedFlow(StagedFlow):
     Stages = [
-        Stage.synthesis,
-        Stage.pre_pnr_sta,
-        Stage.floorplan,
-        Stage.macro_placement,
-        Stage.power_grid,
-        Stage.io_placement,
-        Stage.global_placement,
-        Stage.detailed_placement,
-        Stage.global_routing,
-        Stage.streamout,
-        Stage.drc,
+        Job.synthesis,
+        Job.pre_pnr_sta,
+        Job.floorplan,
+        Job.macro_placement,
+        Job.power_grid,
+        Job.io_placement,
+        Job.global_placement,
+        Job.detailed_placement,
+        Job.global_routing,
+        Job.streamout,
+        Job.drc,
     ]
 ```
 
@@ -121,7 +121,7 @@ A user sets the `TOOLS` configuration variable to pick a different provider
 for one or more stages, for example `{"streamout": "klayout"}` to run only
 KLayout's stream-out instead of both Magic's and KLayout's. A flow author can
 also pin a stage to a specific provider from inside the `Stages` list itself
-with `Stage.using`, as `VHDLClassic` does for `synthesis`; a pin is the flow's
+with `Job.using`, as `VHDLClassic` does for `synthesis`; a pin is the flow's
 default, not a lock, since a matching `TOOLS` entry still overrides it.
 
 See [Swapping Tools](./swapping_tools.md) for the full `TOOLS` reference,

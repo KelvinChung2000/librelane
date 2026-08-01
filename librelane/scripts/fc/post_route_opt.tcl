@@ -11,15 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# Fusion Compiler (fc_shell) -- post_route_opt stage scaffold.
+# Fusion Compiler (fc_shell) -- post_route_opt job scaffold.
 #
-# Implements: the 'post_route_opt' stage (librelane/stages/taxonomy.py), for the
+# Implements: the 'post_route_opt' job (librelane/jobs/taxonomy.py), for the
 # FC.PostRouteOpt step (librelane/steps/fc.py).
 #
-# No OpenROAD Tcl script implements this stage: the 'post_route_opt' stage
-# has no default provider at all (librelane/stages/taxonomy.py sets
+# No OpenROAD Tcl script implements this job: the 'post_route_opt' job
+# has no default provider at all (librelane/jobs/taxonomy.py sets
 # default_provider=None), so there is no existing filename to mirror. This
-# filename was chosen to describe the stage rather than mirror an existing
+# filename was chosen to describe the job rather than mirror an existing
 # one.
 #
 # This script contains no commands. Fusion Compiler was not available to the
@@ -31,18 +31,18 @@
 #
 # Environment variables TclStep.prepare_env (librelane/steps/tclstep.py) will
 # supply, once this script actually runs:
-#   - CURRENT_DEF, CURRENT_NL, CURRENT_SDC: paths to this stage's input views
+#   - CURRENT_DEF, CURRENT_NL, CURRENT_SDC: paths to this job's input views
 #   - SAVE_DEF, SAVE_NL, SAVE_SDC: paths this script must write its output
 #     views to
 #   - TECH_LEF, MACRO_LEFS: PDK and macro LEF views
 #   - every FC_* and common flow configuration variable, as an
 #     environment variable of the same name (the specific FC_*
-#     variables this stage would need are not yet enumerated; see
+#     variables this job would need are not yet enumerated; see
 #     librelane/steps/fc.py)
 #
 # Views this script must produce, once written: DEF, netlist and SDC (see
-# PNR_IN_PLACE_PROVIDES in librelane/stages/stage.py). Fusion Compiler also
-# carries a proprietary in-memory database across stages, but its format is
+# PNR_IN_PLACE_PROVIDES in librelane/jobs/job.py). Fusion Compiler also
+# carries a proprietary in-memory database across jobs, but its format is
 # not publicly established (see librelane/steps/fc.py and
 # .superpowers/sdd/2026-07-29-cad-tool-abstraction/vendor-python-apis.md,
 # section 12); declaring it as a DesignFormat is future work, not

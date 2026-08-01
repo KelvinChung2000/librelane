@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for Calibre.LVS (stage "lvs").
+# Placeholder for Calibre.LVS (job "lvs").
 #
 # This file uses a ".tcl" extension only because Calibre's actual rule
 # deck format is SVRF (Standard Verification Rule Format), not Tcl, and no
@@ -27,7 +27,7 @@
 # representation), and CURRENT_DEF / CURRENT_GDS / CURRENT_PNL for this
 # step's three declared inputs (DEF, GDS, and the powered netlist as the
 # schematic side of the comparison). This step declares no outputs beyond
-# stage "lvs"'s own contract, which requires none.
+# job "lvs"'s own contract, which requires none.
 #
 # This file contains no rule-deck content. It was not written because
 # Calibre was unavailable to the author, who had no licensed access to the

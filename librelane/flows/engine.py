@@ -179,7 +179,7 @@ class Workflow(Flow):
                     except Exception as e:
                         failures.append(f"Job '{name}': {e}")
                         # Only if it started. The token read and the input
-                        # join run before start_stage, and ending a stage that
+                        # join run before start_stage, and ending a job that
                         # never started would count a completion the bar never
                         # announced.
                         if started:
@@ -412,7 +412,7 @@ class Workflow(Flow):
         Asserts a completed job produced everything its template promised.
 
         Only a ``uses`` job has a promise to assert, and the asymmetry is
-        deliberate. A stage's ``provides`` and ``metrics`` are curated by hand
+        deliberate. A job's ``provides`` and ``metrics`` are curated by hand
         next to the provider that has to honour them, so every entry is a
         guarantee. An inline ``steps`` job's ``provides`` is derived in
         :func:`librelane.flows.job.resolve_jobs` as the union of its steps'
@@ -440,8 +440,8 @@ class Workflow(Flow):
         Raises
         ------
         JobContractError
-            If a ``uses`` job is missing a view or metric its stage or provider
-            declared.
+            If a ``uses`` job is missing a view or metric its template or
+            provider declared.
         """
         if job.provider is None:
             return

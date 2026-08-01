@@ -37,7 +37,7 @@ section 3.
 Innovus carries a proprietary in-memory design database across its own
 place-and-route steps, the way ``openroad`` carries ``odb`` (declared as
 ``native_views=(DesignFormat.odb,)`` on sixteen of its registrations in
-``librelane/stages/providers.py``). No public source establishes a
+``librelane/jobs/providers.py``). No public source establishes a
 ``DesignFormat`` for Innovus's database, so no ``native_views`` are declared
 on any registration below, and none of these steps consumes one. Declaring
 one, once its format is established, is the correct future change; inventing
@@ -49,7 +49,7 @@ from typing import ClassVar
 
 from librelane.steps.step import Step
 from librelane.steps.vendor import VendorTclStep
-from librelane.stages.stage import PNR_IN_PLACE_PROVIDES, PNR_IN_PLACE_REQUIRES
+from librelane.jobs.job import PNR_IN_PLACE_PROVIDES, PNR_IN_PLACE_REQUIRES
 from librelane.state import DesignFormat
 
 
@@ -76,7 +76,7 @@ class InnovusStep(VendorTclStep):
 @Step.factory.register()
 class Floorplan(InnovusStep):
     """
-    Scaffold for the ``floorplan`` stage using Innovus.
+    Scaffold for the ``floorplan`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/floorplan.tcl``. Mirrors
     ``librelane/scripts/openroad/floorplan.tcl``.
@@ -94,7 +94,7 @@ class Floorplan(InnovusStep):
 @Step.factory.register()
 class MacroPlacement(InnovusStep):
     """
-    Scaffold for the ``macro_placement`` stage using Innovus.
+    Scaffold for the ``macro_placement`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/macro_placement.tcl``. No
     OpenROAD Tcl counterpart exists: ``Odb.ManualMacroPlacement`` is a Python
@@ -115,7 +115,7 @@ class MacroPlacement(InnovusStep):
 @Step.factory.register()
 class TapEndcapInsertion(InnovusStep):
     """
-    Scaffold for the ``tapcell_insertion`` stage using Innovus.
+    Scaffold for the ``tapcell_insertion`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/tapcell.tcl``. Mirrors
     ``librelane/scripts/openroad/tapcell.tcl``.
@@ -133,7 +133,7 @@ class TapEndcapInsertion(InnovusStep):
 @Step.factory.register()
 class PowerGrid(InnovusStep):
     """
-    Scaffold for the ``power_grid`` stage using Innovus.
+    Scaffold for the ``power_grid`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/pdn.tcl``. Mirrors
     ``librelane/scripts/openroad/pdn.tcl``.
@@ -151,7 +151,7 @@ class PowerGrid(InnovusStep):
 @Step.factory.register()
 class IOPlacement(InnovusStep):
     """
-    Scaffold for the ``io_placement`` stage using Innovus.
+    Scaffold for the ``io_placement`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/ioplacer.tcl``. Mirrors
     ``librelane/scripts/openroad/ioplacer.tcl``.
@@ -169,7 +169,7 @@ class IOPlacement(InnovusStep):
 @Step.factory.register()
 class GlobalPlacement(InnovusStep):
     """
-    Scaffold for the ``global_placement`` stage using Innovus.
+    Scaffold for the ``global_placement`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/gpl.tcl``. Mirrors
     ``librelane/scripts/openroad/gpl.tcl``.
@@ -187,7 +187,7 @@ class GlobalPlacement(InnovusStep):
 @Step.factory.register()
 class PostGPLRepair(InnovusStep):
     """
-    Scaffold for the ``post_gpl_repair`` stage using Innovus.
+    Scaffold for the ``post_gpl_repair`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/repair_design.tcl``.
     Mirrors ``librelane/scripts/openroad/repair_design.tcl``.
@@ -205,7 +205,7 @@ class PostGPLRepair(InnovusStep):
 @Step.factory.register()
 class DetailedPlacement(InnovusStep):
     """
-    Scaffold for the ``detailed_placement`` stage using Innovus.
+    Scaffold for the ``detailed_placement`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/dpl.tcl``. Mirrors
     ``librelane/scripts/openroad/dpl.tcl``.
@@ -223,7 +223,7 @@ class DetailedPlacement(InnovusStep):
 @Step.factory.register()
 class CTS(InnovusStep):
     """
-    Scaffold for the ``cts`` stage using Innovus.
+    Scaffold for the ``cts`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/cts.tcl``. Mirrors
     ``librelane/scripts/openroad/cts.tcl``.
@@ -241,7 +241,7 @@ class CTS(InnovusStep):
 @Step.factory.register()
 class PostCTSOpt(InnovusStep):
     """
-    Scaffold for the ``post_cts_opt`` stage using Innovus.
+    Scaffold for the ``post_cts_opt`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/rsz_timing_postcts.tcl``.
     Mirrors ``librelane/scripts/openroad/rsz_timing_postcts.tcl``.
@@ -259,7 +259,7 @@ class PostCTSOpt(InnovusStep):
 @Step.factory.register()
 class GlobalRouting(InnovusStep):
     """
-    Scaffold for the ``global_routing`` stage using Innovus.
+    Scaffold for the ``global_routing`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/grt.tcl``. Mirrors
     ``librelane/scripts/openroad/grt.tcl``.
@@ -279,7 +279,7 @@ class GlobalRouting(InnovusStep):
 @Step.factory.register()
 class PostGRTRepair(InnovusStep):
     """
-    Scaffold for the ``post_grt_repair`` stage using Innovus.
+    Scaffold for the ``post_grt_repair`` job using Innovus.
 
     Unimplemented; see
     ``librelane/scripts/innovus/repair_design_postgrt.tcl``. Mirrors
@@ -298,7 +298,7 @@ class PostGRTRepair(InnovusStep):
 @Step.factory.register()
 class AntennaRepair(InnovusStep):
     """
-    Scaffold for the ``antenna_repair`` stage using Innovus.
+    Scaffold for the ``antenna_repair`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/antenna_repair.tcl``.
     Mirrors ``librelane/scripts/openroad/antenna_repair.tcl``.
@@ -316,7 +316,7 @@ class AntennaRepair(InnovusStep):
 @Step.factory.register()
 class PostGRTOpt(InnovusStep):
     """
-    Scaffold for the ``post_grt_opt`` stage using Innovus.
+    Scaffold for the ``post_grt_opt`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/rsz_timing_postgrt.tcl``.
     Mirrors ``librelane/scripts/openroad/rsz_timing_postgrt.tcl``.
@@ -334,7 +334,7 @@ class PostGRTOpt(InnovusStep):
 @Step.factory.register()
 class DetailedRouting(InnovusStep):
     """
-    Scaffold for the ``detailed_routing`` stage using Innovus.
+    Scaffold for the ``detailed_routing`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/drt.tcl``. Mirrors
     ``librelane/scripts/openroad/drt.tcl``.
@@ -352,12 +352,12 @@ class DetailedRouting(InnovusStep):
 @Step.factory.register()
 class PostRouteOpt(InnovusStep):
     """
-    Scaffold for the ``post_route_opt`` stage using Innovus.
+    Scaffold for the ``post_route_opt`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/post_route_opt.tcl``. No
-    OpenROAD Tcl counterpart exists: this stage has no ``openroad`` provider
+    OpenROAD Tcl counterpart exists: this job has no ``openroad`` provider
     at all in the taxonomy (its ``default_provider`` is ``None``), so there is
-    nothing to mirror. This filename describes the stage instead.
+    nothing to mirror. This filename describes the job instead.
     """
 
     id = "Innovus.PostRouteOpt"
@@ -372,7 +372,7 @@ class PostRouteOpt(InnovusStep):
 @Step.factory.register()
 class FillInsertion(InnovusStep):
     """
-    Scaffold for the ``fill_insertion`` stage using Innovus.
+    Scaffold for the ``fill_insertion`` job using Innovus.
 
     Unimplemented; see ``librelane/scripts/innovus/fill.tcl``. Mirrors
     ``librelane/scripts/openroad/fill.tcl``.
@@ -387,8 +387,8 @@ class FillInsertion(InnovusStep):
     outputs = list(PNR_IN_PLACE_PROVIDES)
 
 
-#: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
-#: agent), not by this module. A registration names exactly one stage, so each
+#: Registered by ``librelane/jobs/providers_vendor.py`` (owned by another
+#: agent), not by this module. A registration names exactly one job, so each
 #: entry below is separate, even though Innovus's real database persists across
 #: all seventeen of these steps in a real run.
 _INNOVUS_NAMESPACES = (
@@ -402,103 +402,103 @@ _INNOVUS_NAMESPACES = (
 
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "floorplan",
+        "job": "floorplan",
         "provider": "innovus",
         "steps": [Floorplan],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "macro_placement",
+        "job": "macro_placement",
         "provider": "innovus",
         "steps": [MacroPlacement],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "tapcell_insertion",
+        "job": "tapcell_insertion",
         "provider": "innovus",
         "steps": [TapEndcapInsertion],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "power_grid",
+        "job": "power_grid",
         "provider": "innovus",
         "steps": [PowerGrid],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "io_placement",
+        "job": "io_placement",
         "provider": "innovus",
         "steps": [IOPlacement],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "global_placement",
+        "job": "global_placement",
         "provider": "innovus",
         "steps": [GlobalPlacement],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "post_gpl_repair",
+        "job": "post_gpl_repair",
         "provider": "innovus",
         "steps": [PostGPLRepair],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "detailed_placement",
+        "job": "detailed_placement",
         "provider": "innovus",
         "steps": [DetailedPlacement],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "cts",
+        "job": "cts",
         "provider": "innovus",
         "steps": [CTS],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "post_cts_opt",
+        "job": "post_cts_opt",
         "provider": "innovus",
         "steps": [PostCTSOpt],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "global_routing",
+        "job": "global_routing",
         "provider": "innovus",
         "steps": [GlobalRouting],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "post_grt_repair",
+        "job": "post_grt_repair",
         "provider": "innovus",
         "steps": [PostGRTRepair],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "antenna_repair",
+        "job": "antenna_repair",
         "provider": "innovus",
         "steps": [AntennaRepair],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "post_grt_opt",
+        "job": "post_grt_opt",
         "provider": "innovus",
         "steps": [PostGRTOpt],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "detailed_routing",
+        "job": "detailed_routing",
         "provider": "innovus",
         "steps": [DetailedRouting],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "post_route_opt",
+        "job": "post_route_opt",
         "provider": "innovus",
         "steps": [PostRouteOpt],
         "namespaces": _INNOVUS_NAMESPACES,
     },
     {
-        "stage": "fill_insertion",
+        "job": "fill_insertion",
         "provider": "innovus",
         "steps": [FillInsertion],
         "namespaces": _INNOVUS_NAMESPACES,

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `formal_equivalence` stage's Conformal.LEC step.
+# Placeholder for the `formal_equivalence` job's Conformal.LEC step.
 #
 # This file intentionally contains no executable Tcl. Conformal.LEC.run()
 # (inherited from VendorTclStep) raises NotImplementedError before this
@@ -27,13 +27,13 @@
 #     always sets: STEP_ID, SCRIPTS_DIR, STEP_DIR, TECH_LEF, MACRO_LEFS, and
 #     one entry per accessible `self.config` key.
 #   - Read a golden/reference design (pre-synthesis RTL, or a prior
-#     netlist, depending on what this stage is checking against) and run
+#     netlist, depending on what this job is checking against) and run
 #     Conformal's LEC comparison between it and CURRENT_NL. This step
 #     produces no views: Conformal.LEC declares no outputs, and the
-#     `formal_equivalence` stage itself contracts no metrics.
+#     `formal_equivalence` job itself contracts no metrics.
 #
 # No counterpart script exists in librelane/scripts/yosys/ with a matching
-# name: Yosys.EQY, which implements the same stage in the open-source flow,
+# name: Yosys.EQY, which implements the same job in the open-source flow,
 # drives the external `eqy` tool through its own config-file generator
-# rather than a single named Tcl script. This filename describes the stage
+# rather than a single named Tcl script. This filename describes the job
 # instead.

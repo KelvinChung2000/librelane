@@ -4,55 +4,55 @@ import pytest
 pytestmark = pytest.mark.all
 
 
-def test_every_selectable_stage_has_its_default_provider_registered():
-    from librelane.stages import Stage, StageRegistry
-    from librelane.stages.taxonomy import STAGE_ORDER
+def test_every_selectable_job_has_its_default_provider_registered():
+    from librelane.jobs import Job, JobRegistry
+    from librelane.jobs.taxonomy import JOB_ORDER
 
-    for stage_id in STAGE_ORDER:
-        stage = Stage.factory.get(stage_id)
-        for provider in stage.default_providers:
-            assert StageRegistry.get(stage_id, provider) is not None, (
-                f"{stage_id}: default provider '{provider}' is not registered"
+    for job_id in JOB_ORDER:
+        job = Job.factory.get(job_id)
+        for provider in job.default_providers:
+            assert JobRegistry.get(job_id, provider) is not None, (
+                f"{job_id}: default provider '{provider}' is not registered"
             )
 
 
 def test_post_route_opt_has_no_provider():
-    from librelane.stages import StageRegistry
+    from librelane.jobs import JobRegistry
 
-    assert StageRegistry.providers("post_route_opt") == []
+    assert JobRegistry.providers("post_route_opt") == []
 
 
-def test_multi_provider_stages_have_two_providers():
-    from librelane.stages import StageRegistry
+def test_multi_provider_jobs_have_two_providers():
+    from librelane.jobs import JobRegistry
 
-    assert sorted(StageRegistry.providers("streamout")) == ["klayout", "magic"]
-    assert sorted(StageRegistry.providers("drc")) == ["klayout", "magic"]
+    assert sorted(JobRegistry.providers("streamout")) == ["klayout", "magic"]
+    assert sorted(JobRegistry.providers("drc")) == ["klayout", "magic"]
 
 
 def test_synthesis_has_two_providers():
-    from librelane.stages import StageRegistry
+    from librelane.jobs import JobRegistry
 
-    assert sorted(StageRegistry.providers("synthesis")) == ["yosys", "yosys_vhdl"]
+    assert sorted(JobRegistry.providers("synthesis")) == ["yosys", "yosys_vhdl"]
 
 
 def test_lvs_offers_klayout_as_an_alternative_to_netgen():
     """
     ``lvs`` is single-provider, so its two providers are alternatives and
-    exactly one runs. That is what lets both write the stage's contracted
+    exactly one runs. That is what lets both write the job's contracted
     ``design__lvs_error__count`` without either overwriting the other, the same
     licence ``Pegasus.LVS`` takes.
 
     The klayout sequence carries ``OpenROAD.WriteCDL`` for the same reason the
     netgen sequence carries ``Magic.SpiceExtraction``: the comparison needs a
-    schematic-side netlist in the tool's own idiom, and no stage promises one.
+    schematic-side netlist in the tool's own idiom, and no job promises one.
     ``lvs.requires`` is unchanged by this, so a flow that never selects klayout
     is not made to write a CDL it has no use for.
     """
-    from librelane.stages import StageRegistry
+    from librelane.jobs import JobRegistry
     from librelane.steps import Checker, KLayout, OpenROAD
 
-    assert sorted(StageRegistry.providers("lvs")) == ["klayout", "netgen"]
-    assert StageRegistry.get("lvs", "klayout").steps == (
+    assert sorted(JobRegistry.providers("lvs")) == ["klayout", "netgen"]
+    assert JobRegistry.get("lvs", "klayout").steps == (
         OpenROAD.WriteCDL,
         KLayout.LVS,
         Checker.LVS,
@@ -66,12 +66,12 @@ def test_yosys_vhdl_does_not_provide_the_json_header():
     VerilogStep and cannot run on VHDL sources. This asymmetry is what Task 12
     turns into a precise error rather than a runtime surprise.
     """
-    from librelane.stages import StageRegistry
+    from librelane.jobs import JobRegistry
     from librelane.state import DesignFormat
 
-    assert DesignFormat.json_h in StageRegistry.get("synthesis", "yosys").provides
+    assert DesignFormat.json_h in JobRegistry.get("synthesis", "yosys").provides
     assert (
-        DesignFormat.json_h not in StageRegistry.get("synthesis", "yosys_vhdl").provides
+        DesignFormat.json_h not in JobRegistry.get("synthesis", "yosys_vhdl").provides
     )
 
 
@@ -84,11 +84,11 @@ def test_each_drc_provider_owns_its_own_checker():
     that class of orphan, because a checker declares no inputs, so ownership is
     the only fix.
     """
-    from librelane.stages import StageRegistry
+    from librelane.jobs import JobRegistry
     from librelane.steps import Checker, KLayout, Magic
 
-    assert StageRegistry.get("drc", "magic").steps == (Magic.DRC, Checker.MagicDRC)
-    assert StageRegistry.get("drc", "klayout").steps == (
+    assert JobRegistry.get("drc", "magic").steps == (Magic.DRC, Checker.MagicDRC)
+    assert JobRegistry.get("drc", "klayout").steps == (
         KLayout.DRC,
         Checker.KLayoutDRC,
     )
@@ -98,20 +98,20 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
     """
     The mechanical form of the step-ownership invariant, on the metric side.
 
-    A metric a registration declares that its stages do not is by definition
+    A metric a registration declares that its jobs do not is by definition
     tool-specific: only that provider emits it. The step that fails the run on it
     therefore only makes sense when that provider was selected, so it has to live
     in the same registration, where deselecting the tool removes them together.
 
     This is the check that condemned Checker.MagicDRC and Checker.KLayoutDRC as
     plain steps of the flow, and the one a vendor provider added later is held to
-    for free. Note what it does *not* condemn: a checker for a metric the stage
+    for free. Note what it does *not* condemn: a checker for a metric the job
     contracts, such as Checker.TrDRC, is tool-neutral and belongs inside a
     registration for a different reason -- membership is what gives it the
-    stage's gating variable.
+    job's gating variable.
     """
-    from librelane.stages import Stage
-    from librelane.stages.providers import _REGISTRATIONS
+    from librelane.jobs import Job
+    from librelane.jobs.providers import _REGISTRATIONS
     from librelane.steps import (
         calibre,
         conformal,
@@ -132,9 +132,9 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
     )
 
     # Read each vendor module's data directly rather than importing
-    # librelane.stages.providers_vendor, whose import registers every
+    # librelane.jobs.providers_vendor, whose import registers every
     # commercial provider as a side effect and would defeat the opt-in
-    # boundary test/stages/test_providers_vendor.py pins.
+    # boundary test/jobs/test_providers_vendor.py pins.
     vendor_registrations = [
         entry
         for module in (
@@ -159,15 +159,15 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
     ]
 
     for entry in _REGISTRATIONS + vendor_registrations:
-        contracted_by_stage = set(Stage.factory.get(entry["stage"]).metrics)
-        tool_specific = set(entry.get("metrics", ())) - contracted_by_stage
+        contracted_by_job = set(Job.factory.get(entry["job"]).metrics)
+        tool_specific = set(entry.get("metrics", ())) - contracted_by_job
         checked = {
             metric
             for step in entry["steps"]
             if (metric := getattr(step, "metric_name", None)) is not None
         }
         assert tool_specific <= checked, (
-            f"{entry['stage']}:{entry['provider']} declares "
+            f"{entry['job']}:{entry['provider']} declares "
             f"{sorted(tool_specific - checked)}, which nothing in the sequence "
             f"checks. A checker for it elsewhere in a flow would outlive the "
             f"tool it checks."
@@ -176,13 +176,13 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
 
 def test_providers_that_run_together_do_not_declare_the_same_metric():
     """
-    On a ``multi_provider`` stage every provider runs, so two of them declaring
+    On a ``multi_provider`` job every provider runs, so two of them declaring
     the same metric key means whichever finishes last silently wins and the
     other tool's result is lost. That is the metric-side twin of two steps
     writing the same view.
 
-    Single-provider stages are exempt on purpose: exactly one provider runs, so
-    its providers are alternatives and are *expected* to share the stage's
+    Single-provider jobs are exempt on purpose: exactly one provider runs, so
+    its providers are alternatives and are *expected* to share the job's
     contracted key. That is why ``Pegasus.LVS`` reuses
     ``design__lvs_error__count`` rather than inventing a name, and why
     ``KLayout.LVS`` may keep it while it remains an alternative. Issue 696 wants
@@ -191,17 +191,17 @@ def test_providers_that_run_together_do_not_declare_the_same_metric():
     """
     from collections import defaultdict
 
-    from librelane.stages import Stage, StageRegistry
-    from librelane.stages.taxonomy import STAGE_ORDER
+    from librelane.jobs import Job, JobRegistry
+    from librelane.jobs.taxonomy import JOB_ORDER
 
-    for stage_id in STAGE_ORDER:
-        stage = Stage.factory.get(stage_id)
-        if not stage.multi_provider:
+    for job_id in JOB_ORDER:
+        job = Job.factory.get(job_id)
+        if not job.multi_provider:
             continue
 
         owners = defaultdict(list)
-        for provider in StageRegistry.providers(stage_id):
-            registration = StageRegistry.get(stage_id, provider)
+        for provider in JobRegistry.providers(job_id):
+            registration = JobRegistry.get(job_id, provider)
             for metric in registration.metrics:
                 owners[metric].append(provider)
 
@@ -211,7 +211,7 @@ def test_providers_that_run_together_do_not_declare_the_same_metric():
             if len(providers) > 1
         }
         assert not clashing, (
-            f"{stage_id} runs every provider, but {clashing} declare the same "
+            f"{job_id} runs every provider, but {clashing} declare the same "
             f"metric. The last one to finish would silently overwrite the other."
         )
 
@@ -220,30 +220,30 @@ def test_declared_native_views_are_exactly_the_hard_unmet_inputs():
     """
     native_views is an exemption from the registration-time view check, so an
     over-broad declaration silently weakens the contract. Pin it to precisely
-    the views each sequence hard-requires and no stage supplies.
+    the views each sequence hard-requires and no job supplies.
     """
-    from librelane.stages import Stage
-    from librelane.stages.providers import _REGISTRATIONS
+    from librelane.jobs import Job
+    from librelane.jobs.providers import _REGISTRATIONS
     from librelane.steps.step.composition import compose_step_sequence
 
     for entry in _REGISTRATIONS:
         union = compose_step_sequence(entry["steps"])
-        supplied = set(Stage.factory.get(entry["stage"]).requires)
+        supplied = set(Job.factory.get(entry["job"]).requires)
         needed = {
             view.id
             for view in union.unmet_inputs
             if not view.optional and view not in supplied
         }
         declared = {view.id for view in entry.get("native_views", ())}
-        assert needed == declared, f"{entry['stage']}:{entry['provider']}"
+        assert needed == declared, f"{entry['job']}:{entry['provider']}"
 
 
 def test_openroad_carries_odb_across_pnr_boundaries():
-    from librelane.stages import StageRegistry
+    from librelane.jobs import JobRegistry
     from librelane.state import DesignFormat
 
-    assert StageRegistry.get("global_placement", "openroad").native_views == (
+    assert JobRegistry.get("global_placement", "openroad").native_views == (
         DesignFormat.odb,
     )
     # pre_pnr_sta runs before any odb exists, so it must not claim one.
-    assert StageRegistry.get("pre_pnr_sta", "openroad").native_views == ()
+    assert JobRegistry.get("pre_pnr_sta", "openroad").native_views == ()

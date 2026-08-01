@@ -46,14 +46,14 @@ def test_vhdl_classic_steps_match_golden():
     assert _snapshot(VHDLClassic) == _load_golden("vhdl_classic_steps.json")
 
 
-def test_vhdl_classic_declares_its_own_stages():
+def test_vhdl_classic_declares_its_own_jobs():
     """
     The strongest available validation that the abstraction does its job: a real
-    tool swap between two real tools, expressed as a flow declaring the stages
+    tool swap between two real tools, expressed as a flow declaring the jobs
     it runs and pinning a provider for one of them, reproducing byte-for-byte
     the step list Classic produces with the VHDL frontend in place of Verilog.
     """
-    from librelane.stages import Stage
+    from librelane.jobs import Job
 
     VHDLClassic = Flow.factory.get("VHDLClassic")
 
@@ -63,7 +63,7 @@ def test_vhdl_classic_declares_its_own_stages():
     synthesis = [
         entry
         for entry in VHDLClassic.Stages
-        if isinstance(entry, Stage) and entry.id == "synthesis"
+        if isinstance(entry, Job) and entry.id == "synthesis"
     ]
     assert [entry.default_providers for entry in synthesis] == [("yosys_vhdl",)]
     assert _snapshot(VHDLClassic) == _load_golden("vhdl_classic_steps.json")
@@ -112,9 +112,9 @@ def _gated_step_ids(FlowClass, disabled: str) -> list[str]:
     return sorted(gated)
 
 
-#: Gating variables whose reach changed when gating moved to the stage level.
+#: Gating variables whose reach changed when gating moved to the job level.
 #: Each entry is the full set of step IDs skipped after the change. Gating a
-#: stage skips every step in it, and these three stages contain steps the old
+#: job skips every step in it, and these three jobs contain steps the old
 #: step-level keys did not reach. See Changelog.md for why each is correct.
 WIDENED_GATES = {
     "RUN_DRT": [

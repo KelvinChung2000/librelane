@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `antenna_repair` stage's Innovus.AntennaRepair step.
+# Placeholder for the `antenna_repair` job's Innovus.AntennaRepair step.
 #
 # This file intentionally contains no executable Tcl.
 # Innovus.AntennaRepair.run() (inherited from VendorTclStep) raises
@@ -32,4 +32,4 @@
 #     declares all three as outputs.
 #
 # Mirrors librelane/scripts/openroad/antenna_repair.tcl, which performs the
-# same stage with OpenROAD.
+# same job with OpenROAD.

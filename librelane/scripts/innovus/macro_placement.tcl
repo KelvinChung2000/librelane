@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `macro_placement` stage's Innovus.MacroPlacement step.
+# Placeholder for the `macro_placement` job's Innovus.MacroPlacement step.
 #
 # This file intentionally contains no executable Tcl. Innovus.MacroPlacement
 # .run() (inherited from VendorTclStep) raises NotImplementedError before
@@ -33,4 +33,4 @@
 #
 # No counterpart script exists in librelane/scripts/openroad/: macro
 # placement there is Odb.ManualMacroPlacement, a Python (odbpy) step, not a
-# Tcl script. This filename describes the stage instead.
+# Tcl script. This filename describes the job instead.

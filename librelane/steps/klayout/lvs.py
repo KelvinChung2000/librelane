@@ -36,9 +36,9 @@ class LVS(KLayoutStep):
     """
     Runs LVS using KLayout, comparing the GDSII against a CDL netlist.
 
-    This is the ``klayout`` provider of the ``lvs`` stage, an alternative to
+    This is the ``klayout`` provider of the ``lvs`` job, an alternative to
     the default ``netgen`` provider rather than an addition to it. Both write
-    the stage's contracted ``design__lvs_error__count``, but they do not write
+    the job's contracted ``design__lvs_error__count``, but they do not write
     the same quantity: Netgen reports a count of mismatching cells and nets,
     while the KLayout scripts report only whether the netlists matched, so this
     step emits ``0`` or ``1``. ``Checker.LVS`` thresholds at zero and behaves

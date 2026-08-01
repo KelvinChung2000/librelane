@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `signoff_sta` stage's Tempus.SignoffSTA step.
+# Placeholder for the `signoff_sta` job's Tempus.SignoffSTA step.
 #
 # This file intentionally contains no executable Tcl. Tempus.SignoffSTA
 # .run() (inherited from VendorTclStep) raises NotImplementedError before
@@ -27,12 +27,12 @@
 #     the fixed variables it always sets: STEP_ID, SCRIPTS_DIR, STEP_DIR,
 #     TECH_LEF, MACRO_LEFS, and one entry per accessible `self.config` key.
 #   - Run signoff static timing analysis across every corner and report the
-#     four metrics the `signoff_sta` stage contracts: timing__setup_vio__count,
+#     four metrics the `signoff_sta` job contracts: timing__setup_vio__count,
 #     timing__hold_vio__count, design__max_slew_violation__count and
 #     design__max_cap_violation__count. This step produces no views:
 #     Tempus.SignoffSTA declares no outputs.
 #
 # No single named counterpart script exists in librelane/scripts/openroad/:
 # OpenROAD.STAPostPNR shares scripts/openroad/sta/corner.tcl with
-# OpenROAD.STAPrePNR through subclassing rather than a per-stage filename.
-# This filename is named for the stage it implements instead.
+# OpenROAD.STAPrePNR through subclassing rather than a per-job filename.
+# This filename is named for the job it implements instead.

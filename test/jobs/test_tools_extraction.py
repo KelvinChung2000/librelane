@@ -7,7 +7,7 @@ pytestmark = pytest.mark.all
 
 
 def _extract(*sources, overrides=None):
-    from librelane.stages.tools import extract_tools
+    from librelane.jobs.tools import extract_tools
 
     return extract_tools(list(sources), config_override_strings=overrides)
 
@@ -51,37 +51,37 @@ def test_list_values_are_preserved():
 
 
 def test_non_mapping_tools_is_rejected():
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
-    with pytest.raises(StageResolutionError, match="must be a mapping"):
+    with pytest.raises(JobResolutionError, match="must be a mapping"):
         _extract({"TOOLS": "genus"})
 
 
 def test_preprocessor_constructs_are_rejected():
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
-    with pytest.raises(StageResolutionError, match="must be a literal"):
+    with pytest.raises(JobResolutionError, match="must be a literal"):
         _extract({"TOOLS": {"synthesis": "ref::$SYNTH_TOOL"}})
 
 
 def test_preprocessor_constructs_are_rejected_inside_a_list():
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
-    with pytest.raises(StageResolutionError, match="must be a literal"):
+    with pytest.raises(JobResolutionError, match="must be a literal"):
         _extract({"TOOLS": {"streamout": ["magic", "expr::$X"]}})
 
 
 def test_non_string_provider_is_rejected():
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
-    with pytest.raises(StageResolutionError, match="must be a string"):
+    with pytest.raises(JobResolutionError, match="must be a string"):
         _extract({"TOOLS": {"synthesis": 3}})
 
 
 def test_malformed_override_json_is_rejected():
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
-    with pytest.raises(StageResolutionError, match="not valid JSON"):
+    with pytest.raises(JobResolutionError, match="not valid JSON"):
         _extract({}, overrides=["TOOLS={not json}"])
 
 

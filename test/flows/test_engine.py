@@ -31,9 +31,9 @@ def _bool_var(name: str, default: bool) -> dict:
 
 
 @pytest.fixture(scope="module")
-def contract_stage():
+def contract_job():
     """
-    A stage with a hand-curated contract, and five providers for it.
+    A job with a hand-curated contract, and five providers for it.
 
     Every other job in this module is an inline ``steps`` job, and an inline
     job is deliberately exempt from the output-contract check: its ``provides``
@@ -44,7 +44,7 @@ def contract_stage():
     its metric half, which nothing else in the phase reaches, because an inline
     job's ``metrics`` is always empty.
 
-    Module-scoped: ``Stage.factory`` is a process-wide singleton, so
+    Module-scoped: ``Job.factory`` is a process-wide singleton, so
     registering the same id once per test would raise on the second use.
 
     Returns
@@ -55,11 +55,11 @@ def contract_stage():
     import pathlib
     import threading
 
-    from librelane.stages import Stage, StageRegistry
+    from librelane.jobs import Job, JobRegistry
     from librelane.state import DesignFormat
     from librelane.steps import DeferredStepError, Step
 
-    Stage(
+    Job(
         id="engine_contract",
         full_name="Engine Contract",
         default_provider="honest",
@@ -72,7 +72,7 @@ def contract_stage():
 
     class Base(Step):
         inputs = []
-        # Declared by every provider, because StageRegistry checks a stage's
+        # Declared by every provider, because JobRegistry checks a job's
         # 'provides' against its provider's *declared* outputs at registration.
         # Whether a provider then actually writes the view is the run-time
         # question these tests are about.
@@ -132,8 +132,8 @@ def contract_stage():
         ("deferring", Deferring),
         ("blocking", Blocking),
     ):
-        StageRegistry.register(
-            stage="engine_contract",
+        JobRegistry.register(
+            job="engine_contract",
             provider=provider,
             steps=[step],
             namespaces=["ENGINE_CONTRACT_"],
@@ -306,8 +306,8 @@ def test_a_step_writes_into_its_job_s_directory(
 
 
 @mock_variables([flow_module, step_module])
-def test_a_uses_job_honours_its_stage_derived_contract(
-    contract_stage, minimal_design, mock_pdk
+def test_a_uses_job_honours_its_job_derived_contract(
+    contract_job, minimal_design, mock_pdk
 ):
     from librelane.flows.engine import Workflow
     from librelane.flows.spec import FlowSpec
@@ -319,7 +319,7 @@ def test_a_uses_job_honours_its_stage_derived_contract(
 
     final = Workflow(spec, minimal_design, **mock_pdk).start(tag="t")
 
-    # Both halves of the contract came from the stage, not from the step: the
+    # Both halves of the contract came from the job, not from the step: the
     # provider's only declaration is 'outputs', which says nothing about
     # metrics at all.
     assert final[DesignFormat.nl] is not None
@@ -328,7 +328,7 @@ def test_a_uses_job_honours_its_stage_derived_contract(
 
 @mock_variables([flow_module, step_module])
 def test_a_uses_job_that_does_not_produce_its_declared_view_raises(
-    contract_stage, minimal_design, mock_pdk
+    contract_job, minimal_design, mock_pdk
 ):
     from librelane.flows.flow import FlowError
     from librelane.flows.engine import Workflow
@@ -357,7 +357,7 @@ def test_a_uses_job_that_does_not_produce_its_declared_view_raises(
 
 @mock_variables([flow_module, step_module])
 def test_a_uses_job_that_does_not_produce_its_declared_metric_raises(
-    contract_stage, minimal_design, mock_pdk
+    contract_job, minimal_design, mock_pdk
 ):
     from librelane.flows.flow import FlowError
     from librelane.flows.engine import Workflow
@@ -409,7 +409,7 @@ def test_an_inline_job_is_exempt_from_the_output_contract(minimal_design, mock_p
 
 @mock_variables([flow_module, step_module])
 def test_a_pass_through_job_is_exempt_from_the_output_contract(
-    contract_stage, minimal_design, mock_pdk
+    contract_job, minimal_design, mock_pdk
 ):
     from librelane.flows.engine import Workflow
     from librelane.flows.spec import FlowSpec
@@ -426,7 +426,7 @@ def test_a_pass_through_job_is_exempt_from_the_output_contract(
 
     flow = Workflow(spec, minimal_design, **mock_pdk)
 
-    # The job's stage declares 'nl' and the job produces nothing, but it never
+    # The job's job declares 'nl' and the job produces nothing, but it never
     # ran, so there is no contract to have broken. Raising here would make
     # every gated-off job in a document a hard error.
     flow.start(tag="t")
@@ -434,7 +434,7 @@ def test_a_pass_through_job_is_exempt_from_the_output_contract(
 
 @mock_variables([flow_module, step_module])
 def test_a_deferred_error_is_not_replaced_by_a_contract_error(
-    contract_stage, minimal_design, mock_pdk
+    contract_job, minimal_design, mock_pdk
 ):
     from librelane.flows.engine import JobContractError, Workflow
     from librelane.flows.flow import FlowError
@@ -448,7 +448,7 @@ def test_a_deferred_error_is_not_replaced_by_a_contract_error(
     with pytest.raises(FlowError) as exc_info:
         flow.start(tag="t")
 
-    # The step deferred, so it never produced the 'nl' its stage declares. The
+    # The step deferred, so it never produced the 'nl' its job declares. The
     # deferred error is the real diagnosis and must be what surfaces.
     assert "the tool reported 3 violations" in str(exc_info.value)
     assert not isinstance(exc_info.value, JobContractError)
@@ -474,7 +474,7 @@ def gds_writers():
     #
     # Not the streamout case, despite the resemblance. Magic.StreamOut and
     # KLayout.StreamOut both declare 'gds' in their real outputs, and a job
-    # 'uses' either one also unions in Stage.streamout.provides, so two
+    # 'uses' either one also unions in Job.streamout.provides, so two
     # streamout leaves are caught at load time, not here. What this models is
     # the narrower gap that makes the run-time check load-bearing at all:
     # Step.start validates declared inputs only and nothing anywhere checks
@@ -811,7 +811,7 @@ def test_a_job_downstream_of_a_failure_does_not_run(minimal_design, mock_pdk):
 @pytest.mark.usefixtures("two_workers")
 @mock_variables([flow_module, step_module])
 def test_one_job_s_deferral_does_not_exempt_another_from_its_contract(
-    contract_stage, minimal_design, mock_pdk
+    contract_job, minimal_design, mock_pdk
 ):
     from librelane.flows.flow import FlowError
     from librelane.flows.engine import Workflow
@@ -832,7 +832,7 @@ def test_one_job_s_deferral_does_not_exempt_another_from_its_contract(
     #
     # 'liar' is a 'uses' job now: an inline job carries no contract to be
     # exempted from, so only a curated one can make this question meaningful.
-    deferral_recorded = contract_stage
+    deferral_recorded = contract_job
     deferral_recorded.clear()
 
     @Step.factory.register()
@@ -973,7 +973,7 @@ def test_an_error_scheduling_a_job_is_collected_not_raised_from_the_sweep(
 
 @mock_variables([flow_module, step_module])
 def test_a_job_that_omits_uses_runs_the_template_its_id_names(
-    contract_stage, minimal_design, mock_pdk
+    contract_job, minimal_design, mock_pdk
 ):
     from librelane.flows.engine import Workflow
     from librelane.flows.spec import FlowSpec

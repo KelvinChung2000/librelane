@@ -286,10 +286,10 @@ def test_a_deleted_output_view_reruns_only_its_step(ResumeFlow):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_a_reused_step_counts_as_executed_for_the_stage_contract(ResumeFlow):
+def test_a_reused_step_counts_as_executed_for_the_job_contract(ResumeFlow):
     """
     StagedFlow._after_step skips the contract check unless every step in the
-    stage executed. A reused step really did produce its views, so reporting
+    job executed. A reused step really did produce its views, so reporting
     it as not executed would disable the check the contract exists for.
     """
     make, _ = ResumeFlow

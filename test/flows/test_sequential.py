@@ -362,7 +362,7 @@ def test_overlapping_gating_keys_union_rather_than_overwrite(MetricIncrementer):
     """
     A wildcard key and an exact key matching the same step both apply. Taking
     the last one in iteration order silently dropped the other, which on a
-    StagedFlow means dropping the stage gate a flow never wrote by hand and
+    StagedFlow means dropping the job gate a flow never wrote by hand and
     cannot see.
     """
     from librelane.flows import SequentialFlow

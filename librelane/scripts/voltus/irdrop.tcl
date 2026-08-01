@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `ir_drop` stage's Voltus.IRDrop step.
+# Placeholder for the `ir_drop` job's Voltus.IRDrop step.
 #
 # This file intentionally contains no executable Tcl. Voltus.IRDrop.run()
 # (inherited from VendorTclStep) raises NotImplementedError before this
@@ -28,7 +28,7 @@
 #     TECH_LEF, MACRO_LEFS, and one entry per accessible `self.config` key.
 #   - Run static or dynamic IR drop analysis and report the results. This
 #     step produces no views: Voltus.IRDrop declares no outputs, matching
-#     OpenROAD.IRDropReport's contract for the same stage.
+#     OpenROAD.IRDropReport's contract for the same job.
 #
 # Mirrors librelane/scripts/openroad/irdrop.tcl, which performs the same
-# stage with OpenROAD.
+# job with OpenROAD.

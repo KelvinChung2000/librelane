@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for StarRC.Extraction (stage "extraction").
+# Placeholder for StarRC.Extraction (job "extraction").
 #
 # Named "rcx.tcl" to mirror librelane/scripts/openroad/rcx.tcl, the
-# open-source counterpart for the same stage.
+# open-source counterpart for the same job.
 #
 # TclStep.prepare_env() (librelane/steps/tclstep.py) would populate this
 # script's environment with, among others: STEP_ID, SCRIPTS_DIR, STEP_DIR,

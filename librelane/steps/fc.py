@@ -19,7 +19,7 @@ shared data model; this is vendor-confirmed (Synopsys's own product blog and
 datasheet describe it as integrating "all synthesis, place-and-route and
 signoff engines on a single data model"), not marketing gloss this module is
 merely repeating. That is why this module registers for the ``synthesis``
-stage as well as the seventeen place-and-route stages that IC Compiler II
+job as well as the seventeen place-and-route jobs that IC Compiler II
 also covers.
 
 ``fc_shell`` is Fusion Compiler's invocation binary, but its provenance is
@@ -45,11 +45,11 @@ from librelane.steps.vendor import VendorTclStep
 from librelane.state import DesignFormat
 
 # Mirrors PNR_IN_PLACE_REQUIRES / PNR_IN_PLACE_PROVIDES in
-# librelane/stages/stage.py: the view contract shared by every in-place
+# librelane/jobs/job.py: the view contract shared by every in-place
 # place-and-route transform. Restated here rather than imported, because
-# librelane.steps is the lower layer that librelane.stages is built on (no
-# module under librelane/steps/ imports librelane.stages, and
-# librelane/stages/providers.py imports librelane.steps at module load time,
+# librelane.steps is the lower layer that librelane.jobs is built on (no
+# module under librelane/steps/ imports librelane.jobs, and
+# librelane/jobs/providers.py imports librelane.steps at module load time,
 # so importing the other way round here would invert that layering and risk
 # a circular import).
 _PNR_IN_PLACE_REQUIRES = [DesignFormat.DEF, DesignFormat.NETLIST, DesignFormat.SDC]
@@ -85,7 +85,7 @@ class FCStep(VendorTclStep):
 class FCPNRStep(FCStep):
     """
     Shared input/output contract for the seventeen in-place place-and-route
-    stages Fusion Compiler covers (``floorplan`` through ``fill_insertion``),
+    jobs Fusion Compiler covers (``floorplan`` through ``fill_insertion``),
     on top of ``synthesis`` (see :class:`Synthesis`). A concrete subclass
     need only set ``id``, ``name`` and ``script_filename``.
     """
@@ -97,7 +97,7 @@ class FCPNRStep(FCStep):
 @Step.factory.register()
 class Synthesis(FCStep):
     """
-    Scaffold for the ``synthesis`` stage using Fusion Compiler. Unimplemented;
+    Scaffold for the ``synthesis`` job using Fusion Compiler. Unimplemented;
     see ``librelane/scripts/fc/synthesis.tcl``.
     """
 
@@ -116,7 +116,7 @@ class Synthesis(FCStep):
 @Step.factory.register()
 class Floorplan(FCPNRStep):
     """
-    Scaffold for the ``floorplan`` stage using Fusion Compiler. Unimplemented;
+    Scaffold for the ``floorplan`` job using Fusion Compiler. Unimplemented;
     see ``librelane/scripts/fc/floorplan.tcl``.
     """
 
@@ -124,11 +124,11 @@ class Floorplan(FCPNRStep):
     name = "Floorplan (Fusion Compiler)"
     script_filename: ClassVar[str] = "floorplan.tcl"
 
-    # Unlike every later stage in this span, floorplan is where DEF and SDC
-    # are produced for the first time, not carried in: the floorplan stage's
-    # own contract requires only DesignFormat.NETLIST (see librelane/stages/
+    # Unlike every later job in this span, floorplan is where DEF and SDC
+    # are produced for the first time, not carried in: the floorplan job's
+    # own contract requires only DesignFormat.NETLIST (see librelane/jobs/
     # taxonomy.py), matching OpenROAD.Floorplan. Inheriting the base step's
-    # inputs unmodified would claim DEF as an input the stage never promises,
+    # inputs unmodified would claim DEF as an input the job never promises,
     # which the registration-time view check correctly rejects.
     inputs = [DesignFormat.NETLIST]
 
@@ -136,7 +136,7 @@ class Floorplan(FCPNRStep):
 @Step.factory.register()
 class MacroPlacement(FCPNRStep):
     """
-    Scaffold for the ``macro_placement`` stage using Fusion Compiler.
+    Scaffold for the ``macro_placement`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/macro_placement.tcl``.
     """
 
@@ -148,7 +148,7 @@ class MacroPlacement(FCPNRStep):
 @Step.factory.register()
 class TapcellInsertion(FCPNRStep):
     """
-    Scaffold for the ``tapcell_insertion`` stage using Fusion Compiler.
+    Scaffold for the ``tapcell_insertion`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/tapcell.tcl``.
     """
 
@@ -160,7 +160,7 @@ class TapcellInsertion(FCPNRStep):
 @Step.factory.register()
 class PowerGrid(FCPNRStep):
     """
-    Scaffold for the ``power_grid`` stage using Fusion Compiler.
+    Scaffold for the ``power_grid`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/pdn.tcl``.
     """
 
@@ -172,7 +172,7 @@ class PowerGrid(FCPNRStep):
 @Step.factory.register()
 class IOPlacement(FCPNRStep):
     """
-    Scaffold for the ``io_placement`` stage using Fusion Compiler.
+    Scaffold for the ``io_placement`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/ioplacer.tcl``.
     """
 
@@ -184,7 +184,7 @@ class IOPlacement(FCPNRStep):
 @Step.factory.register()
 class GlobalPlacement(FCPNRStep):
     """
-    Scaffold for the ``global_placement`` stage using Fusion Compiler.
+    Scaffold for the ``global_placement`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/gpl.tcl``.
     """
 
@@ -196,7 +196,7 @@ class GlobalPlacement(FCPNRStep):
 @Step.factory.register()
 class PostGPLRepair(FCPNRStep):
     """
-    Scaffold for the ``post_gpl_repair`` stage using Fusion Compiler.
+    Scaffold for the ``post_gpl_repair`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/repair_design.tcl``.
     """
 
@@ -208,7 +208,7 @@ class PostGPLRepair(FCPNRStep):
 @Step.factory.register()
 class DetailedPlacement(FCPNRStep):
     """
-    Scaffold for the ``detailed_placement`` stage using Fusion Compiler.
+    Scaffold for the ``detailed_placement`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/dpl.tcl``.
     """
 
@@ -220,7 +220,7 @@ class DetailedPlacement(FCPNRStep):
 @Step.factory.register()
 class CTS(FCPNRStep):
     """
-    Scaffold for the ``cts`` stage using Fusion Compiler. Unimplemented; see
+    Scaffold for the ``cts`` job using Fusion Compiler. Unimplemented; see
     ``librelane/scripts/fc/cts.tcl``.
     """
 
@@ -232,7 +232,7 @@ class CTS(FCPNRStep):
 @Step.factory.register()
 class PostCTSOpt(FCPNRStep):
     """
-    Scaffold for the ``post_cts_opt`` stage using Fusion Compiler.
+    Scaffold for the ``post_cts_opt`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/rsz_timing_postcts.tcl``.
     """
 
@@ -244,7 +244,7 @@ class PostCTSOpt(FCPNRStep):
 @Step.factory.register()
 class GlobalRouting(FCPNRStep):
     """
-    Scaffold for the ``global_routing`` stage using Fusion Compiler.
+    Scaffold for the ``global_routing`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/grt.tcl``.
     """
 
@@ -256,7 +256,7 @@ class GlobalRouting(FCPNRStep):
 @Step.factory.register()
 class PostGRTRepair(FCPNRStep):
     """
-    Scaffold for the ``post_grt_repair`` stage using Fusion Compiler.
+    Scaffold for the ``post_grt_repair`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/repair_design_postgrt.tcl``.
     """
 
@@ -268,7 +268,7 @@ class PostGRTRepair(FCPNRStep):
 @Step.factory.register()
 class AntennaRepair(FCPNRStep):
     """
-    Scaffold for the ``antenna_repair`` stage using Fusion Compiler.
+    Scaffold for the ``antenna_repair`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/antenna_repair.tcl``.
     """
 
@@ -280,7 +280,7 @@ class AntennaRepair(FCPNRStep):
 @Step.factory.register()
 class PostGRTOpt(FCPNRStep):
     """
-    Scaffold for the ``post_grt_opt`` stage using Fusion Compiler.
+    Scaffold for the ``post_grt_opt`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/rsz_timing_postgrt.tcl``.
     """
 
@@ -292,7 +292,7 @@ class PostGRTOpt(FCPNRStep):
 @Step.factory.register()
 class DetailedRouting(FCPNRStep):
     """
-    Scaffold for the ``detailed_routing`` stage using Fusion Compiler.
+    Scaffold for the ``detailed_routing`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/drt.tcl``.
     """
 
@@ -304,7 +304,7 @@ class DetailedRouting(FCPNRStep):
 @Step.factory.register()
 class PostRouteOpt(FCPNRStep):
     """
-    Scaffold for the ``post_route_opt`` stage using Fusion Compiler.
+    Scaffold for the ``post_route_opt`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/post_route_opt.tcl``.
     """
 
@@ -316,7 +316,7 @@ class PostRouteOpt(FCPNRStep):
 @Step.factory.register()
 class FillInsertion(FCPNRStep):
     """
-    Scaffold for the ``fill_insertion`` stage using Fusion Compiler.
+    Scaffold for the ``fill_insertion`` job using Fusion Compiler.
     Unimplemented; see ``librelane/scripts/fc/fill.tcl``.
     """
 
@@ -325,15 +325,15 @@ class FillInsertion(FCPNRStep):
     script_filename: ClassVar[str] = "fill.tcl"
 
 
-#: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
+#: Registered by ``librelane/jobs/providers_vendor.py`` (owned by another
 #: agent), not by this module: opt-in to a commercial provider must be a
 #: separate, explicit step from importing this module. See
-#: ``librelane/stages/providers.py`` for the shape this list mirrors.
+#: ``librelane/jobs/providers.py`` for the shape this list mirrors.
 #:
-#: A registration names exactly one stage, so each stage below gets its own
+#: A registration names exactly one job, so each job below gets its own
 #: entry. A real Fusion Compiler backend would use ``native_views`` between
 #: its own steps to get the single-data-model benefit. Fusion Compiler carries a
-#: proprietary in-memory design database across stages, the same way
+#: proprietary in-memory design database across jobs, the same way
 #: OpenROAD's live ``odb`` database does, but no public source establishes
 #: its view name or on-disk format (see vendor-python-apis.md, section 12),
 #: so no ``DesignFormat`` is invented for it here, and every registration
@@ -341,113 +341,113 @@ class FillInsertion(FCPNRStep):
 #: once someone with ``fc_shell`` access determines the real format, is the
 #: correct future change: it is the mechanism that would let a real
 #: implementation pass a live database between Fusion Compiler's own steps
-#: across all eighteen stages below instead of re-reading DEF, netlist and
+#: across all eighteen jobs below instead of re-reading DEF, netlist and
 #: every LEF at each boundary.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "synthesis",
+        "job": "synthesis",
         "provider": "fc",
         "steps": [Synthesis],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "floorplan",
+        "job": "floorplan",
         "provider": "fc",
         "steps": [Floorplan],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "macro_placement",
+        "job": "macro_placement",
         "provider": "fc",
         "steps": [MacroPlacement],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "tapcell_insertion",
+        "job": "tapcell_insertion",
         "provider": "fc",
         "steps": [TapcellInsertion],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "power_grid",
+        "job": "power_grid",
         "provider": "fc",
         "steps": [PowerGrid],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "io_placement",
+        "job": "io_placement",
         "provider": "fc",
         "steps": [IOPlacement],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "global_placement",
+        "job": "global_placement",
         "provider": "fc",
         "steps": [GlobalPlacement],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "post_gpl_repair",
+        "job": "post_gpl_repair",
         "provider": "fc",
         "steps": [PostGPLRepair],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "detailed_placement",
+        "job": "detailed_placement",
         "provider": "fc",
         "steps": [DetailedPlacement],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "cts",
+        "job": "cts",
         "provider": "fc",
         "steps": [CTS],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "post_cts_opt",
+        "job": "post_cts_opt",
         "provider": "fc",
         "steps": [PostCTSOpt],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "global_routing",
+        "job": "global_routing",
         "provider": "fc",
         "steps": [GlobalRouting],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "post_grt_repair",
+        "job": "post_grt_repair",
         "provider": "fc",
         "steps": [PostGRTRepair],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "antenna_repair",
+        "job": "antenna_repair",
         "provider": "fc",
         "steps": [AntennaRepair],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "post_grt_opt",
+        "job": "post_grt_opt",
         "provider": "fc",
         "steps": [PostGRTOpt],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "detailed_routing",
+        "job": "detailed_routing",
         "provider": "fc",
         "steps": [DetailedRouting],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "post_route_opt",
+        "job": "post_route_opt",
         "provider": "fc",
         "steps": [PostRouteOpt],
         "namespaces": ("FC_",),
     },
     {
-        "stage": "fill_insertion",
+        "job": "fill_insertion",
         "provider": "fc",
         "steps": [FillInsertion],
         "namespaces": ("FC_",),

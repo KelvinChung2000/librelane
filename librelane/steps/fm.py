@@ -41,7 +41,7 @@ from librelane.steps.step import Step
 
 class FormalityStep(VendorTclStep):
     """
-    Shared base for Formality's one covered stage, formal equivalence
+    Shared base for Formality's one covered job, formal equivalence
     checking.
     """
 
@@ -66,8 +66,7 @@ class FormalEquivalence(FormalityStep):
     equivalence checking using Formality.
 
     Mirrors ``Yosys.EQY``'s neutral contract for the ``formal_equivalence``
-    stage. It consumes the netlist and produces no additional neutral
-    views.
+    job. It consumes the netlist and produces no additional neutral views.
     """
 
     id = "Formality.FormalEquivalence"
@@ -88,10 +87,10 @@ _FM_NAMESPACES = ("FM_",)
 
 #: Registrations for the aggregator to fold into the opt-in vendor-provider
 #: module. Not applied here. This module does not call
-#: ``StageRegistry.register`` itself.
+#: ``JobRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "formal_equivalence",
+        "job": "formal_equivalence",
         "provider": "fm",
         "steps": [FormalEquivalence],
         "namespaces": _FM_NAMESPACES,

@@ -85,7 +85,7 @@ from librelane.steps.calibre import CalibreStep
 
 # Commercial ("vendor") tool scaffolds. Every step registers in Step.factory
 # by being imported here, exactly like the open-source tool modules above;
-# none of them is opted into any Stage by this module, which happens instead
+# none of them is opted into any Job by this module, which happens instead
 # at the provider-registration layer.
 from librelane.steps import dc as DC
 from librelane.steps.dc import DCStep

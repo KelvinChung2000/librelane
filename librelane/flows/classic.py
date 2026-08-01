@@ -14,10 +14,10 @@
 from librelane.flows.flow import Flow
 from librelane.flows.staged import StagedFlow
 from librelane.config import variable
-from librelane.stages import Stage
+from librelane.jobs import Job
 
 # Netgen, Verilator and Yosys no longer appear here: their steps are named by
-# the provider registrations in librelane/stages/providers.py, which is what
+# the provider registrations in librelane/jobs/providers.py, which is what
 # makes them substitutable from configuration.
 from librelane.steps import (
     OpenROAD,
@@ -40,59 +40,59 @@ class Classic(StagedFlow):
     """
 
     Stages = [
-        Stage.lint,
-        Stage.synthesis,
-        Stage.pre_pnr_sta,
-        Stage.floorplan,
+        Job.lint,
+        Job.synthesis,
+        Job.pre_pnr_sta,
+        Job.floorplan,
         OpenROAD.RMP,
-        # A plain step rather than part of the floorplan stage, because it
+        # A plain step rather than part of the floorplan job, because it
         # hard-requires the Verilog header only Verilog synthesis emits. A flow
         # whose synthesis frontend cannot produce one omits this entry.
         Odb.SetPowerConnections,
-        Stage.macro_placement,
+        Job.macro_placement,
         OpenROAD.CutRows,
-        Stage.tapcell_insertion,
-        Stage.power_grid,
+        Job.tapcell_insertion,
+        Job.power_grid,
         Odb.AddRoutingObstructions,
-        Stage.io_placement,
+        Job.io_placement,
         # Before global placement, deliberately: the port buffers exist by the
         # time placement runs, so the logic is placed around them (#917).
         OpenROAD.AddBuffer,
-        Stage.global_placement,
+        Job.global_placement,
         Odb.WriteVerilogHeader,
         Checker.PowerGridViolations,
         OpenROAD.STAMidPNR,
-        Stage.post_gpl_repair,
+        Job.post_gpl_repair,
         Odb.ManualGlobalPlacement,
-        Stage.detailed_placement,
-        Stage.cts,
+        Job.detailed_placement,
+        Job.cts,
         OpenROAD.STAMidPNR,
-        Stage.post_cts_opt,
+        Job.post_cts_opt,
         OpenROAD.STAMidPNR,
-        Stage.global_routing,
-        Stage.post_grt_repair,
-        Stage.antenna_repair,
-        Stage.post_grt_opt,
+        Job.global_routing,
+        Job.post_grt_repair,
+        Job.antenna_repair,
+        Job.post_grt_opt,
         OpenROAD.STAMidPNR,
-        Stage.detailed_routing,
+        Job.detailed_routing,
         Odb.ReportDisconnectedPins,
         Checker.DisconnectedPins,
         Odb.ReportWireLength,
         Checker.WireLength,
-        Stage.post_route_opt,
-        Stage.fill_insertion,
+        Job.post_route_opt,
+        Job.fill_insertion,
         Odb.CellFrequencyTables,
-        Stage.extraction,
-        Stage.signoff_sta,
-        Stage.ir_drop,
-        Stage.streamout,
+        Job.extraction,
+        Job.signoff_sta,
+        Job.ir_drop,
+        Job.streamout,
         Magic.WriteLEF,
         Odb.CheckDesignAntennaProperties,
         KLayout.XOR,
         Checker.XOR,
-        Stage.drc,
-        Stage.lvs,
-        Stage.formal_equivalence,
+        Job.drc,
+        Job.lvs,
+        Job.formal_equivalence,
         Checker.SetupViolations,
         Checker.HoldViolations,
         Checker.MaxSlewViolations,
@@ -218,20 +218,20 @@ class Classic(StagedFlow):
 
         RUN_EQY: bool = variable(
             False,
-            description="Enables the formal equivalence stage, i.e. the Yosys.EQY step. Has no effect in VHDLClassic, which does not run that stage.",
+            description="Enables the formal equivalence job, i.e. the Yosys.EQY step. Has no effect in VHDLClassic, which does not run that job.",
         )
 
         RUN_LINTER: bool = variable(
             True,
-            description="Enables the lint stage, i.e. the Verilator.Lint step and associated checker steps. Has no effect in VHDLClassic, which does not run that stage.",
+            description="Enables the lint job, i.e. the Verilator.Lint step and associated checker steps. Has no effect in VHDLClassic, which does not run that job.",
             deprecated_names=["RUN_VERILATOR"],
         )
 
-    # Fifteen entries that used to live here are now generated from the stage
+    # Fifteen entries that used to live here are now generated from the job
     # taxonomy's gating_config_var, so they gate whichever provider is selected
     # rather than only the OpenROAD step that happened to be named. What remains
-    # is the gates that address one tool *inside* a multi_provider stage, or a
-    # plain step that is not part of any stage.
+    # is the gates that address one tool *inside* a multi_provider job, or a
+    # plain step that is not part of any job.
     gating_config_vars = {
         "OpenROAD.RMP": ["RUN_RMP"],
         "Odb.HeuristicDiodeInsertion": ["RUN_HEURISTIC_DIODE_INSERTION"],
@@ -272,54 +272,54 @@ class VHDLClassic(Classic):
     #: it runs; a filter expression over another flow's list is a substitution
     #: map wearing a different hat, and reintroduces exactly the coupling this
     #: list exists to remove. The differences from ``Classic`` are the pinned
-    #: synthesis provider and the four omitted entries: ``Stage.lint``,
+    #: synthesis provider and the four omitted entries: ``Job.lint``,
     #: ``Odb.SetPowerConnections``, ``Odb.WriteVerilogHeader`` and
-    #: ``Stage.formal_equivalence``.
+    #: ``Job.formal_equivalence``.
     Stages = [
-        Stage.synthesis.using("yosys_vhdl"),
-        Stage.pre_pnr_sta,
-        Stage.floorplan,
+        Job.synthesis.using("yosys_vhdl"),
+        Job.pre_pnr_sta,
+        Job.floorplan,
         OpenROAD.RMP,
-        Stage.macro_placement,
+        Job.macro_placement,
         OpenROAD.CutRows,
-        Stage.tapcell_insertion,
-        Stage.power_grid,
+        Job.tapcell_insertion,
+        Job.power_grid,
         Odb.AddRoutingObstructions,
-        Stage.io_placement,
+        Job.io_placement,
         OpenROAD.AddBuffer,
-        Stage.global_placement,
+        Job.global_placement,
         Checker.PowerGridViolations,
         OpenROAD.STAMidPNR,
-        Stage.post_gpl_repair,
+        Job.post_gpl_repair,
         Odb.ManualGlobalPlacement,
-        Stage.detailed_placement,
-        Stage.cts,
+        Job.detailed_placement,
+        Job.cts,
         OpenROAD.STAMidPNR,
-        Stage.post_cts_opt,
+        Job.post_cts_opt,
         OpenROAD.STAMidPNR,
-        Stage.global_routing,
-        Stage.post_grt_repair,
-        Stage.antenna_repair,
-        Stage.post_grt_opt,
+        Job.global_routing,
+        Job.post_grt_repair,
+        Job.antenna_repair,
+        Job.post_grt_opt,
         OpenROAD.STAMidPNR,
-        Stage.detailed_routing,
+        Job.detailed_routing,
         Odb.ReportDisconnectedPins,
         Checker.DisconnectedPins,
         Odb.ReportWireLength,
         Checker.WireLength,
-        Stage.post_route_opt,
-        Stage.fill_insertion,
+        Job.post_route_opt,
+        Job.fill_insertion,
         Odb.CellFrequencyTables,
-        Stage.extraction,
-        Stage.signoff_sta,
-        Stage.ir_drop,
-        Stage.streamout,
+        Job.extraction,
+        Job.signoff_sta,
+        Job.ir_drop,
+        Job.streamout,
         Magic.WriteLEF,
         Odb.CheckDesignAntennaProperties,
         KLayout.XOR,
         Checker.XOR,
-        Stage.drc,
-        Stage.lvs,
+        Job.drc,
+        Job.lvs,
         Checker.SetupViolations,
         Checker.HoldViolations,
         Checker.MaxSlewViolations,

@@ -35,7 +35,7 @@ from typing import ClassVar
 
 from librelane.steps.step import Step
 from librelane.steps.vendor import VendorTclStep
-from librelane.stages.stage import PNR_IN_PLACE_REQUIRES
+from librelane.jobs.job import PNR_IN_PLACE_REQUIRES
 from librelane.state import DesignFormat
 
 
@@ -60,7 +60,7 @@ class TempusStep(VendorTclStep):
 @Step.factory.register()
 class PrePNRSTA(TempusStep):
     """
-    Scaffold for the ``pre_pnr_sta`` stage using Tempus.
+    Scaffold for the ``pre_pnr_sta`` job using Tempus.
 
     Unimplemented; see ``librelane/scripts/tempus/pre_pnr_sta.tcl``.
     """
@@ -77,11 +77,11 @@ class PrePNRSTA(TempusStep):
 @Step.factory.register()
 class SignoffSTA(TempusStep):
     """
-    Scaffold for the ``signoff_sta`` stage using Tempus.
+    Scaffold for the ``signoff_sta`` job using Tempus.
 
     Unimplemented; see ``librelane/scripts/tempus/signoff_sta.tcl``. A real
     implementation would need to report the four metrics the
-    ``signoff_sta`` stage contracts: ``timing__setup_vio__count``,
+    ``signoff_sta`` job contracts: ``timing__setup_vio__count``,
     ``timing__hold_vio__count``, ``design__max_slew_violation__count`` and
     ``design__max_cap_violation__count``.
     """
@@ -95,7 +95,7 @@ class SignoffSTA(TempusStep):
     outputs = []
 
 
-#: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
+#: Registered by ``librelane/jobs/providers_vendor.py`` (owned by another
 #: agent), not by this module.
 _TEMPUS_NAMESPACES = (
     # The specific TEMPUS_* configuration variables a real Tempus flow
@@ -108,13 +108,13 @@ _TEMPUS_NAMESPACES = (
 
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "pre_pnr_sta",
+        "job": "pre_pnr_sta",
         "provider": "tempus",
         "steps": [PrePNRSTA],
         "namespaces": _TEMPUS_NAMESPACES,
     },
     {
-        "stage": "signoff_sta",
+        "job": "signoff_sta",
         "provider": "tempus",
         "steps": [SignoffSTA],
         "namespaces": _TEMPUS_NAMESPACES,

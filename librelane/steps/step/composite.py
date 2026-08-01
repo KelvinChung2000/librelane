@@ -45,8 +45,8 @@ class CompositeStep(Step):
     sequence. The alternative, exposing the parts individually, invites a flow
     to run half of them.
 
-    A :class:`librelane.stages.Registration` also binds one stage to several
-    steps, but keeps them individually addressable, which is what lets a stage
+    A :class:`librelane.jobs.Registration` also binds one job to several
+    steps, but keeps them individually addressable, which is what lets a job
     gate be lowered onto each of them. A composite instead hides its
     constituents behind one identifier, one configuration model, one directory
     and one resume unit. See ``docs/source/usage/writing_tool_backends.md``.

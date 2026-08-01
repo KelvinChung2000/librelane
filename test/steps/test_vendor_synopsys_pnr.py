@@ -18,7 +18,7 @@ step scaffolds (librelane/steps/dc.py, fc.py, icc2.py).
 These test behavior, not structure: that the scaffold fails loudly and
 informatively rather than guessing, that every script path it names actually
 resolves to a real file, and that each module's REGISTRATIONS list covers
-exactly the stages it is supposed to.
+exactly the jobs it is supposed to.
 """
 
 import os
@@ -26,14 +26,14 @@ import os
 import pytest
 
 from librelane.steps import step
-from librelane.stages import Stage
+from librelane.jobs import Job
 
 pytestmark = pytest.mark.all
 
 mock_variables = pytest.mock_variables
 
 
-PNR_STAGE_IDS = [
+PNR_JOB_IDS = [
     "floorplan",
     "macro_placement",
     "tapcell_insertion",
@@ -187,37 +187,37 @@ def test_step_is_registered_in_step_factory(step_id):
 
 
 # ----------------------------------------------------------------------
-# REGISTRATIONS covers exactly the stage ids intended, and every stage id
-# named is a real, registered Stage.
+# REGISTRATIONS covers exactly the job ids intended, and every job id
+# named is a real, registered Job.
 # ----------------------------------------------------------------------
 def test_dc_registrations_cover_exactly_synthesis():
     from librelane.steps.dc import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
     assert covered == ["synthesis"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "dc"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
-def test_icc2_registrations_cover_exactly_the_seventeen_pnr_stages():
+def test_icc2_registrations_cover_exactly_the_seventeen_pnr_jobs():
     from librelane.steps.icc2 import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
-    assert covered == sorted(PNR_STAGE_IDS)
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
+    assert covered == sorted(PNR_JOB_IDS)
     for entry in REGISTRATIONS:
         assert entry["provider"] == "icc2"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
-def test_fc_registrations_cover_synthesis_and_the_seventeen_pnr_stages():
+def test_fc_registrations_cover_synthesis_and_the_seventeen_pnr_jobs():
     from librelane.steps.fc import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
-    assert covered == sorted(["synthesis"] + PNR_STAGE_IDS)
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
+    assert covered == sorted(["synthesis"] + PNR_JOB_IDS)
     for entry in REGISTRATIONS:
         assert entry["provider"] == "fc"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
 # ----------------------------------------------------------------------

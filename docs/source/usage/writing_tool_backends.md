@@ -24,11 +24,11 @@ since a provider is built out of ordinary `Step` subclasses.
 ## A minimal complete registration
 
 ```python
-from librelane.stages import StageRegistry
+from librelane.jobs import JobRegistry
 from librelane.state import DesignFormat
 
-StageRegistry.register(
-    stage="synthesis",
+JobRegistry.register(
+    job="synthesis",
     provider="genus",
     steps=[Genus.Synthesis, Checker.GenusSynthChecks],
     namespaces=("GENUS_",),
@@ -38,7 +38,7 @@ StageRegistry.register(
 )
 ```
 
-* `stage`: the id of the one stage this registration implements. A
+* `job`: the id of the one job this registration implements. A
   registration names exactly one; see
   [One registration, one stage](#one-registration-one-stage) for why.
 * `provider`: the tool name, for example `genus`, not a vendor name. This is
@@ -64,7 +64,7 @@ StageRegistry.register(
 
 ## The four enforcement points
 
-**Registration time**, inside `StageRegistry.register`, runs three checks the
+**Registration time**, inside `JobRegistry.register`, runs three checks the
 moment your module is imported, so a broken registration fails loudly at
 import rather than quietly at run time:
 
@@ -135,7 +135,7 @@ A native view is a tool-native artifact one step of your sequence hands to
 the next step of the same sequence, instead of going through a portable
 format. OpenROAD's `odb` (its live OpenDB database) is the worked example
 already in the codebase: sixteen of the `openroad` provider's registrations
-in `librelane/stages/providers.py` declare `native_views=(DesignFormat.odb,)`,
+in `librelane/jobs/providers.py` declare `native_views=(DesignFormat.odb,)`,
 because every OpenROAD place-and-route step after `floorplan` takes the
 previous step's live database as input rather than re-reading `DEF` and every
 LEF from scratch.
@@ -169,7 +169,7 @@ not an available way to avoid the cost. See the next section for why.
 (one-registration-one-stage)=
 ## One registration, one stage
 
-`Registration.stage` is a single stage id, and there is no way to say that a
+`Registration.job` is a single job id, and there is no way to say that a
 provider covers several. Gating, contract checking and provider selection are
 all per-stage, so a registration covering more than one has no meaning in any
 of them. If you are tempted to register one provider across several stages to
@@ -219,8 +219,8 @@ provider's responsibility ends and the next stage's begins.
 
 A backend is an ordinary `librelane_plugin_*` Python module or package,
 auto-imported by `librelane/plugins.py:17-21` alongside every other LibreLane
-plugin. Calling `StageRegistry.register` at import time, the same way
-`librelane/stages/providers.py` does for the open-source toolchain, needs no
+plugin. Calling `JobRegistry.register` at import time, the same way
+`librelane/jobs/providers.py` does for the open-source toolchain, needs no
 new discovery mechanism: whatever your module's top level does at import
 already runs before anything asks for its stages.
 
@@ -235,9 +235,9 @@ with a license and the tool's own documentation to fill in.
 
 These scaffolds register with `Step.factory` unconditionally, the same as
 any other step, but they do not register as stage providers by default. That
-registration is opt-in, behind importing `librelane.stages.providers_vendor`.
-Nothing under `librelane.stages` imports that module for you; until your own
-code does, `StageRegistry.providers()` and `librelane help` know nothing
+registration is opt-in, behind importing `librelane.jobs.providers_vendor`.
+Nothing under `librelane.jobs` imports that module for you; until your own
+code does, `JobRegistry.providers()` and `librelane help` know nothing
 about any of these sixteen tools. Import it once to make them visible, the
 same way a real backend from the previous sections would.
 
@@ -246,7 +246,7 @@ same way a real backend from the previous sections would.
 No commercial backend ships with LibreLane in working order, and none has
 been tested against a real tool invocation. Everything on this page describes
 the enforcement machinery as it exists today, exercised by the open-source
-providers in `librelane/stages/providers.py` and, at the registration-contract
+providers in `librelane/jobs/providers.py` and, at the registration-contract
 level only, by the scaffolds in the previous section. The first person to
 write a commercial backend against it should expect to find and correct parts
 of this contract that a purely open-source toolchain never exercised. For

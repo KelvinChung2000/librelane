@@ -39,7 +39,7 @@ from typing import ClassVar
 
 from librelane.steps.step import Step
 from librelane.steps.vendor import VendorTclStep
-from librelane.stages.stage import PNR_IN_PLACE_REQUIRES
+from librelane.jobs.job import PNR_IN_PLACE_REQUIRES
 from librelane.state import DesignFormat
 
 
@@ -72,7 +72,7 @@ class QuantusStep(VendorTclStep):
 @Step.factory.register()
 class Extraction(QuantusStep):
     """
-    Scaffold for the ``extraction`` stage using Quantus.
+    Scaffold for the ``extraction`` job using Quantus.
 
     Unimplemented; see ``librelane/scripts/quantus/rcx.tcl``. Beyond the
     usual scaffold gap (the script is unwritten), Quantus's own invocation
@@ -89,11 +89,11 @@ class Extraction(QuantusStep):
     outputs = [DesignFormat.SPEF]
 
 
-#: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
+#: Registered by ``librelane/jobs/providers_vendor.py`` (owned by another
 #: agent), not by this module.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "extraction",
+        "job": "extraction",
         "provider": "quantus",
         "steps": [Extraction],
         # The specific QUANTUS_* configuration variables a real Quantus

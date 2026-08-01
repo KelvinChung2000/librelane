@@ -10,8 +10,8 @@ pytestmark = pytest.mark.all
 
 def test_vendor_registration_is_opt_in_via_subprocess():
     """
-    StageRegistry and Step.factory are process-wide singletons, so importing
-    librelane.stages.providers_vendor in this process would register the
+    JobRegistry and Step.factory are process-wide singletons, so importing
+    librelane.jobs.providers_vendor in this process would register the
     sixteen commercial providers for the rest of the pytest session, and a
     later test asserting their absence would then fail depending on test
     order under pytest-randomly. Both the "before" and "after" halves of this
@@ -20,20 +20,20 @@ def test_vendor_registration_is_opt_in_via_subprocess():
     """
     script = textwrap.dedent(
         """
-        import librelane.stages
-        from librelane.stages import StageRegistry
+        import librelane.jobs
+        from librelane.jobs import JobRegistry
         from librelane.flows.flow import Flow
 
-        before = set(StageRegistry.providers("synthesis"))
+        before = set(JobRegistry.providers("synthesis"))
         assert before == {"yosys", "yosys_vhdl"}, before
         assert not ({"dc", "fc", "genus"} & before), before
 
         before_help = Flow.factory.get("Classic").get_help_md()
         assert "`dc`" not in before_help, "vendor provider leaked before opt-in"
 
-        import librelane.stages.providers_vendor  # noqa: F401  (the opt-in)
+        import librelane.jobs.providers_vendor  # noqa: F401  (the opt-in)
 
-        after = set(StageRegistry.providers("synthesis"))
+        after = set(JobRegistry.providers("synthesis"))
         assert {"dc", "fc", "genus"} <= after, after
 
         after_help = Flow.factory.get("Classic").get_help_md()
@@ -54,25 +54,25 @@ def test_vendor_registration_is_opt_in_via_subprocess():
     assert "OK" in result.stdout
 
 
-def test_stages_package_does_not_import_the_vendor_aggregator():
+def test_jobs_package_does_not_import_the_vendor_aggregator():
     """
-    librelane/stages/__init__.py must never import providers_vendor: doing so
+    librelane/jobs/__init__.py must never import providers_vendor: doing so
     would make every commercial provider ambient on ordinary import of
-    librelane.stages, defeating the opt-in boundary the previous test pins.
+    librelane.jobs, defeating the opt-in boundary the previous test pins.
     """
-    import librelane.stages as stages_pkg
+    import librelane.jobs as jobs_pkg
 
-    assert not hasattr(stages_pkg, "providers_vendor")
+    assert not hasattr(jobs_pkg, "providers_vendor")
 
 
-def test_every_vendor_module_exports_registrations_for_real_stages():
+def test_every_vendor_module_exports_registrations_for_real_jobs():
     """
     Harmless to run in-process: this only reads each module's REGISTRATIONS
-    data and checks stage ids against Stage.factory, without ever calling
-    StageRegistry.register. A typo in a stage id here would otherwise only
+    data and checks job ids against Job.factory, without ever calling
+    JobRegistry.register. A typo in a job id here would otherwise only
     surface the first time someone actually opts in.
     """
-    from librelane.stages import Stage
+    from librelane.jobs import Job
     from librelane.steps import (
         calibre,
         conformal,
@@ -110,14 +110,14 @@ def test_every_vendor_module_exports_registrations_for_real_stages():
         vc_spyglass,
         voltus,
     )
-    known_stages = set(Stage.factory.list())
+    known_jobs = set(Job.factory.list())
 
     for module in modules:
         registrations = module.REGISTRATIONS
         assert registrations, f"{module.__name__}.REGISTRATIONS is empty"
         for entry in registrations:
-            stage_id = entry["stage"]
-            assert stage_id in known_stages, (
+            job_id = entry["job"]
+            assert job_id in known_jobs, (
                 f"{module.__name__}: registration for provider "
-                f"'{entry['provider']}' names unknown stage '{stage_id}'"
+                f"'{entry['provider']}' names unknown job '{job_id}'"
             )

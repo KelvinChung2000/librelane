@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""A sequential flow whose step list is expanded from a list of stages."""
+"""A sequential flow whose step list is expanded from a list of jobs."""
 
 from dataclasses import dataclass, replace
 from collections.abc import Iterable, Mapping, Sequence
@@ -21,20 +21,20 @@ from loguru import logger
 
 from librelane.common import Filter, parse_metric_modifiers
 from librelane.config import Config as ResolvedConfig, variable
-from librelane.stages.registry import StageRegistry
-from librelane.stages.resolution import (
+from librelane.jobs.registry import JobRegistry
+from librelane.jobs.resolution import (
     Resolution,
     ResolvedSpan,
-    StageEntry,
+    JobEntry,
     ToolSelection,
     resolve,
 )
-from librelane.stages.stage import (
-    Stage,
-    StageContractError,
-    StageResolutionError,
+from librelane.jobs.job import (
+    Job,
+    JobContractError,
+    JobResolutionError,
 )
-from librelane.stages.tools import extract_tools
+from librelane.jobs.tools import extract_tools
 from librelane.state import DesignFormat, State
 from librelane.steps import Step
 
@@ -45,7 +45,7 @@ from librelane.flows.sequential import SequentialFlow
 @dataclass(frozen=True)
 class Boundary:
     """
-    A contiguous run of resolved steps belonging to one stage, and the contract
+    A contiguous run of resolved steps belonging to one job, and the contract
     that must hold once its last step completes.
 
     Parameters
@@ -54,10 +54,10 @@ class Boundary:
         The provider whose obligation this boundary carries. A
         single name for a boundary covering one provider's steps, and the
         selected names joined by ``+`` for one covering a whole
-        ``multi_provider`` stage.
+        ``multi_provider`` job.
     """
 
-    stage_ids: tuple[str, ...]
+    job_ids: tuple[str, ...]
     provider: str
     step_ids: tuple[str, ...]
     provides: tuple[DesignFormat, ...]
@@ -71,25 +71,25 @@ class Boundary:
 class StagedFlow(SequentialFlow):
     """
     A :class:`SequentialFlow` whose step list is expanded from a list of
-    :class:`librelane.stages.Stage` objects, so the tool used for each phase
+    :class:`librelane.jobs.Job` objects, so the tool used for each phase
     can be chosen from configuration rather than by subclassing the flow.
 
     Attributes
     ----------
-    Stages : list[StageEntry]
-        The flow in stage terms. Entries are either ``Stage``
+    Stages : list[JobEntry]
+        The flow in job terms. Entries are either ``Job``
         objects, which expand to whichever provider is selected, or plain
         ``Step`` classes, which are provider-neutral utilities and boundary
-        observations. A plain step entry is only meaningful at a stage
+        observations. A plain step entry is only meaningful at a job
         boundary.
 
     ``Steps`` is expanded from ``Stages`` at class-definition time using each
-    stage's ``default_provider``, so it is a fully populated list at import and
+    job's ``default_provider``, so it is a fully populated list at import and
     every existing ``SequentialFlow`` facility keeps working unchanged:
     ``get_help_md``, step IDs and step directory names.
     """
 
-    Stages: list[StageEntry] = []
+    Stages: list[JobEntry] = []
 
     #: Overridden from ``Flow``, where it is ``NotImplemented``. ``StagedFlow``
     #: populates it from ``Stages``, but the class body of ``StagedFlow``
@@ -98,7 +98,7 @@ class StagedFlow(SequentialFlow):
     Steps: list[type[Step]] = []
 
     #: The gating entries a flow author wrote by hand, as opposed to those
-    #: generated from stage gates. Kept apart because generated entries name
+    #: generated from job gates. Kept apart because generated entries name
     #: concrete step IDs and so must be rebuilt for every subclass: a subclass
     #: declaring its own ``Stages`` produces different ones, which would
     #: otherwise leave an inherited entry naming a step that is not in the
@@ -108,16 +108,16 @@ class StagedFlow(SequentialFlow):
     #: The resolution ``Steps`` was expanded from. Its spans carry the
     #: ``provides`` and ``metrics`` of the providers actually selected, which
     #: the taxonomy alone does not know. Empty for a subclass that declares
-    #: ``Steps`` directly and so has no stages.
+    #: ``Steps`` directly and so has no jobs.
     _resolution: Resolution = Resolution([], [], ())
 
     class Config(SequentialFlow.Config):
         TOOLS: Optional[dict[str, Union[str, list[str]]]] = variable(
             None,
             description=(
-                "A mapping from stage id to the provider (tool) implementing "
+                "A mapping from job id to the provider (tool) implementing "
                 "it, for example {'synthesis': 'genus'}. Only overrides need "
-                "listing; an unnamed stage uses its default provider. Must be a "
+                "listing; an unnamed job uses its default provider. Must be a "
                 "literal mapping, as it is read before the configuration "
                 "preprocessor runs, and so cannot come from the PDK."
             ),
@@ -139,7 +139,7 @@ class StagedFlow(SequentialFlow):
             raise TypeError(
                 f"StagedFlow subclass '{Self.__qualname__}' declares neither "
                 f"'Stages' nor 'Steps'. Declare 'Stages' to expand a flow from "
-                f"the stage taxonomy, or 'Steps' to bypass it."
+                f"the job taxonomy, or 'Steps' to bypass it."
             )
 
         if "gating_config_vars" in Self.__dict__:
@@ -149,7 +149,7 @@ class StagedFlow(SequentialFlow):
         # Step IDs are only final once the base class has normalized
         # duplicates, so gates cannot be generated until after.
         super().__init_subclass__(scm_type=scm_type, name=name, **kwargs)
-        Self._apply_stage_gating(Self)
+        Self._apply_job_gating(Self)
         Self._validate_gating_config_vars(Self)
 
     def __init__(
@@ -175,7 +175,7 @@ class StagedFlow(SequentialFlow):
             step.id for step in self._resolution.steps
         ]
         # Assigned before the re-expansion below rather than after, because
-        # _apply_stage_gating reads each stage's gate off the spans.
+        # _apply_job_gating reads each job's gate off the spans.
         self._resolution = resolution
         if reexpanded:
             # Re-expansion happens before super().__init__, because that is
@@ -184,7 +184,7 @@ class StagedFlow(SequentialFlow):
             # TOOLS pre-pass exists is that the step set has to be known first.
             self.Steps = resolution.steps
             self._normalize_step_ids(self)
-            self._apply_stage_gating(self)
+            self._apply_job_gating(self)
             self.__prune_deselected_gates(self)
 
         super().__init__(
@@ -195,7 +195,7 @@ class StagedFlow(SequentialFlow):
 
         self.__executed_step_ids: set[str] = set()
         # A list per step, not one boundary: the last provider's boundary and the
-        # boundary covering the whole stage necessarily end on the same step.
+        # boundary covering the whole job necessarily end on the same step.
         self.__boundaries_by_last_step: dict[str, list[Boundary]] = {}
         for boundary in self._boundaries(self):
             self.__boundaries_by_last_step.setdefault(boundary.last_step_id, []).append(
@@ -215,7 +215,7 @@ class StagedFlow(SequentialFlow):
         before any tool is invoked.
         """
         available: set[str] = set()
-        last_stage = "<start of flow>"
+        last_job = "<start of flow>"
         gates_by_step_id = self.__gates_by_step_id()
 
         for step in self.Steps:
@@ -229,18 +229,18 @@ class StagedFlow(SequentialFlow):
                 # be tested before the membership check.
                 if view.optional or view.id in available:
                     continue
-                raise StageResolutionError(
+                raise JobResolutionError(
                     f"step '{step.id}' consumes view '{view.id}', which no "
                     f"earlier step in this configuration produces. The last "
-                    f"stage before it is {last_stage}. "
+                    f"job before it is {last_job}. "
                     f"{self.__how_to_produce(view)}"
                 )
             for view in step.outputs:
                 available.add(view.id)
-            span = getattr(step, "_stage_span", None)
+            span = getattr(step, "_job_span", None)
             if span is not None:
-                last_stage = (
-                    f"'{span[-1]}' (provider '{getattr(step, '_stage_provider', '?')}')"
+                last_job = (
+                    f"'{span[-1]}' (provider '{getattr(step, '_job_provider', '?')}')"
                 )
 
     @staticmethod
@@ -255,7 +255,7 @@ class StagedFlow(SequentialFlow):
 
         Searches both ``provides`` and ``native_views``. A view such as
         OpenROAD's ``odb`` never appears in any registration's ``provides``:
-        it is carried natively across a provider's own stage boundaries
+        it is carried natively across a provider's own job boundaries
         rather than produced as a neutral output. Omitting ``native_views``
         would misreport an orphaned consumer of such a view as one no
         registration declares at all, which is false and leaves the reader
@@ -263,17 +263,17 @@ class StagedFlow(SequentialFlow):
         """
         provides_producers = sorted(
             {
-                f"provider '{registration.provider}' of stage '{registration.stage}'"
-                for registration in StageRegistry.list()
+                f"provider '{registration.provider}' of job '{registration.job}'"
+                for registration in JobRegistry.list()
                 if view in registration.provides
             }
         )
         native_producers = sorted(
             {
-                f"provider '{registration.provider}' of stage "
-                f"'{registration.stage}' (natively, as an internal carry-over "
+                f"provider '{registration.provider}' of job "
+                f"'{registration.job}' (natively, as an internal carry-over "
                 f"between its own steps rather than a declared neutral output)"
-                for registration in StageRegistry.list()
+                for registration in JobRegistry.list()
                 if view in registration.native_views
             }
         )
@@ -282,7 +282,7 @@ class StagedFlow(SequentialFlow):
             return (
                 f"View '{view.id}' is declared by {' and '.join(producers)}, "
                 f"which this configuration did not select. Select it in TOOLS, "
-                f"or use a flow whose stages do not include this step."
+                f"or use a flow whose jobs do not include this step."
             )
         return (
             f"No provider registration declares view '{view.id}', so the step "
@@ -314,26 +314,26 @@ class StagedFlow(SequentialFlow):
         Every contract to check for ``target``, with each boundary's contract
         taken from the resolution rather than from the taxonomy. Only the
         resolution knows which providers were selected, and a
-        :class:`librelane.stages.Registration` may declare ``provides`` and
-        ``metrics`` beyond its stage's.
+        :class:`librelane.jobs.Registration` may declare ``provides`` and
+        ``metrics`` beyond its job's.
 
-        There are two contracts per stage, at two granularities, because the two
-        say different things on a ``multi_provider`` stage:
+        There are two contracts per job, at two granularities, because the two
+        say different things on a ``multi_provider`` job:
 
-        * The stage's own ``provides``/``metrics``, checked once the whole stage
+        * The job's own ``provides``/``metrics``, checked once the whole job
           has run. This obligation is satisfied by the selected providers
           jointly: both ``streamout`` tools stream out, and the one named by
           ``PRIMARY_GDSII_STREAMOUT_TOOL`` owns the neutral ``gds`` view, with
           the other writing it only if that tool did not run at all.
         * Each provider's own, checked once that provider's steps have run, so
-          that gating one tool of a stage off leaves the other still answerable
+          that gating one tool of a job off leaves the other still answerable
           for its metric.
 
-        For a single-provider stage the two cover the same steps and their union
+        For a single-provider job the two cover the same steps and their union
         is the whole contract, so no special case is needed.
         """
         result: list[Boundary] = []
-        for boundary in StagedFlow.stage_boundaries(target.Steps):
+        for boundary in StagedFlow.job_boundaries(target.Steps):
             span = StagedFlow._span_for(target, boundary)
             result.append(
                 replace(boundary, provides=span.provides, metrics=span.metrics)
@@ -357,22 +357,22 @@ class StagedFlow(SequentialFlow):
 
         Raises
         ------
-        StageResolutionError
+        JobResolutionError
             If the resolution does not cover that
-            stage, which means the step tags and the resolution disagree.
+            job, which means the step tags and the resolution disagree.
 
         Every tagged step in a ``StagedFlow``'s ``Steps`` came out of that flow's
         own resolution, whether directly or through ``Step.with_id``, so a
         miss here is a programming error rather than a configuration mistake. It has to be loud either way, because both callers
-        would otherwise carry on with an unenforced contract or an ungated stage.
+        would otherwise carry on with an unenforced contract or an ungated job.
         """
         for span in target._resolution.spans:
-            if span.stage_ids == boundary.stage_ids:
+            if span.job_ids == boundary.job_ids:
                 return span
         name = getattr(target, "__qualname__", type(target).__qualname__)
-        raise StageResolutionError(
-            f"flow '{name}' has steps tagged for stage "
-            f"{list(boundary.stage_ids)}, which its own resolution does not "
+        raise JobResolutionError(
+            f"flow '{name}' has steps tagged for job "
+            f"{list(boundary.job_ids)}, which its own resolution does not "
             f"cover. A 'Steps' list may not be assembled out of the steps "
             f"another flow's 'Stages' expanded to."
         )
@@ -385,7 +385,7 @@ class StagedFlow(SequentialFlow):
         # still reporting the step as executed, so a boundary ending on a step
         # that both emits a contracted metric and defers an error is checked
         # against a state that cannot contain the metric. It would then raise
-        # StageContractError and bury the real deferred error. No provider is
+        # JobContractError and bury the real deferred error. No provider is
         # affected today: every contracted metric is emitted by a step earlier in
         # its provider's sequence than the checker that defers.
         for boundary in self.__boundaries_by_last_step.get(step.id, []):
@@ -395,7 +395,7 @@ class StagedFlow(SequentialFlow):
                 # A run that did not execute every step cannot be held to its
                 # contract: the views and metrics were never attempted.
                 logger.debug(
-                    f"stage {list(boundary.stage_ids)}, provider "
+                    f"job {list(boundary.job_ids)}, provider "
                     f"'{boundary.provider}': not every step ran, contract not "
                     f"checked"
                 )
@@ -418,11 +418,11 @@ class StagedFlow(SequentialFlow):
             parts.append(f"views {missing_views}")
         if missing_metrics:
             parts.append(f"metrics {missing_metrics}")
-        raise StageContractError(
-            f"stage {list(boundary.stage_ids)}, provider "
+        raise JobContractError(
+            f"job {list(boundary.job_ids)}, provider "
             f"'{boundary.provider}', completed without producing "
-            f"{' and '.join(parts)}. It is contracted to produce them; a stage "
-            f"whose contract is not met cannot be handed to the next stage."
+            f"{' and '.join(parts)}. It is contracted to produce them; a job "
+            f"whose contract is not met cannot be handed to the next job."
         )
 
     @classmethod
@@ -460,7 +460,7 @@ class StagedFlow(SequentialFlow):
         removed, for example ``Magic.StreamOut`` once ``TOOLS`` picks klayout
         alone for ``streamout``. Such a gate is moot rather than wrong, and
         erroring on it would make provider selection unusable for precisely the
-        multi-tool stages it exists to serve.
+        multi-tool jobs it exists to serve.
         """
         step_ids = [step.id for step in target.Steps]
         kept: dict[str, list[str]] = {}
@@ -475,28 +475,28 @@ class StagedFlow(SequentialFlow):
         target.gating_config_vars = kept
 
     @staticmethod
-    def _apply_stage_gating(target) -> None:
+    def _apply_job_gating(target) -> None:
         """
-        Turns each stage's ``gating_config_var`` into step-level gating entries
+        Turns each job's ``gating_config_var`` into step-level gating entries
         covering every step of the provider resolved for ``target``.
 
         Reusing the existing step-level mechanism rather than adding a parallel
         one means gating behaves identically whichever provider is selected,
-        which is the whole point: ``RUN_CTS`` gates the ``cts`` stage no matter
+        which is the whole point: ``RUN_CTS`` gates the ``cts`` job no matter
         what implements it.
 
         Takes a target rather than binding to a class because instance-level
         ``TOOLS`` rebuilds ``Steps`` on the instance.
 
         The gate is read off the resolution rather than looked back up from
-        ``Stage.factory``, so that a flow placing a modified copy of a stage in
-        its ``Stages`` list, as ``replace(Stage.cts, gating_config_var="MY_GATE")``,
-        is gated by the variable it asked for. The registered stage is a default,
-        not the authority, in the same way ``Stage.using`` makes a pinned provider
+        ``Job.factory``, so that a flow placing a modified copy of a job in
+        its ``Stages`` list, as ``replace(Job.cts, gating_config_var="MY_GATE")``,
+        is gated by the variable it asked for. The registered job is a default,
+        not the authority, in the same way ``Job.using`` makes a pinned provider
         a default.
         """
         generated: dict[str, list[str]] = {}
-        for boundary in StagedFlow.stage_boundaries(target.Steps):
+        for boundary in StagedFlow.job_boundaries(target.Steps):
             gate = StagedFlow._span_for(target, boundary).gating_config_var
             if gate is None:
                 continue
@@ -506,7 +506,7 @@ class StagedFlow(SequentialFlow):
         merged = generated
         for key, value in target._explicit_gating_config_vars.items():
             # dict.fromkeys deduplicates while preserving order, so a variable
-            # that is both a stage gate and an explicit entry appears once.
+            # that is both a job gate and an explicit entry appears once.
             merged[key] = list(dict.fromkeys(merged.get(key, []) + list(value)))
         target.gating_config_vars = merged
 
@@ -519,28 +519,28 @@ class StagedFlow(SequentialFlow):
     ) -> Explanation:
         """
         As :meth:`librelane.flows.SequentialFlow.explain`, additionally
-        reporting the stages that contributed no steps. Those are announced
+        reporting the jobs that contributed no steps. Those are announced
         only at debug level during construction, so nothing else surfaces them.
         """
         return replace(
             super().explain(frm=frm, to=to, skip=skip),
-            unselected_stages=tuple(self._resolution.unselected),
+            unselected_jobs=tuple(self._resolution.unselected),
         )
 
     @classmethod
-    def describe_stages(Self) -> list[tuple[str, Optional[str]]]:
+    def describe_jobs(Self) -> list[tuple[str, Optional[str]]]:
         """
         Returns
         -------
         list[tuple[str, Optional[str]]]
-            One entry per stage in ``Stages``, in flow order, pairing the
-            stage id with the provider selected for it by default. The
-            provider is ``None`` for an unselected optional stage, and several
-            names joined by ``", "`` for a multi-provider stage.
+            One entry per job in ``Stages``, in flow order, pairing the
+            job id with the provider selected for it by default. The
+            provider is ``None`` for an unselected optional job, and several
+            names joined by ``", "`` for a multi-provider job.
         """
         described: list[tuple[str, Optional[str]]] = []
         for entry in Self.Stages:
-            if not isinstance(entry, Stage):
+            if not isinstance(entry, Job):
                 continue
             providers = entry.default_providers
             described.append((entry.id, ", ".join(providers) if providers else None))
@@ -551,19 +551,19 @@ class StagedFlow(SequentialFlow):
         result = super().get_help_md(myst_anchors=myst_anchors)
         if not Self.Stages:
             return result
-        result += "\n#### Stages\n\n"
+        result += "\n#### Jobs\n\n"
         result += (
             "Set the `TOOLS` configuration variable to change the tool used "
             "for any of these. See "
             "[Swapping Tools](./swapping_tools.md).\n\n"
         )
-        result += "| Stage | Default provider | Alternatives |\n"
+        result += "| Job | Default provider | Alternatives |\n"
         result += "| --- | --- | --- |\n"
-        for stage_id, default in Self.describe_stages():
+        for job_id, default in Self.describe_jobs():
             selected = set((default or "").split(", "))
             others = [
                 provider
-                for provider in StageRegistry.providers(stage_id)
+                for provider in JobRegistry.providers(job_id)
                 if provider not in selected
             ]
             default_cell = (
@@ -574,21 +574,21 @@ class StagedFlow(SequentialFlow):
             others_cell = (
                 ", ".join(f"`{name}`" for name in others) if others else "none"
             )
-            result += f"| `{stage_id}` | {default_cell} | {others_cell} |\n"
+            result += f"| `{job_id}` | {default_cell} | {others_cell} |\n"
         return result
 
     @staticmethod
     def __report_unselected(resolution: Resolution) -> None:
-        for stage_id in resolution.unselected:
-            logger.debug(f"stage '{stage_id}': no provider selected, skipped")
+        for job_id in resolution.unselected:
+            logger.debug(f"job '{job_id}': no provider selected, skipped")
 
     @classmethod
-    def stage_boundaries(Self, steps: list[type[Step]]) -> list[Boundary]:
+    def job_boundaries(Self, steps: list[type[Step]]) -> list[Boundary]:
         """
-        Recovers the stage boundary map from a final step list by scanning for
-        contiguous runs of steps carrying the same ``_stage_span`` tag.
+        Recovers the job boundary map from a final step list by scanning for
+        contiguous runs of steps carrying the same ``_job_span`` tag.
 
-        One boundary per stage: for a ``multi_provider`` stage its ``step_ids``
+        One boundary per job: for a ``multi_provider`` job its ``step_ids``
         are every selected provider's steps and its ``provider`` is their names
         joined by ``+``. See :meth:`provider_boundaries` for the finer grouping.
 
@@ -601,16 +601,16 @@ class StagedFlow(SequentialFlow):
     @classmethod
     def provider_boundaries(Self, steps: list[type[Step]]) -> list[Boundary]:
         """
-        As :meth:`stage_boundaries`, but one boundary per provider of a stage
-        rather than one per stage, by grouping on the ``_stage_provider`` tag as
-        well as ``_stage_span``.
+        As :meth:`job_boundaries`, but one boundary per provider of a job
+        rather than one per job, by grouping on the ``_job_provider`` tag as
+        well as ``_job_span``.
 
         This is the granularity at which a provider's own contract has to be
         checked. A boundary whose steps did not all run cannot be held to its
         contract, which is what lets ``RUN_MAGIC_STREAMOUT=false`` work at all.
-        At stage granularity that escape is far too wide on a ``multi_provider``
-        stage: gating one of the two ``drc`` tools off would excuse the other
-        from producing its metric, on a stage whose whole point is that each
+        At job granularity that escape is far too wide on a ``multi_provider``
+        job: gating one of the two ``drc`` tools off would excuse the other
+        from producing its metric, on a job whose whole point is that each
         provider checks the design independently.
         """
         return Self.__runs(steps, lambda span, provider: (span, provider))
@@ -636,7 +636,7 @@ class StagedFlow(SequentialFlow):
                 return
             boundaries.append(
                 Boundary(
-                    stage_ids=current_span,
+                    job_ids=current_span,
                     provider="+".join(current_providers),
                     step_ids=tuple(current_ids),
                     provides=(),
@@ -645,8 +645,8 @@ class StagedFlow(SequentialFlow):
             )
 
         for step in steps:
-            span: tuple[str, ...] | None = getattr(step, "_stage_span", None)
-            provider: str | None = getattr(step, "_stage_provider", None)
+            span: tuple[str, ...] | None = getattr(step, "_job_span", None)
+            provider: str | None = getattr(step, "_job_provider", None)
             step_key = key(span, provider) if span is not None else None
             if step_key != current_key:
                 flush()
@@ -657,7 +657,7 @@ class StagedFlow(SequentialFlow):
             if span is None:
                 continue
             # Both tags are written together by
-            # StageRegistration.tagged_steps, so a step carrying a span carries
+            # Registration.tagged_steps, so a step carrying a span carries
             # a provider. Stated rather than guarded: a None here would mean the
             # tagging itself is broken, and "+".join would fail further away.
             assert provider is not None
@@ -666,4 +666,4 @@ class StagedFlow(SequentialFlow):
             current_ids.append(step.id)
         flush()
 
-        return [boundary for boundary in boundaries if boundary.stage_ids]
+        return [boundary for boundary in boundaries if boundary.job_ids]

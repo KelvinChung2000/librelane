@@ -89,7 +89,7 @@ class SequentialFlow(Flow):
         that every gating variable is a declared Boolean.
 
         Separate from ``__init_subclass__`` so that :class:`StagedFlow` can
-        re-run it after generating gating entries from stage gates, which it can
+        re-run it after generating gating entries from job gates, which it can
         only do once step IDs have been normalized. Takes a target, like
         ``_normalize_step_ids``, because instance-level
         ``TOOLS`` rebuilds ``Steps`` on the instance rather than the class.
@@ -135,7 +135,7 @@ class SequentialFlow(Flow):
         run loop requires every variable in a step's list to be true, so the
         union reads as "all of the conditions that named this step apply",
         which is the only reading under which a wildcard a flow author wrote
-        cannot silently displace a stage gate generated for the same step.
+        cannot silently displace a job gate generated for the same step.
 
         Shared between :meth:`run` and
         :meth:`librelane.flows.StagedFlow._preflight_views`, so that the
@@ -174,7 +174,7 @@ class SequentialFlow(Flow):
         excluded by ``--from``/``--to``.
 
         Does nothing here. :class:`librelane.flows.StagedFlow` uses it to check
-        the stage contract at each stage boundary. Note that
+        the job contract at each job boundary. Note that
         ``create_reproducible`` breaks out of the run loop before this is
         reached, which is correct: a reproducible does not execute the flow.
         """
@@ -569,7 +569,7 @@ class SequentialFlow(Flow):
                         # librelane.flows.StagedFlow, which checks a stage
                         # contract there: a provider whose final step both emits
                         # a contracted metric and defers an error would raise
-                        # StageContractError and bury the real deferred error.
+                        # JobContractError and bury the real deferred error.
                         # No provider does today.
                         deferred_errors.append(str(e))
                     except StepError as e:
@@ -584,7 +584,7 @@ class SequentialFlow(Flow):
             self.progress_bar.end_stage(increment_ordinal=executed)
 
             # A reused step produced its views and metrics as surely as one that
-            # just ran, and they are in the state being checked, so the stage
+            # just ran, and they are in the state being checked, so the job
             # contract still applies to it.
             self._after_step(step, current_state, executed)
 

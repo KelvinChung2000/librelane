@@ -45,7 +45,7 @@ def test_every_step_of_an_unconstrained_flow_will_run(MetricIncrementer):
     assert [d.step_id for d in explanation.steps] == ["Test.MetricIncrementer"]
     assert all(d.will_run for d in explanation.steps)
     assert all(d.mechanism is None for d in explanation.steps)
-    assert explanation.unselected_stages == ()
+    assert explanation.unselected_jobs == ()
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -128,11 +128,11 @@ def test_a_deselected_provider_s_steps_are_absent_not_excluded(mock_config):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
-def test_turning_off_run_cts_excludes_every_step_of_the_stage(mock_config):
+def test_turning_off_run_cts_excludes_every_step_of_the_job(mock_config):
     """
-    A stage gate is lowered onto each step of the stage, so every step of the
-    cts stage reports the same gate. This is the case a user actually hits,
-    and the one describe_stages cannot answer.
+    A job gate is lowered onto each step of the job, so every step of the
+    cts job reports the same gate. This is the case a user actually hits,
+    and the one describe_jobs cannot answer.
     """
     from librelane.flows import Flow
 
@@ -152,9 +152,9 @@ def test_turning_off_run_cts_excludes_every_step_of_the_stage(mock_config):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
-def test_an_unselected_stage_is_reported_separately(mock_config):
+def test_an_unselected_job_is_reported_separately(mock_config):
     """
-    Stage.post_route_opt has a None default provider, so it contributes no
+    Job.post_route_opt has a None default provider, so it contributes no
     steps and cannot be a step entry.
     """
     from librelane.flows import Flow
@@ -163,7 +163,7 @@ def test_an_unselected_stage_is_reported_separately(mock_config):
     values = {v.name: v.default for v in Classic.config_vars}
     flow = Classic(mock_config.copy(**values))
 
-    assert "post_route_opt" in flow.explain().unselected_stages
+    assert "post_route_opt" in flow.explain().unselected_jobs
 
 
 def test_format_explanation_renders_every_row():
@@ -176,7 +176,7 @@ def test_format_explanation_renders_every_row():
                 StepDisposition("Test.Alpha", True, "will run", None),
                 StepDisposition("Test.Beta", False, "gated off by RUN_BETA", "gate"),
             ),
-            unselected_stages=("post_route_opt",),
+            unselected_jobs=("post_route_opt",),
         )
     )
 

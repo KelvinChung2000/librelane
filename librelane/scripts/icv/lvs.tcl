@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for ICValidator.LVS (stage "lvs").
+# Placeholder for ICValidator.LVS (job "lvs").
 #
 # This file uses a ".tcl" extension only because IC Validator's actual rule
 # deck format ("runset") is IC Validator's own format, not Tcl, and no
@@ -27,7 +27,7 @@
 # representation), and CURRENT_DEF / CURRENT_GDS / CURRENT_PNL for this
 # step's three declared inputs (DEF, GDS, and the powered netlist as the
 # schematic side of the comparison). This step declares no outputs beyond
-# stage "lvs"'s own contract, which requires none.
+# job "lvs"'s own contract, which requires none.
 #
 # This file contains no rule-deck content. It was not written because IC
 # Validator was unavailable to the author, who had no licensed access to

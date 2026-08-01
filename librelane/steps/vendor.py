@@ -201,7 +201,7 @@ class VendorPythonStep(Step):
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         message = (
             f"'{self.id}' is a scaffold and has no working implementation: "
-            "the PrimeTime 'snps' Python API calls for this stage have not "
+            "the PrimeTime 'snps' Python API calls for this job have not "
             "been written. No API call is guessed here; someone with access "
             "to PrimeTime needs to write them, using snps.cmd.<command>() "
             "calls that mirror the equivalent Tcl commands, before this "

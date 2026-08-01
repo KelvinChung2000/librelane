@@ -49,7 +49,7 @@ from librelane.steps.step import Step
 
 class PrimeTimeStep(VendorPythonStep):
     """
-    Shared base for PrimeTime's two signoff stages.
+    Shared base for PrimeTime's two signoff jobs.
 
     Both subclasses below are left with :meth:`VendorPythonStep.run`'s
     inherited ``NotImplementedError``. There is no script to point at, and no
@@ -67,9 +67,9 @@ class PreSTA(PrimeTimeStep):
     """
     Scaffold for pre-PnR static timing analysis using PrimeTime.
 
-    Mirrors the neutral contract of the ``pre_pnr_sta`` stage.
+    Mirrors the neutral contract of the ``pre_pnr_sta`` job.
     ``OpenROAD.STAPrePNR`` consumes the netlist and produces no view this
-    stage's contract tracks, and this step is scaffolded to the same boundary
+    job's contract tracks, and this step is scaffolded to the same boundary
     so it is a drop-in alternative provider rather than one with a narrower or
     wider contract.
     """
@@ -87,11 +87,10 @@ class SignoffSTA(PrimeTimeStep):
     """
     Scaffold for signoff static timing analysis using PrimeTime.
 
-    Mirrors the neutral contract of the ``signoff_sta`` stage.
+    Mirrors the neutral contract of the ``signoff_sta`` job.
     ``OpenROAD.STAPostPNR`` consumes the placed-and-routed design plus
     extracted parasitics and produces no additional neutral views (its
-    output is metrics and reports, not a view this stage's contract
-    tracks).
+    output is metrics and reports, not a view this job's contract tracks).
     """
 
     id = "PrimeTime.SignoffSTA"
@@ -120,9 +119,9 @@ class SignoffSTA(PrimeTimeStep):
 #: planned integration into PrimeTime/Fusion Compiler/"PrimeClosure" rather
 #: than PrimeRail. No public source states whether PrimeRail is being
 #: retired, kept separate, or folded into RedHawk-SC. Scaffolding a provider
-#: for the ``ir_drop`` stage under either product identity right now would
+#: for the ``ir_drop`` job under either product identity right now would
 #: bake in a guess about an acquisition-driven product consolidation that is
-#: still unresolved a few months after close; the stage already has a
+#: still unresolved a few months after close; the job already has a
 #: working OpenROAD provider, so nothing is lost by waiting for that
 #: question to actually resolve before adding a Synopsys one.
 
@@ -134,16 +133,16 @@ _PT_NAMESPACES = ("PT_",)
 
 #: Registrations for the aggregator to fold into the opt-in vendor-provider
 #: module. Not applied here. This module does not call
-#: ``StageRegistry.register`` itself.
+#: ``JobRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "pre_pnr_sta",
+        "job": "pre_pnr_sta",
         "provider": "pt",
         "steps": [PreSTA],
         "namespaces": _PT_NAMESPACES,
     },
     {
-        "stage": "signoff_sta",
+        "job": "signoff_sta",
         "provider": "pt",
         "steps": [SignoffSTA],
         "namespaces": _PT_NAMESPACES,

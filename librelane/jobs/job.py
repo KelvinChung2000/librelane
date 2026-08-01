@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""The :class:`Stage` dataclass, its factory, and the shared contract constants."""
+"""The :class:`Job` dataclass, its factory, and the shared contract constants."""
 
 import builtins
 from collections.abc import Sequence
@@ -22,14 +22,14 @@ from librelane.common.errors import FlowError
 from librelane.state import DesignFormat
 
 
-class StageError(RuntimeError):
+class JobDefinitionError(RuntimeError):
     """
-    Raised when a stage or a stage registration is itself malformed. This is a
+    Raised when a job or a job registration is itself malformed. This is a
     programming error in a provider package and surfaces at import time.
     """
 
 
-class StageResolutionError(FlowError):
+class JobResolutionError(FlowError):
     """
     Raised when a configuration cannot be resolved to a concrete step list:
     an unknown provider, an inconsistent span selection, a missing PDK
@@ -37,25 +37,25 @@ class StageResolutionError(FlowError):
     """
 
 
-class StageContractError(FlowError):
+class JobContractError(FlowError):
     """
-    Raised at runtime when a stage completes without having produced every
+    Raised at runtime when a job completes without having produced every
     view or metric it declared.
     """
 
 
-class StageMetaclass(type):
+class JobMetaclass(type):
     def __getattr__(Self, key: str):
-        stage = Self.factory.get(key)
-        if stage is not None:
-            return stage
-        raise AttributeError("Unknown Stage attribute", key, Self)
+        job = Self.factory.get(key)
+        if job is not None:
+            return job
+        raise AttributeError("Unknown Job attribute", key, Self)
 
 
 @dataclass(frozen=True)
-class Stage(metaclass=StageMetaclass):
+class Job(metaclass=JobMetaclass):
     """
-    A named phase of a flow. A stage is the unit of tool substitution and of
+    A named phase of a flow. A job is the unit of tool substitution and of
     independent gating. It never executes anything: a provider registration
     binds it to a sequence of concrete steps.
 
@@ -65,35 +65,35 @@ class Stage(metaclass=StageMetaclass):
         A lowercase alphanumeric/underscore identifier, for example
         ``detailed_routing``. This is what appears in the ``TOOLS``
         configuration key. It is not accepted by ``--from``/``--to``, which
-        resolve concrete step IDs only; re-entering a flow at a stage is not
+        resolve concrete step IDs only; re-entering a flow at a job is not
         implemented.
     full_name : str
         A human-readable name.
     default_provider : str | tuple[str, ...] | None
         The provider used when ``TOOLS`` does not name
         one. A tuple of provider names is legal only for a
-        :attr:`multi_provider` stage. ``None`` is legal only when
-        :attr:`optional` is ``True``, in which case the stage is unselected and
+        :attr:`multi_provider` job. ``None`` is legal only when
+        :attr:`optional` is ``True``, in which case the job is unselected and
         contributes no steps.
     requires : tuple[DesignFormat, ...]
-        The neutral views the stage consumes at its boundary.
+        The neutral views the job consumes at its boundary.
         A provider may additionally consume its own native views, declared on
         the registration.
     provides : tuple[DesignFormat, ...]
-        The neutral views every provider of this stage must have
-        produced by the time the stage completes. Enforced at runtime.
+        The neutral views every provider of this job must have
+        produced by the time the job completes. Enforced at runtime.
     metrics : tuple[str, ...]
-        The metric names every provider of this stage must have
+        The metric names every provider of this job must have
         produced by the time it completes. Enforced at runtime.
     gating_config_var : str | None
         A Boolean flow configuration variable that, when
-        false, skips every step of this stage.
+        false, skips every step of this job.
     multi_provider : bool
         Whether ``TOOLS`` may name a list of providers for
-        this stage, whose sequences are concatenated in listed order.
+        this job, whose sequences are concatenated in listed order.
     optional : bool
-        Whether the stage may be left unselected. Only legal for
-        stages whose :attr:`provides` no later stage requires.
+        Whether the job may be left unselected. Only legal for
+        jobs whose :attr:`provides` no later job requires.
     """
 
     id: str
@@ -119,7 +119,7 @@ class Stage(metaclass=StageMetaclass):
         -------
         tuple[str, ...]
             :attr:`default_provider` normalized to a tuple. Empty when
-            the stage is unselected by default.
+            the job is unselected by default.
         """
         if self.default_provider is None:
             return ()
@@ -127,36 +127,36 @@ class Stage(metaclass=StageMetaclass):
             return (self.default_provider,)
         return tuple(self.default_provider)
 
-    def using(self, provider: "str | Sequence[str]") -> "Stage":
+    def using(self, provider: "str | Sequence[str]") -> "Job":
         """
-        Pins the tool this stage runs, for use in a flow's ``Stages`` list::
+        Pins the tool this job runs, for use in a flow's ``Stages`` list::
 
-            Stages = [..., Stage.synthesis.using("yosys_vhdl"), ...]
+            Stages = [..., Job.synthesis.using("yosys_vhdl"), ...]
 
         Parameters
         ----------
         provider : str | Sequence[str]
             The provider name, or several for a
-            :attr:`multi_provider` stage, whose sequences are concatenated in
+            :attr:`multi_provider` job, whose sequences are concatenated in
             listed order.
 
         Returns
         -------
-        Stage
-            A copy of this stage whose :attr:`default_provider` is
+        Job
+            A copy of this job whose :attr:`default_provider` is
             ``provider``. The copy is deliberately *not* registered: it keeps
-            this stage's ``id``, so a ``TOOLS`` entry naming that id still
+            this job's ``id``, so a ``TOOLS`` entry naming that id still
             overrides the pin, because resolution consults ``TOOLS`` before
             ``default_provider``. A pin is a flow's default, not a lock.
 
         Raises
         ------
-        StageError
-            If several providers are named for a stage that runs
+        JobDefinitionError
+            If several providers are named for a job that runs
             exactly one tool, or if no provider is named at all.
 
         Naming a list is the multi-provider idiom, and is how a flow pins several
-        tools to one stage. It is legal only for a :attr:`multi_provider` stage.
+        tools to one job. It is legal only for a :attr:`multi_provider` job.
 
         The provider is not checked against the registry here. Registration
         order follows import order, so a check at flow-definition time would be
@@ -166,67 +166,67 @@ class Stage(metaclass=StageMetaclass):
         if not isinstance(provider, str):
             provider = tuple(provider)
             if not self.multi_provider:
-                raise StageError(
-                    f"Stage '{self.id}' does not accept a list of providers: it "
+                raise JobDefinitionError(
+                    f"Job '{self.id}' does not accept a list of providers: it "
                     f"runs exactly one tool. Got {list(provider)}."
                 )
             if len(provider) == 0:
-                raise StageError(
-                    f"Stage '{self.id}': 'using' was given an empty provider "
-                    f"list. To skip a stage, use its gating variable; there is "
+                raise JobDefinitionError(
+                    f"Job '{self.id}': 'using' was given an empty provider "
+                    f"list. To skip a job, use its gating variable; there is "
                     f"no way to select nothing."
                 )
         return replace(self, default_provider=provider)
 
-    def register(self) -> "Stage":
+    def register(self) -> "Job":
         """
-        Adds this stage to the registry. Raises :class:`StageError` if a stage
-        with the same id is already registered, or if the stage is internally
+        Adds this job to the registry. Raises :class:`JobDefinitionError` if a job
+        with the same id is already registered, or if the job is internally
         inconsistent.
         """
         if self.default_provider is None and not self.optional:
-            raise StageError(
-                f"Stage '{self.id}' has no default_provider but is not marked "
-                f"optional. Only optional stages may be left unselected."
+            raise JobDefinitionError(
+                f"Job '{self.id}' has no default_provider but is not marked "
+                f"optional. Only optional jobs may be left unselected."
             )
         if len(self.default_providers) > 1 and not self.multi_provider:
-            raise StageError(
-                f"Stage '{self.id}' defaults to several providers "
+            raise JobDefinitionError(
+                f"Job '{self.id}' defaults to several providers "
                 f"{list(self.default_providers)} but is not multi_provider."
             )
         self.__class__.factory.register(self)
         return self
 
-    class StageFactory(object):
+    class JobFactory(object):
         """
-        A factory singleton for Stages, allowing them to be registered and
+        A factory singleton for Jobs, allowing them to be registered and
         then retrieved by a string id.
         """
 
-        _registry: ClassVar[dict[str, "Stage"]] = {}
+        _registry: ClassVar[dict[str, "Job"]] = {}
 
         @classmethod
-        def register(Self, stage: "Stage") -> "Stage":
-            if stage.id in Self._registry:
-                raise StageError(f"Stage '{stage.id}' is already registered.")
-            Self._registry[stage.id] = stage
-            return stage
+        def register(Self, job: "Job") -> "Job":
+            if job.id in Self._registry:
+                raise JobDefinitionError(f"Job '{job.id}' is already registered.")
+            Self._registry[job.id] = job
+            return job
 
         @classmethod
-        def get(Self, id: str) -> "Stage | None":
+        def get(Self, id: str) -> "Job | None":
             return Self._registry.get(id)
 
         @classmethod
         def list(Self) -> builtins.list[str]:
             return list(Self._registry.keys())
 
-    factory: ClassVar = StageFactory
+    factory: ClassVar = JobFactory
 
 
 #: The view contract shared by every in-place place-and-route transform: a
-#: stage that takes a placed-or-routed design and returns one, changing the
+#: job that takes a placed-or-routed design and returns one, changing the
 #: layout but not the set of views. Declared once and reused rather than
-#: restated on each of the fifteen stages that share it.
+#: restated on each of the fifteen jobs that share it.
 PNR_IN_PLACE_REQUIRES: tuple[DesignFormat, ...] = (
     DesignFormat.def_,
     DesignFormat.nl,

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `pre_pnr_sta` stage's Tempus.PrePNRSTA step.
+# Placeholder for the `pre_pnr_sta` job's Tempus.PrePNRSTA step.
 #
 # This file intentionally contains no executable Tcl. Tempus.PrePNRSTA
 # .run() (inherited from VendorTclStep) raises NotImplementedError before
@@ -32,5 +32,5 @@
 #
 # No single named counterpart script exists in librelane/scripts/openroad/:
 # OpenROAD.STAPrePNR shares scripts/openroad/sta/corner.tcl with
-# OpenROAD.STAPostPNR through subclassing rather than a per-stage filename.
-# This filename is named for the stage it implements instead.
+# OpenROAD.STAPostPNR through subclassing rather than a per-job filename.
+# This filename is named for the job it implements instead.

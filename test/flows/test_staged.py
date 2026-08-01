@@ -26,20 +26,20 @@ _MOCK_PDK = {
 def SmallStaged():
     from librelane.config import variable
     from librelane.flows import StagedFlow
-    from librelane.stages import Stage
+    from librelane.jobs import Job
     from librelane.steps import OpenROAD
 
     class SmallStaged(StagedFlow):
         Stages = [
-            Stage.global_placement,
+            Job.global_placement,
             OpenROAD.STAMidPNR,
-            Stage.detailed_placement,
-            Stage.cts,
+            Job.detailed_placement,
+            Job.cts,
         ]
 
         class Config(StagedFlow.Config):
-            # The cts stage declares RUN_CTS as its gate, so any flow including
-            # that stage has to declare the variable.
+            # The cts job declares RUN_CTS as its gate, so any flow including
+            # that job has to declare the variable.
             RUN_CTS: bool = variable(True, description="test gate")
 
     return SmallStaged
@@ -55,9 +55,9 @@ def test_steps_are_populated_at_class_definition(SmallStaged):
 
 
 def test_boundaries_exclude_plain_steps(SmallStaged):
-    boundaries = SmallStaged.stage_boundaries(SmallStaged.Steps)
+    boundaries = SmallStaged.job_boundaries(SmallStaged.Steps)
 
-    assert [b.stage_ids for b in boundaries] == [
+    assert [b.job_ids for b in boundaries] == [
         ("global_placement",),
         ("detailed_placement",),
         ("cts",),
@@ -71,19 +71,19 @@ def test_boundaries_exclude_plain_steps(SmallStaged):
 
 def test_duplicate_normalization_preserves_tags():
     from librelane.flows import StagedFlow
-    from librelane.stages import Stage
+    from librelane.jobs import Job
 
     class Doubled(StagedFlow):
         Stages = [
-            Stage.factory.get("global_placement"),
-            Stage.factory.get("global_placement"),
+            Job.factory.get("global_placement"),
+            Job.factory.get("global_placement"),
         ]
 
     assert [step.id for step in Doubled.Steps] == [
         "OpenROAD.GlobalPlacement",
         "OpenROAD.GlobalPlacement-1",
     ]
-    boundaries = Doubled.stage_boundaries(Doubled.Steps)
+    boundaries = Doubled.job_boundaries(Doubled.Steps)
     assert len(boundaries) == 1
     assert boundaries[0].step_ids == (
         "OpenROAD.GlobalPlacement",
@@ -105,13 +105,13 @@ def test_subclass_declaring_neither_stages_nor_steps_is_rejected():
             pass
 
 
-def test_stage_gate_applies_to_every_step_of_the_stage():
+def test_job_gate_applies_to_every_step_of_the_job():
     from librelane.config import variable
     from librelane.flows import StagedFlow
-    from librelane.stages import Stage
+    from librelane.jobs import Job
 
     class Gated(StagedFlow):
-        Stages = [Stage.antenna_repair]
+        Stages = [Job.antenna_repair]
 
         class Config(StagedFlow.Config):
             RUN_ANTENNA_REPAIR: bool = variable(True, description="test gate")
@@ -124,15 +124,15 @@ def test_stage_gate_applies_to_every_step_of_the_stage():
 
 
 @pytest.fixture(scope="module")
-def ProbeStage():
+def ProbeJob():
     """
-    A stage whose gating variable can be overridden via dataclasses.replace.
+    A job whose gating variable can be overridden via dataclasses.replace.
 
-    Module-scoped because Stage.factory and StageRegistry are process-wide
+    Module-scoped because Job.factory and JobRegistry are process-wide
     singletons. The step ID uses the Test. prefix the repository reserves for
     ephemeral test steps.
     """
-    from librelane.stages import Stage, StageRegistry
+    from librelane.jobs import Job, JobRegistry
     from librelane.steps import Step
 
     @Step.factory.register()
@@ -145,32 +145,32 @@ def ProbeStage():
         def run(self, state_in, **kwargs):
             return {}, {}
 
-    Stage(
-        id="probe_stage",
-        full_name="Probe Stage",
+    Job(
+        id="probe_job",
+        full_name="Probe Job",
         default_provider="probe",
         requires=(),
         provides=(),
-        gating_config_var="RUN_PROBE_STAGE",
+        gating_config_var="RUN_PROBE_JOB",
     ).register()
 
-    StageRegistry.register(
-        stage="probe_stage",
+    JobRegistry.register(
+        job="probe_job",
         provider="probe",
         steps=[Probe],
         namespaces=["PROBE_"],
     )
-    return Stage.factory.get("probe_stage")
+    return Job.factory.get("probe_job")
 
 
-def test_modified_stage_gating_variable_is_respected(ProbeStage):
+def test_modified_job_gating_variable_is_respected(ProbeJob):
     """
-    When a flow places a modified copy of a stage in its Stages list with
-    dataclasses.replace(stage, gating_config_var="NEW_VAR"), the modified
-    gating variable is used, not the one from Stage.factory.
+    When a flow places a modified copy of a job in its Stages list with
+    dataclasses.replace(job, gating_config_var="NEW_VAR"), the modified
+    gating variable is used, not the one from Job.factory.
 
     Regression test: under the old code that re-derived the gating variable
-    from Stage.factory, this would have produced ["RUN_PROBE_STAGE"] instead
+    from Job.factory, this would have produced ["RUN_PROBE_JOB"] instead
     of the correct ["MY_GATE"]. ResolvedSpan.gating_config_var must remain
     authoritative.
     """
@@ -180,7 +180,7 @@ def test_modified_stage_gating_variable_is_respected(ProbeStage):
     from librelane.flows import StagedFlow
 
     class ModifiedGate(StagedFlow):
-        Stages = [dataclasses.replace(ProbeStage, gating_config_var="MY_GATE")]
+        Stages = [dataclasses.replace(ProbeJob, gating_config_var="MY_GATE")]
 
         class Config(StagedFlow.Config):
             MY_GATE: bool = variable(True, description="test gate")
@@ -213,7 +213,7 @@ def test_subclass_may_declare_steps_directly():
         Steps = [OpenROAD.STAMidPNR]
 
     assert [step.id for step in Bypassed.Steps] == ["OpenROAD.STAMidPNR"]
-    assert Bypassed.stage_boundaries(Bypassed.Steps) == []
+    assert Bypassed.job_boundaries(Bypassed.Steps) == []
 
 
 def _flow_with_tools(mock_config, FlowClass, tools, **overrides):
@@ -222,7 +222,7 @@ def _flow_with_tools(mock_config, FlowClass, tools, **overrides):
     Config.load. The mock variable set the fixtures install collides with real
     step variables (DIODE_ON_PORTS), so the real flow cannot be validated under
     them; the pre-pass that reads TOOLS out of raw sources is covered by
-    test/stages/test_tools_extraction.py instead.
+    test/jobs/test_tools_extraction.py instead.
 
     Skipping Config.load also means nothing put the flow's own variables into the
     configuration, so its declared defaults are supplied here, with ``overrides``
@@ -243,7 +243,7 @@ def _classic_with_tools(mock_config, tools, **overrides):
     )
 
 
-#: Selecting klayout alone for the streamout stage removes Magic.StreamOut, and
+#: Selecting klayout alone for the streamout job removes Magic.StreamOut, and
 #: KLayout.XOR compares the two tools' GDSII against each other, so it hard-
 #: requires a Magic GDS that nothing then produces. The view preflight says so
 #: at startup; see test_klayout_only_streamout_needs_the_xor_disabled. Tests
@@ -290,12 +290,12 @@ def test_default_run_does_not_reexpand(mock_config):
 @mock_variables([flow_module, sequential_module, step_module])
 def test_gates_for_a_deselected_tool_are_dropped_not_rejected(mock_config):
     """
-    Selecting one tool of a multi_provider stage removes the other's steps,
+    Selecting one tool of a multi_provider job removes the other's steps,
     leaving Classic's hand-written per-tool gates with nothing to name. That
     makes them moot, not wrong: rejecting them would make TOOLS unusable for
-    exactly the stages it exists to serve.
+    exactly the jobs it exists to serve.
 
-    The tool's checker goes with it. Checker.MagicDRC belongs to the drc stage's
+    The tool's checker goes with it. Checker.MagicDRC belongs to the drc job's
     magic provider, so deselecting magic removes the step and its gate together,
     rather than leaving a checker demanding a metric no selected tool emitted.
     """
@@ -371,35 +371,35 @@ def test_klayout_lvs_is_selectable_on_classic(mock_config):
 @mock_variables([flow_module, sequential_module, step_module])
 def test_unknown_provider_is_rejected_with_the_registered_names():
     from librelane.flows import Flow
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
     Classic = Flow.factory.get("Classic")
-    with pytest.raises(StageResolutionError, match="no provider named 'genus'"):
+    with pytest.raises(JobResolutionError, match="no provider named 'genus'"):
         Classic({**_MINIMAL_DESIGN, "TOOLS": {"synthesis": "genus"}}, **_MOCK_PDK)
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
-def test_unknown_stage_key_is_rejected_with_a_suggestion():
+def test_unknown_job_key_is_rejected_with_a_suggestion():
     from librelane.flows import Flow
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
     Classic = Flow.factory.get("Classic")
-    with pytest.raises(StageResolutionError, match="Did you mean: 'synthesis'"):
+    with pytest.raises(JobResolutionError, match="Did you mean: 'synthesis'"):
         Classic({**_MINIMAL_DESIGN, "TOOLS": {"synthesys": "yosys"}}, **_MOCK_PDK)
 
 
 @pytest.fixture(scope="module")
-def ContractTestStage():
+def ContractTestJob():
     """
-    A stage whose only provider fails to emit a metric it contracted.
+    A job whose only provider fails to emit a metric it contracted.
 
-    Module-scoped because Stage.factory and StageRegistry are process-wide
+    Module-scoped because Job.factory and JobRegistry are process-wide
     singletons: a function-scoped fixture would fail on the second use with
     "already registered". The step ID uses the Test. prefix the repository
     reserves for ephemeral test steps, which test_registry_snapshot.py excludes.
     """
-    from librelane.stages import Stage, StageRegistry
+    from librelane.jobs import Job, JobRegistry
     from librelane.steps import Step
 
     @Step.factory.register()
@@ -412,7 +412,7 @@ def ContractTestStage():
         def run(self, state_in, **kwargs):
             return {}, {}
 
-    Stage(
+    Job(
         id="contract_test",
         full_name="Contract Test",
         default_provider="silent",
@@ -421,41 +421,41 @@ def ContractTestStage():
         metrics=("test__required",),
     ).register()
 
-    StageRegistry.register(
-        stage="contract_test",
+    JobRegistry.register(
+        job="contract_test",
         provider="silent",
         steps=[Silent],
         namespaces=["TEST_"],
     )
-    return Stage.factory.get("contract_test")
+    return Job.factory.get("contract_test")
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
-def test_missing_contracted_metric_raises(ContractTestStage):
+def test_missing_contracted_metric_raises(ContractTestJob):
     from librelane.flows import StagedFlow
-    from librelane.stages import StageContractError
+    from librelane.jobs import JobContractError
 
     class Broken(StagedFlow):
-        Stages = [ContractTestStage]
+        Stages = [ContractTestJob]
 
     flow = Broken(_MINIMAL_DESIGN, **_MOCK_PDK)
 
-    with pytest.raises(StageContractError, match="test__required"):
+    with pytest.raises(JobContractError, match="test__required"):
         flow.start()
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
-def test_skipped_stage_is_not_contract_checked(ContractTestStage):
+def test_skipped_job_is_not_contract_checked(ContractTestJob):
     """
-    A stage that did not run every step cannot be held to its contract: the
+    A job that did not run every step cannot be held to its contract: the
     views and metrics were never attempted.
     """
     from librelane.flows import StagedFlow
 
     class Broken(StagedFlow):
-        Stages = [ContractTestStage]
+        Stages = [ContractTestJob]
 
     flow = Broken(_MINIMAL_DESIGN, **_MOCK_PDK)
 
@@ -463,22 +463,22 @@ def test_skipped_stage_is_not_contract_checked(ContractTestStage):
 
 
 @pytest.fixture(scope="module")
-def MultiProviderContractStages():
+def MultiProviderContractJobs():
     """
-    Two multi_provider stages, both shaped like a real one:
+    Two multi_provider jobs, both shaped like a real one:
 
     * ``per_provider_contract`` is shaped like ``drc``. Each provider runs its
       own deck and contracts its own metric, and neither emits it.
     * ``joint_contract`` is shaped like ``streamout``. The obligation belongs to
-      the stage rather than to either provider, and exactly one of the two
+      the job rather than to either provider, and exactly one of the two
       satisfies it, the way ``PRIMARY_GDSII_STREAMOUT_TOOL`` decides which
       stream-out result becomes the neutral ``gds`` view.
 
-    Module-scoped because Stage.factory and StageRegistry are process-wide
+    Module-scoped because Job.factory and JobRegistry are process-wide
     singletons. The step IDs use the Test. prefix the repository reserves for
     ephemeral test steps, which test_registry_snapshot.py excludes.
     """
-    from librelane.stages import Stage, StageRegistry
+    from librelane.jobs import Job, JobRegistry
     from librelane.steps import Step
 
     class Quiet(Step):
@@ -511,7 +511,7 @@ def MultiProviderContractStages():
         def run(self, state_in, **kwargs):
             return {}, {"test__joint": 0}
 
-    Stage(
+    Job(
         id="per_provider_contract",
         full_name="Per Provider Contract",
         default_provider=("first", "second"),
@@ -519,7 +519,7 @@ def MultiProviderContractStages():
         provides=(),
         multi_provider=True,
     ).register()
-    Stage(
+    Job(
         id="joint_contract",
         full_name="Joint Contract",
         default_provider=("silent", "emitter"),
@@ -535,38 +535,36 @@ def MultiProviderContractStages():
         ("joint_contract", "silent", JointSilent, []),
         ("joint_contract", "emitter", JointEmitter, []),
     )
-    for stage_id, provider, step, metrics in registrations:
-        StageRegistry.register(
-            stage=stage_id,
+    for job_id, provider, step, metrics in registrations:
+        JobRegistry.register(
+            job=job_id,
             provider=provider,
             steps=[step],
             namespaces=["TEST_"],
             metrics=metrics,
         )
-    return Stage.factory.get("per_provider_contract"), Stage.factory.get(
-        "joint_contract"
-    )
+    return Job.factory.get("per_provider_contract"), Job.factory.get("joint_contract")
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
 def test_gating_one_tool_leaves_the_other_s_contract_enforced(
-    MultiProviderContractStages,
+    MultiProviderContractJobs,
 ):
     """
-    Both providers of a multi_provider stage used to be collapsed into one
+    Both providers of a multi_provider job used to be collapsed into one
     boundary, and a boundary whose steps did not all run is not held to its
     contract. So gating one tool off - RUN_MAGIC_DRC=false being the real,
     documented case - excused the *other* tool from producing its metric, on a
-    stage whose whole point is that each provider checks the design
+    job whose whole point is that each provider checks the design
     independently. Since MetricChecker.run warns and returns success when its
     metric is absent, that is a DRC check passing on an unexamined design.
     """
     from librelane.config import variable
     from librelane.flows import StagedFlow
-    from librelane.stages import StageContractError
+    from librelane.jobs import JobContractError
 
-    PerProvider, _ = MultiProviderContractStages
+    PerProvider, _ = MultiProviderContractJobs
 
     class Both(StagedFlow):
         Stages = [PerProvider]
@@ -577,29 +575,29 @@ def test_gating_one_tool_leaves_the_other_s_contract_enforced(
 
     flow = Both(_MINIMAL_DESIGN, **_MOCK_PDK)
 
-    with pytest.raises(StageContractError, match="test__second"):
+    with pytest.raises(JobContractError, match="test__second"):
         flow.start()
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
-def test_a_stage_level_contract_stays_joint_across_its_providers(
-    MultiProviderContractStages,
+def test_a_job_level_contract_stays_joint_across_its_providers(
+    MultiProviderContractJobs,
 ):
     """
     The converse of the test above, and the reason a provider's contract cannot
-    simply be the stage's contract repeated per provider.
+    simply be the job's contract repeated per provider.
 
-    A stage's own ``provides``/``metrics`` are what the stage owes once it
-    completes, and a multi_provider stage may satisfy them with any one of its
+    A job's own ``provides``/``metrics`` are what the job owes once it
+    completes, and a multi_provider job may satisfy them with any one of its
     providers. ``streamout`` is the live case: both tools stream out, but only
     the one named by PRIMARY_GDSII_STREAMOUT_TOOL writes the neutral ``gds``
-    view. Holding each provider to the stage's obligation separately would fail
+    view. Holding each provider to the job's obligation separately would fail
     the flow at the first provider's boundary.
     """
     from librelane.flows import StagedFlow
 
-    _, Joint = MultiProviderContractStages
+    _, Joint = MultiProviderContractJobs
 
     class Both(StagedFlow):
         Stages = [Joint]
@@ -610,7 +608,7 @@ def test_a_stage_level_contract_stays_joint_across_its_providers(
 
 
 #: The four ways an ordinary user turns off one tool of one of `Classic`'s two
-#: multi-provider stages: the gating variable, the stage, the provider it
+#: multi-provider jobs: the gating variable, the job, the provider it
 #: removes, and the provider that must stay answerable for its own contract.
 _ONE_TOOL_GATED = [
     ("RUN_MAGIC_DRC", "drc", "magic", "klayout"),
@@ -620,18 +618,18 @@ _ONE_TOOL_GATED = [
 ]
 
 
-@pytest.mark.parametrize(("gate", "stage_id", "gated", "kept"), _ONE_TOOL_GATED)
+@pytest.mark.parametrize(("gate", "job_id", "gated", "kept"), _ONE_TOOL_GATED)
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, sequential_module, step_module])
 def test_gating_one_real_tool_leaves_the_other_s_contract_checked(
-    mock_config, gate, stage_id, gated, kept
+    mock_config, gate, job_id, gated, kept
 ):
     """
     The same defect as test_gating_one_tool_leaves_the_other_s_contract_enforced,
-    read off the real flow rather than an ephemeral stage, for all four ways a
-    user can turn one tool of a multi-provider stage off.
+    read off the real flow rather than an ephemeral job, for all four ways a
+    user can turn one tool of a multi-provider job off.
 
-    The stage-wide boundary is legitimately not checked here, since a run that
+    The job-wide boundary is legitimately not checked here, since a run that
     skipped steps cannot be held to an obligation those steps would have met.
     That is exactly why the surviving provider needs a boundary of its own.
     """
@@ -644,16 +642,14 @@ def test_gating_one_real_tool_leaves_the_other_s_contract_checked(
         return all(flow.config[name] for name in gates.get(step_id, []))
 
     boundaries = {
-        (boundary.stage_ids, boundary.provider): boundary
+        (boundary.job_ids, boundary.provider): boundary
         for boundary in flow._boundaries(flow)
     }
-    whole_stage = boundaries[((stage_id,), "magic+klayout")]
-    assert not all(runs(step_id) for step_id in whole_stage.step_ids)
+    whole_job = boundaries[((job_id,), "magic+klayout")]
+    assert not all(runs(step_id) for step_id in whole_job.step_ids)
 
-    assert not all(
-        runs(step_id) for step_id in boundaries[((stage_id,), gated)].step_ids
-    )
-    surviving = boundaries[((stage_id,), kept)]
+    assert not all(runs(step_id) for step_id in boundaries[((job_id,), gated)].step_ids)
+    surviving = boundaries[((job_id,), kept)]
     assert all(runs(step_id) for step_id in surviving.step_ids)
     assert surviving.provides or surviving.metrics, (
         "the surviving provider must have something of its own to answer for, "
@@ -700,14 +696,14 @@ def PreflightSteps():
 @mock_variables([flow_module, sequential_module, step_module])
 def test_preflight_rejects_an_input_no_earlier_step_produces(PreflightSteps):
     from librelane.flows import StagedFlow
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
     _, WantsHeader = PreflightSteps
 
     class Broken(StagedFlow):
         Steps = [WantsHeader]
 
-    with pytest.raises(StageResolutionError, match="json_h"):
+    with pytest.raises(JobResolutionError, match="json_h"):
         Broken(_MINIMAL_DESIGN, **_MOCK_PDK)
 
 
@@ -793,16 +789,16 @@ def test_default_classic_passes_the_preflight(mock_config):
 def test_klayout_only_streamout_needs_the_xor_disabled(mock_config):
     """
     KLayout.XOR compares Magic's GDSII against KLayout's, so selecting klayout
-    alone for the streamout stage leaves it hard-requiring a view nothing
+    alone for the streamout job leaves it hard-requiring a view nothing
     produces. Its gate is RUN_KLAYOUT_XOR plus the two per-tool streamout
     variables, and TOOLS is not one of them, so the gate does not fire and the
     step really would run. This configuration was already broken before the
     preflight existed; the difference is that it now fails at startup naming the
     view instead of crashing once routing is done.
     """
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
-    with pytest.raises(StageResolutionError) as raised:
+    with pytest.raises(JobResolutionError) as raised:
         _classic_with_tools(mock_config, {"streamout": "klayout"})
 
     message = str(raised.value)
@@ -810,7 +806,7 @@ def test_klayout_only_streamout_needs_the_xor_disabled(mock_config):
     assert "mag_gds" in message
     # The error has to name the provider that would have produced the view, or
     # the reader is left to work out for themselves which tool they dropped.
-    assert "provider 'magic' of stage 'streamout'" in message
+    assert "provider 'magic' of job 'streamout'" in message
 
 
 #: The single-provider selections of `Classic` that legitimately fail the view
@@ -835,28 +831,28 @@ _ORPHANING_SELECTIONS = {
     ("streamout", "magic"): (
         "KLayout.XOR",
         "klayout_gds",
-        "provider 'klayout' of stage 'streamout'",
+        "provider 'klayout' of job 'streamout'",
     ),
     ("streamout", "klayout"): (
         "KLayout.XOR",
         "mag_gds",
-        "provider 'magic' of stage 'streamout'",
+        "provider 'magic' of job 'streamout'",
     ),
     ("synthesis", "yosys_vhdl"): (
         "Odb.SetPowerConnections",
         "json_h",
-        "provider 'yosys' of stage 'synthesis'",
+        "provider 'yosys' of job 'synthesis'",
     ),
 }
 
 
-def _stages_with_several_providers(FlowClass) -> dict[str, list[str]]:
-    from librelane.stages import Stage, StageRegistry
+def _jobs_with_several_providers(FlowClass) -> dict[str, list[str]]:
+    from librelane.jobs import Job, JobRegistry
 
     return {
-        entry.id: StageRegistry.providers(entry.id)
+        entry.id: JobRegistry.providers(entry.id)
         for entry in FlowClass.Stages
-        if isinstance(entry, Stage) and len(StageRegistry.providers(entry.id)) > 1
+        if isinstance(entry, Job) and len(JobRegistry.providers(entry.id)) > 1
     }
 
 
@@ -864,32 +860,32 @@ def _stages_with_several_providers(FlowClass) -> dict[str, list[str]]:
 @mock_variables([flow_module, sequential_module, step_module])
 def test_every_single_provider_selection_leaves_no_orphaned_step(mock_config):
     """
-    Drives the view preflight across `Classic` once per provider of every stage
+    Drives the view preflight across `Classic` once per provider of every job
     that has more than one, which is what a vendor provider added later gets
     checked by for free: register it, and this test says whether selecting it
     leaves somebody else's tool steps behind.
     """
     from librelane.flows import Flow
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
-    selections = _stages_with_several_providers(Flow.factory.get("Classic"))
+    selections = _jobs_with_several_providers(Flow.factory.get("Classic"))
     assert selections == {
         "synthesis": ["yosys", "yosys_vhdl"],
         "streamout": ["magic", "klayout"],
         "drc": ["magic", "klayout"],
         "lvs": ["netgen", "klayout"],
-    }, "a stage gained or lost a provider; extend _ORPHANING_SELECTIONS if so"
+    }, "a job gained or lost a provider; extend _ORPHANING_SELECTIONS if so"
 
-    for stage_id, providers in selections.items():
+    for job_id, providers in selections.items():
         for provider in providers:
-            expected = _ORPHANING_SELECTIONS.get((stage_id, provider))
+            expected = _ORPHANING_SELECTIONS.get((job_id, provider))
             if expected is None:
-                _classic_with_tools(mock_config, {stage_id: provider})
+                _classic_with_tools(mock_config, {job_id: provider})
                 continue
-            with pytest.raises(StageResolutionError) as raised:
-                _classic_with_tools(mock_config, {stage_id: provider})
+            with pytest.raises(JobResolutionError) as raised:
+                _classic_with_tools(mock_config, {job_id: provider})
             for fragment in expected:
-                assert fragment in str(raised.value), (stage_id, provider, fragment)
+                assert fragment in str(raised.value), (job_id, provider, fragment)
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -902,9 +898,9 @@ def test_vhdl_synthesis_on_classic_fails_the_preflight(mock_config):
     view, rather than crash deep in the flow. Dropping those steps is what makes
     VHDLClassic a different flow rather than a differently configured Classic.
     """
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
-    with pytest.raises(StageResolutionError, match="json_h"):
+    with pytest.raises(JobResolutionError, match="json_h"):
         _classic_with_tools(mock_config, {"synthesis": "yosys_vhdl"})
 
 
@@ -951,7 +947,7 @@ def test_preflight_gate_expansion_matches_the_real_run_for_a_colliding_key(
     """
     from librelane.config import variable
     from librelane.flows import StagedFlow
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
     WantsOptionalHeader, WantsHeader = PreflightSteps
 
@@ -994,7 +990,7 @@ def test_preflight_gate_expansion_matches_the_real_run_for_a_colliding_key(
             RUN_A: bool = variable(True, description="test gate, true")
             RUN_B: bool = variable(True, description="test gate, true")
 
-    with pytest.raises(StageResolutionError, match="json_h"):
+    with pytest.raises(JobResolutionError, match="json_h"):
         BothTrue(_MINIMAL_DESIGN, **_MOCK_PDK)
 
 
@@ -1029,16 +1025,16 @@ def test_orphaned_native_view_consumer_names_a_native_provider(OdbConsumerStep):
     Pins the fix for a Task 12 review finding: '__how_to_produce' only
     searched 'provides', so an orphaned consumer of a tool-native view such as
     'odb' fell into the "no provider registration declares view" branch, which
-    is false - OpenROAD carries 'odb' natively across several of its stages.
+    is false - OpenROAD carries 'odb' natively across several of its jobs.
     The remedial half of the message must instead name an OpenROAD provider.
     """
     from librelane.flows import StagedFlow
-    from librelane.stages import StageResolutionError
+    from librelane.jobs import JobResolutionError
 
     class Orphan(StagedFlow):
         Steps = [OdbConsumerStep]
 
-    with pytest.raises(StageResolutionError) as excinfo:
+    with pytest.raises(JobResolutionError) as excinfo:
         Orphan(_MINIMAL_DESIGN, **_MOCK_PDK)
 
     message = str(excinfo.value)
@@ -1047,40 +1043,40 @@ def test_orphaned_native_view_consumer_names_a_native_provider(OdbConsumerStep):
     assert "provider 'openroad'" in message
 
 
-def test_help_lists_stages_and_their_providers():
+def test_help_lists_jobs_and_their_providers():
     from librelane.flows import Flow
 
     Classic = Flow.factory.get("Classic")
     help_md = Classic.get_help_md()
 
-    assert "#### Stages" in help_md
+    assert "#### Jobs" in help_md
     assert "| `detailed_routing` | `openroad` |" in help_md
     assert "| `streamout` | `magic`, `klayout` |" in help_md
     assert "| `post_route_opt` | none selected |" in help_md
 
 
-def test_describe_stages_reports_the_default_selection():
+def test_describe_jobs_reports_the_default_selection():
     from librelane.flows import Flow
 
     Classic = Flow.factory.get("Classic")
-    described = dict(Classic.describe_stages())
+    described = dict(Classic.describe_jobs())
 
     assert described["cts"] == "openroad"
     assert described["post_route_opt"] is None
 
 
-def test_a_wildcard_explicit_gate_does_not_displace_the_stage_gate():
+def test_a_wildcard_explicit_gate_does_not_displace_the_job_gate():
     """
-    _apply_stage_gating merges by exact key, so a wildcard explicit key lands
+    _apply_job_gating merges by exact key, so a wildcard explicit key lands
     as a separate entry and only collides with the generated one at expansion.
     Both entries must survive the merge for the union there to be reachable.
     """
     from librelane.config import variable
     from librelane.flows import StagedFlow
-    from librelane.stages import Stage
+    from librelane.jobs import Job
 
     class Both(StagedFlow):
-        Stages = [Stage.cts]
+        Stages = [Job.cts]
         gating_config_vars = {"OpenROAD.CTS*": ["MY_GATE"]}
 
         class Config(StagedFlow.Config):

@@ -20,8 +20,8 @@ what selects the steps, that is circular. This module breaks the cycle with a
 narrow pre-pass that reads one key and validates nothing else, mirroring the
 two-phase read that already recovers ``PDK`` and ``DESIGN_NAME`` early.
 
-This lives under ``stages`` rather than ``config.loading`` because it raises a
-stage-level error: ``stages`` depends on ``config``, so the reverse would be a
+This lives under ``jobs`` rather than ``config.loading`` because it raises a
+job-level error: ``jobs`` depends on ``config``, so the reverse would be a
 cycle.
 """
 
@@ -39,7 +39,7 @@ from librelane.config.loading import (
     read_source,
 )
 
-from librelane.stages.stage import StageResolutionError
+from librelane.jobs.job import JobResolutionError
 
 TOOLS_KEY = "TOOLS"
 
@@ -48,11 +48,11 @@ TOOLS_KEY = "TOOLS"
 _PREPROCESSOR_PREFIXES = ("ref::", "expr::", "refg::", "dir::")
 
 
-def _reject_construct(stage: str, value: str) -> None:
+def _reject_construct(job: str, value: str) -> None:
     for prefix in _PREPROCESSOR_PREFIXES:
         if value.startswith(prefix):
-            raise StageResolutionError(
-                f"TOOLS['{stage}'] is '{value}'. TOOLS must be a literal "
+            raise JobResolutionError(
+                f"TOOLS['{job}'] is '{value}'. TOOLS must be a literal "
                 f"mapping: tool selection is read before the configuration "
                 f"preprocessor runs, so '{prefix}' and other constructs "
                 f"cannot be evaluated there."
@@ -61,31 +61,31 @@ def _reject_construct(stage: str, value: str) -> None:
 
 def _validate(raw: Any) -> dict[str, str | list[str]]:
     if not isinstance(raw, Mapping):
-        raise StageResolutionError(
-            f"TOOLS must be a mapping from stage id to provider name, got "
+        raise JobResolutionError(
+            f"TOOLS must be a mapping from job id to provider name, got "
             f"{type(raw).__name__}."
         )
     result: dict[str, str | list[str]] = {}
-    for stage, value in raw.items():
+    for job, value in raw.items():
         if isinstance(value, str):
-            _reject_construct(str(stage), value)
-            result[str(stage)] = value
+            _reject_construct(str(job), value)
+            result[str(job)] = value
             continue
         if isinstance(value, Sequence):
             providers = []
             for element in value:
                 if not isinstance(element, str):
-                    raise StageResolutionError(
-                        f"TOOLS['{stage}'] contains {type(element).__name__}; "
+                    raise JobResolutionError(
+                        f"TOOLS['{job}'] contains {type(element).__name__}; "
                         f"every provider name must be a string."
                     )
-                _reject_construct(str(stage), element)
+                _reject_construct(str(job), element)
                 providers.append(element)
-            result[str(stage)] = providers
+            result[str(job)] = providers
             continue
-        raise StageResolutionError(
-            f"TOOLS['{stage}'] is {type(value).__name__}; a provider selection "
-            f"must be a string, or a list of strings for a multi-provider stage."
+        raise JobResolutionError(
+            f"TOOLS['{job}'] is {type(value).__name__}; a provider selection "
+            f"must be a string, or a list of strings for a multi-provider job."
         )
     return result
 
@@ -119,7 +119,7 @@ def extract_tools(
 
     Raises
     ------
-    StageResolutionError
+    JobResolutionError
         If ``TOOLS`` is present but malformed.
     """
     sources: list[ConfigSource] = []
@@ -129,7 +129,7 @@ def extract_tools(
             logger.info(
                 f"TOOLS is not read from Tcl configuration files; "
                 f"'{source.name}' was not consulted for tool selection and "
-                f"stage defaults apply."
+                f"job defaults apply."
             )
         sources.append(source)
 
@@ -142,7 +142,7 @@ def extract_tools(
         try:
             raw = json.loads(value)
         except json.JSONDecodeError as error:
-            raise StageResolutionError(
+            raise JobResolutionError(
                 f"TOOLS override on the command line is not valid JSON: {error}"
             ) from None
 

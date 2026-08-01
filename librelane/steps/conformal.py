@@ -23,7 +23,7 @@ Conformal ships two distinct binaries, selected by check type:
 * ``conformal_ccd_bin`` for constraint and CDC checks.
 
 Only ``conformal_lec_bin`` is used here, for the ``formal_equivalence``
-stage; ``conformal_ccd_bin`` (constraint/CDC) has no matching stage in this
+job; ``conformal_ccd_bin`` (constraint/CDC) has no matching job in this
 taxonomy and is not scaffolded.
 
 No public source shows a native Python API for Conformal; Hammer's Cadence
@@ -80,7 +80,7 @@ class ConformalStep(VendorTclStep):
 @Step.factory.register()
 class LEC(ConformalStep):
     """
-    Scaffold for the ``formal_equivalence`` stage using Conformal's LEC
+    Scaffold for the ``formal_equivalence`` job using Conformal's LEC
     binary.
 
     Unimplemented; see ``librelane/scripts/conformal/lec.tcl``.
@@ -106,11 +106,11 @@ class LEC(ConformalStep):
 # "HAL". See section 11 of
 # .superpowers/sdd/2026-07-29-cad-tool-abstraction/vendor-python-apis.md.
 
-#: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
+#: Registered by ``librelane/jobs/providers_vendor.py`` (owned by another
 #: agent), not by this module.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "formal_equivalence",
+        "job": "formal_equivalence",
         "provider": "conformal",
         "steps": [LEC],
         # The specific CONFORMAL_* configuration variables a real Conformal

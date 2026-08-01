@@ -60,7 +60,7 @@ class GenusStep(VendorTclStep):
 @Step.factory.register()
 class Synthesis(GenusStep):
     """
-    Scaffold for the ``synthesis`` stage using Genus.
+    Scaffold for the ``synthesis`` job using Genus.
 
     Unimplemented. ``run()`` (inherited from ``VendorTclStep``) raises
     ``NotImplementedError`` before ``librelane/scripts/genus/synthesis.tcl``
@@ -83,13 +83,13 @@ class Synthesis(GenusStep):
     outputs = [DesignFormat.NETLIST]
 
 
-#: Registered by ``librelane/stages/providers_vendor.py`` (owned by another
+#: Registered by ``librelane/jobs/providers_vendor.py`` (owned by another
 #: agent), not by this module: opt-in to a commercial provider must be a
 #: separate, explicit step from importing this module. See
-#: ``librelane/stages/providers.py`` for the shape this list mirrors.
+#: ``librelane/jobs/providers.py`` for the shape this list mirrors.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "synthesis",
+        "job": "synthesis",
         "provider": "genus",
         "steps": [Synthesis],
         # The specific GENUS_* configuration variables a real Genus

@@ -12,35 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Stages: the unit of tool substitution and independent gating.
+Jobs: the unit of tool substitution and independent gating.
 
 See ``docs/source/usage/swapping_tools.md`` for user documentation and
 ``docs/source/usage/writing_tool_backends.md`` for the provider contract.
 """
 
-from librelane.stages.stage import (
-    Stage,
-    StageError,
-    StageContractError,
-    StageResolutionError,
+from librelane.jobs.job import (
+    Job,
+    JobDefinitionError,
+    JobContractError,
+    JobResolutionError,
     PNR_IN_PLACE_REQUIRES,
     PNR_IN_PLACE_PROVIDES,
 )
-from librelane.stages.registry import Registration, StageRegistry
-from librelane.stages import taxonomy as taxonomy  # noqa: F401  (registration side effects)
-from librelane.stages.taxonomy import STAGE_ORDER
-from librelane.stages import providers as providers  # noqa: F401  (registration side effects)
-from librelane.stages.tools import extract_tools
+from librelane.jobs.registry import Registration, JobRegistry
+from librelane.jobs import taxonomy as taxonomy  # noqa: F401  (registration side effects)
+from librelane.jobs.taxonomy import JOB_ORDER
+from librelane.jobs import providers as providers  # noqa: F401  (registration side effects)
+from librelane.jobs.tools import extract_tools
 
 __all__ = [
-    "Stage",
+    "Job",
     "Registration",
-    "StageRegistry",
-    "STAGE_ORDER",
+    "JobRegistry",
+    "JOB_ORDER",
     "extract_tools",
-    "StageError",
-    "StageContractError",
-    "StageResolutionError",
+    "JobDefinitionError",
+    "JobContractError",
+    "JobResolutionError",
     "PNR_IN_PLACE_REQUIRES",
     "PNR_IN_PLACE_PROVIDES",
 ]

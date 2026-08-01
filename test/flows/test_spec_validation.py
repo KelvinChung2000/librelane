@@ -13,7 +13,7 @@
 # limitations under the License.
 import pytest
 
-import librelane.steps  # noqa: F401  populates Step.factory and StageRegistry
+import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 from librelane.flows.spec import FlowSpec, FlowSpecError
 from librelane.flows.spec_validation import validate_against_registry
 
@@ -35,16 +35,16 @@ def test_a_valid_document_passes():
     )
 
 
-def test_an_unregistered_stage_is_rejected_naming_the_registered_ones():
+def test_an_unregistered_job_is_rejected_naming_the_registered_ones():
     with pytest.raises(FlowSpecError) as exc_info:
-        validate_against_registry(_spec({"nope": {"uses": "not_a_stage"}}))
+        validate_against_registry(_spec({"nope": {"uses": "not_a_job"}}))
 
     message = str(exc_info.value)
-    assert "not_a_stage" in message
+    assert "not_a_job" in message
     assert "synthesis" in message
 
 
-def test_an_unregistered_provider_is_rejected_naming_the_stage_s_providers():
+def test_an_unregistered_provider_is_rejected_naming_the_job_s_providers():
     with pytest.raises(FlowSpecError) as exc_info:
         validate_against_registry(
             _spec({"synthesis": {"uses": "synthesis/not_a_tool"}})
@@ -166,7 +166,7 @@ def test_a_view_from_a_shared_ancestor_is_not_a_conflict():
 
 def test_a_metric_fan_in_conflict_is_rejected_naming_both_producers():
     """
-    Two lvs/netgen jobs each declare design__lvs_error__count from the stage
+    Two lvs/netgen jobs each declare design__lvs_error__count from the job
     and magic__illegal_overlap__count from the registration. The join rule is
     the same one views get.
     """
@@ -337,7 +337,7 @@ def test_a_with_on_the_only_reader_is_accepted():
 
 def test_a_with_set_by_every_reader_of_the_variable_is_accepted():
     """
-    Two jobs of one stage with different values, which is the case this key
+    Two jobs of one job with different values, which is the case this key
     exists for. Both run Yosys.Synthesis so both read SYNTH_STRATEGY, and both
     set it, so no reader is left observing a value it did not declare.
     """

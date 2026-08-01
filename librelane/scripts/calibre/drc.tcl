@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for Calibre.DRC (stage "drc"), one of three providers of that
-# stage alongside Magic and IC Validator.
+# Placeholder for Calibre.DRC (job "drc"), one of three providers of that
+# job alongside Magic and IC Validator.
 #
 # This file uses a ".tcl" extension only because Calibre's actual rule
 # deck format is SVRF (Standard Verification Rule Format), not Tcl, and no
@@ -27,7 +27,7 @@
 # TECH_LEF, MACRO_LEFS, every accessible self.config variable (as its Tcl
 # representation), and CURRENT_DEF / CURRENT_GDS for this step's declared
 # inputs (DEF is optional; GDS is not). This step declares no outputs
-# beyond stage "drc"'s own contract, which requires none.
+# beyond job "drc"'s own contract, which requires none.
 #
 # This file contains no rule-deck content. It was not written because
 # Calibre was unavailable to the author, who had no licensed access to the

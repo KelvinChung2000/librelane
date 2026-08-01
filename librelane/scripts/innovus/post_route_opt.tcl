@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `post_route_opt` stage's Innovus.PostRouteOpt step.
+# Placeholder for the `post_route_opt` job's Innovus.PostRouteOpt step.
 #
 # This file intentionally contains no executable Tcl. Innovus.PostRouteOpt
 # .run() (inherited from VendorTclStep) raises NotImplementedError before
@@ -31,7 +31,7 @@
 #     prepare_env() sets because Innovus.PostRouteOpt declares all three as
 #     outputs.
 #
-# No counterpart script exists in librelane/scripts/openroad/: this stage
+# No counterpart script exists in librelane/scripts/openroad/: this job
 # has no `openroad` provider at all in the taxonomy (its default_provider is
-# None), so there is nothing to mirror. This filename describes the stage
+# None), so there is nothing to mirror. This filename describes the job
 # instead.

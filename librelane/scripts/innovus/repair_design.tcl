@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `post_gpl_repair` stage's Innovus.PostGPLRepair step.
+# Placeholder for the `post_gpl_repair` job's Innovus.PostGPLRepair step.
 #
 # This file intentionally contains no executable Tcl.
 # Innovus.PostGPLRepair.run() (inherited from VendorTclStep) raises
@@ -32,4 +32,4 @@
 #     Innovus.PostGPLRepair declares all three as outputs.
 #
 # Mirrors librelane/scripts/openroad/repair_design.tcl, which performs the
-# same stage with OpenROAD.
+# same job with OpenROAD.

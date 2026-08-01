@@ -58,7 +58,7 @@ from librelane.steps.step import Step
 
 class CalibreStep(VendorTclStep):
     """
-    Shared base for Calibre's two covered stages, DRC and LVS.
+    Shared base for Calibre's two covered jobs, DRC and LVS.
     """
 
     binary = "calibre"
@@ -81,7 +81,7 @@ class DRC(CalibreStep):
     """
     Scaffold for design rule checking using Calibre.
 
-    ``drc`` is a ``multi_provider`` stage already served by Magic and
+    ``drc`` is a ``multi_provider`` job already served by Magic and
     KLayout; this step slots in beside them (and beside IC Validator) as
     another provider rather than replacing any of them. Mirrors
     ``Magic.DRC``'s neutral contract, taking DEF optionally and GDS.
@@ -102,7 +102,7 @@ class LVS(CalibreStep):
     """
     Scaffold for layout-versus-schematic checking using Calibre.
 
-    Mirrors the ``lvs`` stage's neutral contract: DEF, GDS, and the powered
+    Mirrors the ``lvs`` job's neutral contract: DEF, GDS, and the powered
     netlist as the schematic side of the comparison, the same triple
     ``Netgen.LVS`` (by way of ``Magic.SpiceExtraction``) consumes.
     """
@@ -125,16 +125,16 @@ _CALIBRE_NAMESPACES = ("CALIBRE_",)
 
 #: Registrations for the aggregator to fold into the opt-in vendor-provider
 #: module. Not applied here. This module does not call
-#: ``StageRegistry.register`` itself.
+#: ``JobRegistry.register`` itself.
 REGISTRATIONS: list[dict] = [
     {
-        "stage": "drc",
+        "job": "drc",
         "provider": "calibre",
         "steps": [DRC],
         "namespaces": _CALIBRE_NAMESPACES,
     },
     {
-        "stage": "lvs",
+        "job": "lvs",
         "provider": "calibre",
         "steps": [LVS],
         "namespaces": _CALIBRE_NAMESPACES,

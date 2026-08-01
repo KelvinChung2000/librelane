@@ -19,7 +19,7 @@ conformal.py).
 These test behavior, not structure: that each scaffold fails loudly and
 informatively rather than guessing, that every script path it names actually
 resolves to a real file, and that each module's REGISTRATIONS list covers
-exactly the stages it is supposed to.
+exactly the jobs it is supposed to.
 """
 
 import os
@@ -27,14 +27,14 @@ import os
 import pytest
 
 from librelane.steps import step
-from librelane.stages import Stage
+from librelane.jobs import Job
 
 pytestmark = pytest.mark.all
 
 mock_variables = pytest.mock_variables
 
 
-PNR_STAGE_IDS = [
+PNR_JOB_IDS = [
     "floorplan",
     "macro_placement",
     "tapcell_insertion",
@@ -280,94 +280,94 @@ def test_step_is_registered_in_step_factory(step_id):
 
 
 # ----------------------------------------------------------------------
-# REGISTRATIONS covers exactly the stage ids intended, and every stage id
-# named is a real, registered Stage.
+# REGISTRATIONS covers exactly the job ids intended, and every job id
+# named is a real, registered Job.
 # ----------------------------------------------------------------------
 def test_genus_registrations_cover_exactly_synthesis():
     from librelane.steps.genus import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
     assert covered == ["synthesis"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "genus"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
-def test_innovus_registrations_cover_exactly_the_seventeen_pnr_stages():
+def test_innovus_registrations_cover_exactly_the_seventeen_pnr_jobs():
     from librelane.steps.innovus import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
-    assert covered == sorted(PNR_STAGE_IDS)
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
+    assert covered == sorted(PNR_JOB_IDS)
     for entry in REGISTRATIONS:
         assert entry["provider"] == "innovus"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
 def test_tempus_registrations_cover_exactly_pre_and_signoff_sta():
     from librelane.steps.tempus import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
     assert covered == sorted(["pre_pnr_sta", "signoff_sta"])
     for entry in REGISTRATIONS:
         assert entry["provider"] == "tempus"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
 def test_quantus_registrations_cover_exactly_extraction():
     from librelane.steps.quantus import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
     assert covered == ["extraction"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "quantus"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
 def test_voltus_registrations_cover_exactly_ir_drop():
     from librelane.steps.voltus import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
     assert covered == ["ir_drop"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "voltus"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
 def test_pegasus_registrations_cover_exactly_drc_and_lvs():
     from librelane.steps.pegasus import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
     assert covered == sorted(["drc", "lvs"])
     for entry in REGISTRATIONS:
         assert entry["provider"] == "pegasus"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
 def test_conformal_registrations_cover_exactly_formal_equivalence():
     from librelane.steps.conformal import REGISTRATIONS
 
-    covered = sorted({entry["stage"] for entry in REGISTRATIONS})
+    covered = sorted({entry["job"] for entry in REGISTRATIONS})
     assert covered == ["formal_equivalence"]
     for entry in REGISTRATIONS:
         assert entry["provider"] == "conformal"
-        assert entry["stage"] in Stage.factory.list()
+        assert entry["job"] in Job.factory.list()
 
 
 # ----------------------------------------------------------------------
-# Pegasus's drc/lvs metrics reuse the stage's own contracted metric rather
+# Pegasus's drc/lvs metrics reuse the job's own contracted metric rather
 # than inventing a Pegasus-specific name.
 # ----------------------------------------------------------------------
 def test_pegasus_drc_declares_no_extra_metrics():
     from librelane.steps.pegasus import REGISTRATIONS
 
-    drc_entry = next(e for e in REGISTRATIONS if e["stage"] == "drc")
+    drc_entry = next(e for e in REGISTRATIONS if e["job"] == "drc")
     assert drc_entry.get("metrics", []) == []
 
 
-def test_pegasus_lvs_declares_only_the_stage_s_own_metric():
+def test_pegasus_lvs_declares_only_the_job_s_own_metric():
     from librelane.steps.pegasus import REGISTRATIONS
 
-    lvs_entry = next(e for e in REGISTRATIONS if e["stage"] == "lvs")
+    lvs_entry = next(e for e in REGISTRATIONS if e["job"] == "lvs")
     assert lvs_entry.get("metrics", []) == ["design__lvs_error__count"]
 
 

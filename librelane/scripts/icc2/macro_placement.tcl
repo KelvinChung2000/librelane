@@ -11,15 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# IC Compiler II (icc2_shell) -- macro_placement stage scaffold.
+# IC Compiler II (icc2_shell) -- macro_placement job scaffold.
 #
-# Implements: the 'macro_placement' stage (librelane/stages/taxonomy.py), for the
+# Implements: the 'macro_placement' job (librelane/jobs/taxonomy.py), for the
 # ICC2.MacroPlacement step (librelane/steps/icc2.py).
 #
-# No OpenROAD Tcl script implements this stage: OpenROAD's own
+# No OpenROAD Tcl script implements this job: OpenROAD's own
 # 'macro_placement' registration runs Odb.ManualMacroPlacement, a Python
-# step, not a Tcl script (see librelane/stages/providers.py). This filename
-# was chosen to describe the stage rather than mirror an existing one.
+# step, not a Tcl script (see librelane/jobs/providers.py). This filename
+# was chosen to describe the job rather than mirror an existing one.
 #
 # This script contains no commands. IC Compiler II was not available to the
 # author of this scaffold, so no icc2_shell command in this file has been
@@ -30,18 +30,18 @@
 #
 # Environment variables TclStep.prepare_env (librelane/steps/tclstep.py) will
 # supply, once this script actually runs:
-#   - CURRENT_DEF, CURRENT_NL, CURRENT_SDC: paths to this stage's input views
+#   - CURRENT_DEF, CURRENT_NL, CURRENT_SDC: paths to this job's input views
 #   - SAVE_DEF, SAVE_NL, SAVE_SDC: paths this script must write its output
 #     views to
 #   - TECH_LEF, MACRO_LEFS: PDK and macro LEF views
 #   - every ICC2_* and common flow configuration variable, as an
 #     environment variable of the same name (the specific ICC2_*
-#     variables this stage would need are not yet enumerated; see
+#     variables this job would need are not yet enumerated; see
 #     librelane/steps/icc2.py)
 #
 # Views this script must produce, once written: DEF, netlist and SDC (see
-# PNR_IN_PLACE_PROVIDES in librelane/stages/stage.py). IC Compiler II also
-# carries a proprietary in-memory database across stages, but its format is
+# PNR_IN_PLACE_PROVIDES in librelane/jobs/job.py). IC Compiler II also
+# carries a proprietary in-memory database across jobs, but its format is
 # not publicly established (see librelane/steps/icc2.py and
 # .superpowers/sdd/2026-07-29-cad-tool-abstraction/vendor-python-apis.md,
 # section 13); declaring it as a DesignFormat is future work, not

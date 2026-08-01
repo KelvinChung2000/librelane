@@ -39,7 +39,7 @@ pytestmark = pytest.mark.all
 
 mock_variables = pytest.mock_variables
 
-#: One representative concrete step per tool, plus every stage a tool covers
+#: One representative concrete step per tool, plus every job a tool covers
 #: where a tool covers more than one, so the "run() raises" behavior is
 #: checked for all nine concrete steps this batch scaffolds.
 ALL_STEPS = [
@@ -214,20 +214,20 @@ def test_tcl_driven_step_script_path_resolves_to_a_real_file(step_cls):
     )
 
 
-def test_registrations_cover_exactly_the_intended_stages():
-    import librelane.stages  # noqa: F401  (registers the stage taxonomy)
-    from librelane.stages import Stage
+def test_registrations_cover_exactly_the_intended_jobs():
+    import librelane.jobs  # noqa: F401  (registers the job taxonomy)
+    from librelane.jobs import Job
     from librelane.steps import calibre, fm, icv, pt, starrc, vc_spyglass
 
     modules = [pt, starrc, icv, fm, vc_spyglass, calibre]
 
-    all_stage_ids: set[str] = set()
+    all_job_ids: set[str] = set()
     for module in modules:
         assert module.REGISTRATIONS, f"{module.__name__} declares no REGISTRATIONS"
         for registration in module.REGISTRATIONS:
-            all_stage_ids.add(registration["stage"])
+            all_job_ids.add(registration["job"])
 
-    assert all_stage_ids == {
+    assert all_job_ids == {
         "pre_pnr_sta",
         "signoff_sta",
         "extraction",
@@ -237,9 +237,9 @@ def test_registrations_cover_exactly_the_intended_stages():
         "lint",
     }
 
-    known_stage_ids = set(Stage.factory.list())
-    for stage_id in all_stage_ids:
-        assert stage_id in known_stage_ids, (
-            f"Registration names stage '{stage_id}', which is not in the "
-            "registered stage taxonomy"
+    known_job_ids = set(Job.factory.list())
+    for job_id in all_job_ids:
+        assert job_id in known_job_ids, (
+            f"Registration names job '{job_id}', which is not in the "
+            "registered job taxonomy"
         )

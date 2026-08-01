@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `synthesis` stage's Genus.Synthesis step.
+# Placeholder for the `synthesis` job's Genus.Synthesis step.
 #
 # This file intentionally contains no executable Tcl. Genus.Synthesis.run()
 # (inherited from VendorTclStep) raises NotImplementedError before this
@@ -32,4 +32,4 @@
 #
 # No counterpart script exists in librelane/scripts/openroad/: synthesis is
 # Yosys's domain in the open-source flow, and OpenROAD has no synthesis
-# script to mirror. This filename describes the stage instead.
+# script to mirror. This filename describes the job instead.

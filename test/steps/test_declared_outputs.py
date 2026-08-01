@@ -15,7 +15,7 @@
 A step's ``outputs`` are a promise, and nothing in the runtime makes a step keep
 it: :meth:`librelane.steps.Step.start` enforces declared *inputs* only. A step
 that declares an output it never writes therefore fails silently, and this
-fork's stage contracts then promise that view to the next stage on the step's
+fork's job contracts then promise that view to the next job on the step's
 behalf, which is how ``pre_pnr_sta`` came to be contracted to produce an SDC
 that no OpenSTA script ever wrote.
 
@@ -91,21 +91,21 @@ def test_openroad_steps_write_the_views_they_declare():
     )
 
 
-def test_stage_contracts_only_promise_views_a_step_writes():
+def test_job_contracts_only_promise_views_a_step_writes():
     """
-    The stage-level consequence of the same lie. ``StageRegistry`` already
-    checks a stage's ``provides`` against its provider's *declared* outputs at
+    The job-level consequence of the same lie. ``JobRegistry`` already
+    checks a job's ``provides`` against its provider's *declared* outputs at
     import time, so it is only as truthful as those declarations; this checks
     them against the step behaviour above.
     """
-    from librelane.stages.registry import StageRegistry
-    from librelane.stages.stage import Stage
+    from librelane.jobs.registry import JobRegistry
+    from librelane.jobs.job import Job
 
     unbacked = {}
-    for registration in StageRegistry.list():
-        stage = Stage.factory.get(registration.stage)
-        assert stage is not None
-        promised = set(stage.provides) | set(registration.provides)
+    for registration in JobRegistry.list():
+        job = Job.factory.get(registration.job)
+        assert job is not None
+        promised = set(job.provides) | set(registration.provides)
         for view in promised:
             producers = [
                 step
@@ -125,10 +125,10 @@ def test_stage_contracts_only_promise_views_a_step_writes():
             else:
                 if producers:
                     unbacked.setdefault(
-                        (registration.stage, registration.provider), []
+                        (registration.job, registration.provider), []
                     ).append(view.id)
 
     assert unbacked == {}, (
-        "these stage contracts promise a view whose only declared producer "
+        "these job contracts promise a view whose only declared producer "
         f"never writes it: {unbacked}"
     )

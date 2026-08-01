@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for Formality.FormalEquivalence (stage "formal_equivalence").
+# Placeholder for Formality.FormalEquivalence (job "formal_equivalence").
 #
 # No open-source counterpart script name exists to mirror here. The
-# stage's other provider, Yosys.EQY, either uses a user-supplied script
+# job's other provider, Yosys.EQY, either uses a user-supplied script
 # path or generates one at run time rather than shipping a static file
 # under librelane/scripts. "formal_equivalence.tcl" was chosen to describe
-# the stage plainly rather than to imply an established Formality naming
+# the job plainly rather than to imply an established Formality naming
 # convention.
 #
 # TclStep.prepare_env() (librelane/steps/tclstep.py) would populate this
 # script's environment with, among others: STEP_ID, SCRIPTS_DIR, STEP_DIR,
 # TECH_LEF, MACRO_LEFS, every accessible self.config variable (as its Tcl
 # representation), and CURRENT_NL (this step's one declared input). This
-# step declares no outputs beyond stage "formal_equivalence"'s own
+# step declares no outputs beyond job "formal_equivalence"'s own
 # contract, which requires none; a real implementation's result is a
 # pass/fail equivalence verdict, not a design-format view.
 #

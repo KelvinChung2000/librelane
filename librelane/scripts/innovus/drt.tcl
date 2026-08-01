@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `detailed_routing` stage's Innovus.DetailedRouting
+# Placeholder for the `detailed_routing` job's Innovus.DetailedRouting
 # step.
 #
 # This file intentionally contains no executable Tcl.
@@ -31,7 +31,7 @@
 #     paths in SAVE_DEF, SAVE_NL and SAVE_SDC, which prepare_env() sets
 #     because Innovus.DetailedRouting declares all three as outputs. A real
 #     implementation would also need to report a route__drc_errors metric,
-#     since the `detailed_routing` stage contracts it.
+#     since the `detailed_routing` job contracts it.
 #
-# Mirrors librelane/scripts/openroad/drt.tcl, which performs the same stage
+# Mirrors librelane/scripts/openroad/drt.tcl, which performs the same job
 # with OpenROAD.

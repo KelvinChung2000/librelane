@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `detailed_placement` stage's Innovus.DetailedPlacement
+# Placeholder for the `detailed_placement` job's Innovus.DetailedPlacement
 # step.
 #
 # This file intentionally contains no executable Tcl.
@@ -32,5 +32,5 @@
 #     prepare_env() sets because Innovus.DetailedPlacement declares all
 #     three as outputs.
 #
-# Mirrors librelane/scripts/openroad/dpl.tcl, which performs the same stage
+# Mirrors librelane/scripts/openroad/dpl.tcl, which performs the same job
 # with OpenROAD.

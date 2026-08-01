@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""The :class:`Registration` dataclass and the :class:`StageRegistry` singleton."""
+"""The :class:`Registration` dataclass and the :class:`JobRegistry` singleton."""
 
 import builtins
 from collections.abc import Sequence
@@ -23,7 +23,7 @@ from librelane.state import DesignFormat
 from librelane.steps import Step
 from librelane.steps.step.composition import compose_step_sequence
 
-from librelane.stages.stage import Stage, StageError
+from librelane.jobs.job import Job, JobDefinitionError
 
 _COMMON_VARIABLE_NAMES = frozenset(variable.name for variable in flow_common_variables)
 
@@ -31,16 +31,16 @@ _COMMON_VARIABLE_NAMES = frozenset(variable.name for variable in flow_common_var
 @dataclass(frozen=True)
 class Registration:
     """
-    Binds a span of one or more consecutive stages, plus one provider, to an
+    Binds a span of one or more consecutive jobs, plus one provider, to an
     ordered sequence of concrete steps.
 
     Parameters
     ----------
-    stage : str
-        The stage id this registration implements. Exactly one. A
-        provider that cannot decompose a span of stages has no way to say so,
+    job : str
+        The job id this registration implements. Exactly one. A
+        provider that cannot decompose a span of jobs has no way to say so,
         deliberately: gating, contract checking and provider selection are all
-        per-stage.
+        per-job.
     provider : str
         The tool name, for example ``openroad``. Not a vendor
         name.
@@ -52,19 +52,19 @@ class Registration:
         the ``openroad`` provider declares the several legacy prefixes that
         predate this design.
     provides : tuple[DesignFormat, ...]
-        Views this provider guarantees beyond the stage's own
+        Views this provider guarantees beyond the job's own
         ``provides``.
     metrics : tuple[str, ...]
-        Metric names this provider guarantees beyond the stage's
+        Metric names this provider guarantees beyond the job's
         own ``metrics``.
     native_views : tuple[DesignFormat, ...]
-        Tool-native views this provider carries across stage
+        Tool-native views this provider carries across job
         boundaries itself, for example OpenROAD's ``odb``. Exempt from the
         registration-time view check; validated instead by the static view
         availability check at resolution.
     """
 
-    stage: str
+    job: str
     provider: str
     steps: tuple[type[Step], ...]
     namespaces: tuple[str, ...]
@@ -75,7 +75,7 @@ class Registration:
     def tagged_steps(self) -> builtins.list[type[Step]]:
         """
         Returns the step sequence with each class subclassed to carry
-        ``_stage_span`` and ``_stage_provider``.
+        ``_job_span`` and ``_job_provider``.
 
         Tagging by subclass rather than by index range is what makes the
         boundary map survive duplicate-ID normalization:
@@ -87,28 +87,28 @@ class Registration:
                 step.__name__,
                 (step,),
                 {
-                    "_stage_span": (self.stage,),
-                    "_stage_provider": self.provider,
+                    "_job_span": (self.job,),
+                    "_job_provider": self.provider,
                 },
             )
             for step in self.steps
         ]
 
 
-class StageRegistry(object):
+class JobRegistry(object):
     """
-    A factory singleton mapping (stage id, provider) pairs to
+    A factory singleton mapping (job id, provider) pairs to
     :class:`Registration` objects.
     """
 
-    _by_stage_and_provider: ClassVar[dict[tuple[str, str], Registration]] = {}
+    _by_job_and_provider: ClassVar[dict[tuple[str, str], Registration]] = {}
     _all: ClassVar[builtins.list[Registration]] = []
 
     @classmethod
     def register(
         Self,
         *,
-        stage: str,
+        job: str,
         provider: str,
         steps: Sequence[type[Step]],
         namespaces: Sequence[str],
@@ -117,13 +117,13 @@ class StageRegistry(object):
         native_views: Sequence[DesignFormat] = (),
     ) -> Registration:
         """
-        Registers a provider implementation for a span of stages, running
+        Registers a provider implementation for a span of jobs, running
         every registration-time contract check. Violations raise
-        :class:`StageError`, which surfaces as an import error in the
+        :class:`JobDefinitionError`, which surfaces as an import error in the
         offending provider package.
         """
         registration = Registration(
-            stage=stage,
+            job=job,
             provider=provider,
             steps=tuple(steps),
             namespaces=tuple(namespaces),
@@ -133,29 +133,29 @@ class StageRegistry(object):
         )
 
         if len(registration.steps) == 0:
-            raise StageError(
+            raise JobDefinitionError(
                 f"Provider '{provider}' registered for "
-                f"stage '{registration.stage}' with no steps. A provider that "
-                f"runs nothing cannot satisfy a stage contract."
+                f"job '{registration.job}' with no steps. A provider that "
+                f"runs nothing cannot satisfy a job contract."
             )
 
-        resolved_stage = Stage.factory.get(registration.stage)
-        if resolved_stage is None:
-            raise StageError(
-                f"Provider '{provider}': no stage with id "
-                f"'{registration.stage}' is registered. Known stages: "
-                f"{sorted(Stage.factory.list())}"
+        resolved_job = Job.factory.get(registration.job)
+        if resolved_job is None:
+            raise JobDefinitionError(
+                f"Provider '{provider}': no job with id "
+                f"'{registration.job}' is registered. Known jobs: "
+                f"{sorted(Job.factory.list())}"
             )
-        key = (registration.stage, provider)
-        if key in Self._by_stage_and_provider:
-            raise StageError(
-                f"Provider '{provider}' is already registered for stage "
-                f"'{registration.stage}'."
+        key = (registration.job, provider)
+        if key in Self._by_job_and_provider:
+            raise JobDefinitionError(
+                f"Provider '{provider}' is already registered for job "
+                f"'{registration.job}'."
             )
 
-        Self.__check_contract(registration, resolved_stage)
+        Self.__check_contract(registration, resolved_job)
 
-        Self._by_stage_and_provider[key] = registration
+        Self._by_job_and_provider[key] = registration
         Self._all.append(registration)
         return registration
 
@@ -163,7 +163,7 @@ class StageRegistry(object):
     def __check_contract(
         Self,
         registration: Registration,
-        stage: Stage,
+        job: Job,
     ) -> None:
         union = compose_step_sequence(registration.steps)
 
@@ -175,16 +175,16 @@ class StageRegistry(object):
                 variable.name.startswith(prefix) for prefix in registration.namespaces
             ):
                 continue
-            raise StageError(
+            raise JobDefinitionError(
                 f"Provider '{registration.provider}' for "
-                f"stage '{registration.stage}' declares variable "
+                f"job '{registration.job}' declares variable "
                 f"'{variable.name}', which is neither a common flow variable "
                 f"nor prefixed with any of {list(registration.namespaces)}."
             )
 
         # View plausibility.
         allowed_inputs = set(registration.native_views)
-        allowed_inputs.update(stage.requires)
+        allowed_inputs.update(job.requires)
         for view in union.unmet_inputs:
             # An optional input is satisfiable by absence, so it is not a
             # boundary requirement. DesignFormat.mkOptional() returns a copy
@@ -193,41 +193,41 @@ class StageRegistry(object):
             if view.optional:
                 continue
             if view not in allowed_inputs:
-                raise StageError(
+                raise JobDefinitionError(
                     f"Provider '{registration.provider}' for "
-                    f"stage '{registration.stage}' consumes view '{view.id}', "
-                    f"which is neither in the stage's 'requires' nor declared "
+                    f"job '{registration.job}' consumes view '{view.id}', "
+                    f"which is neither in the job's 'requires' nor declared "
                     f"as one of its native_views."
                 )
 
         promised = set(registration.provides)
-        promised.update(stage.provides)
+        promised.update(job.provides)
         produced = set(union.outputs)
         for view in promised:
             if view not in produced:
-                raise StageError(
+                raise JobDefinitionError(
                     f"Provider '{registration.provider}' for "
-                    f"stage '{registration.stage}' never produces view "
+                    f"job '{registration.job}' never produces view "
                     f"'{view.id}', which it is contracted to provide."
                 )
 
     @classmethod
-    def get(Self, stage: str, provider: str) -> Registration | None:
-        return Self._by_stage_and_provider.get((stage, provider))
+    def get(Self, job: str, provider: str) -> Registration | None:
+        return Self._by_job_and_provider.get((job, provider))
 
     @classmethod
-    def providers(Self, stage: str) -> builtins.list[str]:
+    def providers(Self, job: str) -> builtins.list[str]:
         """
         Returns
         -------
         builtins.list[str]
-            Provider names registered for this stage, in registration
+            Provider names registered for this job, in registration
             order.
         """
         return [
             registration.provider
             for registration in Self._all
-            if registration.stage == stage
+            if registration.job == job
         ]
 
     @classmethod

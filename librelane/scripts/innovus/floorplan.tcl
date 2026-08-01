@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `floorplan` stage's Innovus.Floorplan step.
+# Placeholder for the `floorplan` job's Innovus.Floorplan step.
 #
 # This file intentionally contains no executable Tcl. Innovus.Floorplan.run()
 # (inherited from VendorTclStep) raises NotImplementedError before this
@@ -31,4 +31,4 @@
 #     Innovus.Floorplan declares all three as outputs.
 #
 # Mirrors librelane/scripts/openroad/floorplan.tcl, which performs the same
-# stage with OpenROAD.
+# job with OpenROAD.

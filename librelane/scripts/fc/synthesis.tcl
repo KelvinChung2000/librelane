@@ -11,13 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# Fusion Compiler (fc_shell) -- synthesis stage scaffold.
+# Fusion Compiler (fc_shell) -- synthesis job scaffold.
 #
-# Implements: the 'synthesis' stage (librelane/stages/taxonomy.py), for the
+# Implements: the 'synthesis' job (librelane/jobs/taxonomy.py), for the
 # FC.Synthesis step (librelane/steps/fc.py).
 #
-# No OpenROAD Tcl script implements this stage: OpenROAD does not run
-# synthesis. This filename was chosen to describe the stage rather than
+# No OpenROAD Tcl script implements this job: OpenROAD does not run
+# synthesis. This filename was chosen to describe the job rather than
 # mirror an existing one.
 #
 # This script contains no commands. Fusion Compiler was not available to the
@@ -31,7 +31,7 @@
 # supply, once this script actually runs:
 #   - every FC_* and common flow configuration variable, as an
 #     environment variable of the same name (the specific FC_*
-#     variables this stage would need are not yet enumerated; see
+#     variables this job would need are not yet enumerated; see
 #     librelane/steps/fc.py)
 #   - TECH_LEF, MACRO_LEFS: PDK and macro LEF views
 #   - SAVE_NL: the path this script must write its output netlist to

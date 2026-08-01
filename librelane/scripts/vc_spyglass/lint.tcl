@@ -12,19 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for VCSpyGlass.Lint (stage "lint").
+# Placeholder for VCSpyGlass.Lint (job "lint").
 #
 # No open-source counterpart script name exists to mirror here. The
-# stage's other provider, Verilator.Lint, is not a TclStep and does not
+# job's other provider, Verilator.Lint, is not a TclStep and does not
 # drive Verilator with a generated Tcl file at all. "lint.tcl" was chosen
-# to describe the stage plainly rather than to imply an established VC
+# to describe the job plainly rather than to imply an established VC
 # SpyGlass naming convention.
 #
 # TclStep.prepare_env() (librelane/steps/tclstep.py) would populate this
 # script's environment with, among others: STEP_ID, SCRIPTS_DIR, STEP_DIR,
 # TECH_LEF, MACRO_LEFS, and every accessible self.config variable (as its
 # Tcl representation). This step declares no inputs and no outputs, matching
-# stage "lint"'s own empty contract; the design's RTL is expected to be
+# job "lint"'s own empty contract; the design's RTL is expected to be
 # read from the VERILOG_FILES (and equivalent) configuration variables, the
 # same way Verilator.Lint reads it.
 #

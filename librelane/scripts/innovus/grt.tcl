@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `global_routing` stage's Innovus.GlobalRouting step.
+# Placeholder for the `global_routing` job's Innovus.GlobalRouting step.
 #
 # This file intentionally contains no executable Tcl.
 # Innovus.GlobalRouting.run() (inherited from VendorTclStep) raises
@@ -31,5 +31,5 @@
 #     declares DesignFormat.DEF as its only output; the netlist and
 #     constraints pass through unchanged.
 #
-# Mirrors librelane/scripts/openroad/grt.tcl, which performs the same stage
+# Mirrors librelane/scripts/openroad/grt.tcl, which performs the same job
 # with OpenROAD.

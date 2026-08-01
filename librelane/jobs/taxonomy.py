@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-The stage taxonomy.
+The job taxonomy.
 
-Stage boundaries are derived from ``Classic.gating_config_vars``
+Job boundaries are derived from ``Classic.gating_config_vars``
 (``librelane/flows/classic.py:245-287``), which contains 22 distinct ``RUN_*``
 variables. Each is a place where users already demanded the ability to turn one
 phase off independently, which makes it a place where they would plausibly want
-to change tools or re-enter the flow. Fifteen of those variables become stage
-gates here; the remaining seven gate one tool within a stage and stay
+to change tools or re-enter the flow. Fifteen of those variables become job
+gates here; the remaining seven gate one tool within a job and stay
 step-level.
 
 ``requires`` and ``provides`` values are literals, not computed. See the
@@ -28,12 +28,12 @@ implementation plan for how they were derived.
 
 from librelane.state import DesignFormat
 
-from librelane.stages.stage import Stage, PNR_IN_PLACE_PROVIDES, PNR_IN_PLACE_REQUIRES
+from librelane.jobs.job import Job, PNR_IN_PLACE_PROVIDES, PNR_IN_PLACE_REQUIRES
 
 _NO_VIEWS: tuple[DesignFormat, ...] = ()
 
 
-Stage(
+Job(
     id="lint",
     full_name="RTL Linting",
     default_provider="verilator",
@@ -48,7 +48,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="synthesis",
     full_name="Synthesis",
     default_provider="yosys",
@@ -60,21 +60,21 @@ Stage(
     ),
 ).register()
 
-Stage(
+Job(
     id="pre_pnr_sta",
     full_name="Pre-PnR Static Timing Analysis",
     default_provider="openroad",
     requires=(DesignFormat.nl,),
     # Nothing. OpenROAD.STAPrePNR adds an SDF per corner to the state, but no
-    # later stage consumes it and the other registered provider for this stage
-    # produces no views at all, so the stage promises none. It does not re-emit
+    # later job consumes it and the other registered provider for this job
+    # produces no views at all, so the job promises none. It does not re-emit
     # the netlist, which reaches floorplan from synthesis, and it does not
-    # write an SDC: the SDC in the state is floorplan's, and the SDC this stage
+    # write an SDC: the SDC in the state is floorplan's, and the SDC this job
     # reads is the PNR_SDC_FILE configuration variable.
     provides=_NO_VIEWS,
 ).register()
 
-Stage(
+Job(
     id="floorplan",
     full_name="Floorplanning",
     default_provider="openroad",
@@ -83,7 +83,7 @@ Stage(
     provides=PNR_IN_PLACE_PROVIDES,
 ).register()
 
-Stage(
+Job(
     id="macro_placement",
     full_name="Macro Placement",
     default_provider="openroad",
@@ -93,7 +93,7 @@ Stage(
     provides=(DesignFormat.def_,),
 ).register()
 
-Stage(
+Job(
     id="tapcell_insertion",
     full_name="Tap and Endcap Cell Insertion",
     default_provider="openroad",
@@ -103,7 +103,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="power_grid",
     full_name="Power Distribution Network Generation",
     default_provider="openroad",
@@ -112,7 +112,7 @@ Stage(
     metrics=("design__power_grid_violation__count",),
 ).register()
 
-Stage(
+Job(
     id="io_placement",
     full_name="I/O Pin Placement",
     default_provider="openroad",
@@ -120,7 +120,7 @@ Stage(
     provides=PNR_IN_PLACE_PROVIDES,
 ).register()
 
-Stage(
+Job(
     id="global_placement",
     full_name="Global Placement",
     default_provider="openroad",
@@ -128,7 +128,7 @@ Stage(
     provides=PNR_IN_PLACE_PROVIDES,
 ).register()
 
-Stage(
+Job(
     id="post_gpl_repair",
     full_name="Post-Global-Placement Design Repair",
     default_provider="openroad",
@@ -138,7 +138,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="detailed_placement",
     full_name="Detailed Placement",
     default_provider="openroad",
@@ -146,7 +146,7 @@ Stage(
     provides=PNR_IN_PLACE_PROVIDES,
 ).register()
 
-Stage(
+Job(
     id="cts",
     full_name="Clock Tree Synthesis",
     default_provider="openroad",
@@ -156,7 +156,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="post_cts_opt",
     full_name="Post-CTS Timing Optimization",
     default_provider="openroad",
@@ -166,7 +166,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="global_routing",
     full_name="Global Routing",
     default_provider="openroad",
@@ -176,7 +176,7 @@ Stage(
     provides=(DesignFormat.def_,),
 ).register()
 
-Stage(
+Job(
     id="post_grt_repair",
     full_name="Post-Global-Routing Design Repair",
     default_provider="openroad",
@@ -186,7 +186,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="antenna_repair",
     full_name="Antenna Violation Repair",
     default_provider="openroad",
@@ -196,7 +196,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="post_grt_opt",
     full_name="Post-Global-Routing Timing Optimization",
     default_provider="openroad",
@@ -206,7 +206,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="detailed_routing",
     full_name="Detailed Routing",
     default_provider="openroad",
@@ -217,7 +217,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="post_route_opt",
     full_name="Post-Route Optimization",
     default_provider=None,
@@ -226,7 +226,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="fill_insertion",
     full_name="Fill Cell Insertion",
     default_provider="openroad",
@@ -236,7 +236,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="extraction",
     full_name="Parasitics Extraction",
     default_provider="openroad",
@@ -246,7 +246,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="signoff_sta",
     full_name="Signoff Static Timing Analysis",
     default_provider="openroad",
@@ -262,7 +262,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="ir_drop",
     full_name="IR Drop Analysis",
     default_provider="openroad",
@@ -272,7 +272,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="streamout",
     full_name="Layout Stream-Out",
     default_provider=("magic", "klayout"),
@@ -281,7 +281,7 @@ Stage(
     multi_provider=True,
 ).register()
 
-Stage(
+Job(
     id="drc",
     full_name="Design Rule Checking",
     default_provider=("magic", "klayout"),
@@ -291,7 +291,7 @@ Stage(
     multi_provider=True,
 ).register()
 
-Stage(
+Job(
     id="lvs",
     full_name="Layout Versus Schematic",
     default_provider="netgen",
@@ -304,7 +304,7 @@ Stage(
     optional=True,
 ).register()
 
-Stage(
+Job(
     id="formal_equivalence",
     full_name="Formal Equivalence Checking",
     default_provider="yosys",
@@ -315,13 +315,13 @@ Stage(
 ).register()
 
 
-#: The canonical reference order of every stage, and the order a ``StagedFlow``
-#: is expected to declare its own stages in. A flow may omit stages and may
+#: The canonical reference order of every job, and the order a ``StagedFlow``
+#: is expected to declare its own jobs in. A flow may omit jobs and may
 #: interleave plain steps. Nothing enforces the order itself: ``resolve()``
-#: expands a ``Stages`` list exactly as written, and two stages swapped relative
+#: expands a ``Stages`` list exactly as written, and two jobs swapped relative
 #: to each other are caught only if the swap strands a view consumer, which the
 #: view preflight then reports.
-STAGE_ORDER: tuple[str, ...] = (
+JOB_ORDER: tuple[str, ...] = (
     "lint",
     "synthesis",
     "pre_pnr_sta",

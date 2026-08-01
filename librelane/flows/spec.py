@@ -193,12 +193,12 @@ class JobSpec(BaseModel):
     def _reject_both_implementations(self) -> "JobSpec":
         # A job declaring *neither* is not rejected here. The implicit rule
         # says a job whose id is a registered template id means that template,
-        # and the template ids live in the stage registry, which this module
+        # and the template ids live in the job registry, which this module
         # deliberately does not import. spec_validation.py catches it.
         if self.uses is not None and self.steps is not None:
             raise FlowSpecError(
                 "A job declares 'uses' and 'steps' together. Use 'uses' to "
-                "name a registered stage and provider, or 'steps' to list step "
+                "name a registered job and provider, or 'steps' to list step "
                 "IDs inline, but not both."
             )
         return self

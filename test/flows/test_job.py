@@ -13,11 +13,11 @@
 # limitations under the License.
 import pytest
 
-import librelane.steps  # noqa: F401  populates Step.factory and StageRegistry
+import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
 from librelane.flows.job import resolve_jobs
 from librelane.flows.spec import FlowSpec
-from librelane.stages import Stage, StageRegistry
+from librelane.jobs import Job, JobRegistry
 from librelane.state import DesignFormat
 from librelane.steps import Step
 
@@ -42,10 +42,10 @@ def test_a_uses_job_takes_its_steps_from_the_named_provider():
     # Asserted against the registration itself. The provider's steps are
     # Yosys.JsonHeader, Yosys.Synthesis and three Checker.* classes, so a
     # prefix assertion on 'Yosys.' would be false.
-    assert job.steps == tuple(StageRegistry.get("synthesis", "yosys").steps)
+    assert job.steps == tuple(JobRegistry.get("synthesis", "yosys").steps)
 
 
-def test_a_bare_uses_takes_the_stage_default_provider():
+def test_a_bare_uses_takes_the_job_default_provider():
     named = resolve_jobs(_spec({"floorplan": {"uses": "floorplan/openroad"}}))
     bare = resolve_jobs(_spec({"floorplan": {"uses": "floorplan"}}))
 
@@ -53,14 +53,14 @@ def test_a_bare_uses_takes_the_stage_default_provider():
     assert bare["floorplan"].provider == "openroad"
 
 
-def test_a_bare_uses_on_a_multi_provider_stage_concatenates_every_default():
+def test_a_bare_uses_on_a_multi_provider_job_concatenates_every_default():
     # 'streamout' is multi_provider with default_providers ('magic', 'klayout'),
     # so a bare 'uses' means both, in order. Taking only the first would drop
     # KLayout.StreamOut and with it the klayout_gds view the XOR job reads.
     bare = resolve_jobs(_spec({"streamout": {"uses": "streamout"}}))["streamout"]
 
-    assert bare.steps == tuple(StageRegistry.get("streamout", "magic").steps) + tuple(
-        StageRegistry.get("streamout", "klayout").steps
+    assert bare.steps == tuple(JobRegistry.get("streamout", "magic").steps) + tuple(
+        JobRegistry.get("streamout", "klayout").steps
     )
     assert bare.provider == "magic+klayout"
 
@@ -69,7 +69,7 @@ def test_a_job_that_omits_uses_resolves_against_its_own_id():
     # The document's central convenience rule, and the reason the spec's own
     # sample 'classic.yaml' writes 'lint:' and 'floorplan:' with nothing under
     # them. JobSpec deliberately does not reject a job declaring neither 'uses'
-    # nor 'steps' -- the template ids live in the stage registry, which the
+    # nor 'steps' -- the template ids live in the job registry, which the
     # model layer does not import -- and spec_validation._require_implementation
     # admits it whenever the id resolves, so 'uses' really is still None here.
     implicit = resolve_jobs(_spec({"floorplan": {}}))
@@ -81,27 +81,25 @@ def test_a_job_that_omits_uses_resolves_against_its_own_id():
     assert implicit["floorplan"].metrics == explicit["floorplan"].metrics
 
 
-def test_a_job_that_omits_uses_may_still_be_a_multi_provider_stage():
+def test_a_job_that_omits_uses_may_still_be_a_multi_provider_job():
     # 'streamout' defaults to two providers, so the implicit rule has to route
     # through the same default_providers path a bare 'uses' does rather than
-    # treating the id as a single 'stage/provider' string.
+    # treating the id as a single 'job/provider' string.
     implicit = resolve_jobs(_spec({"streamout": {}}))["streamout"]
 
     assert implicit.provider == "magic+klayout"
 
 
-def test_a_uses_job_inherits_the_stage_contract():
+def test_a_uses_job_inherits_the_job_contract():
     jobs = resolve_jobs(_spec({"synthesis": {"uses": "synthesis/yosys"}}))
     job = jobs["synthesis"]
-    registration = StageRegistry.get("synthesis", "yosys")
+    registration = JobRegistry.get("synthesis", "yosys")
 
-    # Stage.synthesis.requires is empty, so an equality assertion against it
+    # Job.synthesis.requires is empty, so an equality assertion against it
     # would be vacuous. Assert the union rule itself instead.
-    assert job.requires == Stage.synthesis.requires
-    assert set(job.provides) == set(Stage.synthesis.provides) | set(
-        registration.provides
-    )
-    assert set(job.metrics) == set(Stage.synthesis.metrics) | set(registration.metrics)
+    assert job.requires == Job.synthesis.requires
+    assert set(job.provides) == set(Job.synthesis.provides) | set(registration.provides)
+    assert set(job.metrics) == set(Job.synthesis.metrics) | set(registration.metrics)
     assert DesignFormat.nl in job.provides
     assert DesignFormat.json_h in job.provides
 

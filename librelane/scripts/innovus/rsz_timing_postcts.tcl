@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `post_cts_opt` stage's Innovus.PostCTSOpt step.
+# Placeholder for the `post_cts_opt` job's Innovus.PostCTSOpt step.
 #
 # This file intentionally contains no executable Tcl. Innovus.PostCTSOpt
 # .run() (inherited from VendorTclStep) raises NotImplementedError before
@@ -32,4 +32,4 @@
 #     outputs.
 #
 # Mirrors librelane/scripts/openroad/rsz_timing_postcts.tcl, which performs
-# the same stage with OpenROAD.
+# the same job with OpenROAD.

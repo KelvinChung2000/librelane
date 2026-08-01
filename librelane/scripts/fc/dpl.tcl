@@ -11,13 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# Fusion Compiler (fc_shell) -- detailed_placement stage scaffold.
+# Fusion Compiler (fc_shell) -- detailed_placement job scaffold.
 #
-# Implements: the 'detailed_placement' stage (librelane/stages/taxonomy.py), for the
+# Implements: the 'detailed_placement' job (librelane/jobs/taxonomy.py), for the
 # FC.DetailedPlacement step (librelane/steps/fc.py).
 #
 # Filename mirrors librelane/scripts/openroad/dpl.tcl, which
-# implements the same stage for the OpenROAD provider; no command or
+# implements the same job for the OpenROAD provider; no command or
 # structure is carried over from that file.
 #
 # This script contains no commands. Fusion Compiler was not available to the
@@ -29,18 +29,18 @@
 #
 # Environment variables TclStep.prepare_env (librelane/steps/tclstep.py) will
 # supply, once this script actually runs:
-#   - CURRENT_DEF, CURRENT_NL, CURRENT_SDC: paths to this stage's input views
+#   - CURRENT_DEF, CURRENT_NL, CURRENT_SDC: paths to this job's input views
 #   - SAVE_DEF, SAVE_NL, SAVE_SDC: paths this script must write its output
 #     views to
 #   - TECH_LEF, MACRO_LEFS: PDK and macro LEF views
 #   - every FC_* and common flow configuration variable, as an
 #     environment variable of the same name (the specific FC_*
-#     variables this stage would need are not yet enumerated; see
+#     variables this job would need are not yet enumerated; see
 #     librelane/steps/fc.py)
 #
 # Views this script must produce, once written: DEF, netlist and SDC (see
-# PNR_IN_PLACE_PROVIDES in librelane/stages/stage.py). Fusion Compiler also
-# carries a proprietary in-memory database across stages, but its format is
+# PNR_IN_PLACE_PROVIDES in librelane/jobs/job.py). Fusion Compiler also
+# carries a proprietary in-memory database across jobs, but its format is
 # not publicly established (see librelane/steps/fc.py and
 # .superpowers/sdd/2026-07-29-cad-tool-abstraction/vendor-python-apis.md,
 # section 12); declaring it as a DesignFormat is future work, not

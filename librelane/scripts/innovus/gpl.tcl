@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `global_placement` stage's Innovus.GlobalPlacement
+# Placeholder for the `global_placement` job's Innovus.GlobalPlacement
 # step.
 #
 # This file intentionally contains no executable Tcl.
@@ -31,5 +31,5 @@
 #     paths in SAVE_DEF, SAVE_NL and SAVE_SDC, which prepare_env() sets
 #     because Innovus.GlobalPlacement declares all three as outputs.
 #
-# Mirrors librelane/scripts/openroad/gpl.tcl, which performs the same stage
+# Mirrors librelane/scripts/openroad/gpl.tcl, which performs the same job
 # with OpenROAD.

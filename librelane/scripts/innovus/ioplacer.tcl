@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `io_placement` stage's Innovus.IOPlacement step.
+# Placeholder for the `io_placement` job's Innovus.IOPlacement step.
 #
 # This file intentionally contains no executable Tcl. Innovus.IOPlacement
 # .run() (inherited from VendorTclStep) raises NotImplementedError before
@@ -31,4 +31,4 @@
 #     Innovus.IOPlacement declares all three as outputs.
 #
 # Mirrors librelane/scripts/openroad/ioplacer.tcl, which performs the same
-# stage with OpenROAD.
+# job with OpenROAD.

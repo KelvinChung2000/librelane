@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Placeholder for the `lvs` stage's Pegasus.LVS step.
+# Placeholder for the `lvs` job's Pegasus.LVS step.
 #
 # This file intentionally contains no executable Tcl. Pegasus.LVS.run()
 # (inherited from VendorTclStep) raises NotImplementedError before this
@@ -36,11 +36,11 @@
 #     always sets: STEP_ID, SCRIPTS_DIR, STEP_DIR, TECH_LEF, MACRO_LEFS,
 #     and one entry per accessible `self.config` key.
 #   - Run a Pegasus LVS deck comparing the layout against the schematic and
-#     report the `design__lvs_error__count` metric, which the `lvs` stage
+#     report the `design__lvs_error__count` metric, which the `lvs` job
 #     itself contracts. This step produces no views: Pegasus.LVS declares
 #     no outputs.
 #
 # No static counterpart script exists in librelane/scripts/netgen/: Netgen
 # LVS's Tcl script is generated dynamically by Netgen.LVS.get_script_path()
-# rather than being a fixed file. This filename describes the stage
+# rather than being a fixed file. This filename describes the job
 # instead.
