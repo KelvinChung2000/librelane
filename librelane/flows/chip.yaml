@@ -18,7 +18,7 @@
 # vhdl_classic.yaml gives at the same place.
 #
 # The differences from Classic are OpenROAD.PadRing after
-# Odb.SetPowerConnections, the six chip finishing steps after Checker.XOR, and
+# Odb.SetPowerConnections, the six chip finishing steps after the XOR, and
 # three omissions: Magic.WriteLEF and Odb.CheckDesignAntennaProperties, which a
 # chip does not need because it is not a macro, and the io_placement job, whose
 # pins are the pad ring's bumps. Chip also runs neither OpenROAD.RMP nor
@@ -222,7 +222,6 @@ jobs:
     needs: [global_placement]
     steps:
       - Odb.WriteVerilogHeader
-      - Checker.PowerGridViolations
       - OpenROAD.STAMidPNR
   post_gpl_repair:
     needs: [post_gpl_checks]
@@ -281,9 +280,7 @@ jobs:
     needs: [detailed_routing]
     steps:
       - Odb.ReportDisconnectedPins
-      - Checker.DisconnectedPins
       - Odb.ReportWireLength
-      - Checker.WireLength
   fill_insertion:
     needs: [routing_reports]
     uses: fill_insertion
@@ -334,9 +331,8 @@ jobs:
   # unless both fired.
   #
   # In series after render and before chip_finishing, which is the order the
-  # Chip flow this document replaces ran them in (Render, XOR, Checker.XOR,
-  # then the six finishing steps) and is not a relaxation this document may
-  # make. chip_finishing rewrites 'gds';
+  # Chip flow this document replaces ran them in (Render, XOR, then the six
+  # finishing steps) and is not a relaxation this document may make. chip_finishing rewrites 'gds';
   # render and xor read the stream-out's. Run in parallel, the branches reach
   # final_checks holding two different 'gds' values and join_states raises
   # JoinConflictError -- it compares values, not declarations, so a key written
@@ -345,22 +341,20 @@ jobs:
   # ancestors before intersecting.
   xor:
     needs: [render]
-    steps: [KLayout.XOR, Checker.XOR]
+    steps: [KLayout.XOR]
     if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
-  # The six finishing steps, as one job, because two of them rewrite 'gds' in
+  # The four finishing steps, as one job, because two of them rewrite 'gds' in
   # place: KLayout.SealRing and KLayout.Filler each consume it and produce it.
   # Keeping them together makes this job the single last writer of 'gds', which
   # is what lets the three signoff jobs below take it from here with no
-  # 'source' to tie-break. All six are ungated today.
+  # 'source' to tie-break. All four are ungated today.
   chip_finishing:
     needs: [xor]
     steps:
       - KLayout.Antenna
-      - Checker.KLayoutAntenna
       - KLayout.SealRing
       - KLayout.Filler
       - KLayout.Density
-      - Checker.KLayoutDensity
   # The one place Chip's signoff differs from Classic's in shape: these three
   # hang off chip_finishing rather than off the last stream-out, because
   # Magic.DRC, KLayout.DRC and Magic.SpiceExtraction all consume 'gds' and ran
@@ -397,9 +391,4 @@ jobs:
       - magic_drc
       - klayout_drc
       - formal_equivalence
-    steps:
-      - Checker.SetupViolations
-      - Checker.HoldViolations
-      - Checker.MaxSlewViolations
-      - Checker.MaxCapViolations
-      - Misc.ReportManufacturability
+    steps: [Misc.ReportManufacturability]

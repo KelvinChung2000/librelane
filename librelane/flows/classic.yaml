@@ -223,14 +223,13 @@ jobs:
     needs: [add_buffer]
     uses: global_placement
   # What the flow does once the cells have a global position: hand the netlist
-  # to whatever reads a Verilog header later, check the grid it was placed on,
-  # and take a timing snapshot. Three steps, one job, because none of them is
-  # gated and no tool selection reaches any of them.
+  # to whatever reads a Verilog header later, and take a timing snapshot. Two
+  # steps, one job, because neither is gated and no tool selection reaches
+  # either.
   post_gpl_checks:
     needs: [global_placement]
     steps:
       - Odb.WriteVerilogHeader
-      - Checker.PowerGridViolations
       - OpenROAD.STAMidPNR
   post_gpl_repair:
     needs: [post_gpl_checks]
@@ -291,9 +290,7 @@ jobs:
     needs: [detailed_routing]
     steps:
       - Odb.ReportDisconnectedPins
-      - Checker.DisconnectedPins
       - Odb.ReportWireLength
-      - Checker.WireLength
   fill_insertion:
     needs: [routing_reports]
     uses: fill_insertion
@@ -378,7 +375,7 @@ jobs:
   # unless both fired.
   xor:
     needs: [check_antenna_properties]
-    steps: [KLayout.XOR, Checker.XOR]
+    steps: [KLayout.XOR]
     if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
   magic_drc:
     needs: [check_antenna_properties]
@@ -415,9 +412,4 @@ jobs:
       - magic_drc
       - klayout_drc
       - formal_equivalence
-    steps:
-      - Checker.SetupViolations
-      - Checker.HoldViolations
-      - Checker.MaxSlewViolations
-      - Checker.MaxCapViolations
-      - Misc.ReportManufacturability
+    steps: [Misc.ReportManufacturability]

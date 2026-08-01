@@ -26,7 +26,7 @@ from decimal import Decimal
 from abc import abstractmethod
 from typing import Optional
 
-from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
+from librelane.steps.step import ViewsUpdate, MetricsUpdate, MetricGate, Step
 from librelane.steps.tclstep import TclStep
 
 from librelane.common import Path, mkdirp, TclUtils
@@ -144,7 +144,24 @@ class LVS(NetgenStep):
     name = "Netgen LVS"
     inputs = [DesignFormat.SPICE, DesignFormat.POWERED_NETLIST]
 
+    # Both LVS providers own this gate, because each is the step that measured
+    # the number. The `lvs` job contracts the metric, so exactly one of them
+    # runs and exactly one gate fires.
+    gates = (
+        MetricGate(
+            "design__lvs_error__count",
+            "LVS errors",
+            error_on_var="ERROR_ON_LVS_ERROR",
+        ),
+    )
+
     class Config(NetgenStep.Config):
+        ERROR_ON_LVS_ERROR: bool = variable(
+            True,
+            description="Checks for LVS errors after the selected LVS tool is executed. If any exist, it raises an error at the end of the flow.",
+            deprecated_names=["QUIT_ON_LVS_ERROR"],
+        )
+
         LVS_INCLUDE_MARCO_NETLISTS: bool = variable(
             False,
             description="A flag that enables including the gate-level netlist of macros while running Netgen",

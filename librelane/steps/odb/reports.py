@@ -18,12 +18,14 @@ from loguru import logger
 
 from importlib.resources import files
 import os
+from decimal import Decimal
 from typing import Optional
 
 from librelane.config import variable
 from librelane.state import DesignFormat, State
 
 from librelane.steps.step import (
+    MetricGate,
     MetricsUpdate,
     Step,
     ViewsUpdate,
@@ -101,6 +103,34 @@ class ReportWireLength(OdbpyStep):
     name = "Report Wire Length"
     outputs = []
 
+    # WIRE_LENGTH_THRESHOLD is a PDK's business rather than a fixed zero, so
+    # the gate is deferred: an over-length wire doesn't invalidate anything
+    # downstream needs from this state, it's a design-quality signal.
+    gates = (
+        MetricGate(
+            "route__wirelength__max",
+            "threshold-surpassing long wires",
+            error_on_var="ERROR_ON_LONG_WIRE",
+            threshold_var="WIRE_LENGTH_THRESHOLD",
+        ),
+    )
+
+    class Config(OdbpyStep.Config):
+        ERROR_ON_LONG_WIRE: bool = variable(
+            True,
+            description="Checks if any wire length exceeds the threshold set in the PDK. If so, an error is raised at the end of the flow.",
+            deprecated_names=["QUIT_ON_LONG_WIRE"],
+        )
+
+        WIRE_LENGTH_THRESHOLD: Optional[Decimal] = variable(
+            None,
+            description="A value above which wire lengths generate warnings.",
+            units="µm",
+            pdk=True,
+        )
+
+    config: Config
+
     def get_script_path(self):
         return files("librelane").joinpath("scripts", "odbpy", "wire_lengths.py")
 
@@ -132,19 +162,37 @@ class ReportDisconnectedPins(OdbpyStep):
         * Any disconnected power inout pins are critical disconnected pins.
 
     The metrics ``design__disconnected_pin__count`` and
-    ``design__critical_disconnected_pin__count`` is updated. It is recommended
-    to use the checker ``Checker.DisconnectedPins`` to check that there are
-    no critical disconnected pins.
+    ``design__critical_disconnected_pin__count`` is updated. If any critical
+    disconnected pins are found, the step raises an error of its own -- see
+    ``ERROR_ON_DISCONNECTED_PINS``.
     """
 
     id = "Odb.ReportDisconnectedPins"
     name = "Report Disconnected Pins"
+
+    # Immediate, not deferred: a critical disconnected pin is very likely to
+    # produce a dead design, so nothing downstream is worth running against
+    # a state this broken.
+    gates = (
+        MetricGate(
+            "design__critical_disconnected_pin__count",
+            "critical disconnected pins",
+            error_on_var="ERROR_ON_DISCONNECTED_PINS",
+            deferred=False,
+        ),
+    )
 
     class Config(OdbpyStep.Config):
         IGNORE_DISCONNECTED_MODULES: Optional[list[str]] = variable(
             None,
             description="Modules (or cells) to ignore when checking for disconnected pins.",
             pdk=True,
+        )
+
+        ERROR_ON_DISCONNECTED_PINS: bool = variable(
+            True,
+            description="Checks for disconnected instance pins after detailed routing and quits immediately if so.",
+            deprecated_names=["QUIT_ON_DISCONNECTED_PINS"],
         )
 
     config: Config

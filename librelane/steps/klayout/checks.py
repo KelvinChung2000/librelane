@@ -22,7 +22,7 @@ import pathlib
 from os.path import abspath
 from typing import Optional
 
-from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
+from librelane.steps.step import MetricGate, ViewsUpdate, MetricsUpdate, Step
 
 from librelane.config import variable
 from librelane.state import DesignFormat, State
@@ -48,7 +48,21 @@ class XOR(KLayoutStep):
     ]
     outputs = []
 
+    gates = (
+        MetricGate(
+            "design__xor_difference__count",
+            "XOR differences",
+            error_on_var="ERROR_ON_XOR_ERROR",
+        ),
+    )
+
     class Config(KLayoutStep.Config):
+        ERROR_ON_XOR_ERROR: bool = variable(
+            True,
+            description="Checks for geometric differences between the Magic and KLayout stream-outs. If any exist, raise an error at the end of the flow.",
+            deprecated_names=["QUIT_ON_XOR_ERROR"],
+        )
+
         KLAYOUT_XOR_THREADS: Optional[int] = variable(
             None,
             description="Specifies number of threads used in the KLayout XOR check. If unset, this will be equal to your machine's thread count.",
@@ -150,7 +164,20 @@ class Density(KLayoutStep):
     inputs = [DesignFormat.GDS]
     outputs = []
 
+    gates = (
+        MetricGate(
+            "klayout__density_error__count",
+            "KLayout density errors",
+            error_on_var="ERROR_ON_KLAYOUT_DENSITY",
+        ),
+    )
+
     class Config(KLayoutStep.Config):
+        ERROR_ON_KLAYOUT_DENSITY: bool = variable(
+            True,
+            description="Checks for density violations after KLayout density check is executed and exits the flow if any was found.",
+        )
+
         KLAYOUT_DENSITY_RUNSET: Optional[Path] = variable(
             None,
             description="A path to KLayout density runset.",
@@ -268,7 +295,20 @@ class Antenna(KLayoutStep):
     inputs = [DesignFormat.GDS]
     outputs = []
 
+    gates = (
+        MetricGate(
+            "klayout__antenna_error__count",
+            "KLayout antenna errors",
+            error_on_var="ERROR_ON_KLAYOUT_ANTENNA",
+        ),
+    )
+
     class Config(KLayoutStep.Config):
+        ERROR_ON_KLAYOUT_ANTENNA: bool = variable(
+            True,
+            description="Checks for antenna violations after KLayout antenna check is executed and exits the flow if any was found.",
+        )
+
         KLAYOUT_ANTENNA_RUNSET: Optional[Path] = variable(
             None,
             description="A path to KLayout antenna runset.",

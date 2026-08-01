@@ -22,7 +22,7 @@ from os.path import abspath
 from tempfile import NamedTemporaryFile
 from typing import Optional
 
-from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
+from librelane.steps.step import ViewsUpdate, MetricsUpdate, MetricGate, Step
 
 from librelane.config import variable
 from librelane.state import DesignFormat, State
@@ -41,13 +41,14 @@ class LVS(KLayoutStep):
     the job's contracted ``design__lvs_error__count``, but they do not write
     the same quantity: Netgen reports a count of mismatching cells and nets,
     while the KLayout scripts report only whether the netlists matched, so this
-    step emits ``0`` or ``1``. ``Checker.LVS`` thresholds at zero and behaves
+    step emits ``0`` or ``1``. The gate below thresholds at zero and behaves
     identically either way; anything reading the number itself does not.
 
     Like ``KLayout.DRC``, the scripts vary wildly by PDK, and a PDK this step
     does not support is skipped with a warning. Currently, only ``ihp-sg13g2``
     and ``ihp-sg13cmos5l`` are supported. A skipped run emits no metric at all,
-    which ``Checker.LVS`` then reports as absent.
+    and so raises nothing: the warning naming the unsupported PDK is the
+    report.
     """
 
     id = "KLayout.LVS"
@@ -59,7 +60,23 @@ class LVS(KLayoutStep):
     ]
     outputs = [DesignFormat.SPICE]
 
+    # The same gate Netgen.LVS declares: each provider raises its own limit on
+    # the number it measured.
+    gates = (
+        MetricGate(
+            "design__lvs_error__count",
+            "LVS errors",
+            error_on_var="ERROR_ON_LVS_ERROR",
+        ),
+    )
+
     class Config(KLayoutStep.Config):
+        ERROR_ON_LVS_ERROR: bool = variable(
+            True,
+            description="Checks for LVS errors after the selected LVS tool is executed. If any exist, it raises an error at the end of the flow.",
+            deprecated_names=["QUIT_ON_LVS_ERROR"],
+        )
+
         KLAYOUT_LVS_SCRIPT: Optional[Path] = variable(
             None,
             description="A path to KLayout LVS script.",

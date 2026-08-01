@@ -29,6 +29,7 @@ from typing import Any, Literal, Optional
 
 from librelane.steps.step import (
     DefaultOutputProcessor,
+    MetricGate,
     OutputProcessor,
     StepError,
     StepException,
@@ -497,9 +498,8 @@ class DRC(MagicStep):
 
     This also converts the results to a KLayout database, which can be loaded.
 
-    The metrics will be updated with ``magic__drc_error__count``. You can use
-    `the relevant checker <#Checker.MagicDRC>`_ to quit if that number is
-    nonzero.
+    The metrics will be updated with ``magic__drc_error__count``. This step's
+    ``gates`` raise if that number is nonzero.
     """
 
     id = "Magic.DRC"
@@ -509,7 +509,21 @@ class DRC(MagicStep):
     inputs = [DesignFormat.DEF.mkOptional(), DesignFormat.GDS]
     outputs = []
 
+    gates = (
+        MetricGate(
+            "magic__drc_error__count",
+            "Magic DRC errors",
+            error_on_var="ERROR_ON_MAGIC_DRC",
+        ),
+    )
+
     class Config(MagicStep.Config):
+        ERROR_ON_MAGIC_DRC: bool = variable(
+            True,
+            description="Checks for DRC violations after magic DRC is executed and exits the flow if any was found.",
+            deprecated_names=["QUIT_ON_MAGIC_DRC"],
+        )
+
         MAGIC_DRC_USE_GDS: bool = variable(
             True,
             description="A flag to choose whether to run the Magic DRC checks on GDS or not. If not, then the checks will be done on the DEF view of the design, which is a bit faster, but may be less accurate as some DEF/LEF elements are abstract.",
@@ -569,9 +583,8 @@ class SpiceExtraction(MagicStep):
     Note that the resultant SPICE netlist is blackboxed, and *only* suitable for abstract LVS.
     If you want to perform a full parasitics extraction (RCX), you should use the Magic.RCX step.
 
-    Also, the metrics will be updated with ``magic__illegal_overlap__count``. You can use
-    `the relevant checker <#Checker.IllegalOverlap>`_ to quit if that number is
-    nonzero.
+    Also, the metrics will be updated with ``magic__illegal_overlap__count``.
+    This step's ``gates`` raise if that number is nonzero.
     """
 
     id = "Magic.SpiceExtraction"
@@ -581,7 +594,21 @@ class SpiceExtraction(MagicStep):
     inputs = [DesignFormat.GDS, DesignFormat.DEF]
     outputs = [DesignFormat.SPICE]
 
+    gates = (
+        MetricGate(
+            "magic__illegal_overlap__count",
+            "Magic illegal overlap errors",
+            error_on_var="ERROR_ON_ILLEGAL_OVERLAPS",
+        ),
+    )
+
     class Config(MagicStep.Config):
+        ERROR_ON_ILLEGAL_OVERLAPS: bool = variable(
+            True,
+            description="Checks for illegal overlaps during Magic extraction. In some cases, these imply existing undetected shorts in the design. It raises an error at the end of the flow if so.",
+            deprecated_names=["QUIT_ON_ILLEGAL_OVERLAPS"],
+        )
+
         MAGIC_EXT_USE_GDS: bool = variable(
             False,
             description="A flag to choose whether to use GDS for spice extraction or not. If not, then the extraction will be done using the DEF/LEF, which is faster.",

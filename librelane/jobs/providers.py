@@ -27,7 +27,6 @@ declarations rather than guessed.
 
 from librelane.state import DesignFormat
 from librelane.steps import (
-    Checker,
     KLayout,
     Magic,
     Netgen,
@@ -88,10 +87,20 @@ _OPENROAD_NAMESPACES = (
     "MANUAL_GLOBAL_PLACEMENTS",
     "ERRORS_ON_UNMATCHED_IO",
     "HEURISTIC_ANTENNA_THRESHOLD",
-    "ERROR_ON_TR_DRC",
     "NON_DEFAULT_RULES",
     "ROUTING_OBSTRUCTIONS",
     "VSRC_LOC_FILES",
+    # Limits the OpenROAD steps raise on their own measurements, and the
+    # corners the timing ones apply at. These belonged to the deleted
+    # 'Checker.*' steps, which is why they read like nobody's namespace: they
+    # were nobody's, until each moved onto the step that took the measurement.
+    "ERROR_ON_TR_DRC",
+    "ERROR_ON_PDN_VIOLATIONS",
+    "TIMING_VIOLATION_CORNERS",
+    "SETUP_VIOLATION_CORNERS",
+    "HOLD_VIOLATION_CORNERS",
+    "MAX_SLEW_VIOLATION_CORNERS",
+    "MAX_CAP_VIOLATION_CORNERS",
 )
 
 #: Magic reads the same technology and cell-view variables in every step that
@@ -117,36 +126,20 @@ _REGISTRATIONS: list[dict] = [
     {
         "job": "lint",
         "provider": "verilator",
-        "steps": [
-            Verilator.Lint,
-            Checker.LintTimingConstructs,
-            Checker.LintErrors,
-            Checker.LintWarnings,
-        ],
+        "steps": [Verilator.Lint],
         "namespaces": ("LINTER_", "ERROR_ON_LINTER_", "VERILOG_"),
     },
     {
         "job": "synthesis",
         "provider": "yosys",
-        "steps": [
-            Yosys.JsonHeader,
-            Yosys.Synthesis,
-            Checker.YosysUnmappedCells,
-            Checker.YosysSynthChecks,
-            Checker.NetlistAssignStatements,
-        ],
+        "steps": [Yosys.JsonHeader, Yosys.Synthesis],
         "namespaces": _YOSYS_NAMESPACES + ("VERILOG_", "SLANG_", "USE_SLANG"),
         "provides": [DesignFormat.json_h],
     },
     {
         "job": "synthesis",
         "provider": "yosys_vhdl",
-        "steps": [
-            Yosys.VHDLSynthesis,
-            Checker.YosysUnmappedCells,
-            Checker.YosysSynthChecks,
-            Checker.NetlistAssignStatements,
-        ],
+        "steps": [Yosys.VHDLSynthesis],
         "namespaces": _YOSYS_NAMESPACES + ("GHDL_", "VHDL_"),
     },
     {
@@ -298,7 +291,6 @@ _REGISTRATIONS: list[dict] = [
             OpenROAD.DetailedRouting,
             Odb.RemoveRoutingObstructions,
             OpenROAD.CheckAntennas,
-            Checker.TrDRC,
         ],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
@@ -345,32 +337,24 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": ("KLAYOUT_",),
         "provides": [DesignFormat.klayout_gds],
     },
-    # Each DRC provider owns the checker that reads its metric. A checker
-    # declares no inputs, so the view preflight cannot catch it being orphaned;
-    # ownership is the only thing that removes it along with the tool it checks.
     {
         "job": "drc",
         "provider": "magic",
-        "steps": [Magic.DRC, Checker.MagicDRC],
+        "steps": [Magic.DRC],
         "namespaces": _MAGIC_NAMESPACES + ("ERROR_ON_MAGIC_DRC",),
         "metrics": ["magic__drc_error__count"],
     },
     {
         "job": "drc",
         "provider": "klayout",
-        "steps": [KLayout.DRC, Checker.KLayoutDRC],
+        "steps": [KLayout.DRC],
         "namespaces": ("KLAYOUT_", "ERROR_ON_KLAYOUT_DRC"),
         "metrics": ["klayout__drc_error__count"],
     },
     {
         "job": "lvs",
         "provider": "netgen",
-        "steps": [
-            Magic.SpiceExtraction,
-            Checker.IllegalOverlap,
-            Netgen.LVS,
-            Checker.LVS,
-        ],
+        "steps": [Magic.SpiceExtraction, Netgen.LVS],
         "namespaces": _MAGIC_NAMESPACES
         + ("NETGEN_", "LVS_", "ERROR_ON_ILLEGAL_OVERLAPS", "ERROR_ON_LVS_ERROR"),
         "metrics": ["magic__illegal_overlap__count"],
@@ -410,7 +394,7 @@ _REGISTRATIONS: list[dict] = [
     {
         "job": "lvs",
         "provider": "klayout",
-        "steps": [OpenROAD.WriteCDL, KLayout.LVS, Checker.LVS],
+        "steps": [OpenROAD.WriteCDL, KLayout.LVS],
         "namespaces": _OPENROAD_NAMESPACES + ("KLAYOUT_", "ERROR_ON_LVS_ERROR"),
         "native_views": _ODB,
     },

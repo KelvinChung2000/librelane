@@ -47,6 +47,7 @@ from librelane.config import Macro, variable
 from librelane.logging import console, options
 from librelane.state import DesignFormat, State
 from librelane.steps.step import (
+    CornerMetricGate,
     MetricsUpdate,
     Step,
     StepException,
@@ -618,10 +619,67 @@ class STAPostPNR(STAPrePNR):
     name = "STA (Post-PnR)"
     long_name = "Static Timing Analysis (Post-PnR)"
 
+    # Signoff timing, and only signoff timing. MultiCornerSTA measures these
+    # four counts every time it runs -- STAPrePNR and the four STAMidPNR
+    # snapshots included -- and a violation at any of those points is expected:
+    # the design is not placed yet, or not routed yet, and the next repair step
+    # is what answers it. This class is the last STA in the flow, so it is the
+    # one whose numbers are the design's.
+    gates = (
+        CornerMetricGate(
+            "timing__setup_vio__count", "setup", "SETUP_VIOLATION_CORNERS"
+        ),
+        CornerMetricGate("timing__hold_vio__count", "hold", "HOLD_VIOLATION_CORNERS"),
+        CornerMetricGate(
+            "design__max_slew_violation__count",
+            "max slew",
+            "MAX_SLEW_VIOLATION_CORNERS",
+        ),
+        CornerMetricGate(
+            "design__max_cap_violation__count", "max cap", "MAX_CAP_VIOLATION_CORNERS"
+        ),
+    )
+
     class Config(STAPrePNR.Config):
         SIGNOFF_SDC_FILE: Optional[Path] = variable(
             None,
             description="Specifies the SDC file for STA during signoff",
+        )
+
+        TIMING_VIOLATION_CORNERS: list[str] = variable(
+            description="A list of wildcards matching IPVT corners to use during checking for timing violations.",
+            pdk=True,
+            deprecated_names=["TIMING_VIOLATIONS_CORNERS"],
+        )
+
+        # Each of the four below narrows the shared list for one violation
+        # type, and an unset one falls through to it. The empty string is a
+        # wildcard that matches nothing, which is how a PDK says "report these,
+        # do not fail on them": max cap and max slew are advisory by default,
+        # hold is checked everywhere, and setup takes whatever the PDK's shared
+        # list says.
+        SETUP_VIOLATION_CORNERS: Optional[list[str]] = variable(
+            None,
+            description="A list of wildcards matching IPVT corners to use during checking for setup violations.",
+            pdk=True,
+        )
+
+        HOLD_VIOLATION_CORNERS: Optional[list[str]] = variable(
+            ["*"],
+            description="A list of wildcards matching IPVT corners to use during checking for hold violations.",
+            pdk=True,
+        )
+
+        MAX_SLEW_VIOLATION_CORNERS: Optional[list[str]] = variable(
+            [""],
+            description="A list of wildcards matching IPVT corners to use during checking for max slew violations.",
+            pdk=True,
+        )
+
+        MAX_CAP_VIOLATION_CORNERS: Optional[list[str]] = variable(
+            [""],
+            description="A list of wildcards matching IPVT corners to use during checking for max cap violations.",
+            pdk=True,
         )
 
     config: Config

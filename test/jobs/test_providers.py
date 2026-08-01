@@ -54,13 +54,12 @@ def test_lvs_offers_klayout_as_an_alternative_to_netgen():
     is not made to write a CDL it has no use for.
     """
     from librelane.jobs import JobRegistry
-    from librelane.steps import Checker, KLayout, OpenROAD
+    from librelane.steps import KLayout, OpenROAD
 
     assert sorted(JobRegistry.providers("lvs")) == ["klayout", "netgen"]
     assert JobRegistry.get("lvs", "klayout").steps == (
         OpenROAD.WriteCDL,
         KLayout.LVS,
-        Checker.LVS,
     )
 
 
@@ -80,40 +79,39 @@ def test_yosys_vhdl_does_not_provide_the_json_header():
     )
 
 
-def test_each_drc_provider_owns_its_own_checker():
+def test_each_drc_provider_carries_the_limit_on_its_own_metric():
     """
-    A checker that reads one tool's metric only makes sense when that tool was
-    selected, so it belongs inside that tool's registration. Left as a plain step
-    in the flow, deselecting magic used to leave Checker.MagicDRC demanding
-    magic__drc_error__count that nothing emitted. The view preflight cannot catch
-    that class of orphan, because a checker declares no inputs, so ownership is
-    the only fix.
+    A DRC provider is one step now, because the limit on the count travels
+    with the tool that measured it rather than following behind as a separate
+    ``Checker.*``. That used to be a real orphan: deselecting magic removed
+    Magic.DRC and left Checker.MagicDRC demanding a magic__drc_error__count
+    nothing emitted, which the view preflight could not catch because a
+    checker declared no inputs. A gate cannot be orphaned -- there is nowhere
+    for it to be, other than on the step.
     """
     from librelane.jobs import JobRegistry
-    from librelane.steps import Checker, KLayout, Magic
+    from librelane.steps import KLayout, Magic
 
-    assert JobRegistry.get("drc", "magic").steps == (Magic.DRC, Checker.MagicDRC)
-    assert JobRegistry.get("drc", "klayout").steps == (
-        KLayout.DRC,
-        Checker.KLayoutDRC,
-    )
+    assert JobRegistry.get("drc", "magic").steps == (Magic.DRC,)
+    assert JobRegistry.get("drc", "klayout").steps == (KLayout.DRC,)
+
+    assert [gate.metric for gate in Magic.DRC.gates] == ["magic__drc_error__count"]
+    assert [gate.metric for gate in KLayout.DRC.gates] == ["klayout__drc_error__count"]
 
 
-def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
+def test_a_tool_specific_metric_is_limited_inside_its_own_registration():
     """
     The mechanical form of the step-ownership invariant, on the metric side.
 
     A metric a registration declares that its jobs do not is by definition
-    tool-specific: only that provider emits it. The step that fails the run on it
-    therefore only makes sense when that provider was selected, so it has to live
-    in the same registration, where deselecting the tool removes them together.
+    tool-specific: only that provider emits it. Whatever fails the run on it
+    therefore only makes sense when that provider was selected, so it has to
+    live in the same registration, where deselecting the tool removes both
+    together.
 
-    This is the check that condemned Checker.MagicDRC and Checker.KLayoutDRC as
-    plain steps of the flow, and the one a vendor provider added later is held to
-    for free. Note what it does *not* condemn: a checker for a metric the job
-    contracts, such as Checker.TrDRC, is tool-neutral and belongs inside a
-    registration for a different reason -- membership is what gives it the
-    job's gating variable.
+    Since the limit is a gate on the measuring step, this now reads as "the
+    step that emits it also limits it", and a vendor provider added later is
+    held to it for free.
     """
     from librelane.jobs import Job
     from librelane.jobs.providers import _REGISTRATIONS
@@ -166,16 +164,12 @@ def test_a_tool_specific_metric_is_checked_inside_its_own_registration():
     for entry in _REGISTRATIONS + vendor_registrations:
         contracted_by_job = set(Job.factory.get(entry["job"]).metrics)
         tool_specific = set(entry.get("metrics", ())) - contracted_by_job
-        checked = {
-            metric
-            for step in entry["steps"]
-            if (metric := getattr(step, "metric_name", None)) is not None
-        }
-        assert tool_specific <= checked, (
+        gated = {gate.metric for step in entry["steps"] for gate in step.gates}
+        assert tool_specific <= gated, (
             f"{entry['job']}:{entry['provider']} declares "
-            f"{sorted(tool_specific - checked)}, which nothing in the sequence "
-            f"checks. A checker for it elsewhere in a flow would outlive the "
-            f"tool it checks."
+            f"{sorted(tool_specific - gated)}, which no step in the sequence "
+            f"limits. A limit placed anywhere else in a flow would outlive the "
+            f"tool it applies to."
         )
 
 

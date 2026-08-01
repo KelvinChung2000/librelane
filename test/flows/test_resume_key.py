@@ -105,7 +105,7 @@ def test_an_edited_input_file_changes_the_key_though_paths_are_identical(KeyStep
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
 def test_a_changed_input_metric_changes_the_key(KeyStep):
-    """Checker steps read state_in.metrics, so metrics are part of the key."""
+    """A step may read state_in.metrics, so metrics are part of the key."""
     from librelane.flows.resume import resume_key
     from librelane.state import State
 

@@ -30,9 +30,10 @@ from librelane.steps.step import (
     DefaultOutputProcessor,
     MetricsUpdate,
     ViewsUpdate,
+    CornerMetricGate,
+    MetricGate,
 )
 from librelane.steps.tclstep import TclStep
-from librelane.steps import checker as Checker
 
 # You'll notice some TclStep subclasses are exposed separately-
 # this is for documentation.

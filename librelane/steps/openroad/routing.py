@@ -43,6 +43,7 @@ from librelane.steps.common_variables import (
 )
 from librelane.steps.step import (
     CompositeStep,
+    MetricGate,
     MetricsUpdate,
     Step,
     ViewsUpdate,
@@ -366,7 +367,27 @@ class DetailedRouting(OpenROADStep):
     id = "OpenROAD.DetailedRouting"
     name = "Detailed Routing"
 
+    # Deferred: a DRC violation doesn't invalidate what downstream steps need
+    # from this state (a routed, if imperfect, layout), so the rest of the
+    # flow still runs and the count is judged at the end. The metric itself
+    # is TritonRoute's own -- it lands in or_metrics_out.json per repair
+    # iteration and OpenROADStep.run() aggregates it into this step's
+    # metrics_updates before this gate ever sees it.
+    gates = (
+        MetricGate(
+            "route__drc_errors",
+            "routing DRC errors",
+            error_on_var="ERROR_ON_TR_DRC",
+        ),
+    )
+
     class Config(GrtConfig, OpenROADStep.Config):
+        ERROR_ON_TR_DRC: bool = variable(
+            True,
+            description="Checks for DRC violations after routing and exits the flow if any was found.",
+            deprecated_names=["QUIT_ON_TR_DRC"],
+        )
+
         DRT_OPT_ITERS: int = variable(
             64,
             description="Specifies the maximum number of optimization iterations during Detailed Routing in TritonRoute.",

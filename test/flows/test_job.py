@@ -39,9 +39,9 @@ def test_a_uses_job_takes_its_steps_from_the_named_provider():
 
     job = jobs["synthesis"]
     assert job.provider == "yosys"
-    # Asserted against the registration itself. The provider's steps are
-    # Yosys.JsonHeader, Yosys.Synthesis and three Checker.* classes, so a
-    # prefix assertion on 'Yosys.' would be false.
+    # Asserted against the registration itself rather than by name, so that
+    # the test says "whatever the provider registered" and not a second copy
+    # of the list.
     assert job.steps == tuple(JobRegistry.get("synthesis", "yosys").steps)
 
 
@@ -120,7 +120,7 @@ def test_a_conjunction_becomes_one_entry_per_conjunct():
         _spec(
             {
                 "xor": {
-                    "steps": ["KLayout.XOR", "Checker.XOR"],
+                    "steps": ["KLayout.XOR"],
                     "if": (
                         "RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT "
                         "and RUN_KLAYOUT_STREAMOUT"
@@ -167,7 +167,6 @@ def test_tools_overrides_a_job_that_omits_uses():
     assert [step.id for step in jobs["lvs"].steps] == [
         "OpenROAD.WriteCDL",
         "KLayout.LVS",
-        "Checker.LVS",
     ]
 
 
@@ -273,7 +272,7 @@ def test_source_keys_carry_through_as_declared_strings():
                 },
                 "xor": {
                     "needs": ["magic_streamout", "klayout_streamout"],
-                    "steps": ["KLayout.XOR", "Checker.XOR"],
+                    "steps": ["KLayout.XOR"],
                     "source": {"gds": "klayout_streamout"},
                 },
             }

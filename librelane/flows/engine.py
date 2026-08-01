@@ -1578,6 +1578,21 @@ class Workflow(Flow):
                 raise FlowException(str(e)) from None
             except DeferredStepError as e:
                 submitted.deferred.append(str(e))
+                # A deferred error says "flag this at the end, keep going", and
+                # where it was raised decides what "keep going" carries on
+                # from. A gate raises after run() has returned, so the step has
+                # real outputs -- OpenROAD.DetailedRouting reporting DRC
+                # violations still routed the design -- and dropping them would
+                # hand every later step the views from before it ran. A step
+                # that defers from inside run() never reached that point and
+                # has none, so the flow carries on with the state it already
+                # had. start() clears state_out before running, so the
+                # attribute answers which of the two happened and nothing else.
+                #
+                # Either way the resume entry is withheld, so a resumed run
+                # re-runs the step and raises again.
+                if step.state_out is not None:
+                    current = step.state_out
             except StepError as e:
                 raise FlowError(str(e)) from None
             else:

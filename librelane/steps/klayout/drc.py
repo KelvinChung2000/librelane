@@ -22,7 +22,13 @@ import pathlib
 from os.path import abspath
 from typing import Optional
 
-from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step, StepException
+from librelane.steps.step import (
+    MetricGate,
+    ViewsUpdate,
+    MetricsUpdate,
+    Step,
+    StepException,
+)
 
 from librelane.config import variable
 from librelane.state import DesignFormat, State
@@ -50,7 +56,21 @@ class DRC(KLayoutStep):
     ]
     outputs = []
 
+    gates = (
+        MetricGate(
+            "klayout__drc_error__count",
+            "KLayout DRC errors",
+            error_on_var="ERROR_ON_KLAYOUT_DRC",
+        ),
+    )
+
     class Config(KLayoutStep.Config):
+        ERROR_ON_KLAYOUT_DRC: bool = variable(
+            True,
+            description="Checks for DRC violations after KLayout DRC is executed and exits the flow if any was found.",
+            deprecated_names=["QUIT_ON_KLAYOUT_DRC"],
+        )
+
         KLAYOUT_DRC_RUNSET: Optional[Path] = variable(
             None,
             description="A path to KLayout DRC runset.",

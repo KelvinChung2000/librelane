@@ -64,6 +64,7 @@ from librelane.steps.step.exceptions import (
     StepSignalled,
 )
 from librelane.steps.step.factory import StepFactory
+from librelane.steps.step.gate import Gate
 from librelane.steps.step.output_processor import (
     DefaultOutputProcessor,
     OutputProcessor,
@@ -183,6 +184,12 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     config_vars : ClassVar[list[Variable]]
         A list of configuration :class:`librelane.config.Variable` objects
         to be used to alter the behavior of this Step.
+    gates : ClassVar[Sequence[Gate]]
+        Limits this step raises against the metrics it measures, checked by
+        :meth:`start` once :meth:`run` has returned. Every configuration
+        variable a gate names -- its ``ERROR_ON_*``, its threshold, its corner
+        wildcards -- has to be declared in this step's ``Config`` like any
+        other.
     output_processors : ClassVar[list[type[OutputProcessor]]]
         A default set of
         :class:`librelane.steps.OutputProcessor` classes for use with
@@ -217,6 +224,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     outputs: ClassVar[list[DesignFormat]] = NotImplemented
     output_processors: ClassVar[list[type[OutputProcessor]]] = [DefaultOutputProcessor]
     config_vars: ClassVar[list[Variable]] = []
+    gates: ClassVar[Sequence[Gate]] = ()
 
     if TYPE_CHECKING:
         # Every step is also handed the flow's common variables, which reach
@@ -646,6 +654,13 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         else:
             self.toolbox = toolbox
 
+        # Cleared rather than merely overwritten later, because a caller reads
+        # it to tell "this step produced nothing" from "this step produced
+        # something and then raised" -- see the engine's handling of a deferred
+        # error. Left over from an earlier start(), it would answer for the
+        # wrong run.
+        self.state_out = None
+
         state_in_result = self.state_in.result()
 
         hyperlinks = (
@@ -721,6 +736,14 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         (self.step_dir / "runtime.txt").write_text(
             format_elapsed_time(self.end_time - self.start_time)
         )
+
+        # Last, and against this run's own metrics rather than the merged set,
+        # so that a gate speaks only for what this step measured. Everything
+        # the step produced is on disk by now: a deferred failure lets the flow
+        # continue from these views, and an immediate one still leaves the
+        # reports that explain it.
+        for gate in self.gates:
+            gate.check(self, metrics_updates)
 
         return self.state_out
 

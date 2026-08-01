@@ -19,7 +19,13 @@ import os
 import re
 from typing import Optional
 
-from librelane.steps.step import Step, StepException, ViewsUpdate, MetricsUpdate
+from librelane.steps.step import (
+    MetricGate,
+    MetricsUpdate,
+    Step,
+    StepException,
+    ViewsUpdate,
+)
 from librelane.config import variable
 from librelane.state import DesignFormat, State
 from librelane.common import Path
@@ -40,7 +46,53 @@ class Lint(Step):
     inputs = []  # The input RTL is part of the configuration
     outputs = []
 
+    # All three stop the flow where they stand rather than deferring: nothing
+    # downstream of a lint failure is worth the wall-clock, and the log naming
+    # the offending line is in this step's directory.
+    gates = (
+        MetricGate(
+            "design__lint_timing_construct__count",
+            "lint timing constructs",
+            error_on_var="ERROR_ON_LINTER_TIMING_CONSTRUCTS",
+            deferred=False,
+            remedy=(
+                "Remove them or wrap them in an ifdef; relying on timing "
+                "constructs for synthesis is heavily discouraged."
+            ),
+        ),
+        MetricGate(
+            "design__lint_error__count",
+            "lint errors",
+            error_on_var="ERROR_ON_LINTER_ERRORS",
+            deferred=False,
+        ),
+        MetricGate(
+            "design__lint_warning__count",
+            "lint warnings",
+            error_on_var="ERROR_ON_LINTER_WARNINGS",
+            deferred=False,
+        ),
+    )
+
     class Config(Step.Config):
+        ERROR_ON_LINTER_ERRORS: bool = variable(
+            True,
+            description="Quit immediately on any linter errors.",
+            deprecated_names=["QUIT_ON_VERILATOR_ERRORS", "QUIT_ON_LINTER_ERRORS"],
+        )
+
+        ERROR_ON_LINTER_WARNINGS: bool = variable(
+            False,
+            description="Raise an error immediately on any linter warnings.",
+            deprecated_names=["QUIT_ON_VERILATOR_WARNINGS", "QUIT_ON_LINTER_WARNINGS"],
+        )
+
+        ERROR_ON_LINTER_TIMING_CONSTRUCTS: bool = variable(
+            True,
+            description="Quit immediately on any discovered timing constructs during linting.",
+            deprecated_names=["QUIT_ON_LINTER_TIMING_CONSTRUCTS"],
+        )
+
         VERILOG_FILES: list[Path] = variable(
             description="The paths of the design's Verilog files.",
         )

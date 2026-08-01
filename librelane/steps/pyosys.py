@@ -29,7 +29,13 @@ from decimal import Decimal
 from abc import abstractmethod
 from typing import Literal, Optional
 
-from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
+from librelane.steps.step import (
+    MetricGate,
+    MetricsUpdate,
+    Step,
+    StepError,
+    ViewsUpdate,
+)
 
 from librelane.config import BaseConfigModel, Variable, model_to_variables, variable
 from librelane.state import State, DesignFormat
@@ -429,7 +435,42 @@ class SynthesisCommon(VerilogStep):
     inputs = []  # The input RTL is part of the configuration
     outputs = [DesignFormat.NETLIST]
 
+    # Both stop the flow where it stands rather than deferring: an unmapped
+    # cell or a check error means the netlist this step just wrote is not
+    # trustworthy, so nothing downstream of it is worth running.
+    gates = (
+        MetricGate(
+            "design__instance_unmapped__count",
+            "unmapped Yosys instances",
+            error_on_var="ERROR_ON_UNMAPPED_CELLS",
+            deferred=False,
+        ),
+        MetricGate(
+            "synthesis__check_error__count",
+            "Yosys check errors",
+            error_on_var="ERROR_ON_SYNTH_CHECKS",
+            deferred=False,
+        ),
+    )
+
     class Config(VerilogStep.Config):
+        ERROR_ON_UNMAPPED_CELLS: bool = variable(
+            True,
+            description="Checks for unmapped cells after synthesis and quits immediately if so.",
+            deprecated_names=["QUIT_ON_UNMAPPED_CELLS", "CHECK_UNMAPPED_CELLS"],
+        )
+
+        ERROR_ON_SYNTH_CHECKS: bool = variable(
+            True,
+            description="Quits the flow immediately if one or more synthesis check errors are flagged. This checks for combinational loops and/or wires with no drivers. The flagged problems are logged by the synthesis step and listed in its `reports/pre_synth_chk.rpt`.",
+            deprecated_names=["QUIT_ON_SYNTH_CHECKS"],
+        )
+
+        ERROR_ON_NL_ASSIGN_STATEMENTS: bool = variable(
+            True,
+            description="Whether to emit an error or simply warn about the existence",
+        )
+
         SYNTH_CHECKS_ALLOW_TRISTATE: bool = variable(
             True,
             description="Ignore multiple-driver warnings if they are connected to tri-state buffers on a best-effort basis.",
@@ -626,7 +667,33 @@ class SynthesisCommon(VerilogStep):
 
         view_updates[DesignFormat.NETLIST] = pathlib.Path(out_file)
 
+        # Last, next to where the gates run, and for the same reason: the
+        # netlist is produced first and then examined.
+        self._check_assign_statements(out_file)
+
         return view_updates, metric_updates
+
+    def _check_assign_statements(self, netlist_path: str) -> None:
+        """
+        ``assign`` statements are known to cause bugs in some PnR tools, so
+        the netlist this step just wrote is scanned for them line by line.
+        This isn't a :class:`~librelane.steps.step.MetricGate`: there's no
+        metric to threshold, just a text pattern to flag, and the value of
+        the check is in the per-line ``file:line`` locations it logs.
+        """
+        assign_rx = re.compile(r"^\s*\bassign\b")
+        emit_error = self.config.ERROR_ON_NL_ASSIGN_STATEMENTS
+        found = False
+        with open(netlist_path, "r", encoding="utf8") as f:
+            for i, line in enumerate(f, start=1):
+                if assign_rx.search(line) is not None:
+                    found = True
+                    step_logger = logger.bind(step=self.id)
+                    (step_logger.error if emit_error else step_logger.warning)(
+                        f"{os.path.relpath(netlist_path)}:{i}: assign statement found in netlist"
+                    )
+        if found and emit_error:
+            raise StepError("One or more assign statements found in the netlist.")
 
 
 @Step.factory.register()

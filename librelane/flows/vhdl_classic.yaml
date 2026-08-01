@@ -23,8 +23,7 @@
 # The differences from Classic are the pinned synthesis provider and four
 # omitted entries: the lint stage, Odb.SetPowerConnections,
 # Odb.WriteVerilogHeader and the formal equivalence stage. None of them can run
-# without Verilog sources. Checker.PowerGridViolations is NOT among them: it sat
-# beside Odb.WriteVerilogHeader in Classic and survives here on its own.
+# without Verilog sources.
 name: VHDLClassic
 description: >-
   A variant of Classic that accepts VHDL files for synthesis instead of Verilog
@@ -211,11 +210,11 @@ jobs:
     uses: global_placement
   # classic.yaml's post_gpl_checks job, minus the step this flow cannot run.
   # Odb.WriteVerilogHeader needs the Verilog header only Verilog synthesis
-  # emits; the other two are unaffected, so the job keeps its name and its
+  # emits; the timing snapshot is unaffected, so the job keeps its name and its
   # place.
   post_gpl_checks:
     needs: [global_placement]
-    steps: [Checker.PowerGridViolations, OpenROAD.STAMidPNR]
+    steps: [OpenROAD.STAMidPNR]
   post_gpl_repair:
     needs: [post_gpl_checks]
     uses: post_gpl_repair
@@ -275,9 +274,7 @@ jobs:
     needs: [detailed_routing]
     steps:
       - Odb.ReportDisconnectedPins
-      - Checker.DisconnectedPins
       - Odb.ReportWireLength
-      - Checker.WireLength
   fill_insertion:
     needs: [routing_reports]
     uses: fill_insertion
@@ -353,7 +350,7 @@ jobs:
   # unless both fired.
   xor:
     needs: [check_antenna_properties]
-    steps: [KLayout.XOR, Checker.XOR]
+    steps: [KLayout.XOR]
     if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
   magic_drc:
     needs: [check_antenna_properties]
@@ -380,9 +377,4 @@ jobs:
       - magic_drc
       - klayout_drc
       - lvs
-    steps:
-      - Checker.SetupViolations
-      - Checker.HoldViolations
-      - Checker.MaxSlewViolations
-      - Checker.MaxCapViolations
-      - Misc.ReportManufacturability
+    steps: [Misc.ReportManufacturability]

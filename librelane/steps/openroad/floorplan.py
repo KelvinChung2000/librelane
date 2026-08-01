@@ -43,6 +43,7 @@ from librelane.steps.common_variables import (
     PdnConfig,
 )
 from librelane.steps.step import (
+    MetricGate,
     MetricsUpdate,
     Step,
     StepException,
@@ -432,7 +433,24 @@ class GeneratePDN(OpenROADStep):
     name = "Generate PDN"
     long_name = "Power Distribution Network Generation"
 
+    # Deferred: an unconnected grid node found by PSM here may still turn out
+    # to be a false positive that LVS clears later, so the flow keeps going
+    # and the count is judged once LVS has had its say.
+    gates = (
+        MetricGate(
+            "design__power_grid_violation__count",
+            "power grid violations (as reported by OpenROAD PSM- you may ignore these if LVS passes)",
+            error_on_var="ERROR_ON_PDN_VIOLATIONS",
+        ),
+    )
+
     class Config(PdnConfig, OpenROADStep.Config):
+        ERROR_ON_PDN_VIOLATIONS: bool = variable(
+            True,
+            description="Checks for unconnected nodes in the power grid. If any exists, an error is raised at the end of the flow.",
+            deprecated_names=["QUIT_ON_PDN_VIOLATIONS", "FP_PDN_CHECK_NODES"],
+        )
+
         PDN_CFG: Optional[Path] = variable(
             None,
             description="A custom PDN configuration file. If not provided, the default PDN config will be used. May be supplied by the PDK, for PDKs whose power grid is better expressed as a script than as the `PDN_*` variables.",

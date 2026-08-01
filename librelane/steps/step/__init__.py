@@ -18,6 +18,11 @@ from librelane.steps.step.output_processor import (
 )
 from librelane.steps.step.process_stats import ProcessStatsThread
 from librelane.steps.step.factory import StepFactory
+from librelane.steps.step.gate import (
+    CornerMetricGate,
+    Gate,
+    MetricGate,
+)
 from librelane.steps.step.core import (
     GlobalToolbox,
     ViewsUpdate,
@@ -38,6 +43,8 @@ _REEXPORTED_CLASSES = [
     StepFactory,
     Step,
     CompositeStep,
+    MetricGate,
+    CornerMetricGate,
 ]
 for _class in _REEXPORTED_CLASSES:
     _class.__module__ = __name__
