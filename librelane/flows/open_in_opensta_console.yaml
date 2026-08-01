@@ -1,0 +1,24 @@
+# Copyright 2026 LibreLane Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+name: OpenInOpenSTAConsole
+description: >-
+  Opens the netlist from the initial state object, and its parasitics if it has
+  any, in an interactive OpenSTA console. Intended for use with a run tag that
+  has already been run with another flow.
+
+jobs:
+  # 'open_console' rather than 'open_gui', for the reason given in
+  # open_in_openroad_console.yaml.
+  open_console:
+    steps: [OpenROAD.OpenSTAConsole]
