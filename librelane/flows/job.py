@@ -24,9 +24,9 @@ from librelane.steps import Step
 
 
 @dataclass(frozen=True)
-class Job:
+class ResolvedJob:
     """
-    A resolved job, a document's declaration bound to a registered template.
+    A document's job declaration bound to a registered template.
 
     Never written by hand. ``needs``, ``source`` and ``conditions`` come from
     the document; ``requires``, ``provides``, ``metrics`` and ``steps`` come
@@ -52,7 +52,7 @@ class Job:
     provider: str | None
 
 
-def resolve_jobs(spec: FlowSpec) -> dict[str, Job]:
+def resolve_jobs(spec: FlowSpec) -> dict[str, ResolvedJob]:
     """
     Parameters
     ----------
@@ -61,13 +61,13 @@ def resolve_jobs(spec: FlowSpec) -> dict[str, Job]:
 
     Returns
     -------
-    Each job id mapped to its resolved :class:`Job`, in document
+    Each job id mapped to its resolved :class:`ResolvedJob`, in document
     order.
     """
     return {name: _resolve(name, job) for name, job in spec.jobs.items()}
 
 
-def _resolve(name: str, spec: JobSpec) -> Job:
+def _resolve(name: str, spec: JobSpec) -> ResolvedJob:
     conditions = () if spec.condition is None else parse_condition(spec.condition)
 
     if spec.steps is not None:
@@ -81,7 +81,7 @@ def _resolve(name: str, spec: JobSpec) -> Job:
         for step in steps:
             requires.update(step.inputs)
             provides.update(step.outputs)
-        return Job(
+        return ResolvedJob(
             id=name,
             needs=tuple(spec.needs),
             source=dict(spec.source),
@@ -116,7 +116,7 @@ def _resolve(name: str, spec: JobSpec) -> Job:
         provides.update(registration.provides)
         metrics.update(registration.metrics)
 
-    return Job(
+    return ResolvedJob(
         id=name,
         needs=tuple(spec.needs),
         source=dict(spec.source),

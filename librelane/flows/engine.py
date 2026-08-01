@@ -25,7 +25,7 @@ from librelane.common import get_tpe, slugify
 from librelane.state import State
 from librelane.steps import DeferredStepError, Step, StepError, StepException
 from librelane.flows.flow import Flow, FlowError, FlowException
-from librelane.flows.job import Job, resolve_jobs
+from librelane.flows.job import ResolvedJob, resolve_jobs
 from librelane.flows.join import join_sink_states, join_states
 from librelane.flows.net import Net
 from librelane.flows.resume import resume_key, reusable_state, write_entry
@@ -269,7 +269,7 @@ class Workflow(Flow):
             return outputs[self.spec.final]
         return join_sink_states(net.sink_tokens(), self.spec.name)
 
-    def _tokens_for(self, net: Net, job: Job) -> dict[str, State]:
+    def _tokens_for(self, net: Net, job: ResolvedJob) -> dict[str, State]:
         arcs = net.inputs_of(job.id)
         tokens = net.consume(job.id)
         return {
@@ -277,7 +277,7 @@ class Workflow(Flow):
             for arc, token in zip(arcs, tokens)
         }
 
-    def _pass_through_reason(self, job: Job, skipped: bool) -> str | None:
+    def _pass_through_reason(self, job: ResolvedJob, skipped: bool) -> str | None:
         """
         Returns
         -------
@@ -299,7 +299,7 @@ class Workflow(Flow):
 
     def _run_job(
         self,
-        job: Job,
+        job: ResolvedJob,
         state_in: State,
         steps: list[Step],
         deferred: list[str],
@@ -311,7 +311,7 @@ class Workflow(Flow):
 
         Parameters
         ----------
-        job : Job
+        job : ResolvedJob
             The job to run.
         state_in : State
             The state its first step consumes.
@@ -374,7 +374,9 @@ class Workflow(Flow):
                 write_entry(step_dir, step, key)
         return current
 
-    def dir_for_job_step(self, job: Job, index: int, step: Step) -> pathlib.Path:
+    def dir_for_job_step(
+        self, job: ResolvedJob, index: int, step: Step
+    ) -> pathlib.Path:
         """
         Returns
         -------
@@ -405,7 +407,7 @@ class Workflow(Flow):
             )
         return self.run_dir / job.id / f"{index + 1}-{slugify(type(step).id)}"
 
-    def _check_contract(self, job: Job, state: State) -> None:
+    def _check_contract(self, job: ResolvedJob, state: State) -> None:
         """
         Asserts a completed job produced everything its template promised.
 
@@ -430,7 +432,7 @@ class Workflow(Flow):
 
         Parameters
         ----------
-        job : Job
+        job : ResolvedJob
             The job that completed.
         state : State
             The state it produced.
