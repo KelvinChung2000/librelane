@@ -300,3 +300,66 @@ global config.tcl.
 This structure allows for storing the best configurations for a given design on
 all different PDKs and their STD_CELL_LIBRARYs. The best configuration for a
 given design differ from one PDK and STD_CELL_LIBRARY to another.
+
+## Command-line overrides
+
+`--config-override KEY=VALUE` (`-c`) sets one variable for one run. It is
+layered after every configuration file, so it beats all of them, including a
+matching `pdk::`/`scl::` section one of them wrote. It may be given more than
+once.
+
+The text after the first `=` is read according to the variable's declared type,
+and the type alone decides which grammar applies:
+
+* A **scalar** variable -- a string, a number, a Boolean, a path, an
+  enumeration -- takes the text exactly as written. Nothing needs quoting for
+  LibreLane's sake, only for your shell's.
+
+  ```console
+  $ librelane -c CLOCK_PERIOD=15 -c 'DESIGN_NAME=my design' config.yaml
+  ```
+
+* A **list, tuple or dictionary** variable takes a JSON document, which is
+  what `--config-override` has always documented itself to take.
+
+  ```console
+  $ librelane -c 'TOOLS={"lvs": "netgen"}' -c 'CELL_PAD_EXCLUDE=["*decap*"]' config.yaml
+  ```
+
+  A value that is not valid JSON is an error naming the variable and the
+  grammar. There is no second grammar to fall back to: a space-separated Tcl
+  list, which earlier versions accepted here, is now rejected.
+
+The [pre-processing](#pre-processing) prefixes apply to an override as they do
+to a value in a JSON or YAML file, and they run before the JSON above, so a
+prefix that produces a list satisfies a list variable without any JSON at all:
+
+```console
+$ librelane -c 'VERILOG_FILES=dir::src/*.v' config.yaml
+```
+
+A prefix written **inside** a JSON array is not expanded, because by then the
+value is a list and not a string. Write the paths out, or use a prefix for the
+whole value as above.
+
+## How a value's syntax is decided
+
+Which grammar a string is read in is a property of the source that wrote it and
+never of the variable it was written for. A variable's declared type says what
+the value has to end up as; the source says how it was written.
+
+| Source | A string for a list or dictionary variable |
+| --- | --- |
+| `.tcl` file | A Tcl word list: `a 1 b 2` is a two-entry dictionary, `p q r` a three-element list. |
+| `--config-override` | A JSON document, as above. |
+| `.json` or `.yaml` file, or an API mapping | An error. These grammars carry a list as a list, so a string was meant as a string. |
+
+The last source to write a key decides, so a `--config-override` on a key a Tcl
+file also set is read as JSON, and a JSON file that overrides a key a Tcl file
+set is held to the JSON file's rules.
+
+One exception covers openlane-era designs: a document declaring
+`meta.version` 1 -- which is the default for a `.tcl` file, and for a `.json`
+file with no `meta` key -- was written when every value was Tcl text, so its
+strings are read as Tcl whichever grammar the file itself is in. The command
+line is not part of the document and is JSON regardless.

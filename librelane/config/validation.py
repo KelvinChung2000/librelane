@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
 from librelane.config.legacy import Variable
+from librelane.config.loading.sources import CoercionSyntax
 from librelane.config.model import variables_to_model
 
 
@@ -133,12 +134,21 @@ def validate_mapping(
     variables: Sequence[Variable],
     *,
     permissive: bool,
-    permissive_keys: frozenset[str] = frozenset(),
+    syntaxes: Mapping[str, CoercionSyntax] | None = None,
     on_unknown_key: Literal["error", "warn"] | None = "warn",
     provenance: Mapping[str, str] | None = None,
     removed: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, Any], DiagnosticSet, dict[str, str]]:
     """Validate one flat mapping through a Pydantic union model.
+
+    Parameters
+    ----------
+    syntaxes : Mapping[str, CoercionSyntax] | None
+        Each key mapped to the syntax the source that last wrote it writes its
+        strings in, which is what decides how a string reaching a list- or
+        dictionary-typed variable is read. A key absent from it was not written
+        by a source at all -- the PDK's compiled values, an API caller's
+        mapping -- and is taken to have arrived typed.
 
     Returns
     -------
@@ -163,7 +173,7 @@ def validate_mapping(
             raw,
             context={
                 "permissive": permissive,
-                "permissive_keys": permissive_keys,
+                "syntaxes": syntaxes or {},
             },
             strict=not permissive,
         )

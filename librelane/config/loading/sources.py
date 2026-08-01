@@ -3,6 +3,7 @@ import json
 import os
 from dataclasses import dataclass
 from decimal import Decimal
+from enum import Enum
 from typing import Any, Literal
 from collections.abc import Mapping
 
@@ -44,11 +45,49 @@ class OpenLaneYAMLLoader(CCoreLoader):
         )
 
 
+class CoercionSyntax(Enum):
+    """
+    How a string that reaches a list-, tuple- or dictionary-typed variable is
+    written.
+
+    This is a property of the source the value came from and not of the
+    variable it was written for: a ``.tcl`` file's values are Tcl text, a
+    ``--config-override`` is text typed at a shell, and a YAML, JSON or Python
+    mapping carries a list as a list. A variable's declared type says what the
+    value has to end up as, never how it was written.
+    """
+
+    #: A Tcl word list: ``a 1 b 2`` is a two-entry dictionary and ``p q r`` a
+    #: three-element list.
+    TCL = "tcl"
+    #: A JSON document, as :data:`librelane.cli.options.ConfigOverridesOption`
+    #: has always documented a ``--config-override`` value to be.
+    JSON = "json"
+    #: Not written as a string at all. A string that reaches a product-typed
+    #: variable from such a source is an error, not something to parse.
+    TYPED = "typed"
+
+
+#: Every source kind, mapped to the syntax its strings are written in.
+_SYNTAX_BY_KIND: Mapping[str, CoercionSyntax] = {
+    "tcl": CoercionSyntax.TCL,
+    "commandline": CoercionSyntax.JSON,
+    "mapping": CoercionSyntax.TYPED,
+    "json": CoercionSyntax.TYPED,
+    "yaml": CoercionSyntax.TYPED,
+}
+
+
 @dataclass(frozen=True)
 class ConfigSource:
     mapping: Mapping[str, Any]
     name: str
-    kind: Literal["mapping", "json", "yaml", "tcl"]
+    kind: Literal["mapping", "json", "yaml", "tcl", "commandline"]
+
+    @property
+    def syntax(self) -> CoercionSyntax:
+        """The syntax in which this source's strings are written."""
+        return _SYNTAX_BY_KIND[self.kind]
 
 
 def read_source(

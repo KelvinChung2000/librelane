@@ -30,6 +30,7 @@ def test_typed_model_mapping_and_schema():
 
 def test_per_key_permissiveness_and_smart_union():
     from librelane.config import BaseConfigModel, variable
+    from librelane.config.loading import CoercionSyntax
 
     class Example(BaseConfigModel):
         COUNT: int = variable(description="Count.")
@@ -37,7 +38,7 @@ def test_per_key_permissiveness_and_smart_union():
 
     model = Example.model_validate(
         {"COUNT": "2", "VALUE": "true"},
-        context={"permissive_keys": {"COUNT"}},
+        context={"syntaxes": {"COUNT": CoercionSyntax.TCL}},
         strict=True,
     )
     assert model.COUNT == 2

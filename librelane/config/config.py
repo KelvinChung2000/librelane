@@ -25,6 +25,7 @@ from typing import (
     Any,
     ClassVar,
     Literal,
+    TypeVar,
     Union,
     Optional,
 )
@@ -34,6 +35,7 @@ from types import MappingProxyType
 from librelane.config.legacy import Variable, MissingRequiredVariable
 from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
 from librelane.config.loading import (
+    CoercionSyntax,
     ConfigSource,
     OpenLaneYAMLLoader,
     layer_mappings,
@@ -64,6 +66,10 @@ from librelane.common import (
 
 AnyConfig = Union[AnyPath, Mapping[str, Any]]
 AnyConfigs = Union[AnyConfig, Sequence[AnyConfig]]
+
+#: What ``_follow_renames`` carries across a rename: an origin, or the syntax
+#: a value was written in.
+_DescriptionT = TypeVar("_DescriptionT")
 
 
 # Moved to config.loading.sources, which is where read_source needs it and
@@ -113,31 +119,34 @@ def _validate_config_file(config: AnyPath) -> Literal["json", "tcl", "yaml"]:
 
 
 def _follow_renames(
-    provenance: dict[str, str],
+    described: dict[str, _DescriptionT],
     translated_from: Mapping[str, str],
 ) -> None:
     """
-    Moves a renamed key's origin onto the name it was renamed to, in place.
+    Moves what is known about a renamed key onto the name it was renamed to,
+    in place.
 
     Parameters
     ----------
-    provenance : dict[str, str]
-        The map to update.
+    described : dict[str, _DescriptionT]
+        The map to update: a key's origin, or the syntax its value was
+        written in.
     translated_from : Mapping[str, str]
         Each current name mapped to the name whose value it took.
 
-    A rename moves the value, so the origin has to move with it: the value under
-    the current name is there *because* some layer wrote the old one. Leaving
-    the origin behind does not merely lose it. Whatever wrote the current name
-    earlier -- typically the PDK, which supplies a value for every PDK variable
-    -- is left claiming a value the design overrode, and naming a real layer
-    that did not supply the value is harder to disbelieve than naming none.
+    A rename moves the value, so what is known about it has to move too: the
+    value under the current name is there *because* some layer wrote the old
+    one. Leaving the origin behind does not merely lose it. Whatever wrote the
+    current name earlier -- typically the PDK, which supplies a value for every
+    PDK variable -- is left claiming a value the design overrode, and naming a
+    real layer that did not supply the value is harder to disbelieve than
+    naming none.
 
-    A name no layer wrote has no origin to move, and none is invented for it.
+    A name no layer wrote has nothing to move, and nothing is invented for it.
     """
     for current, previous in translated_from.items():
-        if previous in provenance:
-            provenance[current] = provenance[previous]
+        if previous in described:
+            described[current] = described[previous]
 
 
 def _written_by(
@@ -809,18 +818,15 @@ class Config(GenericImmutableDict[str, Any]):
             )
 
         config_override_strings = config_override_strings or []
-        permissive_keys = {
-            key for source in sources if source.kind == "tcl" for key in source.mapping
-        }
         overrides: dict[str, Any] = {}
         for string in config_override_strings:
             key, value = string.split("=", 1)
             overrides[key] = value
-            permissive_keys.add(key)
         # Last, and a source of its own rather than an edit to the merged
         # mapping: an override has to outrank every file, including a scoped
-        # section one of them wrote.
-        sources.append(ConfigSource(overrides, "<command line>", "mapping"))
+        # section one of them wrote. Its own kind, because a value typed at a
+        # shell is written in neither a file's grammar nor Tcl's.
+        sources.append(ConfigSource(overrides, "<command line>", "commandline"))
 
         config_obj = Self.__load_dict(
             sources,
@@ -832,7 +838,6 @@ class Config(GenericImmutableDict[str, Any]):
             pad=pad,
             meta=meta,
             permissive_typing=meta.version < 2,
-            permissive_keys=frozenset(permissive_keys),
             _load_pdk_configs=_load_pdk_configs,
         )
 
@@ -876,7 +881,6 @@ class Config(GenericImmutableDict[str, Any]):
         pad: str | None = None,
         full_pdk_warnings: bool = False,
         permissive_typing: bool = False,
-        permissive_keys: frozenset[str] = frozenset(),
         _load_pdk_configs: bool = True,
     ) -> "Config":
         # The sources arrive unmerged because their 'pdk::'/'scl::' sections
@@ -959,6 +963,20 @@ class Config(GenericImmutableDict[str, Any]):
         # layers the design over the PDK and the attribution has to follow the
         # value. A key only the PDK wrote keeps '<pdk>'.
         provenance = {**pdk_provenance, **layered.provenance}
+        # 'meta.version' 1 declares the whole document openlane-era, whose
+        # values are Tcl text whichever container carried them -- that is what
+        # permissive typing has always meant, and a '.json' design file without
+        # a 'meta' key is exactly such a document. The command line is not part
+        # of the document, so the version it declares says nothing about how a
+        # value typed at a shell is written.
+        syntaxes = {
+            key: (
+                CoercionSyntax.TCL
+                if permissive_typing and syntax is CoercionSyntax.TYPED
+                else syntax
+            )
+            for key, syntax in layered.syntax.items()
+        }
 
         design_values, deprecations, design_renames = translate_deprecated_names(
             preprocess_dict(
@@ -973,14 +991,18 @@ class Config(GenericImmutableDict[str, Any]):
         )
         mutable.update(design_values)
         # Before validate_mapping rather than after, so a diagnostic about a
-        # renamed key names the layer that actually wrote it too.
+        # renamed key names the layer that actually wrote it too. The syntax
+        # follows the value for the same reason the origin does: a renamed
+        # value is text a source wrote under the old name, and read under the
+        # new one it would otherwise be taken for a value nobody wrote.
         _follow_renames(provenance, design_renames)
+        _follow_renames(syntaxes, design_renames)
 
         processed, diagnostics, merged_renames = validate_mapping(
             mutable,
             list(flow_config_vars),
             permissive=permissive_typing,
-            permissive_keys=permissive_keys,
+            syntaxes=syntaxes,
             on_unknown_key="warn" if permissive_typing else "error",
             provenance=provenance,
             removed=removed_variables,

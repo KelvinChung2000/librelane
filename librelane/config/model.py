@@ -18,7 +18,8 @@ from pydantic import (
 from pydantic.fields import FieldInfo, PydanticUndefined
 
 from librelane.config.diagnostics import DiagnosticSet
-from librelane.config.types import _shape
+from librelane.config.loading.sources import CoercionSyntax
+from librelane.config.types import CoercionError, _shape
 
 
 BaseConfigModelT = TypeVar("BaseConfigModelT", bound="BaseConfigModel")
@@ -109,7 +110,7 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
         for field in cls.model_fields.values():
             if field.default is PydanticUndefined or field.default is None:
                 continue
-            shaped = _shape(field.default, field.annotation, split_strings=False)
+            shaped = _shape(field.default, field.annotation, CoercionSyntax.TYPED)
             if shaped is not field.default:
                 field.default = shaped
                 rebuild = True
@@ -123,9 +124,15 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
             return data
         context = info.context or {}
         permissive = bool(context.get("permissive"))
-        permissive_keys = frozenset(context.get("permissive_keys", ()))
+        syntaxes: Mapping[str, CoercionSyntax] = context.get("syntaxes") or {}
+        # A key no source is recorded for is one this model was handed
+        # directly: the PDK's compiled values, the flow's own additions, an API
+        # caller's mapping. Those arrive typed, except under the whole-document
+        # permissive mode, where every string is openlane-era Tcl text.
+        fallback = CoercionSyntax.TCL if permissive else CoercionSyntax.TYPED
         output = dict(data)
         for name, field in cls.model_fields.items():
+            written_as = name
             deprecated = next(
                 (item for item in field.metadata if isinstance(item, _DeprecatedNames)),
                 None,
@@ -141,18 +148,23 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
                     output[name] = output[alias_name]
                     if translate is not None and output[name] is not None:
                         output[name] = translate(output[name])
+                    # The value is here because a source wrote the old name, so
+                    # the old name is what its syntax is recorded under.
+                    written_as = alias_name
                     break
             if name not in output:
                 continue
             value = output[name]
             if value is None:
                 continue
-            shaped = _shape(
-                value,
-                field.annotation,
-                split_strings=permissive or name in permissive_keys,
-            )
-            if name in permissive_keys and not permissive:
+            syntax = syntaxes.get(written_as, fallback)
+            try:
+                shaped = _shape(value, field.annotation, syntax)
+            except CoercionError as error:
+                raise ValueError(f"cannot read '{name}': {error}") from None
+            if syntax is not CoercionSyntax.TYPED and not permissive:
+                # The value was written as text, so the scalars inside it are
+                # text too and the model's strict pass would refuse them.
                 shaped = TypeAdapter(_annotation_of(field)).validate_python(shaped)
             output[name] = shaped
         return output
@@ -252,7 +264,7 @@ def _field_for_legacy(variable: Any) -> FieldInfo:
     if default is None and not variable.optional:
         default = PydanticUndefined
     elif default is not PydanticUndefined:
-        default = _shape(default, variable.type, split_strings=True)
+        default = _shape(default, variable.type, CoercionSyntax.TCL)
     aliases = [
         item if isinstance(item, str) else item[0] for item in variable.deprecated_names
     ]
