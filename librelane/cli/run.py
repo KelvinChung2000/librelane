@@ -49,6 +49,7 @@ from librelane.flows import (
     VariableDisposition,
 )
 from librelane.flows.engine import Workflow
+from librelane.flows.selection_validation import supplied_views
 from librelane.flows.spec import FlowSpec
 from librelane.state import DesignFormat, State
 from librelane.cli.options import (
@@ -421,6 +422,11 @@ def start_flow(request: FlowRequest) -> None:
             logger.error("No config file(s) have been provided.")
             raise typer.Exit(1)
 
+        # Before the flow is built, and handed to it: a run starting from a
+        # state that already carries a view is not a run that needs the view
+        # produced, and the load-time selection check is the one thing that
+        # would otherwise refuse it. This is the whole reason the state is
+        # resolved here rather than inside `start`.
         initial_state = apply_initial_state_overrides(request)
 
         flow = Workflow(
@@ -432,6 +438,7 @@ def start_flow(request: FlowRequest) -> None:
             pad=request.pdk.pad,
             config_override_strings=list(request.config_overrides),
             design_dir=request.design_dir,
+            initial_views=supplied_views(initial_state),
         )
     except PassedDirectoryError as error:
         logger.error(error)

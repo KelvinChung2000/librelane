@@ -65,8 +65,35 @@ and both are load-bearing:
   producer the document had?* A view that was never produced in-document is
   outside it either way.
 
-Neither check models ``--target``, ``--skip`` or ``--reproducible``. Those shape
-one invocation rather than the configuration, and they are not known when a
+The initial state, which is known before the flow exists
+--------------------------------------------------------
+
+``--with-initial-state`` is the one invocation-shaped input this module does
+model, and the reason is that it is available before there is a flow to refuse:
+:func:`librelane.cli.run.start_flow` loads and merges the named state files,
+folds every ``--initial-state-element-override`` into them, and only then
+constructs the :class:`librelane.flows.engine.Workflow`. So the view set a state
+supplies is an ordinary constructor input, threaded from there through
+:func:`validate_selection` into :func:`lost_views` as a fourth resolution input.
+
+It has to be, because the differential above is not the whole answer. A run that
+starts from a state already carrying ``json_h`` does not care that its selection
+stopped producing ``json_h``, and refusing it at load is precisely the false
+rejection this module is otherwise built to avoid: ``{"synthesis":
+"yosys_vhdl"}`` on ``classic.yaml`` is a configuration that runs, given that
+state. Those views are available to every job rather than to the descendants of
+one, because the initial state is the common ancestor of the whole graph, so
+they enter the availability question unconditionally.
+
+:func:`supplied_views` is where a state becomes that set, and it counts a view
+as supplied when the state maps it to something other than ``None`` -- the rule
+:meth:`librelane.steps.Step.start` applies to a non-optional input on the real
+state. Mirroring it is what keeps the load-time verdict and the run-time one the
+same verdict rather than two rules that mostly agree.
+
+Neither check models ``--target``, ``--skip`` or ``--reproducible``. Unlike the
+initial state, those shape one invocation rather than the configuration, and
+they are not known when a
 :class:`librelane.flows.engine.Workflow` is constructed. ``--skip`` makes a job
 pass through, so it can only remove a conflict, which leaves this check
 over-reporting for that one invocation; the configuration is still one no
@@ -80,6 +107,7 @@ from collections.abc import Mapping, Set
 from dataclasses import dataclass
 
 from librelane.jobs import JobRegistry, JobResolutionError
+from librelane.state import State
 from librelane.steps.odb.base import OdbpyStep
 from librelane.steps.openroad.base import OpenROADStep
 
@@ -151,10 +179,40 @@ class LostView:
     producers: tuple[str, ...]
 
 
+def supplied_views(state: State | None) -> set[str]:
+    """
+    The views an initial state hands the run before its first job.
+
+    Parameters
+    ----------
+    state : State | None
+        The state ``--with-initial-state`` named, once
+        ``--initial-state-element-override`` has been folded into it, or
+        ``None`` when the run was given no initial state at all.
+
+    Returns
+    -------
+    set[str]
+        The ids of the views it supplies. A state that maps a view to ``None``
+        supplies nothing for it, which is the same reading
+        :meth:`librelane.steps.Step.start` gives that key when it decides
+        whether a non-optional input is missing.
+
+    ``None`` answers with the empty set because a run given no initial state is
+    given no views, which is the reading that makes every no-state verdict in
+    this module identical to the one it gave before a state could be passed at
+    all.
+    """
+    if state is None:
+        return set()
+    return {view for view, element in state.items() if element is not None}
+
+
 def validate_selection(
     spec: FlowSpec,
     jobs: Mapping[str, ResolvedJob],
     enabled: Set[str],
+    initial_views: Set[str] = frozenset(),
 ) -> None:
     """
     Refuses a provider selection this document cannot run.
@@ -169,6 +227,11 @@ def validate_selection(
     enabled : Set[str]
         The ids of the jobs whose ``if`` conditions this configuration makes
         true. A job outside it fires as a pass-through and writes nothing.
+    initial_views : Set[str]
+        The views this run's initial state supplies, from
+        :func:`supplied_views`. Empty for a run given no initial state, which is
+        what makes that run's verdicts exactly the ones it got before this
+        module could be told about a state.
 
     Raises
     ------
@@ -178,12 +241,16 @@ def validate_selection(
         names the key or view, the jobs involved, and every provider that would
         work instead.
     """
-    lost = lost_views(spec, jobs, enabled)
+    lost = lost_views(spec, jobs, enabled, initial_views)
     if lost:
-        raise JobResolutionError(_lost_view_message(spec, jobs, enabled, lost[0]))
+        raise JobResolutionError(
+            _lost_view_message(spec, jobs, enabled, initial_views, lost[0])
+        )
     conflicts = join_conflicts(spec, jobs, enabled)
     if conflicts:
-        raise JobResolutionError(_conflict_message(spec, jobs, enabled, conflicts[0]))
+        raise JobResolutionError(
+            _conflict_message(spec, jobs, enabled, initial_views, conflicts[0])
+        )
 
 
 def join_conflicts(
@@ -279,6 +346,7 @@ def lost_views(
     spec: FlowSpec,
     jobs: Mapping[str, ResolvedJob],
     enabled: Set[str],
+    initial_views: Set[str] = frozenset(),
 ) -> list[LostView]:
     """
     The views this selection stopped producing that some job still requires.
@@ -292,13 +360,19 @@ def lost_views(
         Its resolved jobs, under the selection being validated.
     enabled : Set[str]
         The jobs that will run.
+    initial_views : Set[str]
+        The views the run's initial state supplies, which are available to every
+        job because the state is the common ancestor of the whole graph. A view
+        among them is not lost however thoroughly the selection stopped
+        producing it: the run has it before its first job starts. Empty for a
+        run given no initial state.
 
     Returns
     -------
     list[LostView]
         One entry per ``(job, view)`` pair that the document's own providers
-        make available upstream of the job and the selected ones do not, in
-        document order.
+        make available upstream of the job and neither the selected ones nor the
+        initial state do, in document order.
 
     A differential rather than an absolute rule, for the reason this module's
     docstring gives: ``spec_validation`` presumes a view no job produces arrives
@@ -323,7 +397,7 @@ def lost_views(
         if job_id not in enabled:
             continue
         upstream = ancestors(edges, job_id)
-        available = _union(selected_views, upstream)
+        available = _union(selected_views, upstream) | set(initial_views)
         recoverable = _union(baseline_views, upstream)
         for view in sorted(_required_views(job) - available):
             if view not in recoverable:
@@ -468,6 +542,7 @@ def _alternatives_that_work(
     spec: FlowSpec,
     jobs: Mapping[str, ResolvedJob],
     enabled: Set[str],
+    initial_views: Set[str],
     job_id: str,
 ) -> list[str]:
     """
@@ -480,6 +555,13 @@ def _alternatives_that_work(
     enabled : Set[str]
         The jobs that will run. Unchanged by a provider swap: an ``if`` is the
         document's, and no registration contributes one.
+    initial_views : Set[str]
+        The views the run's initial state supplies. Also unchanged by a provider
+        swap, and passed on for the same reason ``enabled`` is: a candidate is
+        offered on the strength of coming out clean *for this run*, so it has to
+        be measured under everything this run has. A provider that works only
+        because the state carries the view it stopped producing is a provider
+        that works.
     job_id : str
         The job to offer another provider for.
 
@@ -523,7 +605,7 @@ def _alternatives_that_work(
         if not registration.runnable:
             continue
         candidate = resolve_jobs(spec, {**tools, job_id: provider})
-        if lost_views(spec, candidate, enabled):
+        if lost_views(spec, candidate, enabled, initial_views):
             continue
         if join_conflicts(spec, candidate, enabled):
             continue
@@ -535,6 +617,7 @@ def _remedies(
     spec: FlowSpec,
     jobs: Mapping[str, ResolvedJob],
     enabled: Set[str],
+    initial_views: Set[str],
     swappable: Set[str],
     gateable: Set[str],
 ) -> str:
@@ -547,6 +630,9 @@ def _remedies(
         Its resolved jobs.
     enabled : Set[str]
         The jobs that will run.
+    initial_views : Set[str]
+        The views the run's initial state supplies, for the provider search to
+        measure its candidates under.
     swappable : Set[str]
         The jobs whose provider is the thing to change.
     gateable : Set[str]
@@ -577,7 +663,9 @@ def _remedies(
     """
     lines = []
     for job_id in sorted(swappable):
-        for provider in _alternatives_that_work(spec, jobs, enabled, job_id):
+        for provider in _alternatives_that_work(
+            spec, jobs, enabled, initial_views, job_id
+        ):
             lines.append(f"set TOOLS['{job_id}'] to '{provider}'")
     for job_id in sorted(gateable):
         for condition in jobs[job_id].conditions:
@@ -593,6 +681,7 @@ def _conflict_message(
     spec: FlowSpec,
     jobs: Mapping[str, ResolvedJob],
     enabled: Set[str],
+    initial_views: Set[str],
     conflict: JoinConflict,
 ) -> str:
     where = (
@@ -607,7 +696,14 @@ def _conflict_message(
         f"{where} would receive two values for it and "
         f"librelane.flows.join has no rule for choosing. The run would stop "
         f"with a JoinConflictError."
-        + _remedies(spec, jobs, enabled, set(conflict.origins), set(conflict.origins))
+        + _remedies(
+            spec,
+            jobs,
+            enabled,
+            initial_views,
+            set(conflict.origins),
+            set(conflict.origins),
+        )
     )
 
 
@@ -615,6 +711,7 @@ def _lost_view_message(
     spec: FlowSpec,
     jobs: Mapping[str, ResolvedJob],
     enabled: Set[str],
+    initial_views: Set[str],
     lost: LostView,
 ) -> str:
     producers = " and ".join(f"'{producer}'" for producer in lost.producers)
@@ -623,5 +720,8 @@ def _lost_view_message(
         f"'{lost.consumer}' requires view '{lost.view}', which the document's "
         f"own providers produce in {producers} and the selected ones produce "
         f"nowhere before it. The run would stop at the first step reaching for "
-        f"it." + _remedies(spec, jobs, enabled, set(lost.producers), {lost.consumer})
+        f"it."
+        + _remedies(
+            spec, jobs, enabled, initial_views, set(lost.producers), {lost.consumer}
+        )
     )

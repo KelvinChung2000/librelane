@@ -37,6 +37,7 @@ from librelane.flows.selection_validation import (
     join_conflicts,
     lost_views,
     produced_keys,
+    supplied_views,
     validate_selection,
 )
 from librelane.jobs import JobResolutionError
@@ -84,7 +85,11 @@ def _default_enabled(document: str) -> set[str]:
     }
 
 
-def _refusal(document: str, tools: dict[str, str]) -> str | None:
+def _refusal(
+    document: str,
+    tools: dict[str, str],
+    initial_views: set[str] | None = None,
+) -> str | None:
     """
     Parameters
     ----------
@@ -92,6 +97,12 @@ def _refusal(document: str, tools: dict[str, str]) -> str | None:
         A shipped document's file name.
     tools : dict[str, str]
         The ``TOOLS`` selection to validate.
+    initial_views : set[str] | None
+        The views an initial state supplies, or ``None`` to call
+        :func:`validate_selection` with three arguments, exactly as a caller
+        that has never heard of an initial state does. The distinction is the
+        subject of
+        :func:`test_omitting_the_initial_views_is_the_same_call_as_passing_none`.
 
     Returns
     -------
@@ -101,8 +112,13 @@ def _refusal(document: str, tools: dict[str, str]) -> str | None:
         which is the configuration a user who sets only ``TOOLS`` has.
     """
     spec = _document(document)
+    jobs = resolve_jobs(spec, tools)
+    enabled = _default_enabled(document)
     try:
-        validate_selection(spec, resolve_jobs(spec, tools), _default_enabled(document))
+        if initial_views is None:
+            validate_selection(spec, jobs, enabled)
+        else:
+            validate_selection(spec, jobs, enabled, initial_views)
     except JobResolutionError as refused:
         return str(refused)
     return None
@@ -510,6 +526,147 @@ def test_a_view_no_job_produces_is_still_presumed_to_arrive_in_the_state():
     assert lost_views(spec, jobs, set(jobs)) == []
 
 
+def test_supplied_views_reads_a_state_the_way_a_step_reads_its_inputs():
+    """
+    Where a :class:`librelane.state.State` becomes an answer this module can
+    use, and the one rule it has to get right: a key mapped to ``None`` supplies
+    nothing.
+
+    That rule is not this module's invention. ``Step.start`` calls an input
+    missing when ``state_in.get_by_df(input) is None``, so a load-time check
+    that counted the key would accept a selection the first step then dies on --
+    which is the exact failure the whole module exists to prevent, with the sign
+    flipped.
+
+    ``State.load`` drops a JSON ``null`` outright, so the case that survives to
+    be read here is the one ``librelane.cli.run.apply_initial_state_overrides``
+    can build: a state constructed with an explicit ``None`` override.
+    """
+    from librelane.common import Path
+    from librelane.state import State
+
+    assert supplied_views(None) == set()
+
+    loaded = State.load({"json_h": None, "nl": None}, validate_path=False)
+    assert supplied_views(loaded) == set()
+
+    present = State(overrides={"json_h": Path(__file__)})
+    assert supplied_views(present) == {"json_h"}
+    assert supplied_views(State(present, overrides={"json_h": None})) == set()
+
+
+def test_a_view_the_initial_state_supplies_is_not_lost():
+    """
+    The whole subject, at the level of the differential.
+
+    ``{"synthesis": "yosys_vhdl"}`` on ``Classic`` really does stop producing
+    ``json_h``, and ``set_power_connections`` really does require it -- both
+    halves stay true with a state in hand. What changes is the conclusion, and
+    only because a run starting from a state that carries ``json_h`` has
+    ``json_h``.
+    """
+    spec = _document("classic.yaml")
+    jobs = resolve_jobs(spec, {"synthesis": "yosys_vhdl"})
+    enabled = _default_enabled("classic.yaml")
+
+    without = lost_views(spec, jobs, enabled)
+    assert [(lost.consumer, lost.view) for lost in without] == [
+        ("set_power_connections", "json_h"),
+        ("post_gpl_checks", "json_h"),
+    ]
+    assert lost_views(spec, jobs, enabled, {"json_h"}) == []
+
+
+def test_the_initial_state_makes_the_documented_fatal_selection_loadable():
+    """
+    The same claim through the refusal, which is the thing a user meets.
+
+    ``docs/source/usage/swapping_tools.md`` heads its table of refused
+    selections with this one, and the refusal is right for the run it describes:
+    a run of ``Classic`` from nothing. It is wrong for a run resuming from a
+    state that already holds the header, and refusing that one is a false
+    rejection with nothing behind it -- there is no mid-run failure being
+    replaced, because the run would have finished.
+    """
+    assert _refusal("classic.yaml", {"synthesis": "yosys_vhdl"}) is not None
+    assert _refusal("classic.yaml", {"synthesis": "yosys_vhdl"}, {"json_h"}) is None
+
+
+def test_an_initial_state_carrying_other_views_refuses_word_for_word():
+    """
+    The other side, and the one that keeps the change from being a hole: a state
+    is only a rescue for the views it actually carries.
+
+    Asserted as string equality against the no-state refusal rather than as a
+    fragment, because the requirement is that nothing about the message moved.
+    A state that does not carry ``json_h`` leaves every word of the refusal
+    true, so there is nothing to add to it and nothing about the state to name.
+    """
+    baseline = _refusal("classic.yaml", {"synthesis": "yosys_vhdl"})
+    assert baseline is not None
+
+    assert _refusal("classic.yaml", {"synthesis": "yosys_vhdl"}, {"nl", "def"}) == (
+        baseline
+    )
+    assert _refusal("classic.yaml", {"synthesis": "yosys_vhdl"}, set()) == baseline
+
+
+@pytest.mark.parametrize(
+    ("document", "job_id", "provider", "expected"),
+    [(*key, value) for key, value in sorted(_SINGLE_KEY_SELECTIONS.items())],
+)
+def test_omitting_the_initial_views_is_the_same_call_as_passing_none(
+    document, job_id, provider, expected
+):
+    """
+    The no-state regression, over every selection the shipped documents admit
+    rather than over one of them.
+
+    ``validate_selection`` grew a fourth parameter, and every caller that
+    predates it -- every embedder, and ``test/flows/test_documents.py`` -- keeps
+    calling it with three. This pins that the parameter's absence and an empty
+    set are the same question, so the eighteen verdicts in the table above are
+    the same eighteen verdicts whether or not the argument is written.
+    """
+    assert _refusal(document, {job_id: provider}) == _refusal(
+        document, {job_id: provider}, set()
+    )
+
+
+def test_a_remedy_is_measured_under_the_initial_state_too():
+    """
+    Requirement four, and the reason the view set is threaded past
+    :func:`lost_views` into the remedy search rather than being consulted once
+    at the top.
+
+    ``{"synthesis": "yosys_vhdl", "magic_drc": "klayout"}`` is a selection with
+    two things wrong with it. Given ``json_h``, the first is settled and what is
+    left is the DRC collision -- whose remedy is a provider swap, and every
+    candidate for it is a document that still runs ``yosys_vhdl`` and therefore
+    still lacks ``json_h`` in itself. A remedy search blind to the state
+    measures all of them as broken and offers nothing, leaving the user a
+    refusal with no way out of it.
+
+    Both halves are asserted: the candidate is genuinely rejected without the
+    state, and the remedy is genuinely printed with it.
+    """
+    spec = _document("classic.yaml")
+    enabled = _default_enabled("classic.yaml")
+    candidate = resolve_jobs(spec, {"synthesis": "yosys_vhdl", "magic_drc": "magic"})
+
+    assert lost_views(spec, candidate, enabled)
+    assert lost_views(spec, candidate, enabled, {"json_h"}) == []
+
+    refusal = _refusal(
+        "classic.yaml",
+        {"synthesis": "yosys_vhdl", "magic_drc": "klayout"},
+        {"json_h"},
+    )
+    assert refusal is not None
+    assert "both write 'klayout__drc_error__count'" in refusal
+    assert "set TOOLS['magic_drc'] to 'magic'" in refusal
+
+
 #: A two-job document whose jobs run concurrently and whose providers write one
 #: metric each. ``TOOLS`` pointing ``left`` at ``beta`` makes both write
 #: ``probe__beta``, which is the ``magic_drc``/``klayout_drc`` collision in
@@ -675,3 +832,205 @@ def test_constructing_a_workflow_accepts_the_same_selection_gated_off(
 
     assert workflow.jobs["left"].provider == "beta"
     assert workflow._enabled_jobs() == {"right"}
+
+
+#: A two-job chain whose first job has a provider that produces ``json_h`` and
+#: one that does not, and whose second job requires it. The shipped documents
+#: are where the ``json_h`` case is measured; this is the same shape small
+#: enough to construct a ``Workflow`` from, which a shipped document is not --
+#: for the reason this file's module docstring gives.
+_VIEW_PROBE_SPEC = {
+    "name": "ViewProbe",
+    "jobs": {
+        "produce": {"uses": "view_probe_source"},
+        "consume": {"uses": "view_probe_sink", "needs": ["produce"]},
+    },
+}
+
+
+@pytest.fixture(scope="module")
+def view_probe_job():
+    """
+    A job template with one provider that writes a view and one that does not,
+    and a second template that requires the view.
+
+    Module-scoped for the reason :func:`probe_job` is: the two registries are
+    process-wide singletons with no way to unregister.
+
+    ``json_h`` rather than a design format invented here, because a
+    ``DesignFormat`` registered by a test is one every later test in the session
+    sees, and nothing about this needs a view the taxonomy does not already
+    have. The step ids are under ``Test.`` so that
+    ``test/steps/test_registry_snapshot.py`` keeps ignoring them.
+    """
+    from librelane.jobs import Job, JobRegistry
+    from librelane.state import DesignFormat
+    from librelane.steps import Step
+
+    json_h = DesignFormat.factory.get("json_h")
+    assert json_h is not None, "json_h is a shipped design format"
+
+    Job(
+        id="view_probe_source",
+        full_name="View Probe Source",
+        default_provider="keeps",
+        requires=(),
+        provides=(),
+        metrics=(),
+    ).register()
+    Job(
+        id="view_probe_sink",
+        full_name="View Probe Sink",
+        default_provider="only",
+        requires=(json_h,),
+        provides=(),
+        metrics=(),
+    ).register()
+
+    @Step.factory.register()
+    class Keeps(Step):
+        id = "Test.ViewProbeKeeps"
+        inputs = []
+        outputs = [json_h]
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    @Step.factory.register()
+    class Drops(Step):
+        id = "Test.ViewProbeDrops"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    @Step.factory.register()
+    class Consumes(Step):
+        id = "Test.ViewProbeConsumes"
+        inputs = [json_h]
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    for job, provider, step in (
+        ("view_probe_source", "keeps", Keeps),
+        ("view_probe_source", "drops", Drops),
+        ("view_probe_sink", "only", Consumes),
+    ):
+        JobRegistry.register(
+            job=job,
+            provider=provider,
+            steps=[step],
+            namespaces=["VIEW_PROBE_"],
+        )
+
+
+@mock_variables([flow_module, step_module])
+def test_constructing_a_workflow_refuses_a_selection_that_drops_a_needed_view(
+    view_probe_job, minimal_design, mock_pdk
+):
+    """
+    The baseline for the test below, and the thing that must not change: a
+    constructor told nothing about an initial state still refuses at load.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    with pytest.raises(JobResolutionError) as refused:
+        Workflow(
+            FlowSpec.model_validate(_VIEW_PROBE_SPEC),
+            {**minimal_design, "TOOLS": {"produce": "drops"}},
+            **mock_pdk,
+        )
+
+    message = str(refused.value)
+    assert "requires view 'json_h'" in message
+    assert "'consume'" in message
+    assert "set TOOLS['produce'] to 'keeps'" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_constructing_a_workflow_accepts_it_when_the_state_supplies_the_view(
+    view_probe_job, minimal_design, mock_pdk
+):
+    """
+    The engine wiring for the initial state, pinned through the constructor
+    rather than through the validator, because the constructor is where the
+    refusal happens and ``initial_views`` is a constructor input.
+
+    Named the way the command line names it, which is the only caller that has
+    a state to reduce: ``librelane.cli.run.start_flow`` resolves the state
+    first and hands the result here.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    workflow = Workflow(
+        FlowSpec.model_validate(_VIEW_PROBE_SPEC),
+        {**minimal_design, "TOOLS": {"produce": "drops"}},
+        initial_views={"json_h"},
+        **mock_pdk,
+    )
+
+    assert workflow.jobs["produce"].provider == "drops"
+
+
+@mock_variables([flow_module, step_module])
+def test_a_state_carrying_another_view_does_not_make_the_constructor_accept(
+    view_probe_job, minimal_design, mock_pdk
+):
+    """
+    That the constructor forwards the set rather than a "a state was given"
+    boolean. An implementation that skipped the check whenever any state was
+    present would pass the test above and accept this.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    with pytest.raises(JobResolutionError) as refused:
+        Workflow(
+            FlowSpec.model_validate(_VIEW_PROBE_SPEC),
+            {**minimal_design, "TOOLS": {"produce": "drops"}},
+            initial_views={"nl", "def"},
+            **mock_pdk,
+        )
+
+    assert "requires view 'json_h'" in str(refused.value)
+
+
+def test_the_command_line_hands_the_state_s_views_to_the_constructor(mocker, tmp_path):
+    """
+    The last link, and the one the design constraint turned on: ``start_flow``
+    has the initial state -- loaded from the files ``--with-initial-state``
+    names, with every ``--initial-state-element-override`` folded in -- *before*
+    it constructs the flow, so there is a value to pass and this is where it is
+    passed.
+
+    The flow itself is mocked away because what is under test is the argument,
+    not the run: a real ``Workflow`` here would need a PDK, and the two tests
+    above already pin what the constructor does with the argument once it
+    arrives.
+    """
+    from librelane.cli import run as run_module
+    from librelane.common import Path
+    from librelane.state import State
+
+    from test.cli.test_entry_points import make_request
+
+    workflow = mocker.patch.object(run_module, "Workflow")
+    mocker.patch.object(run_module, "select_flow", return_value=mocker.sentinel.spec)
+
+    state = State(overrides={"json_h": Path(__file__)})
+    run_module.start_flow(
+        make_request(tmp_path, config_files=("config.json",), initial_state=state)
+    )
+
+    assert workflow.call_args.kwargs["initial_views"] == {"json_h"}
+
+    run_module.start_flow(
+        make_request(tmp_path, config_files=("config.json",), initial_state=None)
+    )
+
+    assert workflow.call_args.kwargs["initial_views"] == set()

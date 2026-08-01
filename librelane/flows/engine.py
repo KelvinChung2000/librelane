@@ -17,7 +17,7 @@ import os
 import pathlib
 import shutil
 import textwrap
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence, Set
 from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
@@ -353,6 +353,17 @@ class Workflow(Flow):
         As :meth:`librelane.flows.Flow.__init__`. Read twice, once here for
         ``TOOLS`` and once by the loader, for the reason given on
         :mod:`librelane.jobs.tools`.
+    initial_views
+        The views the state this flow will be started with already supplies, as
+        :func:`librelane.flows.selection_validation.supplied_views` reads them
+        off it. Only the *availability* question needs them, which is why this
+        is a view set and not the state: the state itself belongs to
+        :meth:`librelane.flows.Flow.start`, which is given it as
+        ``with_initial_state``, and construction has no use for its paths.
+
+        A caller that starts a flow from a state and does not say so here gets
+        the verdicts of a run starting from nothing, which is a refusal its run
+        would not have earned.
     """
 
     class Config(Flow.Config):
@@ -377,6 +388,7 @@ class Workflow(Flow):
         config: AnyConfigs,
         *,
         config_override_strings: Sequence[str] | None = None,
+        initial_views: Set[str] = frozenset(),
         **kwargs,
     ) -> None:
         validate_against_registry(spec)
@@ -408,12 +420,14 @@ class Workflow(Flow):
         )
         # After super().__init__ and before anything else, because it is the
         # first thing that can be asked once self.config exists and the answer
-        # decides whether this flow can run at all. It needs both halves: the
-        # providers, which resolve_jobs settled above, and the gating, which is
-        # a question about the configuration the loader has only just resolved.
-        # librelane.flows.selection_validation's docstring is where the reason
-        # gating cannot be skipped is written down.
-        validate_selection(spec, self.jobs, self._enabled_jobs())
+        # decides whether this flow can run at all. It needs all three: the
+        # providers, which resolve_jobs settled above; the gating, which is a
+        # question about the configuration the loader has only just resolved;
+        # and the initial state's views, which the caller has because the state
+        # is read before a flow is built.
+        # librelane.flows.selection_validation's docstring is where the reasons
+        # neither gating nor the initial state can be skipped are written down.
+        validate_selection(spec, self.jobs, self._enabled_jobs(), initial_views)
         #: One resolved configuration per job that declares a ``with`` block.
         self.job_configs = self._resolve_job_configs(
             config,

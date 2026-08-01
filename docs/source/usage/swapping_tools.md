@@ -66,6 +66,11 @@ it. Earlier versions accepted it and failed during the run at the first step
 that could not find the header.
 ```
 
+Every refusal on this page describes a run that starts from nothing. A run given
+`--with-initial-state` starts from the views that state holds, and a selection
+that only drops views the state already carries is not refused: see
+[What is checked, and when](#what-is-checked-when).
+
 **What can be selected at all is the Alternatives column of
 [the job table](#the-job-table)**, which is every registered provider of a
 job's template other than the one the flow already resolves to. It is a short
@@ -133,11 +138,19 @@ fires as a pass-through and writes nothing, so turning one side of a collision
 off with its Boolean makes the selection loadable — which matters, because that
 Boolean is usually the real answer.
 
+The first question is also asked of the state the run starts from. The views
+`--with-initial-state` supplies are available to every job, so a selection that
+stops producing one of them has taken nothing away and is not refused: resuming
+a `Classic` run with a `json_h` in the state makes `{"synthesis": "yosys_vhdl"}`
+loadable, and the alternatives a refusal offers are measured with that state in
+hand too. A view the state maps to `null` is not supplied, which is the same
+reading the step that consumes it gives.
+
 Two things it deliberately does not know about. It cannot see `--target`,
 `--skip` or `--reproducible`, which shape one invocation rather than the
-configuration and are not known when the flow is constructed; and it reasons
-about views and keys, never about whether two tools' results are
-*semantically* compatible.
+configuration and, unlike the initial state, are not known when the flow is
+constructed; and it reasons about views and keys, never about whether two tools'
+results are *semantically* compatible.
 
 (job-ids-in-a-workflow-document)=
 
@@ -415,7 +428,10 @@ shipped documents. Seventeen of them are refused at load, which is a fact about
 those documents' graphs rather than about the tools: each one either drops a
 view something downstream hard-requires, or puts a second writer of one key on a
 branch that runs beside another writer's. `test/flows/test_selection_validation.py`
-measures the whole list and is the source of this table.
+measures the whole list and is the source of this table. Every row assumes a run
+that starts from nothing; see
+[What is checked, and when](#what-is-checked-when) for what
+`--with-initial-state` changes.
 
 | Selection | Refused because | What to write instead |
 | --- | --- | --- |

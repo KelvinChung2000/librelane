@@ -739,6 +739,16 @@ Style Notes
     requirements there. They are exempt from the registration-time view check
     because a tool-native database cannot be named in a tool-neutral job's
     `requires`; this is where that exemption is now answered for.
+  * The second pass also reads the initial state. `--with-initial-state` is the
+    one invocation-shaped input it can see, because the command line resolves
+    the state before it builds the flow, and the views that state supplies are
+    available to every job: a selection that only stops producing views the run
+    already holds is not refused, and `{"synthesis": "yosys_vhdl"}` on `Classic`
+    loads for a run resuming from a state that carries `json_h`. The
+    alternatives a refusal offers are measured under the same state, so a
+    provider that works only because the state has the view is still offered. A
+    view the state maps to `null` is not supplied, which is the reading the step
+    consuming it gives.
 * A `TOOLS` selection that would stop the run with a `JoinConflictError` is
   refused at load. The same replay of `librelane.flows.join`'s rule that guards
   the shipped documents now runs over the providers a configuration actually
