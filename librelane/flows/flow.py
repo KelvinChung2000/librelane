@@ -22,6 +22,7 @@ import fnmatch
 import datetime
 import textwrap
 import pathlib
+import threading
 import uuid
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -163,6 +164,20 @@ class FlowProgressBar(object):
         self.__live = live if live is not None else default_live
         #: Row per in-flight step, keyed by step ID.
         self.step_row_ids: dict[str, TaskID] = {}
+        #: Guards :attr:`step_row_ids`.
+        #:
+        #: :meth:`sync_step_rows` is a :class:`LiveLog` listener, and
+        #: ``LiveLog.drain`` calls its listeners outside its own lock.
+        #: ``drain`` runs on the log pump *and* synchronously inside
+        #: ``LiveLog.unregister``, which every step reaches through
+        #: ``step_context``'s ``finally`` on whichever thread ran it. Two steps
+        #: finishing at the same instant therefore run this reconciliation
+        #: concurrently, and both compute the same set of departed ids: the
+        #: loser's ``pop`` raised ``KeyError``, and ``keys() - current`` could
+        #: raise ``RuntimeError`` if the other thread inserted mid-iteration.
+        #: Neither is a ``FlowError``, so either would escape the engine's
+        #: failure collection and abandon every job still running.
+        self.__rows_lock = threading.Lock()
         self.__progress = Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -191,11 +206,16 @@ class FlowProgressBar(object):
         Stops rendering the progress bar.
         """
         self.__live.remove_listener(self.sync_step_rows)
-        for task_id in self.step_row_ids.values():
-            self.__progress.remove_task(task_id)
-        self.step_row_ids.clear()
+        with self.__rows_lock:
+            for task_id in self.step_row_ids.values():
+                self.__progress.remove_task(task_id)
+            self.step_row_ids.clear()
+            # Inside the lock, and before the Progress is stopped: clearing
+            # the task id is what closes sync_step_rows' guard, so a listener
+            # that had already passed it and was waiting on this lock would
+            # otherwise go on to add rows to a bar that is being torn down.
+            self.__task_id = TaskID(-1)
         self.__progress.stop()
-        self.__task_id = TaskID(-1)
 
     def refresh(self):
         """Forces a render. Rich otherwise refreshes on its own schedule."""
@@ -208,17 +228,31 @@ class FlowProgressBar(object):
         Only membership is reconciled here. The text of a row is pulled by
         :class:`_StepActivityColumn` during Rich's own refresh, so a tool
         emitting a hundred thousand lines costs the bar nothing.
+
+        Called concurrently by every thread that finishes a step, so the whole
+        reconciliation is taken under :attr:`__rows_lock`. The snapshot is read
+        before the lock: ``LiveLog.snapshot`` takes ``LiveLog``'s own lock, and
+        taking the two in a fixed order here and nowhere else is what keeps
+        that from being an ordering to reason about.
         """
         if self.__task_id == TaskID(-1):
             return
         current = {display.step_id for display in self.__live.snapshot()}
-        for step_id in current - self.step_row_ids.keys():
-            self.step_row_ids[step_id] = self.__progress.add_task(
-                step_id,
-                total=None,
-            )
-        for step_id in self.step_row_ids.keys() - current:
-            self.__progress.remove_task(self.step_row_ids.pop(step_id))
+        with self.__rows_lock:
+            # Asked again, because the check above is only a cheap early-out:
+            # end() clears the task id under this lock, so a listener that
+            # passed the guard and then waited here would otherwise add rows
+            # to a bar that has been torn down. Under the lock the answer
+            # cannot change while it is acted on.
+            if self.__task_id == TaskID(-1):
+                return
+            for step_id in current - self.step_row_ids.keys():
+                self.step_row_ids[step_id] = self.__progress.add_task(
+                    step_id,
+                    total=None,
+                )
+            for step_id in self.step_row_ids.keys() - current:
+                self.__progress.remove_task(self.step_row_ids.pop(step_id))
 
     @property
     def started(self) -> bool:
@@ -982,6 +1016,15 @@ class Flow(ABC):
     ) -> Future[State]:
         """
         An asynchronous equivalent to :meth:`start_step`.
+
+        Warning
+        -------
+        Submits to the process-wide pool
+        :func:`librelane.common.get_tpe` returns, which
+        :class:`librelane.flows.engine.Workflow` fills with whole jobs. Call it
+        from a flow's own thread, never from inside a job: a worker that
+        submits here and waits is waiting for a worker to free up, and the one
+        that would is itself.
 
         Parameters
         ----------

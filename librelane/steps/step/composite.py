@@ -97,9 +97,27 @@ class CompositeStep(Step):
             # already validated. Revalidating would re-read the PDK, which a
             # reproducible cannot do: its PDK_ROOT points at the copied
             # ./files tree, which holds only the files the config referenced.
-            step = StepClass(self.config, state, _no_revalidate_conf=True)
+            step = StepClass(
+                self.config,
+                state,
+                _no_revalidate_conf=True,
+                # The logging layer keys a running step on its id: the loguru
+                # filter behind step.log, LiveLog's registry, the progress
+                # row. A child carries its own class id, so two jobs running
+                # the same composite at once would give their children
+                # identical keys and each child's records would land in both
+                # step.log files -- the same collision the composite's own id
+                # is disambiguated against, one level down. Deriving from
+                # self.id rather than from the class carries whatever
+                # disambiguation the composite was given through to its
+                # children.
+                id=f"{StepClass.id} ({self.id})",
+            )
+            # slugify of the class id, not the instance's: the id above names
+            # the composite, and the composite's own directory is already the
+            # parent of this one.
             step_dir = self.step_dir / (
-                f"{str(i + 1).zfill(ordinal_length)}-{slugify(step.id)}"
+                f"{str(i + 1).zfill(ordinal_length)}-{slugify(StepClass.id)}"
             )
             state = step.start(
                 toolbox=self.toolbox,

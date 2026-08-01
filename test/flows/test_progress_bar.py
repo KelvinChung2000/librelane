@@ -75,6 +75,72 @@ def test_a_finished_step_loses_its_row(real_progress, live):
         bar.end()
 
 
+def test_only_one_thread_reconciles_the_rows_at_a_time(real_progress, live):
+    """
+    Every thread that finishes a step reconciles the rows, because
+    ``LiveLog.unregister`` drains synchronously and ``drain`` calls its
+    listeners outside its own lock. Two threads doing that at once both saw
+    the same departed ids, so the loser's ``pop`` raised ``KeyError``, and
+    ``keys() - current`` could raise ``RuntimeError`` if the other inserted
+    mid-iteration. Neither is a ``FlowError``, so either escaped the
+    concurrent engine's failure collection and abandoned every job still
+    running.
+
+    Asserting the exclusion rather than hunting the corruption: a second
+    thread is held at the door while the first is inside, which is a fact
+    about the lock and not about who wins a race. Without the lock the second
+    thread has nothing to wait on and finishes immediately, so the wait below
+    is a formality in one direction and a real observation in the other.
+    """
+    import threading
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingRows(dict):
+        """Holds the first thread to insert a row inside the critical section."""
+
+        def __setitem__(self, key, value):
+            if not entered.is_set():
+                entered.set()
+                assert release.wait(timeout=30)
+            super().__setitem__(key, value)
+
+    bar, _ = make_bar(real_progress, live)
+    try:
+        bar.step_row_ids = BlockingRows()
+        live.register("first")
+        live.register("second")
+
+        second_returned = threading.Event()
+
+        def reconcile_and_report() -> None:
+            bar.sync_step_rows()
+            second_returned.set()
+
+        holder = threading.Thread(target=bar.sync_step_rows)
+        contender = threading.Thread(target=reconcile_and_report)
+        holder.start()
+        assert entered.wait(timeout=30), "the first thread never got inside"
+        contender.start()
+
+        assert not second_returned.wait(timeout=1.0), (
+            "a second thread reconciled the rows while the first was still "
+            "inside, so nothing serialises them"
+        )
+
+        release.set()
+        holder.join(timeout=30)
+        contender.join(timeout=30)
+
+        # Both ran, and the rows are each present exactly once: the second
+        # thread read the dict after the first had finished writing it.
+        assert sorted(bar.step_row_ids) == ["first", "second"]
+    finally:
+        release.set()
+        bar.end()
+
+
 def test_a_row_shows_the_step_s_latest_line(real_progress, live):
     """
     The suppressed tool chatter becomes the liveness signal: a row that has been

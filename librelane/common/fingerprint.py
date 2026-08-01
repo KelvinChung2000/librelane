@@ -23,6 +23,7 @@ synthesis output. This module answers the question paths cannot.
 import hashlib
 import os
 import stat
+import threading
 
 #: Read granularity. Large enough that a 30MB liberty file is a handful of
 #: reads, small enough not to hold a GDS in memory.
@@ -46,6 +47,7 @@ class Fingerprinter:
 
     def __init__(self) -> None:
         self.__memo: dict[tuple[str, int, int], str] = {}
+        self.__memo_lock = threading.Lock()
 
     def _read_digest(self, path: str) -> str:
         """
@@ -100,9 +102,19 @@ class Fingerprinter:
             return f"dir:{resolved}"
 
         memo_key = (resolved, status.st_size, status.st_mtime_ns)
-        if (cached := self.__memo.get(memo_key)) is not None:
-            return cached
+        with self.__memo_lock:
+            if (cached := self.__memo.get(memo_key)) is not None:
+                return cached
 
+        # Deliberately outside the lock. One instance is shared by every job
+        # of a run, and jobs run concurrently, so holding the lock across the
+        # read would serialise the hashing of every distinct file in the flow
+        # behind one thread -- removing exactly the parallelism the engine
+        # exists to add, to save a cost that only appears when two jobs happen
+        # to miss on the same file at the same moment. The identity is a pure
+        # function of the key, so the loser of that race recomputes the same
+        # string and stores it over an equal one.
         identity = f"file:{self._read_digest(resolved)}"
-        self.__memo[memo_key] = identity
+        with self.__memo_lock:
+            self.__memo[memo_key] = identity
         return identity

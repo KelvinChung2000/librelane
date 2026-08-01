@@ -89,3 +89,52 @@ def test_composite_children_still_receive_their_variables(mock_config):
     state_out = parent.start(step_dir="/cwd/composite2")
 
     assert state_out.metrics["test__child_knob"] == 3
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_a_composite_s_children_are_told_apart_by_their_parent(mock_config):
+    """
+    The logging layer keys a running step on its id, and a composite's
+    children carry their own class ids. Two jobs running one composite at the
+    same time would give their children identical keys, so each child's
+    records would land in both step.log files -- the collision the composite's
+    own id is disambiguated against, one level down.
+    """
+    from librelane.state import State
+    from librelane.steps import Step
+    from librelane.steps.step.composite import CompositeStep
+
+    seen: list[tuple[str, str]] = []
+
+    class Child(Step):
+        id = "Test.CompositeIdChild"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            seen.append((self.id, os.path.basename(self.step_dir)))
+            return {}, {}
+
+    class Parent(CompositeStep):
+        id = "Test.CompositeId"
+        outputs = []
+        Steps = [Child]
+
+    for job in ("left", "right"):
+        Parent(
+            config=mock_config,
+            state_in=State(),
+            id=f"Test.CompositeId ({job})",
+        ).start(step_dir=f"/cwd/composite-{job}")
+
+    left_child, right_child = (child_id for child_id, _ in seen)
+    assert left_child != right_child
+    # Each child carries whatever disambiguation its parent was given, so a
+    # child of two concurrent composites is two distinct live steps.
+    assert "left" in left_child
+    assert "right" in right_child
+
+    # The directory does not move with the id: the parent's own directory
+    # already says which run this is.
+    assert {directory for _, directory in seen} == {"1-test-compositeidchild"}

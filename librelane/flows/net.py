@@ -84,6 +84,15 @@ class Net:
             if not has_consumer[job]:
                 arcs.append(Arc(job, None))
         self.arcs = tuple(arcs)
+        consumers = {arc.consumer for arc in arcs}
+        assert consumers.issuperset(self._jobs), (
+            "every job has at least one input place. all() over no input "
+            "places is vacuously true, so a job with none is enabled with "
+            "nothing to consume: what holds it back today is only the "
+            "'has not fired' test, which the source arc above makes "
+            "unnecessary and which a net that fires a transition more than "
+            "once would not have"
+        )
         self._marking: dict[Arc, Any] = {}
         self.fired: set[str] = set()
 

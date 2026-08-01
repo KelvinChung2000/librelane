@@ -55,9 +55,6 @@ def set_tpe(tpe: ThreadPoolExecutor):
     Allows replacing LibreLane's global ``ThreadPoolExecutor`` with a customized
     one.
 
-    It will be used inside steps, so use different TPEs inside steps to avoid
-    a deadlock.
-
     Parameters
     ----------
     tpe : ThreadPoolExecutor
@@ -72,8 +69,19 @@ def get_tpe() -> ThreadPoolExecutor:
     Returns
     -------
     ThreadPoolExecutor
-        LibreLane's global ``ThreadPoolExecutor``. This is used to run
-        steps, so do not use them inside steps to avoid a deadlock.
+        LibreLane's global ``ThreadPoolExecutor``, sized from ``-j``.
+
+    Warning
+    -------
+    This pool runs whole *jobs* for
+    :class:`librelane.flows.engine.Workflow`, so its workers are occupied for
+    as long as a job takes. Code running inside a job -- which is to say, any
+    step, and anything a step calls -- must not submit to it and wait on the
+    result: with the pool full of jobs the submitted work can only start once
+    a worker frees up, and the worker that would free up is the one blocked
+    waiting. A step that fans out builds its own executor instead, as
+    ``OpenROAD.STAPrePNR`` does. The same applies to
+    ``Flow.start_step_async``, which submits here.
     """
     global TPE
     return TPE

@@ -182,3 +182,36 @@ def test_each_step_gets_its_own_log_file():
     contents = step_logs[0].read_text()
     assert "belongs to the step log" in contents
     assert "a warning worth keeping" in contents
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([flow, step])
+def test_the_default_subprocess_log_is_named_after_the_step_class(mock_config):
+    """
+    A flow may give an instance a per-run id -- ``Workflow`` names the job in
+    it so two concurrent runs of one step class can be told apart in the logs
+    -- and ``get_log_path`` used to slugify that, so the default subprocess log
+    silently became ``netgen-lvs-signoff.log``. The step directory already
+    names the job, and the newcomers' guide tells readers to open these files
+    by name.
+    """
+    from librelane.state import State
+    from librelane.steps import Step
+
+    class Loud(Step):
+        id = "Test.LoudStep"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    disambiguated = Loud(
+        config=mock_config,
+        state_in=State(),
+        id="Test.LoudStep (signoff)",
+    )
+    disambiguated.step_dir = pathlib.Path("/cwd/runs/X/signoff/1-test-loudstep")
+
+    assert disambiguated.id == "Test.LoudStep (signoff)"
+    assert disambiguated.get_log_path().endswith("/test-loudstep.log")

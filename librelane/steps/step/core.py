@@ -91,9 +91,27 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     in an input state and returns a new output state with updated design format
     paths and/or metrics.
 
-    Warning: The initializer for Step is not thread-safe. Please use it on the main
-    thread and then, if you're using a Flow object, use ``start_step_async``, or
-    if you're not, you may use ``start`` in another thread. That part's fine.
+    The initializer may be called from any thread.
+    :class:`librelane.flows.engine.Workflow` constructs a job's steps on the
+    worker running that job. Everything it writes is on the instance, and it
+    calls three class methods. ``assert_concrete`` and
+    ``get_all_config_variables`` only read class attributes.
+    ``_get_config_model`` does write class state -- a check-then-act on
+    ``_config_model_cache`` -- but its mutating branch needs ``config_vars``
+    in ``cls.__dict__`` *without* a ``Config``, which ``__init_subclass__``
+    rejects for any subclass that declares ``config_vars`` and which
+    :class:`CompositeStep` avoids by installing its model up front, so no
+    in-tree class can reach it; a subclass that did would race there. The one
+    process-wide structure underneath the initializer, the ``lru_cache`` on
+    the PDK configuration, is thread-safe. (An older warning here said the
+    initializer was not thread-safe. It predates ``Step.counter`` moving out
+    of it, which is the mutable global it was about, and ``counter`` is now
+    touched only by ``start`` in interactive mode.)
+
+    Two instances of one step class that run **at the same time** must be
+    given different ``id``\\s, because the logging layer keys a running step
+    on its id: the loguru filter that routes records into ``step.log``, the
+    live registry, and the progress row read off it. See the ``id`` parameter.
 
     Parameters
     ----------

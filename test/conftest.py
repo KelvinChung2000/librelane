@@ -11,20 +11,109 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import contextlib
 import os
 import tempfile
+import threading
 from unittest import mock
 from decimal import Decimal
 from typing import Any, Literal, Optional
-from collections.abc import Iterable, Callable
+from collections.abc import Iterable, Callable, Iterator
 
 import pytest
 from loguru import logger
+from pyfakefs import fake_os, fake_pathlib
+from pyfakefs import fake_filesystem_unittest
 from pyfakefs.fake_filesystem_unittest import Patcher
 from _pytest.fixtures import SubRequest
 
 from librelane.config import Variable, Macro
 from librelane.common import Path, GenericDict
+
+
+class _ThreadScopedUseOriginal:
+    """
+    pyfakefs's "answer this call from the real disk" switch, made per-thread.
+
+    :func:`pyfakefs.fake_os.use_original_os` sets
+    ``FakeOsModule.use_original``, a plain class attribute, so that pyfakefs's
+    own ``linecache`` shim can read a source file that only exists on the real
+    disk. Every faked ``open`` reaches that shim: ``fake_open`` asks
+    ``helpers.is_called_from_skipped_module``, which calls
+    ``traceback.extract_stack()``, which reads source through ``linecache``.
+
+    The switch is process-wide and pyfakefs contains no threading code at all,
+    so while one thread holds it every *other* thread's ``open`` and
+    ``os.path.exists`` are answered by the real filesystem, where the fixtures'
+    ``/pdk`` and ``/cwd`` do not exist. A single-threaded test never sees it. A
+    test that runs two flow jobs at once fails with a PDK path that "does not
+    exist", at whichever call lost the race.
+
+    Whether the calling code is a module pyfakefs was told to skip is a fact
+    about one call stack, so the switch is per-thread by nature. Both readers
+    -- ``fake_os.handle_original_call`` and ``fake_path.handle_original_call``
+    -- only ever test it for truthiness, so an object with a per-thread
+    ``__bool__`` is a drop-in for the ``bool`` they read today.
+    """
+
+    def __init__(self) -> None:
+        self._local = threading.local()
+
+    def __bool__(self) -> bool:
+        return getattr(self._local, "value", False)
+
+    def set(self, value: bool) -> None:
+        self._local.value = value
+
+
+@contextlib.contextmanager
+def _thread_scoped_use_original_os() -> Iterator[None]:
+    """Replaces :func:`pyfakefs.fake_os.use_original_os`, holding the switch
+    for the calling thread only."""
+    switch = fake_os.FakeOsModule.use_original
+    if not isinstance(switch, _ThreadScopedUseOriginal):
+        # An explicit raise rather than an assert: under `python -O` the assert
+        # would be stripped and the next line would fail with an AttributeError
+        # on a bool, which says nothing about what went wrong.
+        raise RuntimeError(
+            "pyfakefs's use_original switch is a "
+            f"{type(switch).__name__}, not the thread-scoped one the "
+            "_pyfakefs_switch_is_thread_scoped fixture installs. Something "
+            "replaced it, and faked calls will leak to the real filesystem "
+            "across threads."
+        )
+    switch.set(True)
+    try:
+        yield
+    finally:
+        switch.set(False)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _pyfakefs_switch_is_thread_scoped():
+    """
+    Installs :class:`_ThreadScopedUseOriginal` for the session.
+
+    Both names have to be replaced together: the switch, and every module-level
+    reference to the context manager that sets it. ``fake_filesystem_unittest``
+    holds one for the ``linecache`` shim and ``fake_pathlib`` holds one for its
+    real-path methods, and each resolves it as a module global at call time, so
+    rebinding the global is enough to reach both. The original
+    ``use_original_os`` would assign a bare ``True`` over the switch object and
+    undo the whole thing, so leaving any reference behind is not an option.
+    """
+    original_switch = fake_os.FakeOsModule.use_original
+    originals = {
+        module: module.use_original_os
+        for module in (fake_os, fake_filesystem_unittest, fake_pathlib)
+    }
+    fake_os.FakeOsModule.use_original = _ThreadScopedUseOriginal()
+    for module in originals:
+        module.use_original_os = _thread_scoped_use_original_os
+    yield
+    for module, original in originals.items():
+        module.use_original_os = original
+    fake_os.FakeOsModule.use_original = original_switch
 
 
 class LoguruCapture:

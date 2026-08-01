@@ -70,10 +70,15 @@ def counting_steps():
     Two trivially registered steps that record the order they ran in, so a
     test can assert the engine's firing order without invoking a real tool.
 
+    The class's id, not the instance's. A flow is free to give an instance a
+    per-run id -- :class:`librelane.flows.engine.Workflow` names the job in it
+    so two concurrent runs of one step class can be told apart in the logs --
+    and which class ran is what a firing-order assertion is about.
+
     Returns
     -------
     ``(order, First, Second)``, where ``order`` is the list the
-    steps append their ids to as they run.
+    steps append their class ids to as they run.
     """
     from librelane.steps import Step
 
@@ -86,7 +91,7 @@ def counting_steps():
         outputs = []
 
         def run(self, state_in, **kwargs):
-            order.append(self.id)
+            order.append(type(self).id)
             return {}, {"first": 1}
 
     @Step.factory.register()
@@ -96,7 +101,7 @@ def counting_steps():
         outputs = []
 
         def run(self, state_in, **kwargs):
-            order.append(self.id)
+            order.append(type(self).id)
             return {}, {"second": 1}
 
     return order, First, Second

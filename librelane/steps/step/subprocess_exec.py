@@ -63,8 +63,16 @@ class SubprocessMixin:
             parameter.
 
             Override it to change the default log path.
+
+        Named after the step's *class*, not the instance. A flow may give an
+        instance a per-run id -- :class:`librelane.flows.engine.Workflow`
+        names the job in it so two concurrent runs of one step class can be
+        told apart in the logs -- and that name is already the directory this
+        file sits in. Spelling it twice would rename every default subprocess
+        log the moment a flow started disambiguating, which the documentation
+        tells newcomers to open by name.
         """
-        return os.fspath(pathlib.Path(self.step_dir) / f"{slugify(self.id)}.log")
+        return os.fspath(pathlib.Path(self.step_dir) / f"{slugify(type(self).id)}.log")
 
     @protected
     def run_subprocess(
