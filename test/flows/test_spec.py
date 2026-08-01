@@ -269,16 +269,18 @@ _RUN_XOR = {"name": "RUN_XOR", "type": "bool", "description": "x"}
 _STRATEGY = {"name": "STRATEGY", "type": "str", "description": "x"}
 
 
-def test_parse_condition_returns_a_tuple_of_conjuncts():
+def test_parse_predicate_returns_a_tuple_of_config_terms_for_a_conjunction():
     """
-    Phase 2's resolve_jobs assigns this straight to ResolvedJob.conditions,
-    which is a tuple, so the return type is a cross-phase contract rather than
-    a detail.
+    Phase 2's resolve_jobs assigns config_terms(parse_predicate(...)) straight
+    to ResolvedJob.conditions, which is a tuple of names, so the shape is a
+    cross-phase contract rather than a detail. The grammar itself,
+    predicates.parse_predicate, is pinned in test_predicates.py; this only
+    pins spec.py's use of it for 'if'.
     """
-    from librelane.flows.spec import parse_condition
+    from librelane.flows.predicates import ConfigTerm, config_terms, parse_predicate
 
-    assert parse_condition("RUN_LINTER") == ("RUN_LINTER",)
-    assert parse_condition("A and B and C") == ("A", "B", "C")
+    assert parse_predicate("RUN_LINTER") == (ConfigTerm("RUN_LINTER"),)
+    assert config_terms(parse_predicate("A and B and C")) == ("A", "B", "C")
 
 
 def test_an_if_naming_an_undeclared_variable_is_rejected():
@@ -426,3 +428,372 @@ def test_a_job_with_an_ordinary_variable_is_accepted():
     )
 
     assert spec.jobs["synthesis"].values == {"SYNTH_STRATEGY": "AREA 0"}
+
+
+def test_an_unknown_job_key_message_lists_the_new_keys():
+    with pytest.raises(FlowSpecError) as exc_info:
+        JobSpec.model_validate({"uses": "drc/magic", "runs-on": "ubuntu-latest"})
+
+    message = str(exc_info.value)
+    for key in ("until", "iterations", "max", "mode", "select", "resources"):
+        assert key in message
+
+
+def test_a_job_using_every_new_key_legally_validates():
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "resources": {"drc_seats": 2},
+            "jobs": {
+                "sta": {
+                    "uses": "sta",
+                    "until": "metric::timing__setup__ws >= 0",
+                    "max": 3,
+                    "resources": ["drc_seats"],
+                },
+                "place": {
+                    "uses": "placement",
+                    "mode": "sweep",
+                    "iterations": [
+                        {"PL_TARGET_DENSITY": 0.45},
+                        {"PL_TARGET_DENSITY": 0.55},
+                    ],
+                    "select": "route__wirelength min",
+                },
+            },
+        }
+    )
+
+    assert spec.jobs["sta"].until == "metric::timing__setup__ws >= 0"
+    assert spec.jobs["sta"].max_passes == 3
+    assert spec.jobs["sta"].resources == ["drc_seats"]
+    assert spec.jobs["place"].mode == "sweep"
+    assert spec.jobs["place"].select == "route__wirelength min"
+    assert spec.resources == {"drc_seats": 2}
+
+
+def test_an_until_naming_a_configuration_variable_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "config": [_RUN_LINTER],
+                "jobs": {"sta": {"uses": "sta", "until": "RUN_LINTER", "max": 3}},
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "RUN_LINTER" in message
+    assert "metric::" in message
+
+
+def test_an_until_with_neither_iterations_nor_max_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {"sta": {"uses": "sta", "until": "metric::x >= 0"}},
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "iterations" in message
+    assert "max" in message
+
+
+def test_an_until_with_both_iterations_and_max_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "sta": {
+                        "uses": "sta",
+                        "until": "metric::x >= 0",
+                        "max": 3,
+                        "iterations": [{}],
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "both" in message.lower()
+
+
+def test_iterations_without_until_or_sweep_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {"place": {"uses": "placement", "iterations": [{}]}},
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "place" in message
+    assert "until" in message
+    assert "sweep" in message
+
+
+def test_max_without_until_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {"name": "Tiny", "jobs": {"sta": {"uses": "sta", "max": 3}}}
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "until" in message
+
+
+def test_max_with_mode_sweep_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "place": {
+                        "uses": "placement",
+                        "mode": "sweep",
+                        "iterations": [{}],
+                        "select": "route__wirelength min",
+                        "max": 3,
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "place" in message
+    assert "sweep" in message
+
+
+def test_select_without_mode_sweep_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "place": {
+                        "uses": "placement",
+                        "select": "route__wirelength min",
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "place" in message
+    assert "sweep" in message
+
+
+def test_mode_sweep_without_iterations_or_select_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {"place": {"uses": "placement", "mode": "sweep"}},
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "place" in message
+    assert "iterations" in message
+    assert "select" in message
+
+
+def test_mode_sweep_with_until_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "place": {
+                        "uses": "placement",
+                        "mode": "sweep",
+                        "iterations": [{}],
+                        "select": "route__wirelength min",
+                        "until": "metric::x >= 0",
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "place" in message
+    assert "until" in message
+
+
+def test_an_empty_iterations_list_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "sta": {
+                        "uses": "sta",
+                        "until": "metric::x >= 0",
+                        "iterations": [],
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "empty" in message.lower()
+
+
+@pytest.mark.parametrize("key", ["PDK", "SCL", "PAD", "meta"])
+def test_an_iterations_entry_naming_a_process_selection_key_is_rejected(key):
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "sta": {
+                        "uses": "sta",
+                        "until": "metric::x >= 0",
+                        "iterations": [{key: "whatever"}],
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert key in message
+    assert "1" in message
+
+
+def test_an_iterations_entry_naming_tools_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "sta": {
+                        "uses": "sta",
+                        "until": "metric::x >= 0",
+                        "iterations": [{}, {"TOOLS": {"sta": "opensta"}}],
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "TOOLS" in message
+    assert "2" in message
+
+
+def test_a_max_below_one_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {"sta": {"uses": "sta", "until": "metric::x >= 0", "max": 0}},
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "positive" in message.lower()
+
+
+def test_a_select_that_is_not_two_tokens_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "place": {
+                        "uses": "placement",
+                        "mode": "sweep",
+                        "iterations": [{}],
+                        "select": "route__wirelength",
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "place" in message
+    assert "min" in message
+    assert "max" in message
+
+
+def test_a_select_with_the_metric_prefix_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "place": {
+                        "uses": "placement",
+                        "mode": "sweep",
+                        "iterations": [{}],
+                        "select": "metric::route__wirelength min",
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "place" in message
+    assert "metric::" in message
+
+
+def test_duplicate_job_resources_are_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "resources": {"drc_seats": 2},
+                "jobs": {
+                    "drc": {
+                        "uses": "drc/magic",
+                        "resources": ["drc_seats", "drc_seats"],
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "drc" in message
+    assert "more than once" in message
+
+
+def test_a_resource_pool_capacity_below_one_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "resources": {"drc_seats": 0},
+                "jobs": {"drc": {"uses": "drc/magic"}},
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "drc_seats" in message
+    assert "0" in message
+
+
+def test_job_resources_naming_an_undeclared_pool_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "resources": {"drc_seats": 2},
+                "jobs": {"drc": {"uses": "drc/magic", "resources": ["typo_seats"]}},
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "drc" in message
+    assert "typo_seats" in message
+    assert "drc_seats" in message

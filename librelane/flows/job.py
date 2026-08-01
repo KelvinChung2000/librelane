@@ -20,7 +20,8 @@ from dataclasses import dataclass
 
 from rapidfuzz import fuzz, process, utils
 
-from librelane.flows.spec import FlowSpec, JobSpec, parse_condition
+from librelane.flows.predicates import config_terms, parse_predicate
+from librelane.flows.spec import FlowSpec, JobSpec
 from librelane.jobs import Job, JobRegistry, JobResolutionError
 from librelane.state import DesignFormat
 from librelane.steps import Step
@@ -153,7 +154,13 @@ def _checked_selections(
 
 
 def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
-    conditions = () if spec.condition is None else parse_condition(spec.condition)
+    # Task 3 retypes ResolvedJob.conditions to carry the parsed Term objects
+    # (and gate runtime 'metric::' terms at scheduling time); until then this
+    # keeps today's runtime behavior exactly, by carrying only the
+    # configuration-variable names a ConfigTerm names.
+    conditions = (
+        () if spec.condition is None else config_terms(parse_predicate(spec.condition))
+    )
 
     if spec.steps is not None:
         steps = []

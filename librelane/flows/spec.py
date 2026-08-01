@@ -22,10 +22,9 @@ a library, not a redefinition of one.
 
 import graphlib
 import os
-import re
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -33,6 +32,7 @@ from librelane.common import Path
 from librelane.common.errors import FlowError
 from librelane.config import Variable
 from librelane.config.loading.sources import read_source
+from librelane.flows import predicates
 from librelane.flows.spec_graph import topological_order
 
 
@@ -58,11 +58,24 @@ _VARIABLE_TYPES: dict[str, Any] = {
     "Path": Path,
 }
 
-_JOB_KEYS = ("needs", "uses", "steps", "source", "if", "with")
+_JOB_KEYS = (
+    "needs",
+    "uses",
+    "steps",
+    "source",
+    "if",
+    "with",
+    "until",
+    "iterations",
+    "max",
+    "mode",
+    "select",
+    "resources",
+)
 
 #: The Python field names behind the aliased job keys, accepted so that
-#: ``JobSpec(condition=..., values=...)`` works from Python.
-_JOB_FIELD_NAMES = ("condition", "values")
+#: ``JobSpec(condition=..., values=..., max_passes=...)`` works from Python.
+_JOB_FIELD_NAMES = ("condition", "values", "max_passes")
 
 #: Keys no ``with`` block at either level may set. They select the process
 #: before any other value is resolved, so a document setting one would
@@ -78,52 +91,6 @@ _RESERVED_VALUE_KEYS = ("PDK", "SCL", "PAD", "meta")
 #: setting it would therefore be read too late to change anything, and the
 #: resolved configuration would report a provider selection that did not happen.
 _PRE_PASS_VALUE_KEY = "TOOLS"
-
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-
-
-def parse_condition(text: str) -> tuple[str, ...]:
-    """
-    Parses a job's ``if`` into the variable names it conjoins.
-
-    The grammar is one or more variable names separated by the literal
-    ``and``. General expressions are deliberately out of scope; they are
-    spec 3.
-
-    Phase 2 calls this to build ``ResolvedJob.conditions``, so the return is a
-    tuple and this is the only implementation of the grammar. Do not write a
-    second one there.
-
-    Parameters
-    ----------
-    text : str
-        The raw ``if`` string.
-
-    Returns
-    -------
-    The conjoined variable names, in order.
-
-    Raises
-    ------
-    FlowSpecError
-        If ``text`` is not a bare conjunction.
-    """
-    tokens = text.split()
-    names = tokens[0::2]
-    joiners = tokens[1::2]
-    malformed = (
-        len(names) == 0
-        or len(joiners) != len(names) - 1
-        or any(joiner != "and" for joiner in joiners)
-        or any(_IDENTIFIER.match(name) is None or name == "and" for name in names)
-    )
-    if malformed:
-        raise FlowSpecError(
-            f"Condition '{text}' is not a conjunction. An 'if' is one or "
-            f"more configuration variable names joined by the literal 'and', "
-            f"for example 'A' or 'A and B and C'."
-        )
-    return tuple(names)
 
 
 class VariableSpec(BaseModel):
@@ -183,6 +150,26 @@ class JobSpec(BaseModel):
     #: Aliased to ``with``, which is a Python keyword.
     values: dict[str, Any] = Field(default_factory=dict, alias="with")
     condition: str | None = Field(default=None, alias="if")
+    #: The gate of a loop's ring: a predicate of ``metric::`` terms only,
+    #: evaluated against the gate's output after each pass. ``None`` on every
+    #: job outside a ring.
+    until: str | None = None
+    #: The explicit value schedule for an escalation loop's gate or a sweep.
+    #: Pass ``k`` (1-based) layers entry ``k`` onto every ring member's (or
+    #: the sweep job's) configuration for that pass.
+    iterations: list[dict[str, Any]] | None = None
+    #: The pass bound for an incremental-repair loop: no schedule, just a
+    #: count. Aliased to ``max``, which shadows the builtin.
+    max_passes: int | None = Field(default=None, alias="max")
+    #: ``escalate`` stops at the first pass ``until`` accepts; ``sweep`` runs
+    #: every ``iterations`` entry and keeps the best by ``select``.
+    mode: Literal["escalate", "sweep"] = "escalate"
+    #: A sweep's keep rule: a bare metric name and a direction, ``min`` or
+    #: ``max``. ``None`` off ``mode: sweep``.
+    select: str | None = None
+    #: The named resource pools this job must hold a seat in for the
+    #: duration of its execution (or, inside a ring, each pass).
+    resources: list[str] = []
 
     @model_validator(mode="before")
     @classmethod
@@ -233,6 +220,10 @@ class FlowSpec(BaseModel):
     #: The job whose output state is the flow's final state. Absent, the final
     #: state is the join of the sink arcs, which phase 2 computes.
     final: str | None = None
+    #: Named resource pools, each a positive integer capacity or the name of
+    #: a configuration variable the flow declares with type ``int``. A job
+    #: names the pools it needs in its own ``resources``.
+    resources: dict[str, int | str] = {}
 
     def edges(self) -> dict[str, list[str]]:
         """
@@ -252,6 +243,15 @@ class FlowSpec(BaseModel):
         self._check_final_names_a_job()
         self._check_values_are_not_reserved()
         self._check_values_do_not_select_tools()
+        self._check_until_terms_are_metrics()
+        self._check_until_requires_one_bound()
+        self._check_schedule_combinations()
+        self._check_iterations_entries()
+        self._check_max_passes_positive()
+        self._check_select_shape()
+        self._check_job_resources_have_no_duplicates()
+        self._check_resource_pool_literal_capacities()
+        self._check_job_resources_are_declared_pools()
         return self
 
     def _check_needs_are_declared(self) -> None:
@@ -302,15 +302,20 @@ class FlowSpec(BaseModel):
                     )
 
     def _check_conditions_are_declared_booleans(self) -> None:
+        # Only the ConfigTerms of an 'if' are checked here: their names are a
+        # closed set, the declared configuration, and checkable at load time.
+        # MetricTerms pass through unchecked, because metric names are not a
+        # closed set -- a misspelt one surfaces as a runtime failure on the
+        # job's first firing, not here.
         declared = {variable.name: variable for variable in self.config}
         for name, job in self.jobs.items():
             if job.condition is None:
                 continue
             try:
-                variables = parse_condition(job.condition)
-            except FlowSpecError as e:
+                terms = predicates.parse_predicate(job.condition)
+            except predicates.PredicateError as e:
                 raise FlowSpecError(f"Job '{name}': {e}") from None
-            for variable_name in variables:
+            for variable_name in predicates.config_terms(terms):
                 variable = declared.get(variable_name)
                 if variable is None:
                     raise FlowSpecError(
@@ -366,6 +371,193 @@ class FlowSpec(BaseModel):
                 f"while still appearing in the resolved configuration. Set it "
                 f"on the design."
             )
+
+    def _check_until_terms_are_metrics(self) -> None:
+        # 'until' accepts only 'metric::' terms: a configuration variable is
+        # constant across passes, so a gate conjoining one either always
+        # exits on pass 1 or never exits at all, and both are documents
+        # saying something they cannot mean.
+        for name, job in self.jobs.items():
+            if job.until is None:
+                continue
+            try:
+                terms = predicates.parse_predicate(job.until)
+            except predicates.PredicateError as e:
+                raise FlowSpecError(f"Job '{name}': {e}") from None
+            config_names = predicates.config_terms(terms)
+            if config_names:
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'until: {job.until}', which "
+                    f"conjoins configuration variable(s) {list(config_names)}. "
+                    f"A configuration variable is constant across passes, so "
+                    f"an 'until' gate on one either always exits on pass 1 or "
+                    f"never exits at all. 'until' accepts only 'metric::' "
+                    f"terms."
+                )
+
+    def _check_until_requires_one_bound(self) -> None:
+        for name, job in self.jobs.items():
+            if job.until is None:
+                continue
+            has_iterations = job.iterations is not None
+            has_max = job.max_passes is not None
+            if not has_iterations and not has_max:
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'until' with neither "
+                    f"'iterations' nor 'max'. An 'until' gate declares "
+                    f"exactly one bound: an explicit value schedule "
+                    f"('iterations') or a pass count ('max'); an unbounded "
+                    f"loop is not accepted from any document."
+                )
+            if has_iterations and has_max:
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'until' with both 'iterations' "
+                    f"and 'max'. An 'until' gate declares exactly one bound, "
+                    f"not both."
+                )
+
+    def _check_schedule_combinations(self) -> None:
+        for name, job in self.jobs.items():
+            is_sweep = job.mode == "sweep"
+            if job.iterations is not None and job.until is None and not is_sweep:
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'iterations' without 'until' or "
+                    f"'mode: sweep'. 'iterations' is a value schedule: either "
+                    f"an escalation loop's, gated by 'until', or a sweep's, "
+                    f"declared with 'mode: sweep'."
+                )
+            if job.max_passes is not None:
+                if is_sweep:
+                    raise FlowSpecError(
+                        f"Job '{name}' declares 'max' with 'mode: sweep'. A "
+                        f"sweep runs every 'iterations' entry and keeps the "
+                        f"best rather than stopping at a pass count; 'max' "
+                        f"is meaningless with 'mode: sweep'."
+                    )
+                if job.until is None:
+                    raise FlowSpecError(
+                        f"Job '{name}' declares 'max' without 'until'. "
+                        f"'max' bounds an 'until' gate's passes and is "
+                        f"meaningless without one."
+                    )
+            if job.select is not None and not is_sweep:
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'select' without 'mode: sweep'. "
+                    f"'select' names a sweep's keep rule and is meaningless "
+                    f"without 'mode: sweep'."
+                )
+            if is_sweep:
+                if job.iterations is None or job.select is None:
+                    raise FlowSpecError(
+                        f"Job '{name}' declares 'mode: sweep' without both "
+                        f"'iterations' and 'select'. A sweep needs its "
+                        f"points ('iterations') and its keep rule "
+                        f"('select')."
+                    )
+                if job.until is not None:
+                    raise FlowSpecError(
+                        f"Job '{name}' declares 'mode: sweep' with 'until'. "
+                        f"A sweep does not stop early: it runs every point "
+                        f"and keeps the best, so 'until' is meaningless with "
+                        f"'mode: sweep'."
+                    )
+
+    def _check_iterations_entries(self) -> None:
+        for name, job in self.jobs.items():
+            if job.iterations is None:
+                continue
+            if len(job.iterations) == 0:
+                raise FlowSpecError(
+                    f"Job '{name}' declares an empty 'iterations' list. A "
+                    f"schedule needs at least one entry."
+                )
+            for index, entry in enumerate(job.iterations, start=1):
+                for key in entry:
+                    if key in _RESERVED_VALUE_KEYS:
+                        raise FlowSpecError(
+                            f"Job '{name}' iteration {index} sets '{key}'. "
+                            f"{list(_RESERVED_VALUE_KEYS)} select the "
+                            f"process before any other value is resolved, "
+                            f"so a document setting one would override the "
+                            f"command line rather than layer under it. Set "
+                            f"it on the design or on the command line."
+                        )
+                    if key == _PRE_PASS_VALUE_KEY:
+                        raise FlowSpecError(
+                            f"Job '{name}' iteration {index} sets "
+                            f"'{_PRE_PASS_VALUE_KEY}'. It selects the "
+                            f"provider implementing each job, and is read "
+                            f"before any configuration is resolved, so a "
+                            f"value set here would be read too late to "
+                            f"change which steps run while still appearing "
+                            f"in the resolved configuration. Set it on the "
+                            f"design."
+                        )
+
+    def _check_max_passes_positive(self) -> None:
+        for name, job in self.jobs.items():
+            if job.max_passes is not None and job.max_passes < 1:
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'max: {job.max_passes}'. 'max' "
+                    f"is a positive integer bound on the loop's passes."
+                )
+
+    def _check_select_shape(self) -> None:
+        for name, job in self.jobs.items():
+            if job.select is None:
+                continue
+            tokens = job.select.split()
+            if len(tokens) != 2 or tokens[1] not in ("min", "max"):
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'select: {job.select}', which is "
+                    f"not '<metric-name> min' or '<metric-name> max'. "
+                    f"'select' is a bare metric name and a keep direction, "
+                    f"two whitespace-separated tokens."
+                )
+            metric_name = tokens[0]
+            if metric_name.startswith("metric::"):
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'select: {job.select}', whose "
+                    f"metric name carries a 'metric::' prefix. 'select' "
+                    f"admits nothing but metrics, so a disambiguating prefix "
+                    f"with nothing to disambiguate from is refused."
+                )
+
+    def _check_job_resources_have_no_duplicates(self) -> None:
+        for name, job in self.jobs.items():
+            seen: set[str] = set()
+            for resource in job.resources:
+                if resource in seen:
+                    raise FlowSpecError(
+                        f"Job '{name}' resources '{resource}' more than "
+                        f"once. A 'resources' list names each pool exactly "
+                        f"once."
+                    )
+                seen.add(resource)
+
+    def _check_resource_pool_literal_capacities(self) -> None:
+        # A str capacity names a configuration variable, checked against the
+        # declared configuration in a later pass of this design; nothing here
+        # rejects one.
+        for pool, capacity in self.resources.items():
+            if isinstance(capacity, int) and capacity < 1:
+                raise FlowSpecError(
+                    f"Resource pool '{pool}' declares capacity {capacity}. "
+                    f"A pool's capacity is a positive integer literal or the "
+                    f"name of a configuration variable the flow declares "
+                    f"with type 'int'; a pool nothing can ever enter is a "
+                    f"flow that stalls by declaration."
+                )
+
+    def _check_job_resources_are_declared_pools(self) -> None:
+        for name, job in self.jobs.items():
+            for resource in job.resources:
+                if resource not in self.resources:
+                    raise FlowSpecError(
+                        f"Job '{name}' resources '{resource}', which flow "
+                        f"'{self.name}' does not declare. Declared pools: "
+                        f"{sorted(self.resources)}."
+                    )
 
 
 def load_flow_spec(source: Mapping[str, Any] | str | os.PathLike) -> FlowSpec:
