@@ -347,11 +347,11 @@ def test_render_png_gives_each_render_its_own_step_id(mocker):
 
 def test_run_pya_script_does_not_override_a_caller_supplied_pythonpath(mocker):
     """run_pya_script used to overwrite PYTHONPATH with
-    site.getsitepackages() + sys.path so a bare "python3" child could still
-    see the flow's installed packages. Now that every caller passes
-    sys.executable, the child is the same interpreter and resolves its own
-    site-packages unaided -- the override is not just unneeded, it would
-    clobber whatever PYTHONPATH the caller set on purpose."""
+    site.getsitepackages() + sys.path, with the caller's own PYTHONPATH
+    appended after it. Now that every caller passes sys.executable, the
+    child is the same interpreter and resolves its own site-packages
+    unaided -- the override is not just unneeded, it put the flow's own
+    site-packages ahead of anything the caller set on purpose."""
     import sys
     from librelane.steps.klayout.base import KLayoutStep
     from librelane.steps.step import Step
@@ -373,6 +373,37 @@ def test_run_pya_script_does_not_override_a_caller_supplied_pythonpath(mocker):
     passed_env = run_subprocess.call_args.args[4]
     assert passed_env is given_env
     assert passed_env["PYTHONPATH"] == "/caller/supplied/only"
+
+
+def test_sys_executable_imports_klayout_without_a_propagated_pythonpath():
+    """The real-subprocess proof behind the PYTHONPATH removal above: no
+    mocking. A bare sys.executable subprocess, with PYTHONPATH stripped from
+    its environment entirely, still imports klayout's compiled extension --
+    because it is the same interpreter that is running this test, it
+    resolves its own site-packages unaided. This is what makes
+    run_pya_script's old site.getsitepackages() + sys.path propagation
+    provably redundant now that every caller passes sys.executable.
+
+    No skip-guard: klayout is a project dependency here, so a failure to
+    import it is a real signal, not an environment gap to paper over."""
+    import sys
+    import os
+    import subprocess
+
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import klayout.db; print(klayout.db.__file__)"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().endswith(
+        os.path.join("klayout", "db", "__init__.py")
+    )
 
 
 def _density_argv(mocker, **config_overrides):
