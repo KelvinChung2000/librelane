@@ -194,6 +194,28 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         A default set of
         :class:`librelane.steps.OutputProcessor` classes for use with
         :meth:`run_subprocess`.
+    implemented : ClassVar[bool]
+        Whether :meth:`run` drives a real tool. ``True`` for every step that
+        does anything at all, which is why it is the default and why almost no
+        class states it.
+
+        ``False`` declares a **scaffold**: a class that exists to hold the
+        shape of a backend nobody has been able to write yet, whose :meth:`run`
+        raises ``NotImplementedError`` unconditionally. The commercial CAD tool
+        bases in :mod:`librelane.steps.vendor` are the only ones today.
+
+        It is a separate declaration rather than something derived from the
+        class hierarchy because "is a vendor step" and "cannot run" are not the
+        same claim, and only the second one is asked here: a licensed
+        ``Innovus`` backend, once someone with the tool fills its ``run`` in,
+        is still a :class:`librelane.steps.vendor.VendorTclStep` and must stop
+        being treated as a scaffold. Flipping this line back to ``True`` is
+        that person's last edit.
+
+        Nothing may substitute for it by *calling* the step. A step's
+        ``get_command`` or ``run`` raising is discovered by running it, and the
+        question is asked at load, before anything has run and while a wrong
+        answer is still cheap.
     state_out : State | None
         The last output state from running this step object, if it exists.
 
@@ -225,6 +247,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     output_processors: ClassVar[list[type[OutputProcessor]]] = [DefaultOutputProcessor]
     config_vars: ClassVar[list[Variable]] = []
     gates: ClassVar[Sequence[Gate]] = ()
+    implemented: ClassVar[bool] = True
 
     if TYPE_CHECKING:
         # Every step is also handed the flow's common variables, which reach

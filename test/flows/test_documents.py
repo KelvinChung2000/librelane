@@ -27,12 +27,14 @@ import pytest
 
 import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
-from librelane.steps.odb.base import OdbpyStep
-from librelane.steps.openroad.base import OpenROADStep
-
 from librelane.flows.job import resolve_jobs
+from librelane.flows.selection_validation import (
+    FRAMEWORK_METRICS,
+    JoinConflict,
+    join_conflicts,
+)
 from librelane.flows.spec import FlowSpec, load_flow_spec
-from librelane.flows.spec_graph import ancestors, topological_order
+from librelane.flows.spec_graph import ancestors
 from librelane.flows.spec_validation import validate_against_registry
 from librelane.jobs import JobRegistry
 
@@ -131,147 +133,39 @@ def _gating_variables(name: str) -> list[tuple[str, str, tuple[str, ...]]]:
     ]
 
 
-#: The metrics every OpenROAD invocation writes and nothing declares.
-#:
-#: ``OpenROADStep.get_command`` and ``OdbpyStep.get_command`` both pass an
-#: unconditional ``-metrics``, and OpenROAD's logger fills these in. No step,
-#: job template or registration mentions them -- ``grep`` across ``librelane``
-#: finds nothing -- so every load-time check reasons from contracts that cannot
-#: see them, and :mod:`librelane.flows.join` is what discovers the disagreement,
-#: on the first real run, after the tools have been invoked. Modelled here as
-#: implicit outputs, which is where the special case belongs.
-_FRAMEWORK_METRICS = (
-    "flow__warnings__count",
-    "flow__errors__count",
-    "flow__warnings__type_count",
-)
-
-
-def _produced_by(name: str, tools: dict[str, str] | None = None) -> dict[str, set[str]]:
-    """
-    Every key each job writes, under the provider selection ``tools`` names.
-
-    Three sources, because no one of them is complete:
-
-    * the job's declared contract, which for a ``uses:`` job is its template's
-      ``provides`` and ``metrics`` unioned with its selected registration's;
-    * **every step's own ``outputs``**, which the contract does not cover. For
-      a ``uses:`` job the contract reads the *template*, so 19 of the
-      ~46 jobs in each shipped document write views it cannot see -- ``odb``
-      and ``pnl`` across the PNR chain, ``sdf`` and ``lib`` from the STA jobs,
-      ``mag`` from ``magic_streamout``, ``spice`` from ``lvs``. Declaring less
-      than you write is allowed (``Step.outputs`` is a permission, not an
-      obligation), so the contract is a floor;
-    * the framework metrics, if any step is OpenROAD-backed.
-
-    Modelling only the first would make this guard a subset of the rule it
-    exists to enforce -- which is the mistake that produced two of this
-    phase's defects. The union is measured to change no verdict today; it is
-    here so that it still holds when a later document is not so lucky.
-
-    Read off :func:`librelane.flows.job.resolve_jobs` rather than off the
-    document, so that every key it reports is a key the *selected* provider
-    writes. ``TOOLS`` is what makes the distinction load-bearing: the ``lvs``
-    job's ``klayout`` provider opens with ``OpenROAD.WriteCDL``, so a selection
-    naming it puts framework metrics on a branch that carries none by default.
-    A guard reading the document's declared providers would never see it.
-
-    The metric half stays incomplete and cannot be fixed here: steps carry no
-    metric declaration at all, so an inline ``steps:`` job is modelled as
-    writing none. ``librelane.flows.spec_validation``'s own
-    ``_check_fan_in_is_unambiguous`` shares that blind spot.
-    """
-    produced = {}
-    for job_id, job in resolve_jobs(_document(name), tools).items():
-        keys = {str(view) for view in job.provides} | set(job.metrics)
-        for step in job.steps:
-            keys.update(view.id for view in step.outputs)
-        if any(issubclass(step, (OpenROADStep, OdbpyStep)) for step in job.steps):
-            keys.update(_FRAMEWORK_METRICS)
-        produced[job_id] = keys
-    return produced
-
-
 def _join_conflicts(
     name: str, tools: dict[str, str] | None = None
-) -> list[tuple[str, str, list[str]]]:
+) -> list[JoinConflict]:
     """
-    Replays :mod:`librelane.flows.join`'s rule symbolically over a document.
+    Replays :mod:`librelane.flows.join`'s rule over a document, with every job
+    modelled as enabled.
 
     Returns
     -------
-    list[tuple[str, str, list[str]]]
-        One ``(consumer, key, origins)`` triple per unresolved conflict.
+    list[JoinConflict]
+        One entry per unresolved conflict.
 
-    The rule this checks is the general one, of which "no OpenROAD-backed job
-    has a concurrent peer" is only a proper subset:
+    The replay itself is
+    :func:`librelane.flows.selection_validation.join_conflicts`, which this file
+    is where it was written: it started as a guard over the shipped documents
+    and became a library function once the engine gained a load-time check that
+    has to ask the same question of a user's ``TOOLS`` entry. Calling it rather
+    than keeping a copy is the point -- two implementations of one rule would
+    let the shipped documents be guarded against a rule the engine does not
+    enforce, or the reverse.
 
-        No job may rewrite a view or metric that a concurrent peer inherits
-        from their common ancestor.
-
-    ``join.py`` compares *values*, not declarations, so what matters per key is
-    which job last wrote it on each incoming branch. This walks
-    ``topological_order`` carrying exactly that -- a ``key -> writing job`` map
-    per token -- and flags any job whose predecessors disagree, plus the
-    implicit join that forms the final state.
-
-    Written as a replay rather than as a structural rule because
-    ``_check_fan_in_is_unambiguous`` is the structural rule and this is the
-    class of defect it cannot see: it subtracts the shared ancestors before
-    intersecting, so a key produced in the shared prefix and *re-produced* on
-    exactly one exclusive branch gives an empty intersection and passes.
-
-    Every job is modelled as enabled. A gated-off job passes ``state_in``
-    through unchanged (``engine.py``), which changes which job an origin names
-    but cannot introduce a disagreement that the all-enabled graph does not
-    already have somewhere; the all-enabled graph is also the shipped default.
+    ``enabled`` is every job. That is the right question *here* and the wrong
+    one at load time. A gated-off job passes ``state_in`` through unchanged, so
+    gating can only move a branch's last writer backwards, and two branches that
+    disagree under some gating already disagree with everything enabled: the
+    all-enabled replay reports a superset. A superset is what a guard over the
+    shipped defaults wants, since those defaults do enable everything; the
+    engine's load-time refusal takes the real gating instead, because there an
+    over-report is a rejected configuration that would have run.
     """
     spec = _document(name)
-    edges = spec.edges()
-    produced = _produced_by(name, tools)
-
-    conflicts: list[tuple[str, str, list[str]]] = []
-    carried: dict[str, dict[str, str]] = {}
-
-    def merge(
-        consumer: str, branches: list[str], source: dict[str, str]
-    ) -> dict[str, str]:
-        incoming: dict[str, list[tuple[str, str]]] = {}
-        for branch in branches:
-            for key, origin in carried[branch].items():
-                incoming.setdefault(key, []).append((branch, origin))
-
-        merged: dict[str, str] = {}
-        for key, contributors in sorted(incoming.items()):
-            origins = {origin for _, origin in contributors}
-            if len(origins) == 1:
-                merged[key] = next(iter(origins))
-                continue
-            # A 'source' settles it only by naming a predecessor that actually
-            # contributed, which is what join.py's resolver requires.
-            chosen = [
-                origin for branch, origin in contributors if branch == source.get(key)
-            ]
-            if not chosen:
-                conflicts.append((consumer, key, sorted(origins)))
-            merged[key] = chosen[0] if chosen else sorted(origins)[0]
-        return merged
-
-    for job_id in topological_order(edges):
-        job = spec.jobs[job_id]
-        state = merge(job_id, list(job.needs), job.source)
-        for key in produced[job_id]:
-            state[key] = job_id
-        carried[job_id] = state
-
-    if spec.final is None:
-        needed = {need for job in spec.jobs.values() for need in job.needs}
-        sinks = [job_id for job_id in spec.jobs if job_id not in needed]
-        # No job's 'source' can settle a sink conflict, so an empty mapping is
-        # not a simplification here: join_sink_states has none to read.
-        merge("<the final state>", sinks, {})
-
-    return conflicts
+    jobs = resolve_jobs(spec, tools)
+    return join_conflicts(spec, jobs, set(jobs))
 
 
 def _alternate_providers(name: str) -> list[tuple[str, str]]:
@@ -324,29 +218,31 @@ def _alternate_providers(name: str) -> list[tuple[str, str]]:
 #: nowhere in the document.
 #:
 #: Pinned rather than left to be discovered on a real run, and pinned as an
-#: equality so that a selection becoming safe fails here too. Nothing in the
-#: engine rejects these at load time; that check does not exist yet.
+#: equality so that a selection becoming safe fails here too. What the engine
+#: does about them is ``test/flows/test_selection_validation.py``'s subject;
+#: this file pins that the replay still measures them.
 _SELECTIONS_A_DOCUMENT_DOES_NOT_SURVIVE = {
     ("chip.yaml", "klayout_drc", "magic"): ["magic__drc_error__count"],
     ("chip.yaml", "magic_drc", "klayout"): ["klayout__drc_error__count"],
-    ("chip.yaml", "lvs", "klayout"): list(sorted(_FRAMEWORK_METRICS)),
+    ("chip.yaml", "lvs", "klayout"): list(sorted(FRAMEWORK_METRICS)),
     ("classic.yaml", "klayout_drc", "magic"): ["magic__drc_error__count"],
     ("classic.yaml", "magic_drc", "klayout"): ["klayout__drc_error__count"],
-    ("classic.yaml", "lvs", "klayout"): list(sorted(_FRAMEWORK_METRICS)),
+    ("classic.yaml", "lvs", "klayout"): list(sorted(FRAMEWORK_METRICS)),
     ("vhdl_classic.yaml", "klayout_drc", "magic"): ["magic__drc_error__count"],
     ("vhdl_classic.yaml", "magic_drc", "klayout"): ["klayout__drc_error__count"],
-    ("vhdl_classic.yaml", "lvs", "klayout"): list(sorted(_FRAMEWORK_METRICS)),
+    ("vhdl_classic.yaml", "lvs", "klayout"): list(sorted(FRAMEWORK_METRICS)),
 }
 
 
 def _assert_no_join_conflicts(name: str) -> None:
     conflicts = _join_conflicts(name)
     assert not conflicts, "\n".join(
-        f"'{consumer}' joins branches that wrote '{key}' from different jobs "
-        f"{origins}, so join_states raises JoinConflictError on the first real "
-        f"run. Every branch of a fan-out must descend from the last job that "
-        f"writes each key the branches share."
-        for consumer, key, origins in conflicts
+        f"'{conflict.consumer}' joins branches that wrote '{conflict.key}' from "
+        f"different jobs {list(conflict.origins)}, so join_states raises "
+        f"JoinConflictError on the first real run. Every branch of a fan-out "
+        f"must descend from the last job that writes each key the branches "
+        f"share."
+        for conflict in conflicts
     )
 
 
@@ -1034,7 +930,7 @@ def test_which_alternate_tools_selections_a_shipped_document_survives():
     It has to be the *resolved* jobs that are walked, not the document's own
     ``uses`` providers, because that is the only place a selection is visible.
     See :data:`_SELECTIONS_A_DOCUMENT_DOES_NOT_SURVIVE` for what each failing
-    entry means and why nothing catches it earlier.
+    entry means and why no check reading declared contracts can see it.
     """
     measured = {}
     for document in _shipped_documents():
@@ -1042,10 +938,25 @@ def test_which_alternate_tools_selections_a_shipped_document_survives():
             conflicts = _join_conflicts(document, {job_id: provider})
             if conflicts:
                 measured[(document, job_id, provider)] = sorted(
-                    {key for _, key, _ in conflicts}
+                    {conflict.key for conflict in conflicts}
                 )
 
     assert measured == _SELECTIONS_A_DOCUMENT_DOES_NOT_SURVIVE
+
+
+def test_the_replay_the_documents_are_guarded_by_is_the_engine_s_own():
+    """
+    The one thing that stops this file's guard and the engine's load-time
+    refusal drifting apart: they are the same function.
+
+    Pinned as an identity rather than left implicit, because a later edit that
+    inlines a "small" private copy here would leave both green while the shipped
+    documents were being checked against a rule nothing enforces.
+    """
+    conflicts = _join_conflicts("classic.yaml", {"magic_drc": "klayout"})
+
+    assert conflicts
+    assert all(isinstance(conflict, JoinConflict) for conflict in conflicts)
 
 
 def test_the_alternate_selection_guard_has_selections_to_run_over():

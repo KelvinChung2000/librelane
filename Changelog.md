@@ -718,14 +718,45 @@ Style Notes
   not a failure. A view no job in the document produces at all is presumed to
   arrive in the initial state and is left to the run, which is what lets a
   document start mid-flow from `--with-initial-state`.
-  * The check reasons over the graph the document declares, so it is not
-    configuration-aware, and a `TOOLS` entry re-points a job at another
-    provider without changing that graph. `{"synthesis": "yosys_vhdl"}` on
-    `Classic` is therefore accepted at load and still fails during the run, at
-    the first step reaching for the Verilog header only the `yosys` provider
-    emits. Use the `VHDLClassic` flow, which makes the same selection in the
-    document, where the check can see it. See
-    {doc}`/usage/swapping_tools`.
+  * That check reasons over the graph the document declares, so it cannot see a
+    `TOOLS` entry. A second pass runs after the providers are selected and the
+    configuration is resolved, and refuses a selection that removes the only
+    producer of a view some job still requires: `{"synthesis": "yosys_vhdl"}` on
+    `Classic` now fails at load naming `json_h` and `set_power_connections`,
+    where it used to be accepted and fail during the run at the first step
+    reaching for the Verilog header. Use the `VHDLClassic` flow, which makes the
+    same selection in the document. See {doc}`/usage/swapping_tools`.
+  * The second pass asks only what the *selection* took away, never what the
+    document never had, so the presumption above is untouched: a view no job
+    produces is still left to the initial state, and a document that starts
+    mid-flow still loads.
+  * A job's registration `native_views`, such as OpenROAD's `odb`, count as
+    requirements there. They are exempt from the registration-time view check
+    because a tool-native database cannot be named in a tool-neutral job's
+    `requires`; this is where that exemption is now answered for.
+* A `TOOLS` selection that would stop the run with a `JoinConflictError` is
+  refused at load. The same replay of `librelane.flows.join`'s rule that guards
+  the shipped documents now runs over the providers a configuration actually
+  selected, and the message names the colliding key, both jobs that write it,
+  and every provider that would work instead. `{"magic_drc": "klayout"}`,
+  `{"klayout_drc": "magic"}` and `{"lvs": "klayout"}` are the three shipped
+  selections it catches, on all three documents.
+  * A provider is offered as a remedy only if it would actually run one.
+    Added `Step.implemented`, a class attribute that is `True` for every step
+    that drives a tool and `False` on the two commercial scaffold bases in
+    `librelane.steps.vendor`, whose `run` raises `NotImplementedError` by
+    design; `Registration.runnable` derives from it. So a caller who has opted
+    into `librelane.jobs.providers_vendor` is not told to fix
+    `{"magic_drc": "klayout"}` by selecting `calibre`, `icv` or `pegasus`, all
+    of which resolve cleanly and none of which can run. Selecting one directly
+    is still permitted: the opt-in exists so those scaffolds can be selected and
+    filled in, and whoever fills one in deletes its `implemented = False`.
+  * It reads the jobs that will *run*, not every job the document declares. A
+    job whose `if` is false fires as a pass-through and writes nothing, so
+    `{"magic_drc": "klayout"}` alongside `RUN_MAGIC_DRC: false` — which is what
+    the old stage-keyed `{"drc": "klayout"}` migrates to — still loads. A check
+    that refused it would be rejecting a flow that runs, which is worse than the
+    mid-run failure it replaces.
 * Audited step ownership across every provider, against one rule: a step that
   only makes sense when a particular tool was selected belongs inside that
   tool's provider registration, so deselecting the tool removes the step with

@@ -118,8 +118,10 @@ _YOSYS_NAMESPACES = (
 
 #: OpenROAD's ``odb`` is a tool-native database handed from one OpenROAD step to
 #: the next. It is not a neutral view, so it is declared rather than promoted
-#: into any job's ``requires``; the static view availability preflight is what
-#: verifies an OpenROAD job is actually preceded by one that produces it.
+#: into any job's ``requires``;
+#: :func:`librelane.flows.selection_validation.lost_views` is what verifies an
+#: OpenROAD job is actually preceded by one that produces it, over the steps a
+#: run resolved rather than over the document's declarations.
 _ODB = (DesignFormat.odb,)
 
 _REGISTRATIONS: list[dict] = [

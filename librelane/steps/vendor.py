@@ -97,6 +97,19 @@ class VendorTclStep(TclStep):
     script_dir: ClassVar[str] = NotImplemented
     script_filename: ClassVar[str] = NotImplemented
 
+    #: :meth:`run` below raises unconditionally, so no subclass of this can run
+    #: anything yet. Declared rather than left to be discovered by calling it,
+    #: because callers that need to know ask before anything runs:
+    #: :attr:`librelane.jobs.registry.Registration.runnable` reads it so that
+    #: :mod:`librelane.flows.selection_validation` never offers a scaffold as a
+    #: remedy for a selection it refused.
+    #:
+    #: Whoever fills in :meth:`run` for one of these tools deletes the same
+    #: line from their own class, and only then. It is not a property of being a
+    #: vendor step -- a finished Innovus backend is still a
+    #: :class:`VendorTclStep` -- so it does not belong in the class hierarchy.
+    implemented: ClassVar[bool] = False
+
     def get_script_path(self) -> str:
         if self.script_dir is NotImplemented:
             raise NotImplementedError(
@@ -197,6 +210,10 @@ class VendorPythonStep(Step):
     than calling the equivalent of existing PrimeTime Tcl commands — will
     have designed the wrong thing.
     """
+
+    #: As :attr:`VendorTclStep.implemented`, and deleted by whoever writes the
+    #: ``snps`` calls :meth:`run` below refuses to guess.
+    implemented: ClassVar[bool] = False
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         message = (

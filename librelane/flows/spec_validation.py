@@ -17,6 +17,13 @@ The workflow document checks that need a populated registry.
 Kept apart from :mod:`librelane.flows.spec` so the document models stay
 testable without importing the step and job packages, whose registries are
 process-wide singletons populated by import side effect.
+
+Everything here reads what the document *declares*, because it runs before
+``TOOLS`` has been consulted and before the configuration is resolved: the only
+providers it can see are the ones a ``uses`` key names, and it cannot tell which
+jobs an ``if`` will enable. :mod:`librelane.flows.selection_validation` is the
+second pass, over what actually resolved, and is where a check belongs if
+answering it needs either of those.
 """
 
 from librelane.common.metrics import Metric
@@ -337,7 +344,10 @@ def _check_requirements_are_reachable(
         for view in sorted(_consumed_views(name, job) - available):
             # A view nothing upstream-eligible produces is presumed to arrive
             # in the initial state, and is checked at run time against the real
-            # state.
+            # state. librelane.flows.selection_validation.lost_views keeps that
+            # presumption rather than tightening it: it asks only what a TOOLS
+            # selection took away, so a view the document never produced is
+            # outside its question too.
             if view not in elsewhere:
                 continue
             raise FlowSpecError(

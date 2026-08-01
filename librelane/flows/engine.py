@@ -49,6 +49,7 @@ from librelane.flows.net import Net
 from librelane.flows.resume import resume_key, reusable_state, write_entry
 from librelane.flows.spec import FlowSpec
 from librelane.flows.spec_graph import ancestors, descendants, topological_order
+from librelane.flows.selection_validation import validate_selection
 from librelane.flows.spec_validation import validate_against_registry
 
 
@@ -405,6 +406,14 @@ class Workflow(Flow):
             config_override_strings=config_override_strings,
             **kwargs,
         )
+        # After super().__init__ and before anything else, because it is the
+        # first thing that can be asked once self.config exists and the answer
+        # decides whether this flow can run at all. It needs both halves: the
+        # providers, which resolve_jobs settled above, and the gating, which is
+        # a question about the configuration the loader has only just resolved.
+        # librelane.flows.selection_validation's docstring is where the reason
+        # gating cannot be skipped is written down.
+        validate_selection(spec, self.jobs, self._enabled_jobs())
         #: One resolved configuration per job that declares a ``with`` block.
         self.job_configs = self._resolve_job_configs(
             config,
@@ -1449,6 +1458,26 @@ class Workflow(Flow):
         return {
             (arc.producer if arc.producer is not None else "<initial state>"): token
             for arc, token in zip(arcs, tokens)
+        }
+
+    def _enabled_jobs(self) -> set[str]:
+        """
+        Returns
+        -------
+        set[str]
+            The ids of the jobs this configuration runs, which is every job
+            whose ``if`` conjunction is true.
+
+        Derived from :meth:`_pass_through_reason` rather than by reading the
+        conditions again, so that the load-time checks and the run cannot
+        disagree about which jobs a configuration enables. ``--skip`` is
+        deliberately not passed: it shapes one invocation and is not known when
+        the flow is constructed.
+        """
+        return {
+            job_id
+            for job_id, job in self.jobs.items()
+            if self._pass_through_reason(job, skipped=False) is None
         }
 
     def _pass_through_reason(self, job: ResolvedJob, skipped: bool) -> str | None:

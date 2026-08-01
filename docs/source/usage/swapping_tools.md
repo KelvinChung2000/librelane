@@ -61,10 +61,9 @@ Synthesizing from VHDL sources instead of Verilog:
 described below: it is the same selection, made by the document instead of by a
 configuration.
 
-The mistake is not caught at load. `Classic` accepts the entry and fails during
-the run at the first step that cannot find the header, because a document's
-structural check reasons over the declared graph and re-pointing a job at
-another provider does not change that graph.
+`Classic` refuses the entry at load, naming `json_h` and the job that requires
+it. Earlier versions accepted it and failed during the run at the first step
+that could not find the header.
 ```
 
 **What can be selected at all is the Alternatives column of
@@ -74,11 +73,16 @@ list, because LibreLane ships one open-source provider for most phases.
 
 Two cautions before reaching for an entry in it. Several of the alternatives
 collide with the shipped documents' job graph rather than with the tool, and
-those are enumerated under [Limitations](#limitations). And the sixteen
+those are enumerated under
+[Selections the shipped documents refuse](#selections-the-shipped-documents-refuse).
+Every one of them is refused while the flow loads, so the caution is about which
+entries are worth writing, not about what a bad one costs. And the sixteen
 commercial providers are scaffolds whose steps raise `NotImplementedError`;
 nothing registers them until your own code imports
 `librelane.jobs.providers_vendor`, so until it does they are absent from the
-table below and from `librelane help`. See
+table below and from `librelane help`. Once it does, they are selectable but
+still not runnable, so a refusal never offers one as the alternative that
+would work. See
 [Commercial CAD tool scaffolds](./writing_tool_backends.md#commercial-cad-tool-scaffolds).
 
 `TOOLS` is read by a pre-pass ahead of full configuration resolution, because
@@ -94,6 +98,46 @@ declare can be validated. Two consequences follow from that ordering:
 
 An unknown job id or an unknown provider name is rejected by name, with a
 suggested correction for a near miss.
+
+(what-is-checked-when)=
+
+## What is checked, and when
+
+Three passes run before any tool does, in this order.
+
+1. **The document's own structure**, against the registries. Every job id,
+   provider name and step ID must resolve, every job's non-optional inputs must
+   be produced somewhere above it, and no fan-in may leave two producers of one
+   key unresolved. This reads what the *document* declares, so it says nothing
+   about `TOOLS`.
+2. **The configuration**, resolved against the variables the selected steps
+   declare. `TOOLS` is read by a pre-pass ahead of this, because the step set
+   decides which variables exist.
+3. **The selection**, against what actually resolved. This is the only pass that
+   can see a `TOOLS` entry, and it is the one that refuses the selections below.
+
+The third pass asks two questions:
+
+* **Did the selection remove a view something still needs?** A view the
+  document's own providers produce upstream of a job, and the selected ones do
+  not, is refused, naming the view, the job that needs it and the job that used
+  to produce it. A registration's `native_views`, such as OpenROAD's `odb`,
+  count here exactly as a declared requirement does.
+* **Did the selection put two writers of one key on concurrent branches?** If
+  so the run would stop with a `JoinConflictError` when those branches met, so
+  it stops now instead, naming the key, both jobs and every provider that would
+  work in place of the one selected.
+
+Both questions are asked of the jobs that *will run*. A job whose `if` is false
+fires as a pass-through and writes nothing, so turning one side of a collision
+off with its Boolean makes the selection loadable — which matters, because that
+Boolean is usually the real answer.
+
+Two things it deliberately does not know about. It cannot see `--target`,
+`--skip` or `--reproducible`, which shape one invocation rather than the
+configuration and are not known when the flow is constructed; and it reasons
+about views and keys, never about whether two tools' results are
+*semantically* compatible.
 
 (job-ids-in-a-workflow-document)=
 
@@ -264,9 +308,13 @@ every later step (`Magic.WriteLEF`, `Odb.CheckDesignAntennaProperties`,
 signoff) actually consumes; the other stays only as `mag_gds` or
 `klayout_gds`. The `PRIMARY_GDSII_STREAMOUT_TOOL` configuration variable
 decides which one is copied into `gds`. `KLayout.XOR` then compares the two
-tools' GDSII outputs against each other, which is why dropping one streamout
-job without also disabling `RUN_KLAYOUT_XOR` fails the view preflight: there
-is no second GDSII left to compare.
+tools' GDSII outputs against each other, and requires both. Turning a
+stream-out off with its Boolean is safe, because the documents gate `xor` on
+all three of `RUN_KLAYOUT_XOR`, `RUN_MAGIC_STREAMOUT` and
+`RUN_KLAYOUT_STREAMOUT`, so the comparison goes with the thing it compares.
+Re-pointing one stream-out at the other's tool is not: `xor` still runs and
+there is no second GDSII left for it, which is why that selection is refused at
+load.
 
 For `drc`, both jobs run their own independent DRC deck and each contracts its
 own metric (`magic__drc_error__count`, `klayout__drc_error__count`). There is
@@ -349,6 +397,35 @@ key-by-key with `vendor_tools.json`'s, because `layer_mappings` records the
 last source for each top-level key as a whole; if `config.json` also sets
 `TOOLS`, put every job override you want in whichever file is layered last.
 
+(selections-the-shipped-documents-refuse)=
+
+## Selections the shipped documents refuse
+
+The Alternatives column lists eighteen single-key selections across the three
+shipped documents. Seventeen of them are refused at load, which is a fact about
+those documents' graphs rather than about the tools: each one either drops a
+view something downstream hard-requires, or puts a second writer of one key on a
+branch that runs beside another writer's. `test/flows/test_selection_validation.py`
+measures the whole list and is the source of this table.
+
+| Selection | Refused because | What to write instead |
+| --- | --- | --- |
+| `{"synthesis": "yosys_vhdl"}` on `Classic` or `Chip` | `json_h` is lost, and `set_power_connections` and `post_gpl_checks` require it | use the `VHDLClassic` flow |
+| `{"magic_streamout": "klayout"}` | `mag_gds` is lost, and `KLayout.XOR` requires it | `RUN_MAGIC_STREAMOUT: false` to run one stream-out |
+| `{"klayout_streamout": "magic"}` | `klayout_gds` is lost, same step | `RUN_KLAYOUT_STREAMOUT: false` |
+| `{"magic_drc": "klayout"}` | both DRC jobs then write `klayout__drc_error__count`, concurrently | `RUN_MAGIC_DRC: false` |
+| `{"klayout_drc": "magic"}` | both then write `magic__drc_error__count` | `RUN_KLAYOUT_DRC: false` |
+| `{"lvs": "klayout"}` | the provider opens with `OpenROAD.WriteCDL`, whose framework warning and error counts the `lvs` job's concurrent signoff peers carry unchanged from further up | `RUN_LVS: false`, or keep `netgen` |
+
+The one that runs is `{"synthesis": "yosys"}` on `VHDLClassic`: that document
+declares no job needing the Verilog header, so restoring the Verilog front end
+takes nothing away.
+
+Three of these are Booleans wearing a `TOOLS` disguise. The migration from the
+old stage-keyed selection is the reason: `{"drc": "klayout"}` does not become
+`{"magic_drc": "klayout"}`, it becomes `RUN_MAGIC_DRC: false`, because the two
+jobs are what the two Booleans gate. Each refusal names the Boolean.
+
 ## Limitations
 
 * `TOOLS` cannot come from the PDK. It is a literal mapping read ahead of the
@@ -362,16 +439,6 @@ last source for each top-level key as a whole; if `config.json` also sets
   because it addresses one step inside a job rather than the job, so the step
   ID it names changes when `TOOLS` changes. Write it as
   `<job>/<step ID>` when a step ID runs in more than one job.
-* A selection can put two writers of one key on two branches that a workflow
-  document runs concurrently, and nothing rejects it before the run. Selecting
-  `{"lvs": "klayout"}` is the shipped example: that provider opens with
-  `OpenROAD.WriteCDL`, whose framework warning and error counts the `lvs` job's
-  concurrent signoff peers carry unchanged from further up, so the join that
-  merges them has two values and no rule for choosing. The run stops with a
-  `JoinConflictError` naming the key. Re-pointing `magic_drc` at `klayout`, or
-  `klayout_drc` at `magic`, does the same thing with that tool's DRC metric.
-  `test/flows/test_documents.py` enumerates every such selection for the
-  shipped documents.
 * View-level compatibility across a provider boundary is guaranteed; semantic
   compatibility is not. The view preflight confirms that the `DEF`, netlist,
   or `SDC` a provider hands off is present, but it cannot confirm that two

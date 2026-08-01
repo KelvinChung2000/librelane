@@ -245,6 +245,20 @@ code does, `JobRegistry.providers()` and `librelane help` know nothing
 about any of these sixteen tools. Import it once to make them visible, the
 same way a real backend from the previous sections would.
 
+A scaffold says so, in one line. `VendorTclStep` and `VendorPythonStep` both
+declare `implemented = False`, which is what `Registration.runnable` derives
+from and what stops a scaffold being recommended: when LibreLane refuses a
+`TOOLS` selection it names the providers that would work instead, and a
+provider whose `run()` raises is never on that list. Selecting one directly is
+still permitted — the opt-in exists so that these can be selected, inspected
+and filled in.
+
+**So filling one in has a last step.** Once `run()` drives the real tool,
+delete `implemented = False` from the class you finished. It is declared
+rather than inferred from the base class precisely so that you can: a
+completed Innovus backend is still a `VendorTclStep`, and nothing about the
+hierarchy distinguishes it from the scaffold it grew out of.
+
 ## Scope
 
 No commercial backend ships with LibreLane in working order, and none has

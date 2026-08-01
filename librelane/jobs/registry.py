@@ -60,8 +60,20 @@ class Registration:
     native_views : tuple[DesignFormat, ...]
         Tool-native views this provider carries across job
         boundaries itself, for example OpenROAD's ``odb``. Exempt from the
-        registration-time view check; validated instead by the static view
-        availability check at resolution.
+        registration-time view check below, which would otherwise refuse the
+        sequence for consuming a view the job's tool-neutral ``requires`` does
+        not name -- and must not name, because a neutral job cannot oblige every
+        provider to speak one tool's database.
+
+        Re-validated per run by
+        :func:`librelane.flows.selection_validation.lost_views`, which reads
+        this tuple off the :class:`librelane.flows.job.ResolvedJob` and treats
+        each entry exactly as it treats a declared requirement. That check is a
+        differential against the document's own providers, so what a wrong
+        declaration costs is bounded but real: naming a view here that the
+        provider does not in fact carry adds a requirement nothing has to
+        satisfy, and a selection that drops the view's producer is refused for
+        a job that never needed it.
     """
 
     job: str
@@ -71,6 +83,30 @@ class Registration:
     provides: tuple[DesignFormat, ...] = ()
     metrics: tuple[str, ...] = ()
     native_views: tuple[DesignFormat, ...] = ()
+
+    @property
+    def runnable(self) -> bool:
+        """
+        Returns
+        -------
+        bool
+            Whether selecting this provider would run anything, which is true
+            exactly when every step of it is implemented.
+
+        Derived rather than declared, so that the sixteen commercial tool
+        modules carry no per-registration boilerplate and cannot disagree with
+        their own steps. :attr:`librelane.steps.Step.implemented` is the one
+        place the claim is made, and it is made next to the ``run`` that would
+        otherwise have to be called to find out.
+
+        Registering a provider that is not runnable stays legal and is the
+        point of :mod:`librelane.jobs.providers_vendor`: the scaffolds exist to
+        be selected, inspected and filled in. What reads this is
+        :mod:`librelane.flows.selection_validation`, which refuses to *offer*
+        one as the remedy for a selection it just rejected. Offering is a
+        promise that the alternative works, and permitting is not.
+        """
+        return all(step.implemented for step in self.steps)
 
 
 class JobRegistry(object):

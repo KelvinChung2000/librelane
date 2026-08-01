@@ -48,6 +48,12 @@ class ResolvedJob:
     ``conditions`` is the ``if`` conjunction already split into its variable
     names, empty when the job declares no ``if``. The job runs when every named
     variable is true.
+
+    ``native_views`` is the selected registration's, copied here rather than
+    left to be looked up again: it is a fact about the provider that won, and
+    reading it off the registry a second time means re-deriving the template id
+    from the document's ``uses``, which is exactly the kind of derivation this
+    class exists to have done once.
     """
 
     id: str
@@ -59,6 +65,7 @@ class ResolvedJob:
     metrics: tuple[str, ...]
     steps: tuple[type[Step], ...]
     provider: str | None
+    native_views: tuple[DesignFormat, ...]
 
 
 def resolve_jobs(
@@ -169,6 +176,9 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
             metrics=(),
             steps=tuple(steps),
             provider=None,
+            # An inline job has no registration, so nothing has been exempted
+            # from the registration-time view check on its behalf.
+            native_views=(),
         )
 
     # An omitted 'uses' is the document's central convenience: a job whose id
@@ -223,4 +233,5 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
         metrics=tuple(sorted(metrics)),
         steps=tuple(registration.steps),
         provider=provider,
+        native_views=registration.native_views,
     )
