@@ -997,6 +997,21 @@ class Config(GenericImmutableDict[str, Any]):
         # it and nothing else. Expanding after the merge instead makes one
         # dict's insertion order decide precedence between files -- and lets a
         # section in the first file overwrite a command-line override.
+        #
+        # 'scl' is the library whose 'config.tcl' was loaded, and that is what
+        # an 'scl::' section is matched against. It is not always the resolved
+        # configuration's STD_CELL_LIBRARY: that file is evaluated after its
+        # own path has been built from this value, so a standard cell library
+        # whose file reassigns the key changes the resolved variable and not
+        # the directory the values came from. No shipped PDK does that.
+        #
+        # It has to be this value rather than the resolved variable because it
+        # is the only one both callers can compute. The TOOLS pre-pass asks for
+        # no flow variables, so '__get_pdk_config' short-circuits and returns
+        # no values at all -- reading a resolved STD_CELL_LIBRARY there is not
+        # merely awkward, it is impossible, and matching sections against
+        # anything else would be the selector and the loader disagreeing, which
+        # is what this method exists to rule out.
         layered = layer_mappings(
             [
                 ConfigSource(

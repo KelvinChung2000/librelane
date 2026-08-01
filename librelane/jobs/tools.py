@@ -168,6 +168,13 @@ def _scoped_tools(mapping: Mapping[str, Any]) -> str | None:
     """
     for key, value in mapping.items():
         if not isinstance(value, Mapping):
+            # A section is a mapping-valued key, so no other value can be one.
+            # This is where the claim above stops being exact: a *list*-valued
+            # ``TOOLS`` whose items carried sections would not be detected. It
+            # is safe because a list ``TOOLS`` is not a selection either
+            # consumer accepts -- ``_validate`` refuses it here and the
+            # variable's own type refuses it in the loader -- so there is no
+            # value left for the two to disagree about.
             continue
         if key.startswith(_SECTION_PREFIXES):
             if _promotes_tools(value):
