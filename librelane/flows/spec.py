@@ -70,6 +70,14 @@ _JOB_FIELD_NAMES = ("condition", "values")
 #: than a derived set: only ``PDK`` is a configuration variable at all.
 _RESERVED_VALUE_KEYS = ("PDK", "SCL", "PAD", "meta")
 
+#: The key no ``with`` block at either level may set. ``TOOLS`` decides which
+#: provider implements each job, and the engine reads it out of the raw sources
+#: *before* the configuration exists, because the providers it names are what
+#: fix the step set the configuration is then validated against. A document
+#: setting it would therefore be read too late to change anything, and the
+#: resolved configuration would report a provider selection that did not happen.
+_PRE_PASS_VALUE_KEY = "TOOLS"
+
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
@@ -242,6 +250,7 @@ class FlowSpec(BaseModel):
         self._check_conditions_are_declared_booleans()
         self._check_final_names_a_job()
         self._check_values_are_not_reserved()
+        self._check_values_do_not_select_tools()
         return self
 
     def _check_needs_are_declared(self) -> None:
@@ -335,6 +344,22 @@ class FlowSpec(BaseModel):
                     f"would override the command line rather than layer under "
                     f"it. Set it on the design or on the command line."
                 )
+
+    def _check_values_do_not_select_tools(self) -> None:
+        blocks = [("Flow", self.name, self.values)] + [
+            ("Job", name, job.values) for name, job in self.jobs.items()
+        ]
+        for kind, owner, values in blocks:
+            if _PRE_PASS_VALUE_KEY not in values:
+                continue
+            raise FlowSpecError(
+                f"{kind} '{owner}' sets '{_PRE_PASS_VALUE_KEY}' in a 'with' "
+                f"block. It selects the provider implementing each job, and "
+                f"is read before any configuration is resolved, so a value "
+                f"set here would be read too late to change which steps run "
+                f"while still appearing in the resolved configuration. Set it "
+                f"on the design."
+            )
 
 
 def load_flow_spec(source: Mapping[str, Any] | str | os.PathLike) -> FlowSpec:

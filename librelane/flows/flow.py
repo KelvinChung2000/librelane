@@ -30,6 +30,7 @@ from abc import abstractmethod, ABC
 from concurrent.futures import Future
 from functools import wraps
 from typing import (
+    Any,
     ClassVar,
     TypeVar,
 )
@@ -495,6 +496,11 @@ class Flow(ABC):
     Steps: list[type[Step]] = NotImplemented  # Override
     config_vars: list[Variable] = []
 
+    #: Values this flow supplies for configuration variables, from the ``with``
+    #: block of a workflow document. Layered under the design configuration and
+    #: over the PDK, so a design always wins. A Python flow declares none.
+    values: dict[str, Any] = {}
+
     class Config(BaseConfigModel):
         pass
 
@@ -548,17 +554,32 @@ class Flow(ABC):
             self.name = name
 
         self.Steps = self.Steps.copy()  # Break global reference
+        self.values = dict(self.values)  # Same, for the class-level default
 
         if not isinstance(config, Config):
             config, design_dir = Config.load(
                 config_in=config,
                 flow_config_vars=self.get_all_config_variables(),
+                flow_values=self.values,
                 config_override_strings=config_override_strings,
                 pdk=pdk,
                 pdk_root=pdk_root,
                 scl=scl,
                 pad=pad,
                 design_dir=design_dir,
+            )
+        elif self.values:
+            # An already-resolved configuration has no sources left to layer
+            # under, so the flow's own values could only be applied on top of
+            # the design's -- the opposite of what they mean. Refused rather
+            # than dropped, so that a document's 'with' block cannot be
+            # accepted and then quietly ignored.
+            raise FlowException(
+                f"Flow '{self.name}' supplies values for "
+                f"{sorted(self.values)}, but it was constructed from a "
+                f"configuration that is already resolved, which those values "
+                f"cannot be layered under. Pass the design's configuration "
+                f"file or mapping instead."
             )
 
         self.config: Config = config

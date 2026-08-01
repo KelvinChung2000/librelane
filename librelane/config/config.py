@@ -107,6 +107,34 @@ def _validate_config_file(config: AnyPath) -> Literal["json", "tcl", "yaml"]:
         raise UnknownExtensionError(config)
 
 
+def _written_by(
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+    name: str,
+) -> dict[str, str]:
+    """
+    Parameters
+    ----------
+    before : Mapping[str, Any]
+        The environment a configuration file was evaluated against.
+    after : Mapping[str, Any]
+        The environment it produced.
+    name : str
+        What to attribute the keys it wrote to.
+
+    Returns
+    -------
+    dict[str, str]
+        Every key the file introduced or changed, mapped to ``name``. A key it
+        left alone is not its, so it is left to whichever layer did write it.
+    """
+    return {
+        key: name
+        for key, value in after.items()
+        if key not in before or before[key] != value
+    }
+
+
 class InvalidConfig(ValueError):
     """
     An error raised when a configuration under resolution is invalid.
@@ -340,7 +368,7 @@ class Config(GenericImmutableDict[str, Any]):
         """
         incremental_pdk_vars = [variable for variable in config_vars if variable.pdk]
 
-        mutable, _, _, _ = self.__get_pdk_config(
+        mutable, _, _, _, _ = self.__get_pdk_config(
             self["PDK"],
             self["STD_CELL_LIBRARY"],
             self.get("PAD_CELL_LIBRARY", None),
@@ -464,7 +492,7 @@ class Config(GenericImmutableDict[str, Any]):
         """
         PDK_ROOT = Self.__resolve_pdk_root(PDK_ROOT)
 
-        raw, _, _, _ = Self.__get_pdk_config(
+        raw, _, _, _, _ = Self.__get_pdk_config(
             PDK,
             STD_CELL_LIBRARY,
             PAD_CELL_LIBRARY,
@@ -504,6 +532,8 @@ class Config(GenericImmutableDict[str, Any]):
         config_in: AnyConfigs,
         flow_config_vars: Sequence[Variable],
         *,
+        flow_values: Mapping[str, Any] | None = None,
+        flow_values_name: str = "<flow document>",
         config_override_strings: Sequence[str] | None = None,
         pdk: str | None = None,
         pdk_root: str | None = None,
@@ -527,6 +557,16 @@ class Config(GenericImmutableDict[str, Any]):
 
             Tcl files are also supported, but are deprecated and will be removed
             in the future.
+        flow_values : Mapping[str, Any] | None
+            Values a flow supplies for configuration variables, from the
+            ``with`` block of a workflow document. They layer *under* the design
+            configuration and *over* the PDK and the SCL, so a design always
+            wins and a document always beats a PDK default.
+        flow_values_name : str
+            The name ``flow_values`` is attributed to in diagnostics. A
+            per-job ``with`` block passes ``<flow document: {job id}>``, so that
+            a message about a value one job set does not read as a message about
+            the whole document.
         config_override_strings : Sequence[str] | None
             A list of "overrides" in the form of
             NAME=VALUE strings. These are primarily for running LibreLane from
@@ -589,6 +629,12 @@ class Config(GenericImmutableDict[str, Any]):
             )
 
         sources: list[ConfigSource] = []
+        if flow_values is not None:
+            # First, so that every design source layered after it wins. Not
+            # folded into configs_validated: that loop also computes 'meta' and
+            # 'file_design_dir', and a document is neither a design directory
+            # nor a source of meta.
+            sources.append(ConfigSource(dict(flow_values), flow_values_name, "mapping"))
         meta = Meta()
         for config_validated in configs_validated:
             try:
@@ -737,7 +783,7 @@ class Config(GenericImmutableDict[str, Any]):
                     "The pdk argument is required as the configuration object lacks a 'PDK' key."
                 )
 
-            mutable, pdkpath, scl, pad = Self.__get_pdk_config(
+            mutable, pdkpath, scl, pad, pdk_provenance = Self.__get_pdk_config(
                 pdk=pdk,
                 scl=scl,
                 pad=pad,
@@ -745,6 +791,10 @@ class Config(GenericImmutableDict[str, Any]):
                 full_pdk_warnings=full_pdk_warnings,
                 flow_pdk_vars=flow_pdk_vars,
             )
+            # Under the caller's map, because 'mutable.update(design_values)'
+            # below layers the design over the PDK and the attribution has to
+            # follow the value. A key only the PDK wrote keeps '<pdk>'.
+            provenance = {**pdk_provenance, **(provenance or {})}
         else:
             if pdk_root is not None:
                 pdkpath = os.path.join(pdk_root, mutable["PDK"])
@@ -825,7 +875,7 @@ class Config(GenericImmutableDict[str, Any]):
                 "The pdk argument is required as the configuration object lacks a 'PDK' key."
             )
 
-        _, _, scl, pad = Self.__get_pdk_config(
+        _, _, scl, pad, _ = Self.__get_pdk_config(
             pdk=pdk,
             scl=scl,
             pad=pad,
@@ -863,7 +913,18 @@ class Config(GenericImmutableDict[str, Any]):
     @lru_cache(1, True)
     def __get_pdk_raw(
         pdk_root: str, pdk: str, scl: str | None, pad: str | None
-    ) -> tuple[GenericImmutableDict[str, Any], str, str, str | None]:
+    ) -> tuple[GenericImmutableDict[str, Any], str, str, str | None, dict[str, str]]:
+        """
+        Returns
+        -------
+        tuple[GenericImmutableDict[str, Any], str, str, str | None, dict[str, str]]
+            The merged PDK environment, the PDK path, the SCL, the pad cell
+            library, and a map from each key of the environment to the layer
+            that last wrote it.
+
+        The origin map is memoized along with everything else here, so callers
+        read it and never mutate it.
+        """
         pdk_config: GenericDict[str, Any] = GenericDict(
             {
                 SpecialKeys.pdk_root: pdk_root,
@@ -934,12 +995,18 @@ class Config(GenericImmutableDict[str, Any]):
                 )
             scl_config_path = scl_config_path_alt
 
-        full_env = migrate_old_config(
-            TclUtils._eval_env(
-                pdk_env,
-                open(scl_config_path, encoding="utf8").read(),
-            )
+        # Every key the process selection and the PDK's own file put in scope.
+        # The seed keys -- PDK, PDK_ROOT and, when it was named rather than
+        # defaulted, STD_CELL_LIBRARY -- are attributed to the PDK layer too,
+        # because '<pdk>' names the layer and not the file.
+        origins: dict[str, str] = dict.fromkeys(pdk_env, "<pdk>")
+
+        scl_env = TclUtils._eval_env(
+            pdk_env,
+            open(scl_config_path, encoding="utf8").read(),
         )
+        origins.update(_written_by(pdk_env, scl_env, "<scl>"))
+        full_env = migrate_old_config(scl_env)
 
         pad = pdk_env.get("PAD_CELL_LIBRARY", None)
 
@@ -954,14 +1021,18 @@ class Config(GenericImmutableDict[str, Any]):
                     [f"'{pad_config_path}' was not found.'"],
                 )
 
-            full_env = migrate_old_config(
-                TclUtils._eval_env(
-                    full_env,
-                    open(pad_config_path, encoding="utf8").read(),
-                )
+            pad_env = TclUtils._eval_env(
+                full_env,
+                open(pad_config_path, encoding="utf8").read(),
             )
+            origins.update(_written_by(full_env, pad_env, "<pad>"))
+            full_env = migrate_old_config(pad_env)
 
-        return GenericImmutableDict(full_env), pdkpath, scl, pad
+        # migrate_old_config renames a handful of old keys, so an origin under
+        # a name the migration consumed describes nothing that survived.
+        origins = {key: origin for key, origin in origins.items() if key in full_env}
+
+        return GenericImmutableDict(full_env), pdkpath, scl, pad, origins
 
     @staticmethod
     def __get_pdk_config(
@@ -971,17 +1042,27 @@ class Config(GenericImmutableDict[str, Any]):
         pdk_root: str,
         flow_pdk_vars: list[Variable] | None = None,
         full_pdk_warnings: bool | None = False,
-    ) -> tuple[GenericDict[str, Any], str, str, str | None]:
+    ) -> tuple[GenericDict[str, Any], str, str, str | None, dict[str, str]]:
         """
         Returns
         -------
-        tuple[GenericDict[str, Any], str, str, str | None]
-            A tuple of the PDK configuration, the PDK path, the SCL and the PAD.
+        tuple[GenericDict[str, Any], str, str, str | None, dict[str, str]]
+            A tuple of the PDK configuration, the PDK path, the SCL, the PAD,
+            and a map from each variable this layer supplied a value for to
+            ``<pdk>``, ``<scl>`` or ``<pad>``.
+
+            The PDK is merged separately from the layered design sources, so
+            without that map a PDK-supplied value has no attribution at all and
+            a caller asking where it came from is told ``default`` -- a wrong
+            answer rather than a missing one. A variable no configuration file
+            here wrote is absent, which is how ``default`` is spelled.
         """
 
-        frozen, pdkpath, scl, pad = Config.__get_pdk_raw(pdk_root, pdk, scl, pad)
+        frozen, pdkpath, scl, pad, origins = Config.__get_pdk_raw(
+            pdk_root, pdk, scl, pad
+        )
         if flow_pdk_vars is None or len(flow_pdk_vars) == 0:
-            return (GenericDict(), pdkpath, scl, pad)
+            return (GenericDict(), pdkpath, scl, pad, {})
 
         raw: GenericDict[str, Any] = GenericDict(frozen)  # microwave
         processed, pdk_warnings, pdk_errors = Config.__process_variable_list(
@@ -1005,7 +1086,16 @@ class Config(GenericImmutableDict[str, Any]):
         processed["PDK_ROOT"] = pdk_root
         processed["PDK"] = pdk
 
-        return (processed, pdkpath, scl, pad)
+        # Only the variables that survived compilation. A key of the raw
+        # environment that no flow variable claims is dropped from 'processed',
+        # so attributing it would name an origin for a value nothing carries.
+        return (
+            processed,
+            pdkpath,
+            scl,
+            pad,
+            {key: origins[key] for key in processed if key in origins},
+        )
 
     def __process_variable_list(
         mutable: GenericDict[str, Any],

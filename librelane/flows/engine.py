@@ -19,7 +19,7 @@ import shutil
 from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from loguru import logger
 from rapidfuzz import fuzz, process, utils
@@ -39,6 +39,12 @@ from librelane.flows.spec import FlowSpec
 from librelane.flows.spec_graph import ancestors, descendants, topological_order
 from librelane.flows.spec_validation import validate_against_registry
 
+
+#: The loader's resolved configuration, under a second name. ``Workflow``
+#: declares a nested ``Config`` of its own -- the engine's variable model -- so
+#: an annotation written in its class body resolves to that one, and a method
+#: returning resolved configurations has to say which ``Config`` it means.
+_ResolvedConfig = Config
 
 #: How many job ids an error message spells out before it counts the rest.
 #: ``classic.yaml`` declares 48 jobs, and a message that prints all of them
@@ -181,8 +187,9 @@ class Workflow(Flow):
         )
         self.Steps = [step for job in self.jobs.values() for step in job.steps]
         # Flow.__init__ builds the Config from get_all_config_variables(), which
-        # reads config_vars, and resolves the flow name from the class when the
-        # instance has not set one. Both assignments must precede it.
+        # reads config_vars; resolves the flow name from the class when the
+        # instance has not set one; and layers 'values' into the loader's
+        # sources. All three assignments must precede it.
         #
         # The class's own variables come first, because TOOLS is declared by
         # the engine and by no document: assigning only the document's would
@@ -193,11 +200,92 @@ class Workflow(Flow):
             *(declared.to_variable() for declared in spec.config),
         ]
         self.name = spec.name
+        self.values = dict(spec.values)
         super().__init__(
             config,
             config_override_strings=config_override_strings,
             **kwargs,
         )
+        #: One resolved configuration per job that declares a ``with`` block.
+        self.job_configs = self._resolve_job_configs(
+            config,
+            config_override_strings,
+            kwargs,
+        )
+
+    def _resolve_job_configs(
+        self,
+        config: AnyConfigs,
+        config_override_strings: Sequence[str] | None,
+        load_kwargs: Mapping[str, Any],
+    ) -> dict[str, _ResolvedConfig]:
+        """
+        Resolves one configuration per job that declares a ``with`` block.
+
+        Parameters
+        ----------
+        config : AnyConfigs
+            The design configuration, exactly as it was handed to
+            ``Flow.__init__``, because the job's values have to be layered into
+            the *sources* rather than onto the resolved result: a job's ``with``
+            beats the document's and the PDK's, and loses to the design's and to
+            ``--config-override``. Only the loader knows which of those supplied
+            a given value.
+        config_override_strings : Sequence[str] | None
+            As :meth:`librelane.flows.Flow.__init__`.
+        load_kwargs : Mapping[str, Any]
+            The remaining keyword arguments ``Flow.__init__`` received; the
+            process selection is read out of it.
+
+        Returns
+        -------
+        Each job whose ``with`` block is non-empty mapped to its own
+        configuration. A job that sets nothing is absent, and
+        :meth:`_run_job` hands it ``self.config``.
+
+        There is deliberately no single flattened mapping. The covering rule
+        that ``librelane.flows.spec_validation`` enforces is not a uniqueness
+        rule -- two Yosys jobs may set different ``SYNTH_STRATEGY`` values --
+        so where the feature is used at all, no one mapping can hold what the
+        document means.
+
+        Raises
+        ------
+        FlowException
+            If a document with a per-job ``with`` is constructed over an
+            already-resolved :class:`librelane.config.Config`. Its sources are
+            gone, so the layer cannot be built, and running the job against the
+            flow's configuration would discard values the document asked for
+            without saying so.
+        """
+        job_configs: dict[str, _ResolvedConfig] = {}
+        for job_id, job in self.spec.jobs.items():
+            if not job.values:
+                continue
+            if isinstance(config, Config):
+                raise FlowException(
+                    f"Job '{job_id}' of flow '{self.spec.name}' declares a "
+                    f"'with' block, but this flow was constructed from a "
+                    f"configuration that is already resolved, whose sources "
+                    f"are no longer available to layer it into. Pass the "
+                    f"design's configuration file or mapping instead."
+                )
+            resolved, _ = Config.load(
+                config_in=config,
+                flow_config_vars=self.get_all_config_variables(),
+                # The document's own block first, so a job overrides it and
+                # anything neither sets still comes from the document.
+                flow_values={**self.values, **job.values},
+                flow_values_name=f"<flow document: {job_id}>",
+                config_override_strings=config_override_strings,
+                pdk=load_kwargs.get("pdk"),
+                pdk_root=load_kwargs.get("pdk_root"),
+                scl=load_kwargs.get("scl"),
+                pad=load_kwargs.get("pad"),
+                design_dir=str(self.design_dir),
+            )
+            job_configs[job_id] = resolved
+        return job_configs
 
     @staticmethod
     def _selected_tools(
@@ -874,6 +962,15 @@ class Workflow(Flow):
         A conjunction is false when any one of its variables is false, and the
         reason names every false one so a document author does not have to
         flip them one at a time.
+
+        Read off the flow's configuration and never off the job's own, even
+        for a job that sets the gate variable in its ``with`` block. ``if`` is
+        the engine's question about whether to fire the job at all, asked
+        before the job exists to answer for itself; a job that could switch its
+        own gate on would make every ``if`` naming a variable that job also
+        sets unconditionally true, which is not a gate. This is a decision, not
+        an oversight: a per-job ``with`` changes what the job's *steps* read,
+        and nothing else.
         """
         if skipped:
             return "named by --skip"
@@ -934,9 +1031,12 @@ class Workflow(Flow):
             reproducible is written. Caught by :meth:`run`.
         """
         current = state_in
+        # A job that declares no 'with' block has no configuration of its own,
+        # and the flow's is the whole answer for it.
+        config = self.job_configs.get(job.id, self.config)
         for index, cls in enumerate(job.steps):
             step = cls(
-                config=self.config,
+                config=config,
                 state_in=current,
                 # The logging layer keys a running step on its id: the loguru
                 # sink filter that routes records into the step's own
