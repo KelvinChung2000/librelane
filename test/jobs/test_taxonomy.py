@@ -31,7 +31,7 @@ def test_only_post_route_opt_is_unselected():
     assert unselected == ["post_route_opt"]
 
 
-def test_the_two_templates_with_two_providers_default_to_magic():
+def test_the_two_templates_with_two_providers_agree_with_pdk_compat():
     """
     ``streamout`` and ``drc`` are the two phases every shipped document runs
     under both Magic and KLayout, as two jobs pinning a provider each. Nothing
@@ -39,9 +39,21 @@ def test_the_two_templates_with_two_providers_default_to_magic():
     these templates bare would get, and it has to agree with the tool
     ``pdk_compat`` fills ``PRIMARY_GDSII_STREAMOUT_TOOL`` with -- otherwise a
     lone ``uses: streamout`` would stream out with a tool the PDK does not
-    consider primary.
+    consider primary. Both sides are exercised here so they fail together
+    rather than drifting apart (today, that tool is "magic").
     """
+    from librelane.config.pdk_compat import migrate_old_config
     from librelane.jobs import Job
 
-    assert Job.factory.get("streamout").default_provider == "magic"
-    assert Job.factory.get("drc").default_provider == "magic"
+    minimal_sky130_config = {
+        "PDK_ROOT": "/pdk_root",
+        "PDK": "sky130A",
+        "STD_CELL_LIBRARY": "sky130_fd_sc_hd",
+        "LIB": "/pdk_root/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib",
+    }
+    primary_streamout_tool = migrate_old_config(minimal_sky130_config)[
+        "PRIMARY_GDSII_STREAMOUT_TOOL"
+    ]
+
+    assert Job.factory.get("streamout").default_provider == primary_streamout_tool
+    assert Job.factory.get("drc").default_provider == primary_streamout_tool
