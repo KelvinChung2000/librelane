@@ -1065,3 +1065,260 @@ def test_a_resumed_workflow_executes_nothing(minimal_design, mock_pdk):
         "Test.EngineResumeUpstream": 1,
         "Test.EngineResumeDownstream": 1,
     }
+
+
+@mock_variables([flow_module, step_module])
+def test_target_excludes_the_jobs_downstream_of_the_named_one(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, _, _ = counting_steps
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="target", target=["first"])
+
+    # 'second' is not skipped and not gated: it is not a node of the run at
+    # all, so it neither fires nor stalls it.
+    assert order == ["Test.EngineFirst"]
+
+
+@mock_variables([flow_module, step_module])
+def test_target_pulls_in_the_named_job_s_ancestors(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, _, _ = counting_steps
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="target", target=["second"])
+
+    assert order == ["Test.EngineFirst", "Test.EngineSecond"]
+
+
+@mock_variables([flow_module, step_module])
+def test_target_naming_an_unknown_job_is_an_error(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="unknown", target=["nope"])
+
+    message = str(exc_info.value)
+    assert "nope" in message
+    assert "first" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_invalidate_naming_an_unknown_job_is_an_error(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="unknown", invalidate=["nope"])
+
+    message = str(exc_info.value)
+    assert "--invalidate" in message
+    assert "nope" in message
+    assert "first" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_skip_outside_the_target_subgraph_is_an_error(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="outside", target=["first"], skip=["second"])
+
+    assert "second" in str(exc_info.value)
+
+
+@mock_variables([flow_module, step_module])
+def test_invalidate_outside_the_target_subgraph_is_an_error(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="outside", target=["first"], invalidate=["second"])
+
+    assert "second" in str(exc_info.value)
+
+
+@mock_variables([flow_module, step_module])
+def test_target_runs_a_job_whose_ancestor_is_skipped(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, _, _ = counting_steps
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    # An ancestor is inside the subgraph, so skipping it is legal, and it
+    # still fires as a pass-through. Suppressing the firing instead would
+    # leave the target itself waiting forever on a token nobody deposits.
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="target-skip", target=["second"], skip=["first"])
+
+    assert order == ["Test.EngineSecond"]
+
+
+@mock_variables([flow_module, step_module])
+def test_invalidate_forces_a_job_and_its_descendants_to_rerun(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, _, _ = counting_steps
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    Workflow(spec, minimal_design, **mock_pdk).start(tag="invalidate")
+    order.clear()
+
+    Workflow(spec, minimal_design, **mock_pdk).start(
+        tag="invalidate", invalidate=["first"]
+    )
+
+    assert order == ["Test.EngineFirst", "Test.EngineSecond"]
+
+
+@mock_variables([flow_module, step_module])
+def test_invalidate_leaves_the_named_job_s_ancestors_reusable(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, _, _ = counting_steps
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    Workflow(spec, minimal_design, **mock_pdk).start(tag="invalidate-leaf")
+    order.clear()
+
+    Workflow(spec, minimal_design, **mock_pdk).start(
+        tag="invalidate-leaf", invalidate=["second"]
+    )
+
+    # The cache is invalidated forwards only. This is also the control for the
+    # test above: 'first' really was reusable, so its re-run there was the
+    # forcing and not a resume that never worked for these steps.
+    assert order == ["Test.EngineSecond"]
+
+
+@mock_variables([flow_module, step_module])
+def test_a_targeted_run_joins_its_own_sinks_when_final_is_outside_it(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "final": "second",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    final = flow.start(tag="final-outside", target=["first"])
+
+    # 'final' names the job whose output is the whole document's final state.
+    # A --target that excludes it runs a different graph, and that graph's
+    # final state is the join of its own leaves.
+    assert final.metrics["first"] == 1
+    assert "second" not in final.metrics

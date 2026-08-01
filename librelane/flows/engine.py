@@ -31,6 +31,7 @@ from librelane.flows.join import join_sink_states, join_states
 from librelane.flows.net import Net
 from librelane.flows.resume import resume_key, reusable_state, write_entry
 from librelane.flows.spec import FlowSpec
+from librelane.flows.spec_graph import ancestors, descendants
 from librelane.flows.spec_validation import validate_against_registry
 
 
@@ -89,6 +90,8 @@ class Workflow(Flow):
     def run(
         self,
         initial_state: State,
+        target: Iterable[str] | None = None,
+        invalidate: Iterable[str] | None = None,
         skip: Iterable[str] | None = None,
         **kwargs,
     ) -> tuple[State, list[Step]]:
@@ -97,27 +100,78 @@ class Workflow(Flow):
         ----------
         initial_state : State
             The state deposited on every source place.
+        target : Iterable[str] | None
+            Run only these jobs and their transitive ancestors. ``None`` runs
+            the whole graph.
+        invalidate : Iterable[str] | None
+            Treat these jobs and their transitive descendants as having no
+            reusable result.
         skip : Iterable[str] | None
-            Job ids to pass through without running.
+            Job ids to fire as pass-through without running.
 
         Returns
         -------
         ``(final_state, steps_run)``
-        """
-        skipped = set(skip or ())
-        for name in skipped:
-            if name not in self.jobs:
-                raise FlowException(
-                    f"--skip names '{name}', which flow '{self.spec.name}' "
-                    f"does not declare. Declared jobs: {sorted(self.jobs)}."
-                )
 
-        net = Net(list(self.jobs), self.spec.edges())
+        Raises
+        ------
+        FlowException
+            If any named job is not declared, or lies outside the ``target``
+            subgraph.
+        """
+        # The three compose in a fixed order: --target restricts the graph
+        # first, and --skip and --invalidate then apply within the
+        # restriction. Naming a job outside it is an error rather than a
+        # silent no-op, because the option would otherwise do nothing at all
+        # and say nothing about it.
+        edges = self.spec.edges()
+
+        selected = set(self.jobs)
+        if target is not None:
+            targets = list(target)
+            self._require_declared(targets, "--target")
+            selected = set()
+            for name in targets:
+                selected.add(name)
+                selected |= ancestors(edges, name)
+
+        skipped = set(skip or ())
+        self._require_declared(sorted(skipped), "--skip")
+        invalidated = set(invalidate or ())
+        self._require_declared(sorted(invalidated), "--invalidate")
+
+        outside = (skipped | invalidated) - selected
+        if outside:
+            names = sorted(outside)
+            raise FlowException(
+                f"{names} {'lies' if len(names) == 1 else 'lie'} outside the "
+                f"--target subgraph {sorted(selected)}, so naming "
+                f"{'it' if len(names) == 1 else 'them'} would do nothing."
+            )
+
+        # Forwards only. A cache entry is invalid because its inputs are not
+        # the ones it was written from -- an edited TCL script, a rebuilt tool
+        # -- and that is a statement about the named job and everything fed by
+        # it. An ancestor's entry is untouched by it, and re-running ancestors
+        # would make --invalidate an expensive way to spell --overwrite.
+        forced: set[str] = set()
+        for name in invalidated:
+            forced.add(name)
+            forced |= descendants(edges, name) & selected
+
+        # 'selected' is closed under 'needs' -- ancestors() is the transitive
+        # closure of it -- so dropping the unselected keys cannot leave a
+        # dangling predecessor behind, and every remaining 'needs' list is
+        # already a list of selected jobs.
+        net = Net(
+            [name for name in self.jobs if name in selected],
+            {name: needs for name, needs in edges.items() if name in selected},
+        )
         for arc in net.arcs:
             if arc.producer is None:
                 net.put(arc, initial_state)
 
-        self.progress_bar.set_max_stage_count(len(self.jobs))
+        self.progress_bar.set_max_stage_count(len(selected))
         steps_run: list[Step] = []
         deferred: list[str] = []
         failures: list[str] = []
@@ -168,6 +222,7 @@ class Workflow(Flow):
                                 state_in,
                                 submitted.steps,
                                 submitted.deferred,
+                                name in forced,
                             )
                         ] = submitted
                     except Exception as e:
@@ -226,7 +281,10 @@ class Workflow(Flow):
         if failures:
             raise FlowError("\n".join(failures))
         # A failure leaves its descendants unfired, so this must come second:
-        # otherwise a genuine failure would be reported as a stall.
+        # otherwise a genuine failure would be reported as a stall. 'net' is
+        # the restricted net, so the question is whether every *selected* job
+        # fired: a job --target excluded is not a node of it and cannot stall
+        # it.
         if not net.is_complete():
             raise FlowException(
                 f"Flow '{self.spec.name}' stalled: no job is enabled and "
@@ -234,14 +292,56 @@ class Workflow(Flow):
             )
         if deferred:
             raise FlowError("\n".join(deferred))
-        return self._final_state(net, outputs), steps_run
+        return self._final_state(net, outputs, selected), steps_run
 
-    def _final_state(self, net: Net, outputs: dict[str, State]) -> State:
+    def _require_declared(self, names: Iterable[str], option: str) -> None:
         """
+        Parameters
+        ----------
+        names : Iterable[str]
+            The job ids an option named.
+        option : str
+            The option's spelling, for the message.
+
+        Raises
+        ------
+        FlowException
+            If any name is not a job of this document. The message lists the
+            declared jobs, so a typo is correctable without opening the
+            document.
+        """
+        for name in names:
+            if name not in self.jobs:
+                raise FlowException(
+                    f"{option} names '{name}', which flow "
+                    f"'{self.spec.name}' does not declare. Declared jobs: "
+                    f"{sorted(self.jobs)}."
+                )
+
+    def _final_state(
+        self, net: Net, outputs: dict[str, State], selected: set[str]
+    ) -> State:
+        """
+        Parameters
+        ----------
+        net : Net
+            The net that ran, restricted to ``selected``.
+        outputs : dict[str, State]
+            The state each job that fired produced.
+        selected : set[str]
+            The jobs this run was restricted to.
+
         Returns
         -------
         The flow's final state, either the output of the job the
         document's ``final`` key names, or the join of every leaf's token.
+
+        ``final`` names the job whose output is the *document's* final state,
+        so it settles the sinks only when it is a job of this run. A
+        ``--target`` that excludes it runs a different graph, and that graph's
+        final state is the join of its own leaves; there is no output of the
+        excluded job to return, and returning the whole document's rule over a
+        run that did not follow it would be a lie about what ran.
 
         Raises
         ------
@@ -256,9 +356,10 @@ class Workflow(Flow):
             :meth:`librelane.flows.net.Net.sink_tokens` raises and which means
             the leaf feeding it never fired.
         """
-        if self.spec.final is not None:
+        if self.spec.final is not None and self.spec.final in selected:
             assert self.spec.final in outputs, (
-                "checked by FlowSpec._check_final_names_a_job"
+                "checked by FlowSpec._check_final_names_a_job, and every "
+                "selected job fired or the stall check above would have raised"
             )
             return outputs[self.spec.final]
         return join_sink_states(net.sink_tokens(), self.spec.name)
@@ -297,6 +398,7 @@ class Workflow(Flow):
         state_in: State,
         steps: list[Step],
         deferred: list[str],
+        forced: bool,
     ) -> State:
         """
         Runs one job's steps in order. Called on a worker thread, so ``steps``
@@ -313,6 +415,11 @@ class Workflow(Flow):
             Appended to with every step constructed, in the order run.
         deferred : list[str]
             Appended to with the message of every error a step deferred.
+        forced : bool
+            Whether this job must ignore any reusable result. Required rather
+            than defaulting to ``False``, so that a future caller cannot forget
+            it and silently consult the cache. A forced step still *writes* its
+            entry, so the next run reuses it.
 
         Returns
         -------
@@ -346,7 +453,9 @@ class Workflow(Flow):
             step_dir = self.dir_for_job_step(job, index, step)
             assert self.fingerprinter is not None
             key = resume_key(step, current, self.fingerprinter)
-            reused = reusable_state(step_dir, key, self.fingerprinter)
+            reused = (
+                None if forced else reusable_state(step_dir, key, self.fingerprinter)
+            )
             if reused is not None:
                 logger.info(f"Reusing '{step.name}' from a previous run…")
                 step.step_dir = step_dir
