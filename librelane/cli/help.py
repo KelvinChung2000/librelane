@@ -20,6 +20,7 @@ import rich.markdown
 import typer
 
 from librelane.flows import Flow
+from librelane.flows.engine import Workflow
 from librelane.steps import Step
 from librelane.cli._app import make_app
 
@@ -34,8 +35,8 @@ def show_help(
     # it is this frontend's job, so the terminal presentation lives here rather
     # than in the library. Step.display_help()/Flow.display_help() remain for
     # notebook users, who need IPython rendering instead.
-    if target_flow := Flow.factory.get(step_or_flow):
-        help_md = target_flow.get_help_md()
+    if target_flow := Flow.factory.get_document(step_or_flow):
+        help_md = Workflow.help_md_for_document(target_flow)
     elif target_step := Step.factory.get(step_or_flow):
         help_md = target_step.get_help_md()
     else:

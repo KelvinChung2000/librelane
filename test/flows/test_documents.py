@@ -1180,3 +1180,92 @@ def test_a_document_is_rejected_at_import_if_it_is_malformed(tmp_path):
 
     with pytest.raises(FlowSpecError):
         load_flow_spec(bad)
+
+
+def test_help_for_a_document_lists_its_jobs_and_their_providers():
+    from librelane.flows.engine import Workflow
+
+    help_md = Workflow.help_md_for_document(_document("classic.yaml"))
+
+    assert "#### Jobs" in help_md
+    assert "| `detailed_routing` | `detailed_routing` | `openroad` |" in help_md
+    assert "| `magic_streamout` | `streamout` | `magic` |" in help_md
+    assert "| `xor` | inline steps | | |" in help_md
+
+
+def test_help_for_a_document_lists_its_steps():
+    from librelane.flows.engine import Workflow
+
+    help_md = Workflow.help_md_for_document(_document("classic.yaml"))
+
+    assert "#### Included Steps" in help_md
+    assert "`Yosys.Synthesis`" in help_md
+
+
+def test_help_for_a_document_declares_its_own_variables():
+    from librelane.flows.engine import Workflow
+
+    help_md = Workflow.help_md_for_document(_document("classic.yaml"))
+
+    assert "#### Flow-specific Configuration Variables" in help_md
+    assert "RUN_LINTER" in help_md
+
+
+def _variables_section(help_md: str) -> str:
+    """The rendered variable table, cut out of a help document."""
+    start = help_md.index("#### Flow-specific Configuration Variables")
+    return help_md[start : help_md.index("#### Jobs", start)]
+
+
+def test_help_for_a_document_documents_the_tools_variable():
+    """
+    ``TOOLS`` is declared by the engine and by no document, so a table built
+    from ``spec.config`` alone leaves it out. Every rendered help tells the
+    reader to set it, and the flow reference publishes eight of those
+    pointers, so the variable they point at has to be on the page with its
+    type, its default and its description.
+
+    The class each document replaces carried it: ``StagedFlow.Config`` declares
+    ``TOOLS``, which put it at the head of ``Classic.config_vars``.
+    """
+    from librelane.flows.engine import Workflow
+
+    help_md = Workflow.help_md_for_document(_document("classic.yaml"))
+
+    assert "`TOOLS`" in _variables_section(help_md)
+
+
+def test_help_documents_the_tools_variable_for_a_document_declaring_none():
+    """
+    The engine's variables are a fact about running a document at all, not
+    about which variables that document adds, so the section appears even for
+    a document whose own ``config`` list is empty.
+    """
+    from librelane.flows.engine import Workflow
+
+    spec = _document("open_in_klayout.yaml")
+
+    assert not spec.config
+    assert "`TOOLS`" in _variables_section(Workflow.help_md_for_document(spec))
+
+
+def test_help_for_a_multi_provider_job_names_every_selected_provider():
+    """
+    ``ResolvedJob.provider`` is every selected provider joined by ``+``, which
+    is one string and not one provider. No shipped document leaves a
+    two-default template unpinned -- ``classic.yaml`` splits ``streamout`` and
+    ``drc`` into a job per tool -- so this is written against a document
+    constructed here, and it pins that the Alternatives column subtracts *both*
+    selected providers rather than listing them as alternatives to themselves.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec(
+        name="TwoProviderStreamOut",
+        jobs={"streamout": {"uses": "streamout"}},
+    )
+
+    help_md = Workflow.help_md_for_document(spec)
+
+    assert "| `streamout` | `streamout` | `magic`, `klayout` | none |" in help_md

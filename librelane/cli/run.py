@@ -95,15 +95,32 @@ from librelane.cli.runtime import (
 )
 
 
-#: Every parameter :meth:`librelane.flows.engine.Workflow.run` declares by
-#: name, which is to say every keyword it can be relied on to read. Read from
+def _named_parameters(method: Any) -> frozenset[str]:
+    """
+    Returns
+    -------
+    frozenset[str]
+        Every parameter ``method`` declares by name, which is to say every
+        keyword it can be relied on to read rather than swallow.
+    """
+    return frozenset(
+        name
+        for name, parameter in signature(method).parameters.items()
+        if parameter.kind is not Parameter.VAR_KEYWORD
+    )
+
+
+#: Every keyword this module may hand to a workflow to shape a run: one both
+#: :meth:`librelane.flows.engine.Workflow.run` and
+#: :meth:`librelane.flows.engine.Workflow.explain` declare by name. Read from
 #: the engine rather than restated, so that renaming one there is caught here
-#: rather than turning a command-line option into a silent no-op. See
-#: :func:`bind_workflow_arguments` for why that is possible at all.
-_WORKFLOW_RUN_PARAMETERS = frozenset(
-    name
-    for name, parameter in signature(Workflow.run).parameters.items()
-    if parameter.kind is not Parameter.VAR_KEYWORD
+#: rather than turning a command-line option into a silent no-op, and
+#: intersected because the same keywords go to both: one the explanation did
+#: not declare would describe a different invocation from the one the run
+#: performs. See :func:`bind_workflow_arguments` for why that is possible at
+#: all.
+_WORKFLOW_RUN_PARAMETERS = _named_parameters(Workflow.run) & _named_parameters(
+    Workflow.explain
 )
 
 
@@ -262,16 +279,27 @@ def format_job_explanation(explanation: Explanation) -> str:
     str
         The table, without a trailing newline.
     """
-    width = max((len(d.job_id) for d in explanation.jobs), default=0)
+    # Every width is measured over the header as well as the rows. A column
+    # whose widest value is narrower than its own title -- a document of jobs
+    # with short names, or one nothing depends on -- would otherwise leave the
+    # header a character wider than the rows beneath it, and each column after
+    # it out of line. The mechanism is measured for the same reason a constant
+    # would not do: 'not-in-reproducible' is wider than any column width
+    # somebody would have picked by hand.
+    width = max([len("JOB"), *(len(d.job_id) for d in explanation.jobs)])
     needs_width = max(
-        (len(" ".join(d.needs) or "-") for d in explanation.jobs), default=0
+        [len("NEEDS"), *(len(" ".join(d.needs) or "-") for d in explanation.jobs)]
+    )
+    mechanism_width = max(
+        [len("MECHANISM"), *(len(d.mechanism or "") for d in explanation.jobs)]
     )
     lines = [
-        f"{'JOB'.ljust(width)}  RUN  MECHANISM     {'NEEDS'.ljust(needs_width)}  REASON"
+        f"{'JOB'.ljust(width)}  RUN  {'MECHANISM'.ljust(mechanism_width)} "
+        f"{'NEEDS'.ljust(needs_width)}  REASON"
     ]
     for disposition in explanation.jobs:
         mark = "yes" if disposition.will_run else "no "
-        mechanism = (disposition.mechanism or "").ljust(13)
+        mechanism = (disposition.mechanism or "").ljust(mechanism_width)
         needs = (" ".join(disposition.needs) or "-").ljust(needs_width)
         lines.append(
             f"{disposition.job_id.ljust(width)}  {mark}  {mechanism} "
@@ -309,6 +337,10 @@ def _format_reach(disposition: VariableDisposition) -> str:
         family, or a list of job ids.
     """
     if disposition.universal:
+        # "all 1 jobs" on a single-job document reads as a rendering bug and
+        # invites the reader to wonder what the other jobs are.
+        if len(disposition.reach) == 1:
+            return "universal, read by the only job"
         return f"universal, read by all {len(disposition.reach)} jobs"
     if not disposition.reach:
         return "the flow itself"
@@ -375,8 +407,10 @@ def _truncated(value: str) -> str:
 def bind_workflow_arguments(**arguments: Any) -> dict[str, Any]:
     """
     Checks that every flow-control keyword this module hands to
-    :meth:`librelane.flows.Flow.start` is one
-    :meth:`librelane.flows.engine.Workflow.run` declares by name.
+    :meth:`librelane.flows.Flow.start` and to
+    :meth:`librelane.flows.engine.Workflow.explain` is one both
+    :meth:`librelane.flows.engine.Workflow.run` and ``explain`` declare by
+    name.
 
     ``Flow.start`` forwards its ``**kwargs`` into ``run`` unchanged, and ``run``
     must keep a ``**kwargs`` of its own because ``start`` always passes
@@ -397,14 +431,15 @@ def bind_workflow_arguments(**arguments: Any) -> dict[str, Any]:
     Raises
     ------
     AssertionError
-        If any keyword would land in ``run``'s ``**kwargs``. This is a defect
-        in LibreLane rather than in an invocation: nothing a user types reaches
-        these names.
+        If any keyword would land in ``run``'s ``**kwargs``, or is not one
+        ``explain`` declares. This is a defect in LibreLane rather than in an
+        invocation: nothing a user types reaches these names.
     """
     unbound = sorted(set(arguments) - _WORKFLOW_RUN_PARAMETERS)
     assert not unbound, (
-        f"{unbound} would be swallowed by Workflow.run's '**kwargs' rather "
-        f"than bound. Please report this as a bug."
+        f"{unbound} is not a named parameter of both Workflow.run and "
+        f"Workflow.explain, so it would be swallowed by run's '**kwargs' or "
+        f"refused by explain. Please report this as a bug."
     )
     return arguments
 
@@ -451,13 +486,44 @@ def start_flow(request: FlowRequest) -> None:
         logger.debug(traceback.format_exc())
         logger.error("LibreLane will now quit.")
         raise typer.Exit(1) from error
+    except FlowError as error:
+        # Resolving the document against the registries and resolving `TOOLS`
+        # against the document both raise this, and neither is a `ValueError`.
+        # Every one of those messages names the offending key and the legal
+        # alternatives, which is worth nothing arriving as the last line of a
+        # traceback.
+        logger.error(error)
+        logger.error("LibreLane will now quit.")
+        raise typer.Exit(1) from error
+
+    # `run` reads `None` as "unrestricted" and an empty collection as
+    # "restricted to nothing": `target=()` selects no job at all, builds an
+    # empty net and dies in the sink join. The request holds tuples, so this is
+    # where an option nobody gave has to become `None` again.
+    #
+    # Bound once and handed to whichever of the two runs, because `explain`
+    # describes the invocation these arguments make: an explanation that saw
+    # fewer of them than the run would describe a different invocation, and
+    # would say every job runs where the run in fact stops at the first.
+    flow_control = bind_workflow_arguments(
+        target=list(request.target) or None,
+        invalidate=list(request.invalidate) or None,
+        skip=list(request.skip) or None,
+        reproducible=request.reproducible,
+    )
 
     if request.explain or request.explain_variables:
-        explanation = flow.explain(
-            target=list(request.target) or None,
-            skip=list(request.skip) or None,
-            variables=request.explain_variables,
-        )
+        try:
+            explanation = flow.explain(
+                variables=request.explain_variables, **flow_control
+            )
+        except FlowException as error:
+            # `explain` refuses whatever `run` refuses, so the same mistyped
+            # option that prints one line without `--explain` has to print one
+            # line with it.
+            logger.error(error)
+            logger.error("LibreLane will now quit.")
+            raise typer.Exit(1) from error
         # Each option selects a table; neither filters the other's rows. Given
         # both, both are printed, jobs first, because the reach column of the
         # variable table names the jobs of the one above it.
@@ -474,17 +540,7 @@ def start_flow(request: FlowRequest) -> None:
             with_initial_state=initial_state,
             _force_run_dir=request.force_run_dir,
             overwrite=request.overwrite,
-            # `run` reads `None` as "unrestricted" and an empty collection as
-            # "restricted to nothing": `target=()` selects no job at all,
-            # builds an empty net and dies in the sink join. The request holds
-            # tuples, so this boundary is where an option nobody gave has to
-            # become `None` again.
-            **bind_workflow_arguments(
-                target=list(request.target) or None,
-                invalidate=list(request.invalidate) or None,
-                skip=list(request.skip) or None,
-                reproducible=request.reproducible,
-            ),
+            **flow_control,
         )
     except FlowException as error:
         logger.error(f"The flow encountered an unexpected error:\n{error}")

@@ -166,9 +166,13 @@ jobs:
     if: RUN_LINTER
   # No provider is pinned, because the Python flow does not pin one either:
   # Classic.Stages declares a bare Job.synthesis and only VHDLClassic writes
-  # .using("yosys_vhdl"). This mirrors that and nothing more. Provider
-  # selection through TOOLS belongs to the engine and resolve_jobs does not
-  # consult it today, so neither spelling would be selectable yet.
+  # .using("yosys_vhdl"). This mirrors that and nothing more.
+  #
+  # It is not what makes the job selectable. TOOLS re-points a job whether or
+  # not its 'uses' names a provider -- a pin is this document's default, not a
+  # lock -- so 'TOOLS: {synthesis: yosys_vhdl}' works here and would work just
+  # the same had this said 'synthesis/yosys'. See docs/source/usage/
+  # swapping_tools.md for what that particular selection then breaks.
   synthesis:
     needs: [lint]
     uses: synthesis

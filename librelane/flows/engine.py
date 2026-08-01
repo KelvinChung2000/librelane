@@ -16,6 +16,7 @@
 import os
 import pathlib
 import shutil
+import textwrap
 from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass, field
@@ -29,10 +30,11 @@ from librelane.config import (
     AnyConfig,
     AnyConfigs,
     Config,
+    Variable,
     universal_flow_config_variables,
     variable,
 )
-from librelane.jobs import JobContractError, extract_tools
+from librelane.jobs import JobContractError, JobRegistry, extract_tools
 from librelane.state import State
 from librelane.steps import DeferredStepError, Step, StepError, StepException
 from librelane.flows.explanation import (
@@ -120,6 +122,131 @@ def _declaring_class(step: type[Step], name: str) -> str:
     return declaring.id if declaring.id is not NotImplemented else declaring.__name__
 
 
+def _document_help_md(
+    spec: FlowSpec,
+    jobs: Mapping[str, ResolvedJob],
+    myst_anchors: bool,
+) -> str:
+    """
+    Renders a workflow document's help as Markdown.
+
+    Parameters
+    ----------
+    spec : FlowSpec
+        The document. Supplies the name, the description, the declared
+        configuration variables and each job's ``uses``.
+    jobs : Mapping[str, ResolvedJob]
+        The document's resolved jobs. Supplies each job's selected provider
+        and its steps.
+    myst_anchors : bool
+        Emit MyST anchors and cross-references, for the documentation build.
+        Off for terminal output.
+
+    Returns
+    -------
+    str
+        The rendered Markdown.
+    """
+    anchor = f"(flow-{slugify(spec.name, lower=True)})=" if myst_anchors else ""
+    # Dedented before the description is interpolated, not after: a document's
+    # description may be several lines, and a dedent measured over the
+    # interpolated text would find no common indent and leave the template's
+    # own indentation in the output.
+    result = textwrap.dedent(
+        """\
+        {anchor}
+        ### {name}
+
+        {description}
+
+        #### Using from the CLI
+
+        ```sh
+        librelane --flow {name} [...]
+        ```
+
+        #### Importing
+
+        ```python
+        from librelane.flows import Flow
+        from librelane.flows.engine import Workflow
+
+        {name} = Flow.factory.get_document("{name}")
+        ```
+        """
+    ).format(anchor=anchor, name=spec.name, description=spec.description)
+
+    # The engine's own variables ahead of the document's, exactly as
+    # Workflow.__init__ composes the two, because a document's accepted
+    # configuration is the union and not either half. TOOLS is the whole of the
+    # engine's half and no document declares it, so a table built from
+    # spec.config alone would leave every reader of the Jobs section below --
+    # which tells them to set TOOLS -- with nowhere on the page to learn its
+    # shape. Reading the class attribute rather than a literal keeps the two
+    # lists one list.
+    config_vars = [
+        *Workflow.config_vars,
+        *(declared.to_variable() for declared in spec.config),
+    ]
+    if config_vars:
+        if myst_anchors:
+            result += f"\n({slugify(spec.name, lower=True)}-config-vars)=\n"
+        result += "\n#### Flow-specific Configuration Variables\n"
+        result += Variable._render_table_md(
+            config_vars,
+            myst_anchor_owner_id=spec.name if myst_anchors else None,
+        )
+        result += "\n"
+
+    result += "\n#### Jobs\n\n"
+    result += (
+        "Set the `TOOLS` configuration variable to change the tool used for "
+        "any of these. The key is the job id in the left-hand column. See "
+        "[Swapping Tools](../usage/swapping_tools.md).\n\n"
+    )
+    result += "| Job | Template | Provider | Alternatives |\n"
+    result += "| --- | --- | --- | --- |\n"
+    for job_id, job in jobs.items():
+        if job.provider is None:
+            result += f"| `{job_id}` | inline steps | | |\n"
+            continue
+        # '(uses or job_id)' is not a fallback: it is the document's implicit
+        # rule spelled out, that a job declaring neither 'uses' nor 'steps'
+        # means the template its own id names, which _require_implementation
+        # has already checked.
+        template_id = (spec.jobs[job_id].uses or job_id).partition("/")[0]
+        # One job may run several providers -- resolve_jobs joins their names
+        # with '+' -- and each of them is selected, so none of them is an
+        # alternative to itself.
+        selected = job.provider.split("+")
+        others = [
+            provider
+            for provider in JobRegistry.providers(template_id)
+            if provider not in selected
+        ]
+        selected_cell = ", ".join(f"`{name}`" for name in selected)
+        others_cell = ", ".join(f"`{name}`" for name in others) if others else "none"
+        result += (
+            f"| `{job_id}` | `{template_id}` | {selected_cell} | {others_cell} |\n"
+        )
+
+    result += "\n#### Included Steps\n\n"
+    for job_id, job in jobs.items():
+        result += f"* `{job_id}`\n"
+        for step in job.steps:
+            implementation = step.get_implementation_id()
+            if myst_anchors:
+                result += (
+                    f"  * [`{step.id}`](./step_config_vars.md#step-"
+                    f"{slugify(implementation, lower=True)})\n"
+                )
+            elif implementation != step.id:
+                result += f"  * `{step.id}` (implementation: `{implementation}`)\n"
+            else:
+                result += f"  * `{step.id}`\n"
+    return result
+
+
 class _ReproducibleCreated(Exception):
     """
     Raised by a worker once it has written a reproducible, so that the job
@@ -145,6 +272,37 @@ class _ReproducibleCreated(Exception):
         super().__init__(f"Wrote a reproducible to '{path}'.")
         self.path = path
         self.state = state
+
+
+@dataclass(frozen=True)
+class _RunPlan:
+    """
+    What the run-shaping options select, once they have been composed and
+    checked against one another.
+
+    Held apart from :meth:`Workflow.run` so that :meth:`Workflow.explain` can
+    describe the same invocation rather than a second, similar one. Every
+    refusal these options carry is raised while the plan is built, so an
+    explanation raises wherever the run would: an explanation of an invocation
+    that cannot happen is worse than no explanation.
+
+    Parameters
+    ----------
+    selected
+        The jobs the run is restricted to, closed under ``needs``.
+    skipped
+        The jobs ``--skip`` named, all of them inside :attr:`selected`.
+    forced
+        The jobs that must ignore any reusable result: the ones
+        ``--invalidate`` named and their selected descendants.
+    reproducible_at
+        The job and step index ``--reproducible`` resolved to, or ``None``.
+    """
+
+    selected: set[str]
+    skipped: set[str]
+    forced: set[str]
+    reproducible_at: tuple[str, int] | None
 
 
 @dataclass
@@ -372,6 +530,49 @@ class Workflow(Flow):
             config_override_strings=config_override_strings,
         )
 
+    # An instance method where Flow declares a classmethod, and deliberately
+    # so: a document's step list, its providers and its per-job structure are
+    # facts about the resolved jobs, which a class attribute does not have.
+    # The two cannot be reconciled while both exist, and phase 5 deletes
+    # Flow.get_help_md along with the Flow.Steps it reads.
+    def get_help_md(self, myst_anchors: bool = False) -> str:  # type: ignore[override]
+        """
+        Parameters
+        ----------
+        myst_anchors : bool
+            Emit MyST anchors and cross-references.
+
+        Returns
+        -------
+        str
+            Rendered Markdown help for this workflow, describing the jobs it
+            actually resolved, so a ``TOOLS`` override is visible in the
+            provider column.
+        """
+        return _document_help_md(self.spec, self.jobs, myst_anchors)
+
+    @staticmethod
+    def help_md_for_document(spec: FlowSpec, myst_anchors: bool = False) -> str:
+        """
+        Renders a document's help without constructing a workflow.
+
+        Parameters
+        ----------
+        spec : FlowSpec
+            The document to describe.
+        myst_anchors : bool
+            Emit MyST anchors and cross-references.
+
+        Returns
+        -------
+        str
+            Rendered Markdown help, describing the providers the document
+            declares. A configuration is not needed and is not read, so
+            ``TOOLS`` plays no part.
+        """
+        validate_against_registry(spec)
+        return _document_help_md(spec, resolve_jobs(spec), myst_anchors)
+
     def run(
         self,
         initial_state: State,
@@ -409,85 +610,28 @@ class Workflow(Flow):
         ------
         FlowException
             If any named job is not declared, or lies outside the ``target``
-            subgraph.
+            subgraph; if ``target`` and ``reproducible`` are given together,
+            because both say what should run; if ``reproducible`` names a step
+            of a job ``skip`` names or a false condition stops, so that this
+            run would never execute it; or if it resolves to no step at all or
+            to more than one.
         """
-        # They compose in a fixed order: --target restricts the graph first,
-        # and --skip and --invalidate then apply within the restriction.
-        # Naming a job outside it is an error rather than a silent no-op,
-        # because the option would otherwise do nothing at all and say nothing
-        # about it.
         edges = self.spec.edges()
-
-        selected = self._target_subgraph(edges, target)
-        restricted_by = "--target"
-
-        skipped = set(skip or ())
-        self._require_declared(sorted(skipped), "--skip")
-        invalidated = set(invalidate or ())
-        self._require_declared(sorted(invalidated), "--invalidate")
-
-        # After --skip is read, because a request for a step this run would
-        # never execute is refused against it, and before the subgraph check
-        # below, because --reproducible narrows the subgraph the check is made
-        # against.
-        reproducible_at: tuple[str, int] | None = None
-        if reproducible is not None:
-            if target is not None:
-                raise FlowException(
-                    "--reproducible and --target both say what should run. "
-                    "--reproducible already runs the named step's job and its "
-                    "ancestors, so drop --target."
-                )
-            job_id, step_index = self._resolve_reproducible(reproducible)
-            # Ahead of every skip test, so that a request for a step this
-            # configuration would never execute is diagnosed rather than
-            # silently discarded. This mirrors SequentialFlow.run.
-            if job_id in skipped:
-                raise FlowException(
-                    f"Cannot create a reproducible for a step of job "
-                    f"'{job_id}': it is named by --skip, so this run would "
-                    f"never execute it. Drop it from --skip, or name another "
-                    f"step."
-                )
-            reason = self._pass_through_reason(self.jobs[job_id], skipped=False)
-            if reason is not None:
-                raise FlowException(
-                    f"Cannot create a reproducible for a step of job "
-                    f"'{job_id}': {reason}, so this configuration would never "
-                    f"execute it. Name another step, or change the condition."
-                )
-            # The spec says --reproducible is unchanged in meaning and runs the
-            # ancestors of the step's job, which is exactly what --target does,
-            # so it reuses the restriction rather than adding a second one.
-            selected = {job_id} | ancestors(edges, job_id)
-            reproducible_at = (job_id, step_index)
-            restricted_by = "--reproducible"
-
-        self._reject_outside(skipped | invalidated, selected, restricted_by)
-
-        # Forwards only. A cache entry is invalid because its inputs are not
-        # the ones it was written from -- an edited TCL script, a rebuilt tool
-        # -- and that is a statement about the named job and everything fed by
-        # it. An ancestor's entry is untouched by it, and re-running ancestors
-        # would make --invalidate an expensive way to spell --overwrite.
-        forced: set[str] = set()
-        for name in invalidated:
-            forced.add(name)
-            forced |= descendants(edges, name) & selected
+        plan = self._plan(edges, target, invalidate, skip, reproducible)
 
         # 'selected' is closed under 'needs' -- ancestors() is the transitive
         # closure of it -- so dropping the unselected keys cannot leave a
         # dangling predecessor behind, and every remaining 'needs' list is
         # already a list of selected jobs.
         net = Net(
-            [name for name in self.jobs if name in selected],
-            {name: needs for name, needs in edges.items() if name in selected},
+            [name for name in self.jobs if name in plan.selected],
+            {name: needs for name, needs in edges.items() if name in plan.selected},
         )
         for arc in net.arcs:
             if arc.producer is None:
                 net.put(arc, initial_state)
 
-        self.progress_bar.set_max_stage_count(len(selected))
+        self.progress_bar.set_max_stage_count(len(plan.selected))
         steps_run: list[Step] = []
         deferred: list[str] = []
         failures: list[str] = []
@@ -524,7 +668,7 @@ class Workflow(Flow):
                         state_in = join_states(tokens, job.source, name)
                         self.progress_bar.start_stage(name)
                         started = True
-                        reason = self._pass_through_reason(job, name in skipped)
+                        reason = self._pass_through_reason(job, name in plan.skipped)
                         if reason is not None:
                             logger.info(f"Skipping job '{name}': {reason}.")
                             net.fire(name, state_in)
@@ -539,8 +683,8 @@ class Workflow(Flow):
                                 job,
                                 state_in,
                                 submitted,
-                                name in forced,
-                                reproducible_at,
+                                name in plan.forced,
+                                plan.reproducible_at,
                             )
                         ] = submitted
                     except Exception as e:
@@ -647,7 +791,7 @@ class Workflow(Flow):
         # sequential.py's order: snapshot, raise, report, and a run that is
         # about to fail therefore never announces that it reused anything or
         # that it is complete.
-        final = self._final_state(net, outputs, selected)
+        final = self._final_state(net, outputs, plan.selected)
         self._save_final_snapshot(final)
 
         if deferred:
@@ -667,7 +811,9 @@ class Workflow(Flow):
         self,
         *,
         target: Iterable[str] | None = None,
+        invalidate: Iterable[str] | None = None,
         skip: Iterable[str] | None = None,
+        reproducible: str | None = None,
         variables: bool = False,
     ) -> Explanation:
         """
@@ -675,15 +821,36 @@ class Workflow(Flow):
         ----------
         target : Iterable[str] | None
             As :meth:`run`.
+        invalidate : Iterable[str] | None
+            As :meth:`run`.
+
+            No row changes because of it: it says a cached result may not be
+            reused, and reuse is the one verdict an explanation does not report.
+            It is taken all the same, because :meth:`run` refuses a name it
+            cannot place and an explanation that accepted one would be
+            describing an invocation that cannot happen.
         skip : Iterable[str] | None
             As :meth:`run`.
+        reproducible : str | None
+            As :meth:`run`. It restricts the graph exactly as ``target`` does,
+            to the named step's job and that job's ancestors, so every other
+            job is reported as excluded by it.
         variables : bool
             Also report every configuration variable, its value, the layer that
-            supplied it and the jobs that can read it. Asked for rather than
-            always answered, because it is a larger question than which jobs
-            run and it can only be answered by a flow whose configuration was
-            resolved against its own variable list. Nothing is filtered when
-            it is asked: every variable gets a row, defaults included.
+            supplied it and the jobs that can read it.
+
+            This selects a second table rather than filtering the first, which
+            is what ``--explain-variables`` is on the command line. It is asked
+            for rather than always answered because it is a materially larger
+            question than which jobs run -- Classic resolves some 800 variables
+            against 48 jobs -- and a caller that wants to know why one job is
+            missing should not pay for it. Answering it also requires a
+            configuration resolved against this flow's own variable list, which
+            a caller holding a narrower one does not have.
+
+            Nothing is filtered when it *is* asked: every variable gets a row,
+            defaults included, because a variable sitting at its default is
+            exactly what somebody debugging an unexpected value is looking for.
 
         Returns
         -------
@@ -700,10 +867,11 @@ class Workflow(Flow):
         Raises
         ------
         FlowException
-            If any named job is not declared, or if ``skip`` names a job
-            ``target`` already excluded. :meth:`run` refuses the same
-            arguments, and an explanation that answered where the run would
-            raise would be describing an invocation that cannot happen.
+            Wherever :meth:`run` would refuse the same arguments, which is
+            every condition listed there. An explanation that answered where
+            the run would raise would be describing an invocation that cannot
+            happen, so the two share one derivation of what the arguments
+            select rather than each deriving their own.
 
         Resume is deliberately not reported, for the reason given on
         :meth:`librelane.flows.SequentialFlow.explain`. A resume verdict depends
@@ -711,43 +879,106 @@ class Workflow(Flow):
         rewrite, so it cannot be known before the run.
         """
         edges = self.spec.edges()
-        selected = self._target_subgraph(edges, target)
-        skipped = set(skip or ())
-        self._require_declared(sorted(skipped), "--skip")
-        self._reject_outside(skipped, selected, "--target")
+        plan = self._plan(edges, target, invalidate, skip, reproducible)
+        reproducible_job = (
+            plan.reproducible_at[0] if plan.reproducible_at is not None else None
+        )
 
         dispositions: list[JobDisposition] = []
         for job_id in topological_order(edges):
             job = self.jobs[job_id]
             needs = tuple(job.needs)
-            if job_id not in selected:
-                dispositions.append(
-                    JobDisposition(
-                        job_id,
-                        needs,
-                        False,
-                        "not in the --target subgraph",
-                        "not-in-target",
+            if job_id not in plan.selected:
+                # Which option narrowed the graph, and not merely that it was
+                # narrowed. --reproducible restricts it without --target having
+                # been passed at all, and naming --target there would send a
+                # reader looking for an option they never used.
+                if reproducible_job is not None:
+                    dispositions.append(
+                        JobDisposition(
+                            job_id,
+                            needs,
+                            False,
+                            f"--reproducible runs only '{reproducible_job}' "
+                            f"and its ancestors",
+                            "not-in-reproducible",
+                        )
                     )
-                )
+                else:
+                    dispositions.append(
+                        JobDisposition(
+                            job_id,
+                            needs,
+                            False,
+                            "not in the --target subgraph",
+                            "not-in-target",
+                        )
+                    )
                 continue
             # The same call the run makes, so the two cannot disagree about
             # which variable stopped a job or how its absence is worded.
-            reason = self._pass_through_reason(job, job_id in skipped)
-            if reason is None:
-                dispositions.append(
-                    JobDisposition(job_id, needs, True, "will run", None)
-                )
-            else:
-                mechanism = "skip" if job_id in skipped else "condition"
+            reason = self._pass_through_reason(job, job_id in plan.skipped)
+            if reason is not None:
+                mechanism = "skip" if job_id in plan.skipped else "condition"
                 dispositions.append(
                     JobDisposition(job_id, needs, False, reason, mechanism)
                 )
+                continue
+            if plan.reproducible_at is not None and job_id == reproducible_job:
+                # Reached only for a job that is neither skipped nor stopped by
+                # a condition: the plan refuses a reproducible for one that is,
+                # because this run would never execute the step.
+                dispositions.append(
+                    self._reproducible_disposition(job, needs, plan.reproducible_at[1])
+                )
+                continue
+            dispositions.append(JobDisposition(job_id, needs, True, "will run", None))
         return Explanation(
             steps=(),
             unselected_jobs=(),
             jobs=tuple(dispositions),
             variables=self._variable_dispositions() if variables else (),
+        )
+
+    def _reproducible_disposition(
+        self, job: ResolvedJob, needs: tuple[str, ...], step_index: int
+    ) -> JobDisposition:
+        """
+        Parameters
+        ----------
+        job : ResolvedJob
+            The job whose step ``--reproducible`` named.
+        needs : tuple[str, ...]
+            Its declared incoming edges, for the row.
+        step_index : int
+            The named step's index in the job's step list.
+
+        Returns
+        -------
+        JobDisposition
+            What this job does under ``--reproducible``. It is the one job that
+            neither runs in full nor is excluded: the steps ahead of the named
+            one run, the named one is packaged instead of run, and the run
+            stops there. ``will_run`` is therefore true only when some step of
+            it runs, which is exactly when the named step is not its first.
+        """
+        step_id = job.steps[step_index].id
+        if step_index == 0:
+            return JobDisposition(
+                job.id,
+                needs,
+                False,
+                f"--reproducible packages its first step '{step_id}', so no "
+                f"step of this job runs",
+                "reproducible",
+            )
+        return JobDisposition(
+            job.id,
+            needs,
+            True,
+            f"will run up to '{step_id}', which --reproducible packages "
+            f"instead of running",
+            "reproducible",
         )
 
     def _variable_dispositions(self) -> tuple[VariableDisposition, ...]:
@@ -764,9 +995,12 @@ class Workflow(Flow):
             ``TOOLS`` selection re-pointing a job at another provider is
             reflected in what that job is reported to read.
 
-            Not narrowed by ``--target`` or ``--skip``. Which jobs *can* read a
-            variable is a property of the document and the configuration, and
-            an invocation that runs fewer of them does not change it.
+            Not narrowed by ``--target``, ``--skip`` or ``--reproducible``.
+            Which jobs *can* read a variable is a property of the document and
+            the configuration, and an invocation that runs fewer of them does
+            not change it. So a ``reach`` here may name a job the job table on
+            the same screen reports as excluded; the two answer different
+            questions and neither is wrong.
         """
         universal = {member.name for member in universal_flow_config_variables}
         readers: dict[str, list[str]] = {}
@@ -857,6 +1091,108 @@ class Workflow(Flow):
             ]
         return [(value, origin, tuple(group)) for value, origin, group in groups]
 
+    def _plan(
+        self,
+        edges: dict[str, list[str]],
+        target: Iterable[str] | None,
+        invalidate: Iterable[str] | None,
+        skip: Iterable[str] | None,
+        reproducible: str | None,
+    ) -> _RunPlan:
+        """
+        Composes the run-shaping options into the selection they describe.
+
+        Parameters
+        ----------
+        edges : dict[str, list[str]]
+            This document's job dependency map.
+        target : Iterable[str] | None
+            As :meth:`run`.
+        invalidate : Iterable[str] | None
+            As :meth:`run`.
+        skip : Iterable[str] | None
+            As :meth:`run`.
+        reproducible : str | None
+            As :meth:`run`.
+
+        Returns
+        -------
+        _RunPlan
+            What this invocation would run. :meth:`run` executes it and
+            :meth:`explain` describes it, from this one derivation, because two
+            derivations could disagree about what an invocation does and the
+            explanation would be the one nobody could check.
+
+        Raises
+        ------
+        FlowException
+            Wherever the invocation itself is refused; :meth:`run` lists the
+            conditions.
+        """
+        # They compose in a fixed order: --target restricts the graph first,
+        # and --skip and --invalidate then apply within the restriction.
+        # Naming a job outside it is an error rather than a silent no-op,
+        # because the option would otherwise do nothing at all and say nothing
+        # about it.
+        selected = self._target_subgraph(edges, target)
+        restricted_by = "--target"
+
+        skipped = set(skip or ())
+        self._require_declared(sorted(skipped), "--skip")
+        invalidated = set(invalidate or ())
+        self._require_declared(sorted(invalidated), "--invalidate")
+
+        # After --skip is read, because a request for a step this run would
+        # never execute is refused against it, and before the subgraph check
+        # below, because --reproducible narrows the subgraph the check is made
+        # against.
+        reproducible_at: tuple[str, int] | None = None
+        if reproducible is not None:
+            if target is not None:
+                raise FlowException(
+                    "--reproducible and --target both say what should run. "
+                    "--reproducible already runs the named step's job and its "
+                    "ancestors, so drop --target."
+                )
+            job_id, step_index = self._resolve_reproducible(reproducible)
+            # Ahead of every skip test, so that a request for a step this
+            # configuration would never execute is diagnosed rather than
+            # silently discarded. This mirrors SequentialFlow.run.
+            if job_id in skipped:
+                raise FlowException(
+                    f"Cannot create a reproducible for a step of job "
+                    f"'{job_id}': it is named by --skip, so this run would "
+                    f"never execute it. Drop it from --skip, or name another "
+                    f"step."
+                )
+            reason = self._pass_through_reason(self.jobs[job_id], skipped=False)
+            if reason is not None:
+                raise FlowException(
+                    f"Cannot create a reproducible for a step of job "
+                    f"'{job_id}': {reason}, so this configuration would never "
+                    f"execute it. Name another step, or change the condition."
+                )
+            # The spec says --reproducible is unchanged in meaning and runs the
+            # ancestors of the step's job, which is exactly what --target does,
+            # so it reuses the restriction rather than adding a second one.
+            selected = {job_id} | ancestors(edges, job_id)
+            reproducible_at = (job_id, step_index)
+            restricted_by = "--reproducible"
+
+        self._reject_outside(skipped | invalidated, selected, restricted_by)
+
+        # Forwards only. A cache entry is invalid because its inputs are not
+        # the ones it was written from -- an edited TCL script, a rebuilt tool
+        # -- and that is a statement about the named job and everything fed by
+        # it. An ancestor's entry is untouched by it, and re-running ancestors
+        # would make --invalidate an expensive way to spell --overwrite.
+        forced: set[str] = set()
+        for name in invalidated:
+            forced.add(name)
+            forced |= descendants(edges, name) & selected
+
+        return _RunPlan(selected, skipped, forced, reproducible_at)
+
     def _target_subgraph(
         self, edges: dict[str, list[str]], target: Iterable[str] | None
     ) -> set[str]:
@@ -871,9 +1207,9 @@ class Workflow(Flow):
         Returns
         -------
         The named jobs and their transitive ancestors, or every job when
-        nothing was named. Shared with :meth:`explain` rather than written
-        twice, because an explanation that drew a different subgraph from the
-        run it describes would be worse than no explanation.
+        nothing was named. Called from :meth:`_plan`, which :meth:`run` and
+        :meth:`explain` share, because an explanation that drew a different
+        subgraph from the run it describes would be worse than no explanation.
 
         Raises
         ------
@@ -958,14 +1294,18 @@ class Workflow(Flow):
         FlowException
             If any name is not a job of this document. The message lists the
             declared jobs, so a typo is correctable without opening the
-            document.
+            document, and names the closest one outright, exactly as a
+            ``TOOLS`` key naming no job does: the two spellings are of the same
+            job ids, and a suggestion for one and none for the other would be
+            an accident of where the check lives.
         """
         for name in names:
             if name not in self.jobs:
                 raise FlowException(
                     f"{option} names '{name}', which flow "
-                    f"'{self.spec.name}' does not declare. Declared jobs: "
-                    f"{sorted(self.jobs)}."
+                    f"'{self.spec.name}' does not declare."
+                    + self._near_miss(name, self.jobs)
+                    + f" Declared jobs: {sorted(self.jobs)}."
                 )
 
     def _resolve_reproducible(self, name: str) -> tuple[str, int]:
@@ -1036,23 +1376,24 @@ class Workflow(Flow):
         return matches[0]
 
     @staticmethod
-    def _near_miss(step_id: str, candidates: Iterable[str]) -> str:
+    def _near_miss(named: str, candidates: Iterable[str]) -> str:
         """
         Parameters
         ----------
-        step_id : str
-            The step id that matched nothing.
+        named : str
+            The id that matched nothing: a step id from ``--reproducible``, or
+            a job id from any option that names one.
         candidates : Iterable[str]
-            Every step id this run could have reached.
+            Every id of that kind the invocation could have named.
 
         Returns
         -------
         str
-            A sentence naming the closest step id above the score cutoff, or
+            A sentence naming the closest id above the score cutoff, or
             the empty string when nothing is close enough to be worth offering.
         """
         match_tuple = process.extractOne(
-            step_id,
+            named,
             sorted(set(candidates)),
             scorer=fuzz.partial_ratio,
             score_cutoff=80,

@@ -30,7 +30,7 @@ of the page: <svg stroke="currentColor" fill="currentColor" stroke-width="0" vie
 ```
 
 %for flow in flows:
-${flow.get_help_md(myst_anchors=True)}
+${Workflow.help_md_for_document(flow, myst_anchors=True)}
 <hr />
 
 %endfor

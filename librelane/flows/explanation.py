@@ -60,26 +60,34 @@ class JobDisposition:
         The job's declared incoming edges, so the table can show the graph
         without a second query.
     will_run : bool
-        Whether this invocation would execute the job's steps.
+        Whether this invocation would execute any of the job's steps.
 
         Not whether the job fires. A job excluded by ``condition`` or by
         ``skip`` still fires: it consumes its input tokens and deposits its
         input state unchanged on each of its output places, having run
         nothing, so every job downstream of it runs exactly as it would have.
-        Only ``not-in-target`` takes the job out of the graph, and with it
-        every descendant that is not an ancestor of some other target.
+        ``not-in-target`` and ``not-in-reproducible`` take the job out of the
+        graph, and with it every descendant that is not an ancestor of some
+        other selected job.
     reason : str
         A sentence naming the cause, suitable for printing.
     mechanism : str | None
-        ``None`` when :attr:`will_run` is true, and otherwise
-        one of ``condition``, ``skip`` or ``not-in-target``.
+        ``None`` when the job runs in full, and otherwise one of
+        ``condition``, ``skip``, ``not-in-target``, ``not-in-reproducible`` or
+        ``reproducible``.
 
-        Those three are the only values a job entry can carry, because they
-        are the only mechanisms that exclude a job the document declares.
-        ``TOOLS`` is not among them: it re-points a job at another provider
-        and so changes which steps the job runs, never whether the job is
-        there. Every declared job therefore has an entry, including the ones
-        that will not run, which is the question an explanation is asked.
+        Those five are the only values a job entry can carry, because they are
+        the only mechanisms that stop a job the document declares from running
+        as it otherwise would. ``TOOLS`` is not among them: it re-points a job
+        at another provider and so changes which steps the job runs, never
+        whether the job is there. Every declared job therefore has an entry,
+        including the ones that will not run, which is the question an
+        explanation is asked.
+
+        ``reproducible`` is the one value that can accompany a true
+        :attr:`will_run`. It marks the job whose step ``--reproducible``
+        named: the steps ahead of that one run and the run then stops, so the
+        job neither runs in full nor is excluded.
     """
 
     job_id: str

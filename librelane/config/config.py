@@ -108,6 +108,34 @@ def _validate_config_file(config: AnyPath) -> Literal["json", "tcl", "yaml"]:
         raise UnknownExtensionError(config)
 
 
+def _follow_renames(
+    provenance: dict[str, str],
+    translated_from: Mapping[str, str],
+) -> None:
+    """
+    Moves a renamed key's origin onto the name it was renamed to, in place.
+
+    Parameters
+    ----------
+    provenance : dict[str, str]
+        The map to update.
+    translated_from : Mapping[str, str]
+        Each current name mapped to the name whose value it took.
+
+    A rename moves the value, so the origin has to move with it: the value under
+    the current name is there *because* some layer wrote the old one. Leaving
+    the origin behind does not merely lose it. Whatever wrote the current name
+    earlier -- typically the PDK, which supplies a value for every PDK variable
+    -- is left claiming a value the design overrode, and naming a real layer
+    that did not supply the value is harder to disbelieve than naming none.
+
+    A name no layer wrote has no origin to move, and none is invented for it.
+    """
+    for current, previous in translated_from.items():
+        if previous in provenance:
+            provenance[current] = provenance[previous]
+
+
 def _written_by(
     before: Mapping[str, Any],
     after: Mapping[str, Any],
@@ -426,11 +454,13 @@ class Config(GenericImmutableDict[str, Any]):
         mutable.update(self)
         mutable.update(other_inputs)
 
-        processed, design_warnings, design_errors = Config.__process_variable_list(
-            mutable,
-            config_vars,
-            removed_variables,
-            on_unknown_key=None,
+        processed, design_warnings, design_errors, renames = (
+            Config.__process_variable_list(
+                mutable,
+                config_vars,
+                removed_variables,
+                on_unknown_key=None,
+            )
         )
 
         if len(design_errors) != 0:
@@ -447,15 +477,20 @@ class Config(GenericImmutableDict[str, Any]):
         # In the order the three mappings are layered above: the incremental
         # PDK variables first, then everything this configuration already
         # carried, then the step's own inputs.
+        provenance = {
+            **pdk_provenance,
+            **self.provenance,
+            **{key: _API_OVERRIDE for key in other_inputs},
+        }
+        # 'other_inputs' may name a variable by one of its deprecated names,
+        # in which case its value outranks the one this configuration already
+        # carries under the current name and its origin has to follow it.
+        _follow_renames(provenance, renames)
         return Config(
             processed,
             meta=self.meta.copy(),
             diagnostics=diagnostics,
-            provenance={
-                **pdk_provenance,
-                **self.provenance,
-                **{key: _API_OVERRIDE for key in other_inputs},
-            },
+            provenance=provenance,
         )
 
     @classmethod
@@ -564,11 +599,13 @@ class Config(GenericImmutableDict[str, Any]):
 
         raw.update(kwargs)
 
-        processed, design_warnings, design_errors = Config.__process_variable_list(
-            raw,
-            flow_common_variables,
-            removed_variables,
-            on_unknown_key="error",
+        processed, design_warnings, design_errors, renames = (
+            Config.__process_variable_list(
+                raw,
+                flow_common_variables,
+                removed_variables,
+                on_unknown_key="error",
+            )
         )
 
         if len(design_errors) != 0:
@@ -581,12 +618,17 @@ class Config(GenericImmutableDict[str, Any]):
         for warning in design_warnings:
             logger.warning(warning)
 
+        provenance = {
+            **pdk_provenance,
+            **{key: _API_OVERRIDE for key in kwargs},
+        }
+        # A keyword argument may name a variable by one of its deprecated
+        # names, in which case it, and not the PDK's value under the current
+        # name, is what 'compile' took.
+        _follow_renames(provenance, renames)
         Config.current_interactive = Config(
             processed,
-            provenance={
-                **pdk_provenance,
-                **{key: _API_OVERRIDE for key in kwargs},
-            },
+            provenance=provenance,
         )
 
         return Config.current_interactive
@@ -878,7 +920,7 @@ class Config(GenericImmutableDict[str, Any]):
             if pdk_root is not None:
                 pdkpath = os.path.join(pdk_root, mutable["PDK"])
 
-        design_values, deprecations = translate_deprecated_names(
+        design_values, deprecations, design_renames = translate_deprecated_names(
             preprocess_dict(
                 raw,
                 pdk=pdk,
@@ -890,8 +932,12 @@ class Config(GenericImmutableDict[str, Any]):
             list(flow_config_vars),
         )
         mutable.update(design_values)
+        # Before validate_mapping rather than after, so a diagnostic about a
+        # renamed key names the layer that actually wrote it too.
+        provenance = dict(provenance or {})
+        _follow_renames(provenance, design_renames)
 
-        processed, diagnostics = validate_mapping(
+        processed, diagnostics, merged_renames = validate_mapping(
             mutable,
             list(flow_config_vars),
             permissive=permissive_typing,
@@ -901,6 +947,19 @@ class Config(GenericImmutableDict[str, Any]):
             removed=removed_variables,
         )
         diagnostics.extend(deprecations)
+        # validate_mapping runs two more migrations of its own, on the merged
+        # mapping and so out of reach of the call above: the deprecated names a
+        # layer other than the design wrote, and DIODE_INSERTION_STRATEGY, which
+        # becomes three keys.
+        _follow_renames(provenance, merged_renames)
+        # Every key of the resolved configuration and no others. A key the
+        # migrations consumed is gone from 'processed' and an entry for it here
+        # would describe nothing the caller can look up. This runs after the
+        # renames are followed, so it can no longer drop the origin of a value
+        # that survived under another name.
+        provenance = {
+            key: origin for key, origin in provenance.items() if key in processed
+        }
 
         if diagnostics.errors():
             raise InvalidConfig(
@@ -1185,11 +1244,13 @@ class Config(GenericImmutableDict[str, Any]):
             return (GenericDict(), pdkpath, scl, pad, {})
 
         raw: GenericDict[str, Any] = GenericDict(frozen)  # microwave
-        processed, pdk_warnings, pdk_errors = Config.__process_variable_list(
-            raw,
-            flow_pdk_vars,
-            on_unknown_key=None,
-            permissive_typing=True,
+        processed, pdk_warnings, pdk_errors, pdk_renames = (
+            Config.__process_variable_list(
+                raw,
+                flow_pdk_vars,
+                on_unknown_key=None,
+                permissive_typing=True,
+            )
         )
 
         if len(pdk_errors) != 0:
@@ -1206,6 +1267,26 @@ class Config(GenericImmutableDict[str, Any]):
         processed["PDK_ROOT"] = pdk_root
         processed["PDK"] = pdk
 
+        # A second rename pass, entirely separate from the one
+        # '__get_pdk_raw' attributes across: 'compile' checks each variable's
+        # deprecated names before its current one and emits under the current
+        # one, so 'origins' -- keyed by the names the '.tcl' files wrote --
+        # describes forty-two of sky130A's keys under names 'processed' does
+        # not have. Following the renames before the filter below is what keeps
+        # CELL_LEFS, MAGIC_TECH, WELLTAP_CELL and the whole PDN_* family from
+        # reading as declared defaults for values plainly inside the PDK tree.
+        #
+        # It also moves an origin that was not merely missing but wrong: where
+        # the SCL's file writes the deprecated name and the PDK's the current
+        # one, 'compile' takes the SCL's value while the PDK's entry for the
+        # current name survives, and the map names a layer that did not supply
+        # the value.
+        #
+        # 'origins' is memoized inside '__get_pdk_raw', so it is copied rather
+        # than written through.
+        attributed = dict(origins)
+        _follow_renames(attributed, pdk_renames)
+
         # Only the variables that survived compilation. A key of the raw
         # environment that no flow variable claims is dropped from 'processed',
         # so attributing it would name an origin for a value nothing carries.
@@ -1214,7 +1295,7 @@ class Config(GenericImmutableDict[str, Any]):
             pdkpath,
             scl,
             pad,
-            {key: origins[key] for key in processed if key in origins},
+            {key: attributed[key] for key in processed if key in attributed},
         )
 
     def __process_variable_list(
@@ -1225,7 +1306,7 @@ class Config(GenericImmutableDict[str, Any]):
         on_unknown_key: Literal["error", "warn"] | None = "warn",
         permissive_typing: bool = False,
         missing_ok: bool = False,
-    ) -> tuple[GenericDict[str, Any], list[str], list[str]]:
+    ) -> tuple[GenericDict[str, Any], list[str], list[str], dict[str, str]]:
         """
         Verifies a configuration object against a list of variables, returning
         an object with the variables normalized according to their types.
@@ -1242,19 +1323,31 @@ class Config(GenericImmutableDict[str, Any]):
 
         Returns
         -------
-        tuple[GenericDict[str, Any], list[str], list[str]]
+        tuple[GenericDict[str, Any], list[str], list[str], dict[str, str]]
             A tuple of:
             [0] A final, processed configuration.
             [1] A list of warnings.
             [2] A list of errors.
+            [3] Each variable that took its value from one of its deprecated
+                names, mapped to the name it took it from.
 
             If the third element is non-empty, the first object is invalid.
+
+            The fourth element is reported for the same reason
+            :func:`librelane.config.validation.translate_deprecated_names`
+            reports its own: this is a rename, and a caller tracking where each
+            value came from has to move the origin with the value.
+            :meth:`Variable.compile` is the only place that knows both names --
+            it prefers a deprecated name over the current one and emits under
+            the current one, so no diff of the mapping across this call can
+            recover the pairing.
         """
         if removed is None:
             removed = {}
         warnings: list[str] = []
         errors = []
         final: GenericDict[str, Any] = GenericDict()
+        translated_from: dict[str, str] = {}
 
         # Special Deprecation Behaviors
         if (
@@ -1294,6 +1387,8 @@ class Config(GenericImmutableDict[str, Any]):
                 )
                 if key is not None:
                     del mutable[key]
+                    if key != variable.name:
+                        translated_from[variable.name] = key
                 final[variable.name] = value_processed
             except MissingRequiredVariable as e:
                 if not missing_ok:
@@ -1330,4 +1425,4 @@ class Config(GenericImmutableDict[str, Any]):
                     else:
                         warnings.append(f"An unknown key '{key}' was provided.")
 
-        return (final, warnings, errors)
+        return (final, warnings, errors, translated_from)

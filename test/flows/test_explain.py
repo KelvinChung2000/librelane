@@ -410,6 +410,246 @@ def test_explain_refuses_an_undeclared_job(counting_steps, minimal_design, mock_
         flow.explain(target=["nope"])
 
 
+@mock_variables([flow_module, step_module])
+def test_explain_suggests_a_near_miss_for_a_misspelled_job(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    ``TOOLS`` already suggests the job a typo was reaching for, and the two
+    options name jobs from the same document: a suggestion for one spelling
+    mistake and none for the other is an accident of where the check lives.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"synthesis": {"steps": ["Test.EngineFirst"]}}}
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+
+    with pytest.raises(FlowException, match="Did you mean: 'synthesis'\\?"):
+        flow.explain(target=["syntheis"])
+
+
+def _repro_spec() -> dict:
+    """
+    Returns
+    -------
+    dict
+        Three chained jobs, the first of which runs two steps, so that a
+        reproducible can be asked for at the head of a job's step list and in
+        the middle of it and the two answers can be told apart.
+    """
+    return {
+        "name": "Tiny",
+        "jobs": {
+            "first": {"steps": ["Test.EngineFirst", "Test.EngineSecond"]},
+            "second": {"needs": ["first"], "steps": ["Test.EngineFirst"]},
+            "third": {"needs": ["second"], "steps": ["Test.EngineSecond"]},
+        },
+    }
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_restricts_the_graph_to_the_reproducible_s_subgraph(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    ``--reproducible`` runs the named step's job and its ancestors and stops,
+    so every other job is out of the run. An explanation that reported them as
+    running would be describing an invocation nobody can make.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(_repro_spec())
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(
+        reproducible="second/Test.EngineFirst"
+    )
+
+    by_id = {d.job_id: d for d in explanation.jobs}
+    assert by_id["first"].will_run is True
+    assert by_id["first"].mechanism is None
+    assert by_id["second"].mechanism == "reproducible"
+    assert by_id["third"].will_run is False
+    assert by_id["third"].mechanism == "not-in-reproducible"
+    assert "second" in by_id["third"].reason
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_reports_the_reproducible_s_own_job_stopping_at_the_step(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    The named job runs the steps ahead of the named one and then writes the
+    reproducible instead of running it, so it neither runs in full nor is
+    excluded. Both facts are in the row.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(_repro_spec())
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(
+        reproducible="first/Test.EngineSecond"
+    )
+
+    first = explanation.jobs[0]
+    assert first.job_id == "first"
+    # Its first step runs; the second is the one being packaged.
+    assert first.will_run is True
+    assert first.mechanism == "reproducible"
+    assert "Test.EngineSecond" in first.reason
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_reports_no_step_running_when_the_reproducible_is_the_first_step(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    A reproducible for a job's first step packages that step and runs nothing
+    of the job at all, which is a different answer from the row above.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(_repro_spec())
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(
+        reproducible="first/Test.EngineFirst"
+    )
+
+    first = explanation.jobs[0]
+    assert first.job_id == "first"
+    assert first.will_run is False
+    assert first.mechanism == "reproducible"
+    assert "Test.EngineFirst" in first.reason
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_refuses_a_reproducible_alongside_a_target(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(_repro_spec())
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+
+    with pytest.raises(FlowException, match="both say what should run"):
+        flow.explain(reproducible="first/Test.EngineFirst", target=["first"])
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_refuses_a_reproducible_for_a_skipped_job(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(_repro_spec())
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+
+    with pytest.raises(FlowException, match="it is named by --skip"):
+        flow.explain(reproducible="first/Test.EngineFirst", skip=["first"])
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_refuses_a_reproducible_for_a_job_a_condition_stops(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "config": [_bool_var("RUN_FIRST", False)],
+            "jobs": {"first": {"steps": ["Test.EngineFirst"], "if": "RUN_FIRST"}},
+        }
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+
+    with pytest.raises(FlowException, match="'RUN_FIRST' is false"):
+        flow.explain(reproducible="first/Test.EngineFirst")
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_refuses_a_reproducible_naming_a_step_no_job_runs(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+
+    with pytest.raises(FlowException, match="which flow 'Tiny' does not run"):
+        flow.explain(reproducible="Test.NotAStep")
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_refuses_an_undeclared_invalidate(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    ``run`` refuses the same typo, and an explanation that answered where the
+    run would raise would be describing an invocation that cannot happen.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+
+    with pytest.raises(FlowException, match="--invalidate names 'nope'"):
+        flow.explain(invalidate=["nope"])
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_refuses_an_invalidate_outside_the_target_subgraph(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(_repro_spec())
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+
+    with pytest.raises(FlowException, match="outside the --target subgraph"):
+        flow.explain(target=["first"], invalidate=["second"])
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_leaves_every_row_alone_for_an_invalidate_it_accepts(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    ``--invalidate`` says a cached result may not be reused, and reuse is the
+    one verdict an explanation does not report. It is still refused when it
+    names nothing, which is why it is a parameter at all.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(_repro_spec())
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+
+    assert flow.explain(invalidate=["first"]).jobs == flow.explain().jobs
+
+
 def _classic_workflow(mock_conf_dir: MockConfTree):
     """
     The shipped ``classic.yaml`` bound to a stock configuration.
@@ -476,16 +716,25 @@ def test_explain_keeps_every_row_when_a_target_narrows_the_classic_document(
     """
     ``--target`` narrows what runs and not what is reported. A job it excluded
     is exactly the job someone is about to ask after.
+
+    ``--skip`` is passed with it, naming a job inside the subgraph, because
+    that pair is legal and the only committed coverage of the two together was
+    the refusal. The rows are counted rather than only keyed by job id: a
+    duplicated row collapses into a dictionary without a trace.
     """
     from librelane.flows import Flow
 
     spec = Flow.factory.get_document("Classic")
-    explanation = _classic_workflow(mock_conf_dir).explain(target=["floorplan"])
+    explanation = _classic_workflow(mock_conf_dir).explain(
+        target=["floorplan"], skip=["lint"]
+    )
 
+    assert len(explanation.jobs) == len(spec.jobs)
     by_id = {d.job_id: d for d in explanation.jobs}
     assert set(by_id) == set(spec.jobs)
     assert by_id["floorplan"].will_run is True
-    assert by_id["lint"].will_run is True
+    assert by_id["lint"].will_run is False
+    assert by_id["lint"].mechanism == "skip"
     assert by_id["final_checks"].mechanism == "not-in-target"
 
 
@@ -978,3 +1227,54 @@ def test_format_variable_explanation_truncates_a_value_that_would_set_the_width(
     # Truncating the one row must not cost the others their alignment.
     assert "FP_SIZING" in rendered
     assert "relative" in rendered
+
+
+def test_format_variable_explanation_does_not_say_all_1_jobs():
+    from librelane.cli.run import format_variable_explanation
+    from librelane.flows import VariableDisposition
+
+    rendered = format_variable_explanation(
+        _variables(
+            VariableDisposition("DIE_AREA", None, "default", True, ("only",), None)
+        )
+    )
+
+    assert "universal, read by the only job" in rendered
+    assert "all 1 jobs" not in rendered
+
+
+@mock_variables([flow_module, engine_module, step_module])
+def test_the_rendered_table_reports_what_the_engine_resolved(minimal_design, mock_pdk):
+    """
+    The seam between the two halves. Both are covered on their own -- the
+    engine's rows against real steps, the renderer's columns against
+    hand-built rows -- and neither notices if the field the renderer reads
+    stops being the field the engine fills.
+    """
+    from librelane.cli.run import format_variable_explanation
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "T",
+            "with": {"FP_SIZING": "absolute"},
+            "jobs": _pnr_jobs(),
+        }
+    )
+
+    explanation = Workflow(spec, minimal_design, **mock_pdk).explain(variables=True)
+    rendered = format_variable_explanation(explanation)
+    rows = {line.split("  ")[0].strip(): line for line in rendered.split("\n")}
+
+    assert "VARIABLE" in rows
+    # The value, the origin and the reach the engine resolved, in the row the
+    # renderer produced for them.
+    assert "absolute" in rows["FP_SIZING"]
+    assert "<flow document>" in rows["FP_SIZING"]
+    assert "floorplan" in rows["FP_SIZING"]
+    assert "universal, read by all 3 jobs" in rows["DIODE_ON_PORTS"]
+    assert "the flow itself" in rows["TOOLS"]
+    # Every variable the engine reported has a row: the renderer filters
+    # nothing, defaults included.
+    assert len(rows) == len(explanation.variables) + 1

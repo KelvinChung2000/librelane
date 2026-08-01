@@ -2295,3 +2295,32 @@ def test_a_changed_variable_reruns_only_that_job_and_its_descendants(
         "Test.CascadeLeaf": 2,
         "Test.CascadeSibling": 1,
     }
+
+
+@mock_variables([flow_module, step_module])
+def test_the_instance_help_reports_the_provider_tools_selected(
+    contract_job, minimal_design, mock_pdk
+):
+    """
+    Why there are two help entry points rather than one.
+    ``help_md_for_document`` has no configuration and so can only describe the
+    providers the document declares; ``get_help_md`` reads the jobs the
+    workflow actually resolved, so a ``TOOLS`` override is what its provider
+    column says.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Contracted", "jobs": {"work": {"uses": "engine_contract"}}}
+    )
+
+    declared = Workflow.help_md_for_document(spec)
+    flow = Workflow(
+        spec,
+        dict(minimal_design, TOOLS={"work": "no_metric"}),
+        **mock_pdk,
+    )
+
+    assert "| `work` | `engine_contract` | `honest` |" in declared
+    assert "| `work` | `engine_contract` | `no_metric` |" in flow.get_help_md()

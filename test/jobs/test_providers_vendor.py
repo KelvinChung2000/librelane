@@ -20,15 +20,18 @@ def test_vendor_registration_is_opt_in_via_subprocess():
     """
     script = textwrap.dedent(
         """
-        import librelane.jobs
+        import librelane.steps  # noqa: F401  populates Step.factory
         from librelane.jobs import JobRegistry
-        from librelane.flows.flow import Flow
+        from librelane.flows import Flow
+        from librelane.flows.engine import Workflow
+
+        classic = Flow.factory.get_document("Classic")
 
         before = set(JobRegistry.providers("synthesis"))
         assert before == {"yosys", "yosys_vhdl"}, before
         assert not ({"dc", "fc", "genus"} & before), before
 
-        before_help = Flow.factory.get("Classic").get_help_md()
+        before_help = Workflow.help_md_for_document(classic)
         assert "`dc`" not in before_help, "vendor provider leaked before opt-in"
 
         import librelane.jobs.providers_vendor  # noqa: F401  (the opt-in)
@@ -36,7 +39,7 @@ def test_vendor_registration_is_opt_in_via_subprocess():
         after = set(JobRegistry.providers("synthesis"))
         assert {"dc", "fc", "genus"} <= after, after
 
-        after_help = Flow.factory.get("Classic").get_help_md()
+        after_help = Workflow.help_md_for_document(classic)
         assert "`dc`" in after_help, "vendor provider did not appear after opt-in"
 
         print("OK")

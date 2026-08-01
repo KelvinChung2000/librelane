@@ -13,7 +13,17 @@ def _prepare_deprecated_names(
     raw: dict[str, Any],
     variables: Sequence[Variable],
     diagnostics: DiagnosticSet,
-) -> None:
+) -> dict[str, str]:
+    """
+    Returns
+    -------
+    dict[str, str]
+        Each name this wrote, mapped to the deprecated name whose value it
+        took. Reported rather than left implicit because a caller tracking
+        where each value came from has to move the origin with the value, and
+        this is the only place that knows both names.
+    """
+    translated_from: dict[str, str] = {}
     for variable in variables:
         if variable.name in raw:
             continue
@@ -28,6 +38,7 @@ def _prepare_deprecated_names(
             if translate is not None and value is not None:
                 value = translate(value)
             raw[variable.name] = value
+            translated_from[variable.name] = name
             diagnostics.add(
                 Diagnostic(
                     Severity.DEPRECATION,
@@ -40,12 +51,13 @@ def _prepare_deprecated_names(
                 )
             )
             break
+    return translated_from
 
 
 def translate_deprecated_names(
     mapping: Mapping[str, Any],
     variables: Sequence[Variable],
-) -> tuple[dict[str, Any], DiagnosticSet]:
+) -> tuple[dict[str, Any], DiagnosticSet, dict[str, str]]:
     """Rewrite deprecated keys to their current names within a single layer.
 
     A PDK supplies a value for every PDK variable, so by the time the layers
@@ -53,19 +65,34 @@ def translate_deprecated_names(
     still uses a deprecated one would be quietly ignored. Translating a layer
     while it is still on its own keeps the design's value winning, whichever
     name it was written under.
+
+    Returns
+    -------
+    tuple[dict[str, Any], DiagnosticSet, dict[str, str]]
+        The translated mapping, the deprecation diagnostics, and each name
+        written here mapped to the deprecated name its value came from.
     """
     translated = dict(mapping)
     diagnostics = DiagnosticSet()
-    _prepare_deprecated_names(translated, variables, diagnostics)
-    return translated, diagnostics
+    translated_from = _prepare_deprecated_names(translated, variables, diagnostics)
+    return translated, diagnostics, translated_from
 
 
 def _migrate_diode_strategy(
     raw: dict[str, Any],
     diagnostics: DiagnosticSet,
-) -> None:
+) -> dict[str, str]:
+    """
+    Returns
+    -------
+    dict[str, str]
+        Each of the three keys this wrote, mapped to
+        ``DIODE_INSERTION_STRATEGY``. One key becoming three is still a
+        rename as far as attribution goes: all three owe their values to
+        whichever layer set the one.
+    """
     if raw.get("DIODE_INSERTION_STRATEGY") is None:
-        return
+        return {}
     strategy = raw.pop("DIODE_INSERTION_STRATEGY")
     try:
         strategy = int(strategy)
@@ -82,7 +109,7 @@ def _migrate_diode_strategy(
                 variable="DIODE_INSERTION_STRATEGY",
             )
         )
-        return
+        return {}
     diagnostics.add(
         Diagnostic(
             Severity.DEPRECATION,
@@ -95,6 +122,10 @@ def _migrate_diode_strategy(
     raw["GRT_REPAIR_ANTENNAS"] = strategy in (3, 6)
     raw["RUN_HEURISTIC_DIODE_INSERTION"] = strategy in (4, 6)
     raw["DIODE_ON_PORTS"] = "in" if strategy in (4, 6) else "none"
+    return dict.fromkeys(
+        ("GRT_REPAIR_ANTENNAS", "RUN_HEURISTIC_DIODE_INSERTION", "DIODE_ON_PORTS"),
+        "DIODE_INSERTION_STRATEGY",
+    )
 
 
 def validate_mapping(
@@ -106,13 +137,25 @@ def validate_mapping(
     on_unknown_key: Literal["error", "warn"] | None = "warn",
     provenance: Mapping[str, str] | None = None,
     removed: Mapping[str, str] | None = None,
-) -> tuple[dict[str, Any], DiagnosticSet]:
-    """Validate one flat mapping through a Pydantic union model."""
+) -> tuple[dict[str, Any], DiagnosticSet, dict[str, str]]:
+    """Validate one flat mapping through a Pydantic union model.
+
+    Returns
+    -------
+    tuple[dict[str, Any], DiagnosticSet, dict[str, str]]
+        The validated values, the diagnostics, and each key the two migrations
+        below wrote mapped to the key whose value it came from. The third
+        element is reported for the same reason
+        :func:`translate_deprecated_names` reports it: these migrations run
+        after the layers have been merged, so a caller tracking origins cannot
+        see them happen and would leave a renamed value attributed to whatever
+        wrote its old name -- or to whichever layer last wrote the new one.
+    """
     raw = dict(mapping)
     removed = removed or {}
     diagnostics = DiagnosticSet()
-    _migrate_diode_strategy(raw, diagnostics)
-    _prepare_deprecated_names(raw, variables, diagnostics)
+    translated_from = _migrate_diode_strategy(raw, diagnostics)
+    translated_from.update(_prepare_deprecated_names(raw, variables, diagnostics))
     model_type = variables_to_model("FlowConfig", list(variables))
 
     try:
@@ -155,7 +198,7 @@ def validate_mapping(
                     key_path=location or None,
                 )
             )
-        return {}, diagnostics
+        return {}, diagnostics, translated_from
 
     # Read the validated values rather than dumping them: model_dump flattens
     # dataclasses such as Macro back into plain mappings, and steps expect the
@@ -243,4 +286,8 @@ def validate_mapping(
                 )
             )
 
-    return {key: final[key] for key in declared_names if key in final}, diagnostics
+    return (
+        {key: final[key] for key in declared_names if key in final},
+        diagnostics,
+        translated_from,
+    )

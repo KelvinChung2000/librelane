@@ -56,12 +56,34 @@ Synthesizing from VHDL sources instead of Verilog:
 ```
 
 ```{important}
-This only resolves on a flow whose `Stages` list has no plain
-step that hard-requires a Verilog-only view. `Classic` does: several of its
-steps consume the Verilog header that only `Yosys.JsonHeader` produces, so
-`{"synthesis": "yosys_vhdl"}` on `Classic` is rejected at startup, naming the
-missing view. Use the `VHDLClassic` flow instead, described below.
+`Classic` cannot run that selection. `Odb.SetPowerConnections` and
+`Odb.WriteVerilogHeader` consume the `json_h` view that only
+`Yosys.JsonHeader` produces, and that step belongs to the `synthesis` job's
+`yosys` provider rather than to `yosys_vhdl`. Use the `VHDLClassic` flow,
+described below: it is the same selection, made by the flow instead of by a
+configuration.
+
+Where the mistake surfaces depends on which mechanism runs the flow. The
+`Classic` *class* rejects it before the run starts, naming `json_h`. The
+`Classic` *document*, which is what `librelane --flow Classic` runs, accepts
+it at load and fails during the run at the first step that cannot find the
+header: a document's structural check reasons over the declared graph, and
+re-pointing a job at another provider does not change that graph.
 ```
+
+**What can be selected at all is the Alternatives column of
+[the job table](#the-job-table)**, which is every registered provider of a
+job's template other than the one the flow already resolves to. It is a short
+list, because LibreLane ships one open-source provider for most phases.
+
+Two cautions before reaching for an entry in it. Several of the alternatives
+collide with the shipped documents' job graph rather than with the tool, and
+those are enumerated under [Limitations](#limitations). And the sixteen
+commercial providers are scaffolds whose steps raise `NotImplementedError`;
+nothing registers them until your own code imports
+`librelane.jobs.providers_vendor`, so until it does they are absent from the
+table below and from `librelane help`. See
+[Commercial CAD tool scaffolds](./writing_tool_backends.md#commercial-cad-tool-scaffolds).
 
 `TOOLS` is read by a pre-pass ahead of full configuration resolution, because
 a flow's step set has to be known before the configuration those steps
@@ -164,42 +186,72 @@ half of `uses`: a job keeps both its name and the stage it runs.
 
 ## The job table
 
-Every `StagedFlow` renders its resolved job table in `get_help_md`, which
-`librelane help <flow>` displays. This is `librelane help Classic`, current as
-of this page:
+`librelane help <flow>` prints the flow's resolved job table, which is what
+`Workflow.get_help_md` renders from the document. This is `librelane help
+Classic`, current as of this page:
 
-| Job | Default provider | Alternatives |
-| --- | --- | --- |
-| `lint` | `verilator` | none |
-| `synthesis` | `yosys` | `yosys_vhdl` |
-| `pre_pnr_sta` | `openroad` | none |
-| `floorplan` | `openroad` | none |
-| `macro_placement` | `openroad` | none |
-| `tapcell_insertion` | `openroad` | none |
-| `power_grid` | `openroad` | none |
-| `io_placement` | `openroad` | none |
-| `global_placement` | `openroad` | none |
-| `post_gpl_repair` | `openroad` | none |
-| `detailed_placement` | `openroad` | none |
-| `cts` | `openroad` | none |
-| `post_cts_opt` | `openroad` | none |
-| `global_routing` | `openroad` | none |
-| `post_grt_repair` | `openroad` | none |
-| `antenna_repair` | `openroad` | none |
-| `post_grt_opt` | `openroad` | none |
-| `detailed_routing` | `openroad` | none |
-| `post_route_opt` | none selected | none |
-| `fill_insertion` | `openroad` | none |
-| `extraction` | `openroad` | none |
-| `signoff_sta` | `openroad` | none |
-| `ir_drop` | `openroad` | none |
-| `streamout` | `magic`, `klayout` | none |
-| `drc` | `magic`, `klayout` | none |
-| `lvs` | `netgen` | `klayout` |
-| `formal_equivalence` | `yosys` | none |
+| Job | Template | Provider | Alternatives |
+| --- | --- | --- | --- |
+| `lint` | `lint` | `verilator` | none |
+| `synthesis` | `synthesis` | `yosys` | `yosys_vhdl` |
+| `pre_pnr_sta` | `pre_pnr_sta` | `openroad` | none |
+| `floorplan` | `floorplan` | `openroad` | none |
+| `rmp` | inline steps | | |
+| `set_power_connections` | inline steps | | |
+| `macro_placement` | `macro_placement` | `openroad` | none |
+| `cut_rows` | inline steps | | |
+| `tapcell_insertion` | `tapcell_insertion` | `openroad` | none |
+| `power_grid` | `power_grid` | `openroad` | none |
+| `add_routing_obstructions` | inline steps | | |
+| `io_placement` | `io_placement` | `openroad` | none |
+| `add_buffer` | inline steps | | |
+| `global_placement` | `global_placement` | `openroad` | none |
+| `write_verilog_header` | inline steps | | |
+| `sta_mid_pnr_1` | inline steps | | |
+| `post_gpl_repair` | `post_gpl_repair` | `openroad` | none |
+| `manual_global_placement` | inline steps | | |
+| `detailed_placement` | `detailed_placement` | `openroad` | none |
+| `cts` | `cts` | `openroad` | none |
+| `sta_mid_pnr_2` | inline steps | | |
+| `post_cts_opt` | `post_cts_opt` | `openroad` | none |
+| `sta_mid_pnr_3` | inline steps | | |
+| `global_routing` | `global_routing` | `openroad` | none |
+| `post_grt_repair` | `post_grt_repair` | `openroad` | none |
+| `diodes_on_ports` | inline steps | | |
+| `heuristic_diode_insertion` | inline steps | | |
+| `repair_antennas` | inline steps | | |
+| `post_grt_opt` | `post_grt_opt` | `openroad` | none |
+| `sta_mid_pnr_4` | inline steps | | |
+| `detailed_routing` | `detailed_routing` | `openroad` | none |
+| `routing_reports` | inline steps | | |
+| `fill_insertion` | `fill_insertion` | `openroad` | none |
+| `cell_frequency_tables` | inline steps | | |
+| `extraction` | `extraction` | `openroad` | none |
+| `signoff_sta` | `signoff_sta` | `openroad` | none |
+| `ir_drop` | `ir_drop` | `openroad` | none |
+| `magic_streamout` | `streamout` | `magic` | `klayout` |
+| `klayout_streamout` | `streamout` | `klayout` | `magic` |
+| `render` | inline steps | | |
+| `write_lef` | inline steps | | |
+| `check_antenna_properties` | inline steps | | |
+| `xor` | inline steps | | |
+| `magic_drc` | `drc` | `magic` | `klayout` |
+| `klayout_drc` | `drc` | `klayout` | `magic` |
+| `lvs` | `lvs` | `netgen` | `klayout` |
+| `formal_equivalence` | `formal_equivalence` | `yosys` | none |
+| `final_checks` | inline steps | | |
 
-`post_route_opt` shows `none selected`: it is an optional job with no
-default provider, so it contributes no steps unless `TOOLS` names one.
+Three things about this table are properties of a document rather than of the
+old `Stages` list. The **Job** column is the id the document chose, so one
+template appears under two names wherever the flow runs it twice, as
+`streamout` and `drc` do. The **Template** column is the phase that job
+implements, which is what a provider registers against. And a job that lists
+its steps inline has no provider to name, so `TOOLS` cannot address it and its
+two right-hand cells are empty.
+
+`post_route_opt` has no row at all. It is a registered template with no
+provider, so no document declares a job for it, and a template no job uses
+cannot appear in a table of jobs.
 
 ## Multi-provider jobs
 
@@ -335,14 +387,19 @@ last source for each top-level key as a whole; if `config.json` also sets
 ## The `antenna_repair` consequence
 
 Job selection governs which tool runs the *primary* flow of a job, not
-what a provider does internally to repair the perturbation its own tool
-caused. `OpenROAD.RepairAntennas`, the sole step behind the `openroad`
-provider of `antenna_repair` alongside diode insertion, re-runs OpenROAD's own
-detailed placement and global routing to legalize the diodes it just
-inserted. Selecting a different provider for `detailed_placement`, for
-example Innovus, while leaving `antenna_repair` on `openroad` therefore means
-OpenROAD's own detailed placement runs again inside antenna repair,
-regardless of which tool placed the design the rest of the way. There is no
-mechanism that routes a job's internal legalization pass through a
-different job's selected provider; each provider is responsible for
-whatever internal repair its own tool's pass requires.
+what a step does internally to repair the perturbation its own tool
+caused. `OpenROAD.RepairAntennas` re-runs OpenROAD's own detailed placement
+and global routing to legalize the diodes it just inserted.
+
+The shipped documents run that step as `repair_antennas`, a job listing its
+step inline rather than naming a provider, so `TOOLS` cannot address it — as
+[the previous section](#the-job-table) says of every inline job. Selecting a
+different provider for `detailed_placement`, for example Innovus, therefore
+means OpenROAD's own detailed placement still runs again inside antenna
+repair, regardless of which tool placed the design the rest of the way, and
+no `TOOLS` entry can change that.
+
+The point survives the mechanism: there is no way to route a step's internal
+legalization pass through another job's selected provider, and there would
+not be one even if `repair_antennas` named a provider. Each tool is
+responsible for whatever internal repair its own pass requires.

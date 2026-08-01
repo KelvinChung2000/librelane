@@ -530,6 +530,69 @@ class TestFlowControlArguments:
             bind_workflow_arguments(targt=["floorplan"])
 
 
+class TestFlowConstructionErrors:
+    """
+    What reaches the terminal when building the workflow fails.
+
+    Constructing it resolves the document against the registries and resolves
+    ``TOOLS`` against the document, and both report a mistake as a
+    :class:`librelane.flows.FlowError`. Every one of those messages names the
+    offending key and the legal alternatives, which is worth nothing if it
+    arrives as the last line of a traceback.
+    """
+
+    def test_a_job_resolution_error_is_reported_and_not_a_traceback(
+        self, mocker, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ):
+        import typer
+
+        import librelane.cli.run as run_module
+        from librelane.jobs import JobResolutionError
+
+        mocker.patch.object(run_module, "select_flow")
+        mocker.patch.object(
+            run_module,
+            "Workflow",
+            side_effect=JobResolutionError(
+                "TOOLS names 'syntheis', which is not a job of flow 'Classic'. "
+                "Did you mean: 'synthesis'?"
+            ),
+        )
+
+        with pytest.raises(typer.Exit) as raised:
+            run_module.start_flow(make_request(tmp_path, config_files=("config.json",)))
+
+        assert raised.value.exit_code == 1
+        assert "Did you mean: 'synthesis'?" in caplog.text
+
+    def test_a_malformed_document_is_reported_and_not_a_traceback(
+        self, mocker, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ):
+        """
+        The same handler, reached from the other half of construction: a
+        document validated against the registries raises ``FlowSpecError``,
+        which is a ``FlowError`` and not the ``ValueError`` the neighbouring
+        handler catches.
+        """
+        import typer
+
+        import librelane.cli.run as run_module
+        from librelane.flows.spec import FlowSpecError
+
+        mocker.patch.object(run_module, "select_flow")
+        mocker.patch.object(
+            run_module,
+            "Workflow",
+            side_effect=FlowSpecError("job 'lint' uses stage 'lnt', which…"),
+        )
+
+        with pytest.raises(typer.Exit) as raised:
+            run_module.start_flow(make_request(tmp_path, config_files=("config.json",)))
+
+        assert raised.value.exit_code == 1
+        assert "which…" in caplog.text
+
+
 class TestJobExplanationTable:
     def test_explain_prints_a_job_table(self):
         from librelane.cli.run import format_job_explanation
@@ -559,6 +622,39 @@ class TestJobExplanationTable:
         assert "condition" in rendered
         assert "Jobs contributing no steps" not in rendered
 
+    def test_the_mechanism_column_fits_the_longest_mechanism(self):
+        """
+        ``not-in-reproducible`` is longer than the column a fixed width left
+        for it, and one overflowing row shifts the two columns after it out of
+        line with every other row in the table.
+        """
+        from librelane.cli.run import format_job_explanation
+        from librelane.flows import Explanation, JobDisposition
+
+        rendered = format_job_explanation(
+            Explanation(
+                steps=(),
+                unselected_jobs=(),
+                jobs=(
+                    JobDisposition("lint", (), True, "will run", None),
+                    JobDisposition(
+                        "final_checks",
+                        ("lint",),
+                        False,
+                        "--reproducible runs only 'lint' and its ancestors",
+                        "not-in-reproducible",
+                    ),
+                ),
+            )
+        )
+
+        header, *rows = rendered.splitlines()
+        reason_column = header.index("REASON")
+        assert [row[reason_column:] for row in rows] == [
+            "will run",
+            "--reproducible runs only 'lint' and its ancestors",
+        ]
+
     def test_explain_renders_the_job_half_and_exits(self, mocker, tmp_path: Path):
         """
         `--explain` must reach `format_job_explanation`, not the step-table
@@ -585,10 +681,81 @@ class TestJobExplanationTable:
 
         assert raised.value.exit_code == 0
         workflow.return_value.explain.assert_called_once_with(
-            target=["floorplan"], skip=["lint"], variables=False
+            target=["floorplan"],
+            invalidate=None,
+            skip=["lint"],
+            reproducible=None,
+            variables=False,
         )
         formatter.assert_called_once_with(workflow.return_value.explain.return_value)
         workflow.return_value.start.assert_not_called()
+
+    def test_every_run_shaping_option_reaches_explain(self, mocker, tmp_path: Path):
+        """
+        `--reproducible` and `--invalidate` shape the run as surely as
+        `--target` does: the first restricts the graph to one job and its
+        ancestors, and both refuse a name the document does not declare. An
+        explanation that did not see them would describe a different
+        invocation from the one the same command line would perform.
+        """
+        import typer
+
+        import librelane.cli.run as run_module
+
+        mocker.patch.object(run_module, "select_flow")
+        workflow = mocker.patch.object(run_module, "Workflow")
+        mocker.patch.object(run_module, "format_job_explanation")
+
+        with pytest.raises(typer.Exit):
+            run_module.start_flow(
+                make_request(
+                    tmp_path,
+                    config_files=("config.json",),
+                    explain=True,
+                    invalidate=("synthesis",),
+                    reproducible="synthesis/Yosys.Synthesis",
+                )
+            )
+
+        workflow.return_value.explain.assert_called_once_with(
+            target=None,
+            invalidate=["synthesis"],
+            skip=None,
+            reproducible="synthesis/Yosys.Synthesis",
+            variables=False,
+        )
+
+    def test_a_refusal_from_explain_is_reported_and_not_a_traceback(
+        self, mocker, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ):
+        """
+        `--explain` refuses whatever the run refuses, and the same mistyped
+        `--target` that prints one line without `--explain` printed a
+        traceback with it: the call sat outside every handler in `start_flow`.
+        """
+        import typer
+
+        import librelane.cli.run as run_module
+        from librelane.flows import FlowException
+
+        mocker.patch.object(run_module, "select_flow")
+        workflow = mocker.patch.object(run_module, "Workflow")
+        workflow.return_value.explain.side_effect = FlowException(
+            "--target names 'no_such_job'"
+        )
+
+        with pytest.raises(typer.Exit) as raised:
+            run_module.start_flow(
+                make_request(
+                    tmp_path,
+                    config_files=("config.json",),
+                    explain=True,
+                    target=("no_such_job",),
+                )
+            )
+
+        assert raised.value.exit_code == 1
+        assert "no_such_job" in caplog.text
 
     def test_an_unconstrained_explain_passes_none_not_an_empty_tuple(
         self, mocker, tmp_path: Path
@@ -617,7 +784,11 @@ class TestJobExplanationTable:
             )
 
         workflow.return_value.explain.assert_called_once_with(
-            target=None, skip=None, variables=False
+            target=None,
+            invalidate=None,
+            skip=None,
+            reproducible=None,
+            variables=False,
         )
 
 
@@ -650,7 +821,11 @@ class TestVariableExplanationTable:
 
         assert raised.value.exit_code == 0
         workflow.return_value.explain.assert_called_once_with(
-            target=None, skip=None, variables=True
+            target=None,
+            invalidate=None,
+            skip=None,
+            reproducible=None,
+            variables=True,
         )
         variables.assert_called_once_with(workflow.return_value.explain.return_value)
         jobs.assert_not_called()

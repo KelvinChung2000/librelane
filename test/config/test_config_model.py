@@ -200,7 +200,7 @@ def test_a_path_variable_still_accepts_a_string_after_the_model_bridge(tmp_path)
         DIRECTORY: Path = variable(description="Somewhere.")
 
     variables = model_to_variables(Example)
-    final, _ = validate_mapping(
+    final, _, _ = validate_mapping(
         {"DIRECTORY": str(tmp_path)}, variables, permissive=False
     )
 
@@ -254,7 +254,7 @@ def test_validating_a_mapping_keeps_dataclass_values(tmp_path):
     variables = [
         Variable("MACROS", dict[str, Macro] | None, "Macros.", default=None),
     ]
-    final, diagnostics = validate_mapping(
+    final, diagnostics, _ = validate_mapping(
         {
             "MACROS": {
                 "spm": {
