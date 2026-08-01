@@ -23,6 +23,9 @@ import pytest
 
 import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
+from librelane.steps.odb.base import OdbpyStep
+from librelane.steps.openroad.base import OpenROADStep
+
 from librelane.flows.job import resolve_jobs
 from librelane.flows.spec import FlowSpec, load_flow_spec
 from librelane.flows.spec_graph import ancestors, topological_order
@@ -153,9 +156,11 @@ def _assert_orders_its_steps_as_the_flow_did(name: str, flow) -> None:
     Asserts that the document runs the flow's steps, and that every pair of
     jobs its graph still orders is ordered the way the Python flow ordered it.
 
-    Walks the graph rather than the document's job map, so that a job the edges
-    cannot reach shows up as a missing step rather than passing on the strength
-    of having been declared.
+    The step list is expanded by walking ``topological_order`` rather than the
+    document's job map. That is not a reachability check -- ``edges()`` returns
+    an entry per job and ``static_order`` returns every node it is given, so the
+    two node sets are identical by construction -- it is so that the sequence
+    being checked is the one the engine would actually run.
     """
     spec = _document(name)
     jobs = resolve_jobs(spec)
@@ -171,10 +176,16 @@ def _assert_orders_its_steps_as_the_flow_did(name: str, flow) -> None:
         step.get_implementation_id() for step in flow.Steps
     )
 
-    # Where each job's first step sits in the flow's list. Declaration order is
-    # the flow's order, which _flow_gated_pairs asserts outright.
+    # Which job owns each entry of the flow's list. Asserted rather than
+    # assumed, so that 'index' below is an index into flow.Steps and this
+    # helper does not lean on _flow_gated_pairs to make that true.
+    attribution = _jobs_of_each_step(name)
+    assert [implementation for _, implementation in attribution] == [
+        step.get_implementation_id() for step in flow.Steps
+    ]
+
     position: dict[str, int] = {}
-    for index, (job_id, _) in enumerate(_jobs_of_each_step(name)):
+    for index, (job_id, _) in enumerate(attribution):
         position.setdefault(job_id, index)
 
     for job_id, needs in edges.items():
@@ -183,6 +194,55 @@ def _assert_orders_its_steps_as_the_flow_did(name: str, flow) -> None:
                 f"'{job_id}' needs '{need}', which the {flow.__name__} flow ran "
                 f"after it"
             )
+
+
+def _assert_framework_metric_writers_are_never_concurrent(name: str) -> None:
+    """
+    Asserts that no job running an OpenROAD-backed step has a concurrent peer.
+
+    Every OpenROAD invocation writes ``flow__warnings__count``,
+    ``flow__errors__count`` and ``flow__warnings__type_count`` into the JSON
+    that ``OpenROADStep.get_command`` and ``OdbpyStep.get_command`` request with
+    an unconditional ``-metrics``. No step, job template or registration
+    declares them -- ``grep`` for the names across ``librelane`` finds nothing
+    -- so every load-time check reasons from contracts that cannot see them and
+    :func:`librelane.flows.join.join_states` is what discovers the conflict, on
+    the first real run, after the tools have been invoked.
+
+    The condition is deliberately stronger than "no two concurrent branches
+    both run OpenROAD", which is *not* sufficient and would pass on a document
+    that raises. One branch writing fresh counts while its siblings carry the
+    values they inherited from a common ancestor is already a disagreement, and
+    the join raises on exactly that. So a job that writes these metrics may have
+    no concurrent peer at all, whether or not the peer writes them too.
+
+    ``source`` cannot rescue it either:
+    :func:`librelane.flows.spec_validation._check_sources_can_deliver` rejects a
+    ``source`` naming a key no declared contract in the producer's branch
+    mentions.
+    """
+    spec = _document(name)
+    jobs = resolve_jobs(spec)
+    edges = spec.edges()
+
+    def writes_framework_metrics(job_id: str) -> bool:
+        return any(
+            issubclass(step, (OpenROADStep, OdbpyStep)) for step in jobs[job_id].steps
+        )
+
+    for first, second in itertools.combinations(sorted(spec.jobs), 2):
+        if first in ancestors(edges, second) or second in ancestors(edges, first):
+            continue
+        writers = [job for job in (first, second) if writes_framework_metrics(job)]
+        assert not writers, (
+            f"'{first}' and '{second}' are concurrent and {writers} run an "
+            f"OpenROAD-backed step, so they reach their join carrying different "
+            f"values for flow__warnings__count, flow__errors__count and "
+            f"flow__warnings__type_count. No contract declares those, so "
+            f"nothing rejects this at load time and the join raises "
+            f"JoinConflictError on the first real run. Every branch of a "
+            f"fan-out must descend from the last OpenROAD-backed step."
+        )
 
 
 def _assert_gds_writers_are_ordered(name: str, expected: list[str]) -> None:
@@ -311,24 +371,40 @@ def test_no_two_classic_jobs_write_the_gds_concurrently():
     )
 
 
-def test_no_classic_job_needs_a_source():
+def test_the_classic_document_never_runs_openroad_on_a_parallel_branch():
     """
-    The consequence of the ordering above. Keeping the two ``gds`` producers in
-    series leaves the document with no join whose branches write the same view
-    or metric, so nothing has to be tie-broken. A ``source`` appearing here
-    means a fan-in was introduced whose semantics this test's sibling argues
-    cannot be expressed.
+    The guard for the class of defect, not the instance. See
+    :func:`_assert_framework_metric_writers_are_never_concurrent`.
+    """
+    _assert_framework_metric_writers_are_never_concurrent("classic.yaml")
+
+
+def test_no_classic_gds_consumer_needs_a_source():
+    """
+    Narrower than a global "no job has a ``source``", deliberately. That claim
+    reached past what a declared-contract argument can establish -- the
+    framework's undeclared ``flow__*`` metrics are a counterexample it could
+    not have detected -- so it is made only where the analysis backs it: the
+    six consumers of ``gds``, whose producers this file proves are ordered.
     """
     jobs = _document("classic.yaml").jobs
 
-    assert {name: job.source for name, job in jobs.items() if job.source} == {}
+    for job in ["render", "write_lef", "xor", "magic_drc", "klayout_drc", "lvs"]:
+        assert jobs[job].source == {}, job
 
 
-def test_classic_s_signoff_checks_fan_out_from_the_last_streamout():
+def test_classic_s_signoff_checks_fan_out_from_the_last_openroad_job():
+    """
+    The fan-out point is ``check_antenna_properties``, the last OpenROAD-backed
+    job, rather than the last stream-out. ``render`` and ``write_lef`` sit
+    between the two on the chain, in flow order, and are cheap.
+    """
     edges = _document("classic.yaml").edges()
 
-    for job in ["render", "write_lef", "xor", "magic_drc", "klayout_drc", "lvs"]:
-        assert edges[job] == ["klayout_streamout"], job
+    assert edges["render"] == ["klayout_streamout"]
+    assert edges["write_lef"] == ["render"]
+    for job in ["xor", "magic_drc", "klayout_drc", "lvs"]:
+        assert edges[job] == ["check_antenna_properties"], job
 
 
 def test_classic_s_signoff_checks_are_independent_of_each_other():
@@ -692,3 +768,69 @@ def test_chip_finishing_is_ungated():
     would also need a variable to hang it on.
     """
     assert _document("chip.yaml").jobs["chip_finishing"].condition is None
+
+
+def _framework_metric_writers(name: str) -> set[str]:
+    """
+    Every job that rewrites the framework metrics no contract declares.
+
+    ``OpenROADStep.get_command`` and ``OdbpyStep.get_command`` both pass
+    ``-metrics`` unconditionally, and OpenROAD's logger writes
+    ``flow__warnings__count``, ``flow__errors__count`` and
+    ``flow__warnings__type_count`` into that JSON. No job or provider
+    registration declares them, so ``validate_against_registry`` cannot see
+    them and a document that fans two of these onto sibling branches loads
+    cleanly and fails at the join on the first real run.
+    """
+    from librelane.steps.odb.base import OdbpyStep
+    from librelane.steps.openroad.base import OpenROADStep
+
+    spec = _document(name)
+    jobs = resolve_jobs(spec)
+    return {
+        job_id
+        for job_id, job in jobs.items()
+        # job.steps holds step *classes*, not instances, as every other helper
+        # here relies on: issubclass(step, ...), never issubclass(type(step),
+        # ...), which would ask about the metaclass and silently answer False.
+        if any(issubclass(step, (OdbpyStep, OpenROADStep)) for step in job.steps)
+    }
+
+
+@pytest.mark.parametrize("document", ["vhdl_classic.yaml", "chip.yaml"])
+def test_no_join_of_these_documents_disagrees_on_the_framework_metrics(document):
+    """
+    The rule this pins is not local to one document: every branch of a fan-out
+    must descend from the last OpenROAD-backed job, so that no branch writes a
+    framework metric its siblings do not have.
+
+    ``vhdl_classic.yaml`` obeys it by keeping render, write_lef and
+    check_antenna_properties on the chain and fanning out below them, because
+    Odb.CheckDesignAntennaProperties rewrites all three counts. ``chip.yaml``
+    obeys it for free: Chip omits that step, so its last OpenROAD-backed job is
+    ir_drop, which is upstream of the single stream-out chain and therefore an
+    ancestor of every branch.
+
+    Checked at every join, including the implicit one that forms the final
+    state, because that is where JoinConflictError would be raised.
+    """
+    spec = _document(document)
+    edges = spec.edges()
+    writers = _framework_metric_writers(document)
+
+    joins = [(job_id, job.needs) for job_id, job in spec.jobs.items() if job.needs]
+    needed = {need for job in spec.jobs.values() for need in job.needs}
+    joins.append(("<the final state>", [n for n in spec.jobs if n not in needed]))
+
+    for job_id, branches in joins:
+        carried = {
+            branch: ({branch} | ancestors(edges, branch)) & writers
+            for branch in branches
+        }
+        for first, second in itertools.combinations(branches, 2):
+            assert carried[first] == carried[second], (
+                f"'{job_id}' joins '{first}' and '{second}', which have written "
+                f"the framework metrics a different number of times: "
+                f"{sorted(carried[first])} against {sorted(carried[second])}. "
+                f"The join would raise JoinConflictError on a real run."
+            )

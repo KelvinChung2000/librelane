@@ -331,36 +331,56 @@ jobs:
   # its outputs are empty, so it satisfies no part of the job's 'gds' contract
   # and carries no view across the job boundary. It is also ungated, where
   # KLayout.StreamOut is gated.
+  #
+  # render, write_lef and check_antenna_properties stay on the chain in flow
+  # order, and the fan-out is below them rather than here. The reason is
+  # framework metrics no contract declares: every OpenROAD invocation writes
+  # 'flow__warnings__count', 'flow__errors__count' and
+  # 'flow__warnings__type_count' into its '-metrics' JSON, which
+  # OpenROADStep.get_command and OdbpyStep.get_command pass unconditionally.
+  # check_antenna_properties runs Odb.CheckDesignAntennaProperties and so
+  # rewrites all three. Fanned out here, it would be one branch carrying fresh
+  # counts while its siblings carried ir_drop's, and the join at final_checks
+  # would raise JoinConflictError on the first real run. A 'source' cannot
+  # settle it either: _check_sources_can_deliver rejects a 'source' naming a
+  # key no declared contract in the producer's branch mentions.
+  #
+  # The rule this encodes, which is not local to Classic: every branch of a
+  # fan-out must descend from the last OpenROAD-backed step, so that no branch
+  # writes a framework metric its siblings do not have.
   render:
     needs: [klayout_streamout]
     steps: [KLayout.Render]
   write_lef:
-    needs: [klayout_streamout]
+    needs: [render]
     steps: [Magic.WriteLEF]
     if: RUN_MAGIC_WRITE_LEF
-  # The one data edge in the signoff tail that is not a stream-out edge:
-  # Odb.CheckDesignAntennaProperties consumes 'lef', and Magic.WriteLEF is the
-  # only step in Classic that produces one.
+  # Also a real data edge: Odb.CheckDesignAntennaProperties consumes 'lef', and
+  # Magic.WriteLEF is the only step in Classic that produces one.
   check_antenna_properties:
     needs: [write_lef]
     steps: [Odb.CheckDesignAntennaProperties]
+  # The fan-out point: the last OpenROAD-backed job in the flow, and the four
+  # jobs below it are the heavy ones. render and write_lef are cheap, so
+  # keeping them on the chain costs almost nothing.
+  #
   # A three-variable conjunction, because KLayout.XOR genuinely consumes
   # mag_gds from one stream-out and klayout_gds from the other and cannot run
   # unless both fired.
   xor:
-    needs: [klayout_streamout]
+    needs: [check_antenna_properties]
     steps: [KLayout.XOR, Checker.XOR]
     if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
   magic_drc:
-    needs: [klayout_streamout]
+    needs: [check_antenna_properties]
     uses: drc/magic
     if: RUN_MAGIC_DRC
   klayout_drc:
-    needs: [klayout_streamout]
+    needs: [check_antenna_properties]
     uses: drc/klayout
     if: RUN_KLAYOUT_DRC
   lvs:
-    needs: [klayout_streamout]
+    needs: [check_antenna_properties]
     uses: lvs
     if: RUN_LVS
   # An ordering edge, not a data edge, and deliberately not moved to
@@ -374,14 +394,14 @@ jobs:
   # Every leaf, so that the flow has one sink. Misc.ReportManufacturability
   # reads the LVS, DRC and antenna metrics out of state_in.metrics and warns
   # for each one it cannot find, so a narrower 'needs' would turn the
-  # manufacturability report into five warnings. Making this the only sink also
-  # means the flow's final state is the state the linear flow ended with, which
-  # is what runs/<tag>/final snapshots, and it costs nothing: final_checks ran
-  # last anyway.
+  # manufacturability report into five warnings. render and
+  # check_antenna_properties are not named here because they are no longer
+  # leaves: both are ancestors of all four jobs below, so their metrics arrive
+  # anyway. Making this the only sink also means the flow's final state is the
+  # state the linear flow ended with, which is what runs/<tag>/final snapshots,
+  # and it costs nothing: final_checks ran last anyway.
   final_checks:
     needs:
-      - render
-      - check_antenna_properties
       - xor
       - magic_drc
       - klayout_drc
