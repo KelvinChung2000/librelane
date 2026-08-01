@@ -114,7 +114,11 @@ pythonpath = "."
 # OpenROAD/Magic/Netgen/Yosys, which only exist inside the Nix closure.
 # They run in the build-linux-*/build-darwin jobs. Do not remove this
 # exclusion to "increase coverage" -- it breaks every non-Nix runner.
-addopts = "--strict-markers -m 'not step_impl_test'"
+# test/designs is the ci-designs submodule: design fixtures driven by
+# their own harden.py scripts, never by this pytest run. Collecting it
+# finds no tests and dies on a cocotb fixture importing caravel_cocotb,
+# which is that design's dependency, not this project's.
+addopts = "--strict-markers -m 'not step_impl_test' --ignore=test/designs"
 markers = [
     "all: all tests",
     "step_impl_test: tests for specific step implementations (requires recursive git clone + more time)",

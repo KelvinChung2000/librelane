@@ -538,9 +538,13 @@ def test_supplied_views_reads_a_state_the_way_a_step_reads_its_inputs():
     which is the exact failure the whole module exists to prevent, with the sign
     flipped.
 
-    ``State.load`` drops a JSON ``null`` outright, so the case that survives to
-    be read here is the one ``librelane.cli.run.apply_initial_state_overrides``
-    can build: a state constructed with an explicit ``None`` override.
+    ``State.load`` keeps a JSON ``null`` (``State.__load_recursive`` stores the
+    ``None`` and moves on), and real state files are full of them -- one view
+    produced, a dozen keys ``null``. That is what makes the ``is not None``
+    filter load-bearing on the primary ``--with-initial-state`` path: counting
+    keys instead would claim nearly every view in the taxonomy for any real
+    state file. ``librelane.cli.run.apply_initial_state_overrides`` is the one
+    builder that can never produce a ``None`` (it always constructs a path).
     """
     from librelane.common import Path
     from librelane.state import State
@@ -628,9 +632,14 @@ def test_omitting_the_initial_views_is_the_same_call_as_passing_none(
     set are the same question, so the eighteen verdicts in the table above are
     the same eighteen verdicts whether or not the argument is written.
     """
-    assert _refusal(document, {job_id: provider}) == _refusal(
-        document, {job_id: provider}, set()
-    )
+    verdict = _refusal(document, {job_id: provider})
+    assert verdict == _refusal(document, {job_id: provider}, set())
+
+    if expected is None:
+        assert verdict is None
+        return
+    assert verdict is not None
+    assert expected in verdict
 
 
 def test_a_remedy_is_measured_under_the_initial_state_too():
