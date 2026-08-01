@@ -512,24 +512,28 @@ def test_a_final_resolves_the_sink_join_conflict():
     )
 
 
-def test_the_loops_not_executable_yet_guard_fires_for_any_ring_document():
-    spec = _spec(
-        {
-            "floorplan": {
-                "needs": ["floorplan"],
-                "uses": "floorplan",
-                "until": "metric::x >= 0",
-                "max": 3,
+def test_a_ring_document_passes_validate_against_registry():
+    """
+    The Task 2 guard ("loops are not executable yet") is deleted by Task 4,
+    now that the engine runs a ring: a document declaring one legal ring and
+    nothing else wrong passes the registry-backed checks exactly as any other
+    well-formed document does. That the engine actually constructs and runs
+    a ring is pinned in test/flows/test_loops.py, which is where the
+    execution-level assertion this guard's own test used to make now
+    belongs.
+    """
+    validate_against_registry(
+        _spec(
+            {
+                "floorplan": {
+                    "needs": ["floorplan"],
+                    "uses": "floorplan",
+                    "until": "metric::x >= 0",
+                    "max": 3,
+                }
             }
-        }
+        )
     )
-
-    with pytest.raises(FlowSpecError) as exc_info:
-        validate_against_registry(spec)
-
-    message = str(exc_info.value)
-    assert "loops are not executable yet" in message.lower()
-    assert "floorplan" in message
 
 
 def test_a_schedule_variable_read_outside_the_ring_is_rejected():
@@ -681,37 +685,3 @@ def test_a_str_resource_capacity_naming_a_declared_int_variable_is_accepted():
             ],
         )
     )
-
-
-def test_a_ring_document_is_refused_before_reaching_topological_order(
-    counting_steps, minimal_design, mock_pdk
-):
-    """
-    Workflow.__init__ calls validate_against_registry(spec) before anything
-    else, including resolve_jobs and every later topological_order(spec.edges())
-    call in engine.py and selection_validation.py, which are not yet aware a
-    ring is a legal cycle. A ring document must therefore fail here, with a
-    FlowSpecError, and never reach one of those calls, which would otherwise
-    raise a raw graphlib.CycleError.
-    """
-    from librelane.flows.engine import Workflow
-
-    _order, First, _Second = counting_steps
-    spec = FlowSpec.model_validate(
-        {
-            "name": "Tiny",
-            "jobs": {
-                "resize": {
-                    "needs": ["resize"],
-                    "steps": [First.id],
-                    "until": "metric::x >= 0",
-                    "max": 2,
-                }
-            },
-        }
-    )
-
-    with pytest.raises(FlowSpecError) as exc_info:
-        Workflow(spec, minimal_design, **mock_pdk)
-
-    assert "loops are not executable yet" in str(exc_info.value).lower()

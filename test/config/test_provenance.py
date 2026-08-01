@@ -291,6 +291,37 @@ def test_a_command_line_override_outranks_every_other_layer(tiny_pdk, tmp_path):
     assert provenance["TEST_FROM_PDK"] == "<command line>"
 
 
+def test_an_iteration_value_outranks_the_design(tiny_pdk, tmp_path):
+    """
+    A loop's or a sweep's schedule is the one layer that does not honour
+    design-always-wins: it is the loop's algorithm, declared once in the flow
+    document, and a design that pinned the scheduled variable must not
+    silently flatten the schedule to one fixed value.
+    """
+    resolved = _resolve(
+        tiny_pdk,
+        {"DESIGN_NAME": "x", "TEST_FROM_PDK": "from the design"},
+        tmp_path,
+        iteration_values=("sta", 2, {"TEST_FROM_PDK": "from iteration 2"}),
+    )
+
+    assert resolved["TEST_FROM_PDK"] == "from iteration 2"
+    assert resolved.provenance["TEST_FROM_PDK"] == "<flow document: sta, iteration 2>"
+
+
+def test_a_command_line_override_outranks_an_iteration_value(tiny_pdk, tmp_path):
+    resolved = _resolve(
+        tiny_pdk,
+        {"DESIGN_NAME": "x"},
+        tmp_path,
+        iteration_values=("sta", 2, {"TEST_FROM_PDK": "from iteration 2"}),
+        config_override_strings=["TEST_FROM_PDK=from the command line"],
+    )
+
+    assert resolved["TEST_FROM_PDK"] == "from the command line"
+    assert resolved.provenance["TEST_FROM_PDK"] == "<command line>"
+
+
 def test_a_copied_configuration_keeps_what_it_did_not_override(tiny_pdk, tmp_path):
     """
     ``Config.copy`` is a shallow copy, so a key it leaves alone still came

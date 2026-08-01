@@ -103,13 +103,14 @@ the job ``final`` names, which is under-reporting, and which
 naming the excluded job.
 """
 
+import dataclasses
 from collections.abc import Mapping, Set
 from dataclasses import dataclass
 
 from loguru import logger
 
 from librelane.jobs import JobRegistry, JobResolutionError
-from librelane.state import State
+from librelane.state import DesignFormat, State
 from librelane.steps.odb.base import OdbpyStep
 from librelane.steps.openroad.base import OpenROADStep
 
@@ -216,6 +217,7 @@ def validate_selection(
     jobs: Mapping[str, ResolvedJob],
     enabled: Set[str],
     initial_views: Set[str] = frozenset(),
+    rings: Mapping[str, tuple[str, ...]] | None = None,
 ) -> None:
     """
     Refuses a provider selection this document cannot run.
@@ -226,15 +228,33 @@ def validate_selection(
         The document, for its graph, its name and its ``final`` key.
     jobs : Mapping[str, ResolvedJob]
         Its jobs as :func:`librelane.flows.job.resolve_jobs` resolved them,
-        under the ``TOOLS`` selection being validated.
+        under the ``TOOLS`` selection being validated. One entry per
+        *original* job, ring members included individually: this module, not
+        the caller, does the ring folding below.
     enabled : Set[str]
         The ids of the jobs whose ``if`` conditions this configuration makes
-        true. A job outside it fires as a pass-through and writes nothing.
+        true. A job outside it fires as a pass-through and writes nothing. For
+        a ring, this is the gate id alone, counted enabled iff the gate's own
+        ``if`` holds -- see :meth:`librelane.flows.engine.Workflow._enabled_jobs`.
     initial_views : Set[str]
         The views this run's initial state supplies, from
         :func:`supplied_views`. Empty for a run given no initial state, which is
         what makes that run's verdicts exactly the ones it got before this
         module could be told about a state.
+    rings : Mapping[str, tuple[str, ...]] | None
+        Every ring's gate id mapped to its members, as
+        :meth:`librelane.flows.spec.FlowSpec.rings` returns. ``None`` or empty
+        for a document with no ring, which is every document before this
+        parameter existed, so an omitted ``rings`` reproduces exactly the
+        verdicts this module gave before it could be told about one.
+
+        This module owns the ring-folding math, rather than the caller
+        pre-folding ``jobs``: :func:`join_conflicts` and :func:`lost_views`
+        already walk :meth:`~librelane.flows.spec.FlowSpec.collapsed_edges`,
+        whose node space is one entry per ring (keyed by its gate) and one
+        per ordinary job, so the ``jobs`` view handed to them has to have
+        exactly that same node space or the two would disagree about what
+        the graph's nodes even are. See :func:`_fold_rings`.
 
     Raises
     ------
@@ -248,17 +268,108 @@ def validate_selection(
     (``metric::``) term a consumer needing it does not repeat in its own
     ``if``. See :func:`unrepeated_runtime_terms`.
     """
-    _warn_unrepeated_runtime_terms(jobs)
-    lost = lost_views(spec, jobs, enabled, initial_views)
+    rings = rings or {}
+    folded = _fold_rings(spec, jobs, rings)
+    _warn_unrepeated_runtime_terms(folded)
+    lost = lost_views(spec, folded, enabled, initial_views)
     if lost:
+        # The message-building path below gets the *unfolded* 'jobs', not
+        # 'folded': a remedy search re-resolves a candidate TOOLS selection,
+        # and only the unfolded view still carries every ring member's own
+        # provider for _effective_tools to read. See _alternatives_that_work.
         raise JobResolutionError(
-            _lost_view_message(spec, jobs, enabled, initial_views, lost[0])
+            _lost_view_message(spec, jobs, enabled, initial_views, lost[0], rings)
         )
-    conflicts = join_conflicts(spec, jobs, enabled)
+    conflicts = join_conflicts(spec, folded, enabled)
     if conflicts:
         raise JobResolutionError(
-            _conflict_message(spec, jobs, enabled, initial_views, conflicts[0])
+            _conflict_message(spec, jobs, enabled, initial_views, conflicts[0], rings)
         )
+
+
+def _fold_rings(
+    spec: FlowSpec,
+    jobs: Mapping[str, ResolvedJob],
+    rings: Mapping[str, tuple[str, ...]],
+) -> dict[str, ResolvedJob]:
+    """
+    Replaces every ring's members with one pseudo-job, keyed by the gate id.
+
+    Parameters
+    ----------
+    spec : FlowSpec
+        The document, for :meth:`~librelane.flows.spec.FlowSpec.collapsed_edges`,
+        which is the authority on a ring's external ``needs``: re-deriving it
+        here, separately, would risk disagreeing with the graph
+        :func:`join_conflicts` and :func:`lost_views` actually walk.
+    jobs : Mapping[str, ResolvedJob]
+        Every original job, ring members included individually.
+    rings : Mapping[str, tuple[str, ...]]
+        Every ring's gate id mapped to its members.
+
+    Returns
+    -------
+    dict[str, ResolvedJob]
+        ``jobs``, unchanged, when ``rings`` is empty. Otherwise every
+        non-member job carried through as-is, and one pseudo-job per ring,
+        keyed by its gate id and built from the gate's own ``ResolvedJob``
+        (which already carries the gate's own ``conditions``, ``provides``
+        and ``metrics`` -- only the gate's output ever leaves the loop, so
+        those three are exactly the ring's, unaltered) with three fields
+        replaced:
+
+        * ``requires``: the union, over every member, of views that member
+          requires (or accepts as a native view) and no member of the same
+          ring provides -- folding a member's ``native_views`` into this
+          union too and zeroing the pseudo-job's own, so
+          :func:`_required_views` (which unions the two) reads exactly this
+          set and nothing doubled.
+        * ``needs``: the collapsed node's own needs, read off
+          ``spec.collapsed_edges()`` rather than re-derived.
+        * ``source``: the ring-entry member's (``rings[gate][0]``) -- the
+          member :meth:`librelane.flows.engine.Workflow._run_loop` joins the
+          ring's external tokens under on pass 1.
+    """
+    if not rings:
+        return dict(jobs)
+    collapsed = spec.collapsed_edges()
+    member_of = {member: gate for gate, members in rings.items() for member in members}
+    folded: dict[str, ResolvedJob] = {}
+    for job_id, job in jobs.items():
+        gate = member_of.get(job_id)
+        if gate is None:
+            folded[job_id] = job
+            continue
+        if job_id != gate:
+            # Absorbed into the ring's one pseudo-job, built below when this
+            # loop reaches the gate itself.
+            continue
+        members = rings[gate]
+        member_jobs = [jobs[member] for member in members]
+        provided_ids: set[str] = set()
+        for member_job in member_jobs:
+            provided_ids.update(str(view) for view in member_job.provides)
+            for step in member_job.steps:
+                provided_ids.update(view.id for view in step.outputs)
+        required_by_id: dict[str, DesignFormat] = {}
+        for member_job in member_jobs:
+            for view in (*member_job.requires, *member_job.native_views):
+                if view.optional:
+                    continue
+                view_id = str(view)
+                if view_id in provided_ids:
+                    continue
+                required_by_id.setdefault(view_id, view)
+        folded[gate] = dataclasses.replace(
+            job,
+            requires=tuple(
+                required_by_id[view_id] for view_id in sorted(required_by_id)
+            ),
+            needs=tuple(collapsed[gate]),
+            source=dict(jobs[members[0]].source),
+            native_views=(),
+        )
+    return folded
 
 
 def unrepeated_runtime_terms(
@@ -367,9 +478,10 @@ def join_conflicts(
     :meth:`~librelane.flows.spec.FlowSpec.edges`, so a ring's back edge -- a
     real cycle in the declared graph -- cannot reach
     :func:`~librelane.flows.spec_graph.topological_order`, which refuses one.
-    Task 2's guard against rings still refuses every document that would
-    exercise the difference, so this is unobservable until later work lifts
-    it; it belongs with this file's edges-consuming calls regardless.
+    ``jobs`` has to share that same collapsed node space for the walk to make
+    sense at all, which is exactly what :func:`validate_selection` guarantees
+    by folding every ring into one pseudo-job, keyed by its gate, before
+    either of this module's two checks ever runs.
     """
     edges = spec.collapsed_edges()
     produced = produced_keys(jobs, enabled)
@@ -466,6 +578,19 @@ def lost_views(
     Walks :meth:`~librelane.flows.spec.FlowSpec.collapsed_edges`, for the
     reason :func:`join_conflicts` gives: ``ancestors`` below cannot run over a
     graph with a real cycle in it.
+
+    ``baseline`` below is **not** folded through a ring the way ``jobs`` is
+    by :func:`validate_selection`'s caller: it is a fresh, untooled
+    resolution used only to ask what the document's own providers could
+    produce, and folding it would need this function to also accept
+    ``rings`` and re-derive the same pseudo-jobs :func:`_fold_rings` already
+    builds once, for a baseline that only ever *widens* what counts as
+    ``recoverable`` below -- and this module's own docstring already prefers
+    under-reporting to over-reporting. A non-gate ring member's own
+    contribution to the baseline is therefore invisible here, which can only
+    make a real lost view go unflagged, never flag one that is not; the same
+    direction of imprecision :func:`_alternatives_that_work`'s unfolded
+    remedy search below has, for the same reason.
     """
     edges = spec.collapsed_edges()
     baseline = resolve_jobs(spec)
@@ -624,6 +749,7 @@ def _alternatives_that_work(
     enabled: Set[str],
     initial_views: Set[str],
     job_id: str,
+    rings: Mapping[str, tuple[str, ...]],
 ) -> list[str]:
     """
     Parameters
@@ -631,7 +757,12 @@ def _alternatives_that_work(
     spec : FlowSpec
         The document.
     jobs : Mapping[str, ResolvedJob]
-        Its resolved jobs, under the selection being refused.
+        Its resolved jobs, under the selection being refused, **unfolded**:
+        one entry per original job, ring members included. Needed unfolded
+        because :func:`_effective_tools` below reads every job's own
+        provider off it, and a folded view has no entry at all for a
+        non-gate ring member -- its provider would silently revert to the
+        template's default in every candidate this function builds.
     enabled : Set[str]
         The jobs that will run. Unchanged by a provider swap: an ``if`` is the
         document's, and no registration contributes one.
@@ -643,7 +774,16 @@ def _alternatives_that_work(
         because the state carries the view it stopped producing is a provider
         that works.
     job_id : str
-        The job to offer another provider for.
+        The job to offer another provider for. Always a gate id or an
+        ordinary job id, never a bare ring member: the folded jobs
+        :func:`join_conflicts` and :func:`lost_views` actually replayed have
+        no other kind of key to report a conflict or a lost view against.
+    rings : Mapping[str, tuple[str, ...]]
+        Every ring's gate id mapped to its members, so each re-resolved
+        candidate can be folded the same way before it is checked --
+        :func:`join_conflicts` needs its ``jobs`` to share
+        :meth:`~librelane.flows.spec.FlowSpec.collapsed_edges`'s node space,
+        the same requirement :func:`validate_selection` documents.
 
     Returns
     -------
@@ -684,7 +824,9 @@ def _alternatives_that_work(
         assert registration is not None, "providers() lists what get() answers for"
         if not registration.runnable:
             continue
-        candidate = resolve_jobs(spec, {**tools, job_id: provider})
+        candidate = _fold_rings(
+            spec, resolve_jobs(spec, {**tools, job_id: provider}), rings
+        )
         if lost_views(spec, candidate, enabled, initial_views):
             continue
         if join_conflicts(spec, candidate, enabled):
@@ -700,6 +842,7 @@ def _remedies(
     initial_views: Set[str],
     swappable: Set[str],
     gateable: Set[str],
+    rings: Mapping[str, tuple[str, ...]],
 ) -> str:
     """
     Parameters
@@ -707,7 +850,8 @@ def _remedies(
     spec : FlowSpec
         The document.
     jobs : Mapping[str, ResolvedJob]
-        Its resolved jobs.
+        Its resolved jobs, unfolded -- see :func:`_alternatives_that_work`,
+        which is the one place in this call chain that needs them that way.
     enabled : Set[str]
         The jobs that will run.
     initial_views : Set[str]
@@ -720,6 +864,9 @@ def _remedies(
         for two jobs colliding on a key, dropping either one settles it, but for
         a view a selection stopped producing, dropping the *producer* changes
         nothing and dropping the *consumer* is the answer.
+    rings : Mapping[str, tuple[str, ...]]
+        Every ring's gate id mapped to its members, threaded through to
+        :func:`_alternatives_that_work`.
 
     Returns
     -------
@@ -747,7 +894,7 @@ def _remedies(
     lines = []
     for job_id in sorted(swappable):
         for provider in _alternatives_that_work(
-            spec, jobs, enabled, initial_views, job_id
+            spec, jobs, enabled, initial_views, job_id, rings
         ):
             lines.append(f"set TOOLS['{job_id}'] to '{provider}'")
     for job_id in sorted(gateable):
@@ -766,6 +913,7 @@ def _conflict_message(
     enabled: Set[str],
     initial_views: Set[str],
     conflict: JoinConflict,
+    rings: Mapping[str, tuple[str, ...]],
 ) -> str:
     where = (
         "the final state of the flow"
@@ -786,6 +934,7 @@ def _conflict_message(
             initial_views,
             set(conflict.origins),
             set(conflict.origins),
+            rings,
         )
     )
 
@@ -796,6 +945,7 @@ def _lost_view_message(
     enabled: Set[str],
     initial_views: Set[str],
     lost: LostView,
+    rings: Mapping[str, tuple[str, ...]],
 ) -> str:
     producers = " and ".join(f"'{producer}'" for producer in lost.producers)
     return (
@@ -805,6 +955,12 @@ def _lost_view_message(
         f"nowhere before it. The run would stop at the first step reaching for "
         f"it."
         + _remedies(
-            spec, jobs, enabled, initial_views, set(lost.producers), {lost.consumer}
+            spec,
+            jobs,
+            enabled,
+            initial_views,
+            set(lost.producers),
+            {lost.consumer},
+            rings,
         )
     )

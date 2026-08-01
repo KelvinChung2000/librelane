@@ -396,6 +396,18 @@ class Workflow(Flow):
     ) -> None:
         validate_against_registry(spec)
         self.spec = spec
+        #: Every ring's gate id mapped to its members, in pass order (starting
+        #: at the gate's intra-ring successor, ending at the gate). Set before
+        #: anything below that reads it: ``_enabled_jobs``, ``validate_selection``
+        #: and the two config-resolution passes all need it.
+        self.rings = spec.rings()
+        #: Every ring member (the gate included) mapped to its own gate id, the
+        #: inverse of :attr:`rings` flattened one level, because most of what
+        #: follows asks "which ring, if any, is this job part of" rather than
+        #: "what are this ring's members".
+        self.member_of = {
+            member: gate for gate, members in self.rings.items() for member in members
+        }
         self.jobs = resolve_jobs(
             spec,
             self._selected_tools(config, config_override_strings, kwargs),
@@ -430,9 +442,23 @@ class Workflow(Flow):
         # is read before a flow is built.
         # librelane.flows.selection_validation's docstring is where the reasons
         # neither gating nor the initial state can be skipped are written down.
-        validate_selection(spec, self.jobs, self._enabled_jobs(), initial_views)
+        # 'rings' is passed so that module folds each ring into one pseudo-job
+        # before it reasons about the graph -- see its own docstring for why
+        # that has to happen there and not here.
+        validate_selection(
+            spec, self.jobs, self._enabled_jobs(), initial_views, rings=self.rings
+        )
         #: One resolved configuration per job that declares a ``with`` block.
         self.job_configs = self._resolve_job_configs(
+            config,
+            config_override_strings,
+            kwargs,
+        )
+        #: ``(member, pass)`` -> that pass's configuration, for every member of
+        #: every ring whose gate declares ``iterations``. Built by the same
+        #: mechanism a sweep job's own schedule will use, keyed by the job that
+        #: declares the schedule rather than by ring membership.
+        self.iteration_configs = self._resolve_iteration_configs(
             config,
             config_override_strings,
             kwargs,
@@ -513,6 +539,83 @@ class Workflow(Flow):
             )
             job_configs[job_id] = resolved
         return job_configs
+
+    def _resolve_iteration_configs(
+        self,
+        config: AnyConfigs,
+        config_override_strings: Sequence[str] | None,
+        load_kwargs: Mapping[str, Any],
+    ) -> dict[tuple[str, int], _ResolvedConfig]:
+        """
+        Resolves one configuration per ring member per pass, for every ring
+        whose gate declares an explicit ``iterations`` schedule.
+
+        Parameters
+        ----------
+        config : AnyConfigs
+            As :meth:`_resolve_job_configs`.
+        config_override_strings : Sequence[str] | None
+            As :meth:`librelane.flows.Flow.__init__`.
+        load_kwargs : Mapping[str, Any]
+            As :meth:`_resolve_job_configs`.
+
+        Returns
+        -------
+        ``(member, k)`` (1-based) mapped to that pass's configuration, for
+        every member of every ring whose gate schedules. A ring gated by
+        ``max`` instead contributes no entries: no pass changes any value, so
+        every member of it keeps reading :attr:`job_configs` or
+        :attr:`config` on every pass, exactly as a job outside any ring does.
+
+        Keyed by the job that declares ``iterations`` -- the ring's gate,
+        here -- and not by ring membership, because a sweep job's own
+        schedule (a single job, no ring at all) resolves through this exact
+        same shape of dictionary.
+
+        Raises
+        ------
+        FlowException
+            If a gate with a non-empty ``iterations`` is constructed over an
+            already-resolved :class:`librelane.config.Config`, for the same
+            reason :meth:`_resolve_job_configs` refuses one for a ``with``
+            block: an iteration entry has to layer into the sources, and a
+            resolved configuration no longer has any.
+        """
+        configs: dict[tuple[str, int], _ResolvedConfig] = {}
+        for gate, members in self.rings.items():
+            gate_spec = self.spec.jobs[gate]
+            if not gate_spec.iterations:
+                continue
+            if isinstance(config, Config):
+                raise FlowException(
+                    f"The ring gated by '{gate}' of flow '{self.spec.name}' "
+                    f"declares 'iterations', but this flow was constructed "
+                    f"from a configuration that is already resolved, whose "
+                    f"sources are no longer available to layer the schedule "
+                    f"into. Pass the design's configuration file or mapping "
+                    f"instead."
+                )
+            for member in members:
+                member_spec = self.spec.jobs[member]
+                job_values = (
+                    (member, member_spec.values) if member_spec.values else None
+                )
+                for k, entry in enumerate(gate_spec.iterations, start=1):
+                    resolved, _ = Config.load(
+                        config_in=config,
+                        flow_config_vars=self.get_all_config_variables(),
+                        flow_values=self.values,
+                        job_values=job_values,
+                        iteration_values=(gate, k, entry),
+                        config_override_strings=config_override_strings,
+                        pdk=load_kwargs.get("pdk"),
+                        pdk_root=load_kwargs.get("pdk_root"),
+                        scl=load_kwargs.get("scl"),
+                        pad=load_kwargs.get("pad"),
+                        design_dir=str(self.design_dir),
+                    )
+                    configs[(member, k)] = resolved
+        return configs
 
     @staticmethod
     def _selected_tools(
@@ -661,22 +764,31 @@ class Workflow(Flow):
             run would never execute it; or if it resolves to no step at all or
             to more than one.
         """
-        edges = self.spec.edges()
+        edges = self.spec.collapsed_edges()
         plan = self._plan(edges, target, invalidate, skip, reproducible)
 
-        # 'selected' is closed under 'needs' -- ancestors() is the transitive
-        # closure of it -- so dropping the unselected keys cannot leave a
-        # dangling predecessor behind, and every remaining 'needs' list is
-        # already a list of selected jobs.
+        # 'selected' is member-space (a ring's non-gate members included), so
+        # it is intersected with 'edges' own collapsed node space -- a ring's
+        # gate id standing in for the whole ring -- rather than iterated
+        # directly: a bare member id is not a node this net has, only its
+        # gate is. 'selected' is closed under 'needs' either way -- ancestors()
+        # is the transitive closure of it -- so dropping the unselected keys
+        # cannot leave a dangling predecessor behind, and every remaining
+        # 'needs' list is already a list of selected (collapsed) jobs.
+        collapsed_selected = set(edges) & plan.selected
         net = Net(
-            [name for name in self.jobs if name in plan.selected],
-            {name: needs for name, needs in edges.items() if name in plan.selected},
+            list(collapsed_selected),
+            {
+                name: needs
+                for name, needs in edges.items()
+                if name in collapsed_selected
+            },
         )
         for arc in net.arcs:
             if arc.producer is None:
                 net.put(arc, initial_state)
 
-        self.progress_bar.set_max_stage_count(len(plan.selected))
+        self.progress_bar.set_max_stage_count(len(collapsed_selected))
         steps_run: list[Step] = []
         deferred: list[str] = []
         failures: list[str] = []
@@ -708,32 +820,87 @@ class Workflow(Flow):
                     # error the job itself raises.
                     started = False
                     try:
-                        job = self.jobs[name]
-                        tokens = self._tokens_for(net, job)
-                        state_in = join_states(tokens, job.source, name)
-                        self.progress_bar.start_stage(name)
-                        started = True
-                        reason = self._pass_through_reason(job, name in plan.skipped)
-                        if reason is None:
-                            reason = self._runtime_pass_through_reason(job, state_in)
-                        if reason is not None:
-                            logger.info(f"Skipping job '{name}': {reason}.")
-                            net.fire(name, state_in)
-                            outputs[name] = state_in
-                            self.progress_bar.end_stage()
-                            fired_pass_through = True
-                            continue
-                        submitted = _InFlight(name)
-                        pending[
-                            get_tpe().submit(
-                                self._run_job,
-                                job,
-                                state_in,
-                                submitted,
-                                name in plan.forced,
-                                plan.reproducible_at,
+                        ring_members = self.rings.get(name)
+                        if ring_members is None:
+                            job = self.jobs[name]
+                            tokens = self._tokens_for(net, job)
+                            state_in = join_states(tokens, job.source, name)
+                            self.progress_bar.start_stage(name)
+                            started = True
+                            reason = self._pass_through_reason(
+                                job, name in plan.skipped
                             )
-                        ] = submitted
+                            if reason is None:
+                                reason = self._runtime_pass_through_reason(
+                                    job, state_in
+                                )
+                            if reason is not None:
+                                logger.info(f"Skipping job '{name}': {reason}.")
+                                net.fire(name, state_in)
+                                outputs[name] = state_in
+                                self.progress_bar.end_stage()
+                                fired_pass_through = True
+                                continue
+                            submitted = _InFlight(name)
+                            pending[
+                                get_tpe().submit(
+                                    self._run_job,
+                                    job,
+                                    state_in,
+                                    submitted,
+                                    name in plan.forced,
+                                    plan.reproducible_at,
+                                )
+                            ] = submitted
+                        else:
+                            # A ring's collapsed node: 'name' is the gate id.
+                            # An 'if' on the gate is the one place a ring
+                            # joins across every member's external tokens at
+                            # once, to decide whether the whole loop instance
+                            # fires as a single pass-through -- --skip can
+                            # never name a member here, checked in _plan, so
+                            # 'name in plan.skipped' is always False and kept
+                            # only for symmetry with the ordinary path above.
+                            gate = name
+                            gate_job = self.jobs[gate]
+                            member_tokens = self._tokens_for_ring(
+                                net, gate, ring_members
+                            )
+                            flattened: dict[str, State] = {}
+                            for member_external in member_tokens.values():
+                                flattened.update(member_external)
+                            gate_check_state = join_states(
+                                flattened, gate_job.source, gate
+                            )
+                            self.progress_bar.start_stage(gate)
+                            started = True
+                            reason = self._pass_through_reason(
+                                gate_job, gate in plan.skipped
+                            )
+                            if reason is None:
+                                reason = self._runtime_pass_through_reason(
+                                    gate_job, gate_check_state
+                                )
+                            if reason is not None:
+                                logger.info(
+                                    f"Skipping loop gated by '{gate}': {reason}."
+                                )
+                                net.fire(gate, gate_check_state)
+                                outputs[gate] = gate_check_state
+                                self.progress_bar.end_stage()
+                                fired_pass_through = True
+                                continue
+                            submitted = _InFlight(gate)
+                            pending[
+                                get_tpe().submit(
+                                    self._run_loop,
+                                    gate,
+                                    ring_members,
+                                    member_tokens,
+                                    submitted,
+                                    gate in plan.forced,
+                                )
+                            ] = submitted
                     except Exception as e:
                         failures.append(f"Job '{name}': {e}")
                         # Only if it started. The token read and the input
@@ -922,84 +1089,126 @@ class Workflow(Flow):
         content fingerprints of files that later jobs in the same run will
         rewrite, so it cannot be known before the run.
         """
-        edges = self.spec.edges()
+        edges = self.spec.collapsed_edges()
         plan = self._plan(edges, target, invalidate, skip, reproducible)
         reproducible_job = (
             plan.reproducible_at[0] if plan.reproducible_at is not None else None
         )
 
         dispositions: list[JobDisposition] = []
-        for job_id in topological_order(edges):
-            job = self.jobs[job_id]
-            needs = tuple(job.needs)
-            if job_id not in plan.selected:
-                # Which option narrowed the graph, and not merely that it was
-                # narrowed. --reproducible restricts it without --target having
-                # been passed at all, and naming --target there would send a
-                # reader looking for an option they never used.
-                if reproducible_job is not None:
+        for collapsed_id in topological_order(edges):
+            ring_members = self.rings.get(collapsed_id)
+            # One row per member, in pass order, for a ring; one row for an
+            # ordinary job. Every branch below is written once and applies to
+            # each id in 'row_ids' uniformly, because every fact this method
+            # reports about a ring -- whether it is in the target subgraph,
+            # whether its gate's 'if' stops it -- is a fact about the whole
+            # loop instance, not about one member.
+            row_ids = ring_members if ring_members is not None else (collapsed_id,)
+            for job_id in row_ids:
+                job = self.jobs[job_id]
+                needs = tuple(job.needs)
+                if collapsed_id not in plan.selected:
+                    # Which option narrowed the graph, and not merely that it
+                    # was narrowed. --reproducible restricts it without
+                    # --target having been passed at all, and naming --target
+                    # there would send a reader looking for an option they
+                    # never used.
+                    if reproducible_job is not None:
+                        dispositions.append(
+                            JobDisposition(
+                                job_id,
+                                needs,
+                                False,
+                                f"--reproducible runs only '{reproducible_job}' "
+                                f"and its ancestors",
+                                "not-in-reproducible",
+                            )
+                        )
+                    else:
+                        dispositions.append(
+                            JobDisposition(
+                                job_id,
+                                needs,
+                                False,
+                                "not in the --target subgraph",
+                                "not-in-target",
+                            )
+                        )
+                    continue
+                if ring_members is not None:
+                    gate = collapsed_id
+                    gate_job = self.jobs[gate]
+                    # A ring member can never itself be named by --skip
+                    # (refused in _plan) or by --reproducible (refused in
+                    # _resolve_reproducible), so only the gate's own
+                    # configuration term can stop the whole loop instance
+                    # before it starts, exactly as it does in run().
+                    gate_reason = self._pass_through_reason(gate_job, skipped=False)
+                    if gate_reason is not None:
+                        dispositions.append(
+                            JobDisposition(
+                                job_id, needs, False, gate_reason, "condition"
+                            )
+                        )
+                        continue
+                    bound = len(gate_job.iterations) or gate_job.max_passes
+                    loop_reason = (
+                        f"gate of the loop, at most {bound} passes"
+                        if job_id == gate
+                        else f"loop gated by '{gate}', at most {bound} passes"
+                    )
+                    dispositions.append(
+                        JobDisposition(job_id, needs, True, loop_reason, "loop")
+                    )
+                    continue
+                # The same call the run makes, so the two cannot disagree about
+                # which variable stopped a job or how its absence is worded.
+                reason = self._pass_through_reason(job, job_id in plan.skipped)
+                if reason is not None:
+                    mechanism = "skip" if job_id in plan.skipped else "condition"
+                    dispositions.append(
+                        JobDisposition(job_id, needs, False, reason, mechanism)
+                    )
+                    continue
+                if plan.reproducible_at is not None and job_id == reproducible_job:
+                    # Reached only for a job that is neither skipped nor
+                    # stopped by a condition: the plan refuses a reproducible
+                    # for one that is, because this run would never execute
+                    # the step.
+                    dispositions.append(
+                        self._reproducible_disposition(
+                            job, needs, plan.reproducible_at[1]
+                        )
+                    )
+                    continue
+                runtime_terms = predicates.metric_terms(job.conditions)
+                if runtime_terms:
+                    # --skip and a false configuration term are decided now,
+                    # and both already took the two 'continue's above; a
+                    # runtime term is not decided until the run reads the
+                    # job's actual input state, so the job counts as enabled
+                    # here -- the same optimistic reading _enabled_jobs gives
+                    # it -- and this row says so rather than claiming the
+                    # answer either way.
+                    terms_text = " and ".join(
+                        f"metric::{term.metric} {term.op} {term.literal}"
+                        for term in runtime_terms
+                    )
                     dispositions.append(
                         JobDisposition(
                             job_id,
                             needs,
-                            False,
-                            f"--reproducible runs only '{reproducible_job}' "
-                            f"and its ancestors",
-                            "not-in-reproducible",
+                            True,
+                            f"runtime term(s) {terms_text} are decided at run "
+                            f"time against the job's input state",
+                            "condition (runtime)",
                         )
                     )
-                else:
-                    dispositions.append(
-                        JobDisposition(
-                            job_id,
-                            needs,
-                            False,
-                            "not in the --target subgraph",
-                            "not-in-target",
-                        )
-                    )
-                continue
-            # The same call the run makes, so the two cannot disagree about
-            # which variable stopped a job or how its absence is worded.
-            reason = self._pass_through_reason(job, job_id in plan.skipped)
-            if reason is not None:
-                mechanism = "skip" if job_id in plan.skipped else "condition"
+                    continue
                 dispositions.append(
-                    JobDisposition(job_id, needs, False, reason, mechanism)
+                    JobDisposition(job_id, needs, True, "will run", None)
                 )
-                continue
-            if plan.reproducible_at is not None and job_id == reproducible_job:
-                # Reached only for a job that is neither skipped nor stopped by
-                # a condition: the plan refuses a reproducible for one that is,
-                # because this run would never execute the step.
-                dispositions.append(
-                    self._reproducible_disposition(job, needs, plan.reproducible_at[1])
-                )
-                continue
-            runtime_terms = predicates.metric_terms(job.conditions)
-            if runtime_terms:
-                # --skip and a false configuration term are decided now, and
-                # both already took the two 'continue's above; a runtime term
-                # is not decided until the run reads the job's actual input
-                # state, so the job counts as enabled here -- the same
-                # optimistic reading _enabled_jobs gives it -- and this row
-                # says so rather than claiming the answer either way.
-                terms_text = " and ".join(
-                    f"metric::{term.metric} {term.op} {term.literal}"
-                    for term in runtime_terms
-                )
-                dispositions.append(
-                    JobDisposition(
-                        job_id,
-                        needs,
-                        True,
-                        f"runtime term(s) {terms_text} are decided at run "
-                        f"time against the job's input state",
-                        "condition (runtime)",
-                    )
-                )
-                continue
-            dispositions.append(JobDisposition(job_id, needs, True, "will run", None))
         return Explanation(
             jobs=tuple(dispositions),
             variables=self._variable_dispositions() if variables else (),
@@ -1204,6 +1413,7 @@ class Workflow(Flow):
 
         skipped = set(skip or ())
         self._require_declared(sorted(skipped), "--skip")
+        self._reject_skipped_ring_members(skipped)
         invalidated = set(invalidate or ())
         self._require_declared(sorted(invalidated), "--invalidate")
 
@@ -1251,10 +1461,16 @@ class Workflow(Flow):
         # -- and that is a statement about the named job and everything fed by
         # it. An ancestor's entry is untouched by it, and re-running ancestors
         # would make --invalidate an expensive way to spell --overwrite.
+        #
+        # 'forced' stays in collapsed-id space (a ring's gate id, never a bare
+        # member id): a ring runs as one worker submission, so there is no way
+        # to force only one of its members, and the scheduling loop only ever
+        # checks a collapsed node's id against it.
         forced: set[str] = set()
         for name in invalidated:
-            forced.add(name)
-            forced |= descendants(edges, name) & selected
+            gate = self.member_of.get(name, name)
+            forced.add(gate)
+            forced |= descendants(edges, gate) & selected
 
         return _RunPlan(selected, skipped, forced, reproducible_at)
 
@@ -1265,16 +1481,25 @@ class Workflow(Flow):
         Parameters
         ----------
         edges : dict[str, list[str]]
-            This document's job dependency map.
+            This document's collapsed job dependency map: one node per ring,
+            keyed by its gate id, and one per ordinary job.
         target : Iterable[str] | None
-            The jobs ``--target`` named, or ``None`` for the whole graph.
+            The jobs ``--target`` named, or ``None`` for the whole graph. Any
+            ring member -- gate or not -- is mapped to its gate id before the
+            ancestor walk, because ``edges`` has no node for a bare member.
 
         Returns
         -------
-        The named jobs and their transitive ancestors, or every job when
-        nothing was named. Called from :meth:`_plan`, which :meth:`run` and
-        :meth:`explain` share, because an explanation that drew a different
-        subgraph from the run it describes would be worse than no explanation.
+        The named jobs and their transitive ancestors, re-expanded so that
+        every member of a selected ring is present individually (this is a
+        *member*-space result, unlike ``edges``): :meth:`explain` reports one
+        row per member, and :meth:`_reject_outside` has to recognise a bare
+        member name a caller wrote for ``--skip`` or ``--invalidate`` as
+        inside the subgraph its ring belongs to. Every job when nothing was
+        named, which is already member-space and needs no expansion. Called
+        from :meth:`_plan`, which :meth:`run` and :meth:`explain` share,
+        because an explanation that drew a different subgraph from the run it
+        describes would be worse than no explanation.
 
         Raises
         ------
@@ -1287,9 +1512,48 @@ class Workflow(Flow):
         self._require_declared(targets, "--target")
         selected: set[str] = set()
         for name in targets:
-            selected.add(name)
-            selected |= ancestors(edges, name)
-        return selected
+            gate = self.member_of.get(name, name)
+            selected.add(gate)
+            selected |= ancestors(edges, gate)
+        return self._expand_rings(selected)
+
+    def _expand_rings(self, collapsed_ids: set[str]) -> set[str]:
+        """
+        Returns
+        -------
+        ``collapsed_ids``, with every ring's gate id also standing for its
+        other members: a set of collapsed node ids in, a set of individual
+        job ids out.
+        """
+        expanded = set(collapsed_ids)
+        for node in collapsed_ids:
+            members = self.rings.get(node)
+            if members is not None:
+                expanded.update(members)
+        return expanded
+
+    def _reject_skipped_ring_members(self, skipped: set[str]) -> None:
+        """
+        Raises
+        ------
+        FlowException
+            If ``--skip`` names any ring member, gate included. A loop whose
+            gate never runs can never decide when to exit, so a ring is
+            skipped the way the design describes -- by gating the whole loop
+            off with an ``if`` on the gate -- and not by naming a member
+            here.
+        """
+        for name in sorted(skipped):
+            gate = self.member_of.get(name)
+            if gate is None:
+                continue
+            raise FlowException(
+                f"--skip names '{name}', a member of the ring "
+                f"{list(self.rings[gate])} gated by '{gate}'. A loop whose "
+                f"gate never runs cannot decide when to exit, so --skip "
+                f"refuses a ring member. Skip the whole loop by gating it "
+                f"with 'if' on the gate '{gate}' instead."
+            )
 
     def _reject_outside(
         self, named: set[str], selected: set[str], restricted_by: str
@@ -1436,6 +1700,16 @@ class Workflow(Flow):
                 f"{sorted({candidate for candidate, _ in matches})}. Name one "
                 f"of them as '<job>/{matched_ids[0]}'."
             )
+        job_id, step_index = matches[0]
+        gate = self.member_of.get(job_id)
+        if gate is not None:
+            raise FlowException(
+                f"--reproducible names a step of job '{job_id}', a member of "
+                f"the ring {list(self.rings[gate])} gated by '{gate}'. Which "
+                f"pass it would capture is ambiguous, so this is refused in "
+                f"v1. Its pass directory is the escape hatch: inspect "
+                f"'runs/<tag>/{job_id}/<k>/...' directly instead."
+            )
         return matches[0]
 
     @staticmethod
@@ -1528,13 +1802,230 @@ class Workflow(Flow):
             for arc, token in zip(arcs, tokens)
         }
 
+    def _tokens_for_ring(
+        self, net: Net, gate: str, members: tuple[str, ...]
+    ) -> dict[str, dict[str, State]]:
+        """
+        The member-attributed replacement for :meth:`_tokens_for`, over a
+        ring's one collapsed input place per external producer.
+
+        Parameters
+        ----------
+        net : Net
+            The collapsed net.
+        gate : str
+            The ring's gate id, which is also the collapsed node's id.
+        members : tuple[str, ...]
+            The ring's members, in pass order.
+
+        Returns
+        -------
+        Every member mapped to its own external tokens, keyed by producer.
+        :meth:`FlowSpec.collapse` deduplicated what could be several members'
+        need for the same external producer into one collapsed arc, so this
+        walks the *original* ``spec.edges()`` to find, for each arc consumed
+        here, every member whose own declared ``needs`` names that arc's
+        producer, and broadcasts the one token to each of them -- which is
+        why the return type is ``dict[str, State]`` per member rather than
+        one flat mapping.
+        """
+        arcs = net.inputs_of(gate)
+        raw_tokens = net.consume(gate)
+        tokens: dict[str, dict[str, State]] = {member: {} for member in members}
+        original_edges = self.spec.edges()
+        member_ids = set(members)
+        for arc, token in zip(arcs, raw_tokens):
+            if arc.producer is None:
+                # No external dependency at all, collapsed or not: every
+                # member's own 'needs' is entirely intra-ring (only possible
+                # when the ring itself is a graph root), so this is the one
+                # source-arc token Net ever gives this node, and it is
+                # attributed to the ring-entry member exactly as an ordinary
+                # root job's single source-arc token is its whole input: that
+                # member's external join seeds pass 1's circulating state.
+                tokens[members[0]]["<initial state>"] = token
+                continue
+            matched = False
+            for member in members:
+                for need in original_edges[member]:
+                    if need in member_ids:
+                        continue
+                    if self.member_of.get(need, need) == arc.producer:
+                        tokens[member][need] = token
+                        matched = True
+            assert matched, (
+                f"collapsed input arc {arc} of the ring gated by '{gate}' "
+                f"traces back to no member's own 'needs'; "
+                f"FlowSpec.collapsed_edges() and spec.edges() have diverged"
+            )
+        return tokens
+
+    def _member_config(self, gate: ResolvedJob, member: str, k: int) -> _ResolvedConfig:
+        """
+        Returns
+        -------
+        The configuration ``member`` reads on pass ``k``: the pre-resolved
+        ``(member, k)`` entry of :attr:`iteration_configs` when the ring's
+        gate schedules (``gate.iterations`` is non-empty, in which case every
+        member -- not just the gate -- reads a per-pass configuration, per
+        the design's "iterations layers onto every member" rule), or
+        otherwise this member's own job configuration (or the flow's, if it
+        sets none), exactly as an ordinary job outside any ring reads it.
+        """
+        if gate.iterations:
+            return self.iteration_configs[(member, k)]
+        return self.job_configs.get(member, self.config)
+
+    def _run_loop(
+        self,
+        gate: str,
+        members: tuple[str, ...],
+        tokens: dict[str, dict[str, State]],
+        submitted: _InFlight,
+        forced: bool,
+    ) -> State:
+        """
+        Runs one ring's passes in order. Called on a worker thread, exactly as
+        :meth:`_run_job` is for an ordinary job -- this is the loop
+        instance's one submission to the pool, and every member of every pass
+        runs sequentially inside it, sharing ``submitted`` so the steps,
+        deferrals, reuse and execution counts of the whole loop instance
+        aggregate on the one record, the way :meth:`run` already expects a
+        submission's record to describe everything that submission did.
+
+        Parameters
+        ----------
+        gate : str
+            The ring's gate id.
+        members : tuple[str, ...]
+            The ring's members, in pass order: the gate's intra-ring
+            successor first, the gate itself last.
+        tokens : dict[str, dict[str, State]]
+            Every member's own external tokens, from :meth:`_tokens_for_ring`.
+        submitted : _InFlight
+            This loop instance's record.
+        forced : bool
+            Whether every pass must ignore any reusable result, exactly as
+            :meth:`_run_job`'s own ``forced`` does for an ordinary job.
+
+        Returns
+        -------
+        The gate's output state on the pass that exits the loop: the pass
+        ``until`` was satisfied on, or, on exhaustion, the last pass run.
+
+        Raises
+        ------
+        FlowError
+            If a step of any member raised :class:`librelane.steps.StepError`.
+            A step failing inside any pass fails the loop instance the way it
+            fails a job.
+        FlowException
+            If a step of any member raised
+            :class:`librelane.steps.StepException`.
+
+        Exhaustion is not one of the raises above: a schedule that runs out
+        without ``until`` ever holding is a *deferred* error, appended to
+        ``submitted.deferred`` and returned from normally with the last
+        pass's state, exactly as a deferred step error is -- the run
+        continued past the disappointment and produced real views, and
+        :meth:`run`'s existing deferred plumbing is what withholds the
+        contract check and fails the flow at the end, after every other job
+        has run.
+        """
+        gate_job = self.jobs[gate]
+        bound = len(gate_job.iterations) or gate_job.max_passes
+        # spec.py's load-time validators guarantee exactly one positive
+        # bound: 'iterations' (non-empty) or 'max' (>= 1).
+        assert bound is not None
+        assert bound > 0
+        entry = members[0]
+        # Pass 1's circulating state IS the entry member's external join --
+        # no double join -- because that join has not happened anywhere else
+        # yet; every later pass's circulating state is some earlier pass's
+        # gate output, already a real join.
+        circulating = join_states(tokens[entry], self.jobs[entry].source, entry)
+        for k in range(1, bound + 1):
+            for index, member in enumerate(members):
+                member_job = self.jobs[member]
+                if k == 1 and index > 0 and tokens[member]:
+                    # Only a non-entry member, only on pass 1, and only if it
+                    # has external tokens at all: entry's own join already
+                    # happened above, and every later pass's members receive
+                    # only the circulating state, because their external
+                    # tokens were already consumed once, at entry.
+                    input_state = join_states(
+                        {"<loop>": circulating, **tokens[member]},
+                        member_job.source,
+                        member,
+                    )
+                else:
+                    input_state = circulating
+                reason = self._pass_through_reason(member_job, skipped=False)
+                if reason is None:
+                    reason = self._runtime_pass_through_reason(member_job, input_state)
+                if reason is not None:
+                    logger.info(
+                        f"Skipping '{member}' (loop '{gate}', pass {k}): {reason}."
+                    )
+                    circulating = input_state
+                    continue
+                config = self._member_config(gate_job, member, k)
+                circulating = self._execute_steps(
+                    member_job,
+                    input_state,
+                    submitted,
+                    forced,
+                    None,
+                    pass_index=k,
+                    config=config,
+                )
+            gate_output = circulating
+            held = [
+                predicates.evaluate_metric_term(
+                    term, gate_output.metrics, f"Job '{gate}'"
+                )
+                for term in gate_job.until_terms
+            ]
+            if all(held):
+                return gate_output
+            if k < bound:
+                continue
+            failing = [term for term, ok in zip(gate_job.until_terms, held) if not ok]
+            term_text = " and ".join(
+                f"metric::{term.metric} {term.op} {term.literal}" for term in failing
+            )
+            observed_text = " and ".join(
+                str(gate_output.metrics.get(term.metric)) for term in failing
+            )
+            submitted.deferred.append(
+                f"Job '{gate}': the loop exhausted its {bound} passes "
+                f"without satisfying {term_text} (last observed "
+                f"{observed_text})"
+            )
+            return gate_output
+        raise AssertionError(  # pragma: no cover
+            "unreachable: the loop above always returns before falling "
+            "through, for bound >= 1"
+        )
+
     def _enabled_jobs(self) -> set[str]:
         """
         Returns
         -------
         set[str]
-            The ids of the jobs this configuration runs, which is every job
-            whose ``if`` conjunction is true.
+            The ids of the jobs this configuration runs, which is every
+            ordinary job whose ``if`` conjunction is true, plus one entry per
+            ring -- keyed by its gate id -- counted enabled iff the *gate's*
+            own ``if`` conjunction is true.
+
+            A ring has no entry of its own to ask this about except its
+            gate's: only the gate's ``if`` can stop the whole loop instance
+            (:mod:`librelane.flows.selection_validation` folds a ring into
+            one pseudo-job keyed the same way, and this is the ``enabled``
+            set that folded view is measured against), and a non-gate
+            member's own ``if`` gates only that one member's participation in
+            a pass, which is a fact about the run, not about whether the loop
+            exists in it at all.
 
         Derived from :meth:`_pass_through_reason` rather than by reading the
         conditions again, so that the load-time checks and the run cannot
@@ -1542,11 +2033,16 @@ class Workflow(Flow):
         deliberately not passed: it shapes one invocation and is not known when
         the flow is constructed.
         """
-        return {
-            job_id
-            for job_id, job in self.jobs.items()
-            if self._pass_through_reason(job, skipped=False) is None
-        }
+        enabled: set[str] = set()
+        for job_id, job in self.jobs.items():
+            gate = self.member_of.get(job_id)
+            if gate is not None and gate != job_id:
+                # A non-gate ring member: represented by its gate below, not
+                # by itself.
+                continue
+            if self._pass_through_reason(job, skipped=False) is None:
+                enabled.add(job_id)
+        return enabled
 
     def _pass_through_reason(self, job: ResolvedJob, skipped: bool) -> str | None:
         """
@@ -1624,9 +2120,13 @@ class Workflow(Flow):
         reproducible_at: tuple[str, int] | None,
     ) -> State:
         """
-        Runs one job's steps in order. Called on a worker thread, so
-        ``submitted`` is this job's own record and no other thread reads it
-        until the future resolves.
+        Runs one ordinary job's steps in order, once, on its own
+        configuration. The ``pass_index=None`` case of :meth:`_execute_steps`,
+        kept as a method of its own because every ordinary job's submission
+        calls it by name, and because resolving "this job's own
+        configuration" is a one-line derivation :meth:`_execute_steps` should
+        not have to make on every caller's behalf -- a ring member's or a
+        sweep execution's is resolved per pass instead, by their own callers.
 
         Parameters
         ----------
@@ -1662,10 +2162,88 @@ class Workflow(Flow):
             If this job runs the step ``reproducible_at`` names, once the
             reproducible is written. Caught by :meth:`run`.
         """
-        current = state_in
         # A job that declares no 'with' block has no configuration of its own,
         # and the flow's is the whole answer for it.
         config = self.job_configs.get(job.id, self.config)
+        return self._execute_steps(
+            job,
+            state_in,
+            submitted,
+            forced,
+            reproducible_at,
+            pass_index=None,
+            config=config,
+        )
+
+    def _execute_steps(
+        self,
+        job: ResolvedJob,
+        state_in: State,
+        submitted: _InFlight,
+        forced: bool,
+        reproducible_at: tuple[str, int] | None,
+        *,
+        pass_index: int | None,
+        config: _ResolvedConfig,
+    ) -> State:
+        """
+        Runs one job's steps in order, once. Called on a worker thread, so
+        ``submitted`` is this execution's own record and no other thread reads
+        it until the future resolves -- true even for a ring's several
+        executions across a pass, since :meth:`_run_loop` runs every member
+        sequentially inside its own single worker submission and shares one
+        ``submitted`` across all of them by design, not because two threads
+        ever touch it at once.
+
+        Parameters
+        ----------
+        job : ResolvedJob
+            The job to run.
+        state_in : State
+            The state its first step consumes.
+        submitted : _InFlight
+            This execution's record. Its ``steps``, ``deferred``, ``reused``
+            and ``executed`` are filled in here. A ring's members share one
+            record across every member and every pass, so its counts and
+            deferrals describe the whole loop instance, exactly as one
+            ordinary job's describes it.
+        forced : bool
+            Whether this execution must ignore any reusable result.
+        reproducible_at : tuple[str, int] | None
+            The job and step index a reproducible was asked for, or ``None``.
+            Always ``None`` for a ring member or a sweep execution:
+            ``--reproducible`` refuses both in v1 before either ever reaches
+            here.
+        pass_index : int | None
+            The 1-based pass this execution is, for a ring member or (task 5)
+            a sweep execution, or ``None`` for an ordinary job's only
+            execution. Threaded into the step directory
+            (:meth:`dir_for_job_step`) and every step instance's id, so pass 3
+            of a loop member is distinguishable from pass 2 in both the run
+            directory and the log -- the same reason :meth:`_run_job` already
+            named each instance after its job, extended one level.
+        config : _ResolvedConfig
+            The configuration this execution's steps read. An ordinary job's
+            own (:meth:`_run_job` resolves it before calling here); a ring
+            member's is its iteration config on a scheduled pass or its own
+            job config otherwise, resolved by :meth:`_run_loop`, because which
+            configuration applies is a fact about the pass, not about the job.
+
+        Returns
+        -------
+        The state this execution's last step produced.
+
+        Raises
+        ------
+        FlowError
+            If a step raised :class:`librelane.steps.StepError`.
+        FlowException
+            If a step raised :class:`librelane.steps.StepException`.
+        _ReproducibleCreated
+            If this execution runs the step ``reproducible_at`` names, once
+            the reproducible is written. Caught by :meth:`run`.
+        """
+        current = state_in
         for index, cls in enumerate(job.steps):
             step = cls(
                 config=config,
@@ -1679,11 +2257,15 @@ class Workflow(Flow):
                 # would overwrite the first's display, and whichever finished
                 # first would unregister the other. Step's initializer
                 # documents a per-instance id as the way to disambiguate one
-                # step class used more than once in a flow; the job is what
-                # distinguishes them.
-                id=f"{cls.id} ({job.id})",
+                # step class used more than once in a flow; the job (and, for
+                # a pass, the pass number) is what distinguishes them.
+                id=(
+                    f"{cls.id} ({job.id})"
+                    if pass_index is None
+                    else f"{cls.id} ({job.id}/{pass_index})"
+                ),
             )
-            step_dir = self.dir_for_job_step(job, index, step)
+            step_dir = self.dir_for_job_step(job, index, step, pass_index)
             if (job.id, index) == reproducible_at:
                 # Before the resume check, and without the rmtree below: the
                 # step is not going to run, so neither reusing its previous
@@ -1736,12 +2318,21 @@ class Workflow(Flow):
         return current
 
     def dir_for_job_step(
-        self, job: ResolvedJob, index: int, step: Step
+        self,
+        job: ResolvedJob,
+        index: int,
+        step: Step,
+        pass_index: int | None = None,
     ) -> pathlib.Path:
         """
         Returns
         -------
-        ``<run_dir>/<job id>/<n>-<step slug>``.
+        ``<run_dir>/<job id>/<n>-<step slug>``, or, when ``pass_index`` is not
+        ``None``, ``<run_dir>/<job id>/<pass_index>/<n>-<step slug>``: a ring
+        member's or (task 5) a sweep execution's own directory for that pass,
+        one level below the job's, so pass 3 does not overwrite pass 2's, and
+        an ordinary job's directory (``pass_index=None``, the default) is
+        untouched and byte-identical to what it always was.
 
         Keyed by the job rather than by a global counter, because under
         concurrency there is no global step order and a positional prefix would
@@ -1756,17 +2347,21 @@ class Workflow(Flow):
         new.
 
         The slug comes from the *class's* id, not the instance's.
-        :meth:`_run_job` gives each instance an id naming its job so the
-        logging layer can tell two concurrent runs of one step class apart,
-        and that name is already the directory this path sits in. Spelling it
-        twice would give ``left/1-test-first-left`` and, worse, would move
-        every existing step directory the first time a job was renamed.
+        :meth:`_execute_steps` gives each instance an id naming its job (and,
+        for a pass, the pass) so the logging layer can tell two concurrent
+        runs of one step class apart, and that name is already the directory
+        this path sits in. Spelling it twice would give
+        ``left/1-test-first-left`` and, worse, would move every existing step
+        directory the first time a job was renamed.
         """
         if self.run_dir is None:
             raise FlowException(
                 "Attempted to name a step directory before the flow started."
             )
-        return self.run_dir / job.id / f"{index + 1}-{slugify(type(step).id)}"
+        job_dir = self.run_dir / job.id
+        if pass_index is not None:
+            job_dir = job_dir / str(pass_index)
+        return job_dir / f"{index + 1}-{slugify(type(step).id)}"
 
     def _check_contract(self, job: ResolvedJob, state: State) -> None:
         """

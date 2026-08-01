@@ -1210,3 +1210,202 @@ def test_the_command_line_hands_the_state_s_views_to_the_constructor(mocker, tmp
     )
 
     assert workflow.call_args.kwargs["initial_views"] == set()
+
+
+#: A ring's two members plus the plumbing the ring-folding tests below need: an
+#: external producer of a view a non-gate member requires, and a plain sink
+#: with no requirements of its own to close a document off.
+@pytest.fixture(scope="module")
+def ring_probe_steps():
+    """
+    Steps for a small two-member ring: ``member`` requires ``json_h``, which
+    only an external job upstream of it provides; ``sta`` is the ring's gate
+    and needs nothing of its own.
+
+    Module-scoped for the reason ``probe_job`` and ``view_probe_job`` are: the
+    step registry is a process-wide singleton with no way to unregister.
+    """
+    from librelane.state import DesignFormat
+    from librelane.steps import Step
+
+    json_h = DesignFormat.factory.get("json_h")
+    assert json_h is not None, "json_h is a shipped design format"
+
+    @Step.factory.register()
+    class Produce(Step):
+        id = "Test.RingProbeProduce"
+        inputs = []
+        outputs = [json_h]
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    @Step.factory.register()
+    class Member(Step):
+        id = "Test.RingProbeMember"
+        inputs = [json_h]
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    @Step.factory.register()
+    class MemberEmpty(Step):
+        id = "Test.RingProbeMemberEmpty"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    @Step.factory.register()
+    class Gate(Step):
+        id = "Test.RingProbeGate"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {"x": 0}
+
+    @Step.factory.register()
+    class Sink(Step):
+        id = "Test.RingProbeSink"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    return json_h
+
+
+def test_validate_selection_accepts_a_well_formed_ring(ring_probe_steps):
+    """
+    A ring with an external producer feeding its non-gate member validates
+    cleanly: the pseudo-job's folded ``requires`` (json_h, supplied by
+    ``produce``, upstream of the collapsed node) and ``needs`` (``produce``
+    alone -- the ring's own back edge does not survive the collapse) are both
+    correct, and the ring's own two members are not mistaken for a
+    concurrency conflict of their own.
+    """
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Ring",
+            "jobs": {
+                "produce": {"steps": ["Test.RingProbeProduce"]},
+                "member": {
+                    "needs": ["produce", "sta"],
+                    "steps": ["Test.RingProbeMember"],
+                },
+                "sta": {
+                    "needs": ["member"],
+                    "steps": ["Test.RingProbeGate"],
+                    "until": "metric::x >= 0",
+                    "max": 2,
+                },
+            },
+        }
+    )
+    jobs = resolve_jobs(spec)
+    # The gate-keyed reading _enabled_jobs gives a ring: the whole loop counts
+    # as one entry, enabled because 'sta' declares no config-term 'if'.
+    enabled = {"produce", "sta"}
+
+    validate_selection(spec, jobs, enabled, rings=spec.rings())
+
+
+def test_lost_views_attributes_a_ring_s_missing_requirement_to_the_gate(
+    view_probe_job, ring_probe_steps
+):
+    """
+    'member' is the one that actually requires json_h, but it has no entry of
+    its own in the folded jobs -- :func:`_fold_rings` absorbed it into 'sta'
+    -- so the refusal is reported against the gate, exactly as
+    :meth:`~librelane.flows.spec.FlowSpec.collapsed_edges` reports every
+    other fact about this ring under the gate's id.
+    """
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "RingViewProbe",
+            "jobs": {
+                "produce": {"uses": "view_probe_source"},
+                "member": {
+                    "needs": ["produce", "sta"],
+                    "uses": "view_probe_sink",
+                },
+                "sta": {
+                    "needs": ["member"],
+                    "steps": ["Test.RingProbeGate"],
+                    "until": "metric::x >= 0",
+                    "max": 2,
+                },
+            },
+        }
+    )
+    jobs = resolve_jobs(spec, {"produce": "drops"})
+    enabled = {"produce", "sta"}
+
+    with pytest.raises(JobResolutionError) as exc_info:
+        validate_selection(spec, jobs, enabled, rings=spec.rings())
+
+    message = str(exc_info.value)
+    assert "job 'sta' requires view 'json_h'" in message
+    assert "set TOOLS['produce'] to 'keeps'" in message
+
+
+def test_join_conflicts_flags_a_real_conflict_against_a_ring(
+    probe_job, ring_probe_steps
+):
+    """
+    ``sta`` is the ring's gate, resolved to the same template
+    ``probe_job`` registers two providers for. Swapping its provider to the
+    one ``right`` (outside the ring entirely) already uses makes both write
+    ``probe__beta``, joined with no ``source`` at ``sink`` -- a real
+    conflict the ring must not be allowed to hide by virtue of being folded,
+    and must report against the gate's id, since that is the only id the
+    folded jobs have for it.
+    """
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "RingProbe",
+            "config": [
+                {
+                    "name": "RUN_LEFT",
+                    "type": "bool",
+                    "description": "x",
+                    "default": True,
+                }
+            ],
+            "jobs": {
+                "member": {
+                    "needs": ["sta"],
+                    "steps": ["Test.RingProbeMemberEmpty"],
+                },
+                "sta": {
+                    "needs": ["member"],
+                    "uses": "selection_probe/alpha",
+                    "until": "metric::x >= 0",
+                    "max": 2,
+                },
+                "right": {"uses": "selection_probe/beta"},
+                "sink": {"needs": ["sta", "right"], "steps": ["Test.RingProbeSink"]},
+            },
+        }
+    )
+    jobs = resolve_jobs(spec, {"sta": "beta"})
+    enabled = {"sta", "right", "sink"}
+
+    with pytest.raises(JobResolutionError) as exc_info:
+        validate_selection(spec, jobs, enabled, rings=spec.rings())
+
+    message = str(exc_info.value)
+    assert "'right'" in message
+    assert "'sta'" in message
+    assert "probe__beta" in message
+    assert "job 'sink'" in message

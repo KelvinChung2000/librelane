@@ -691,6 +691,7 @@ class Config(GenericImmutableDict[str, Any]):
         *,
         flow_values: Mapping[str, Any] | None = None,
         job_values: tuple[str, Mapping[str, Any]] | None = None,
+        iteration_values: tuple[str, int, Mapping[str, Any]] | None = None,
         config_override_strings: Sequence[str] | None = None,
         pdk: str | None = None,
         pdk_root: str | None = None,
@@ -731,6 +732,27 @@ class Config(GenericImmutableDict[str, Any]):
             asked for. The id and the values are one argument because the
             attribution *is* the id, and two arguments could name a different
             job than they carried.
+        iteration_values : tuple[str, int, Mapping[str, Any]] | None
+            ``(gate id, pass k, entry)``: the ``k``-th entry of a loop gate's
+            or a sweep job's ``iterations`` schedule. Layered *after* the
+            design configuration and *before* ``config_override_strings`` --
+            the one deliberate break of the design-always-wins rule every
+            other layer here honours.
+
+            The break is the feature, not an oversight. A schedule is the
+            loop's or the sweep's algorithm, declared once in the flow
+            document, not a default a design happens to leave unset: if the
+            design's value won the way ``flow_values`` and ``job_values`` do,
+            a design that pinned the scheduled variable would silently reduce
+            every escalation loop to running its bound at one fixed setting,
+            with no error anywhere to say so. Layering above the design is
+            what keeps the schedule the schedule. The command-line override
+            still wins over it, because it is the operator's explicit last
+            word and outranks every value a file supplies, scheduled or not.
+
+            Provenance is recorded as ``<flow document: <gate id>, iteration
+            <k>>``, so ``--explain-variables`` attributes a scheduled value to
+            the pass that set it rather than to the document generically.
         config_override_strings : Sequence[str] | None
             A list of "overrides" in the form of
             NAME=VALUE strings. These are primarily for running LibreLane from
@@ -851,6 +873,19 @@ class Config(GenericImmutableDict[str, Any]):
                     mapping,
                     source_name,
                     source_kind,  # type: ignore
+                )
+            )
+
+        if iteration_values is not None:
+            # After every design source and before the command-line override:
+            # the one layer that does not follow design-always-wins, and the
+            # parameter docstring above carries the reason.
+            gate_id, k, entry = iteration_values
+            sources.append(
+                ConfigSource(
+                    dict(entry),
+                    f"<flow document: {gate_id}, iteration {k}>",
+                    "mapping",
                 )
             )
 

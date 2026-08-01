@@ -67,19 +67,6 @@ def validate_against_registry(spec: FlowSpec) -> None:
     _check_schedule_values_are_covering(spec)
     _check_resource_variable_capacities_are_declared_ints(spec)
 
-    # TODO(spec 3, task 4): delete this guard once the loop driver runs a
-    # ring. It runs last, not first, so a ring document surfaces every real
-    # load error above -- including a bad schedule -- before this refusal;
-    # only a document with no other complaint ever reaches it. Until Task 4,
-    # a ring reaching engine.py or selection_validation.py would hit
-    # topological_order(spec.edges()) over a graph with a real cycle and
-    # raise a raw graphlib.CycleError instead of a FlowSpecError.
-    if spec.rings():
-        raise FlowSpecError(
-            f"Flow '{spec.name}' declares ring(s) gated by "
-            f"{sorted(spec.rings())}. Loops are not executable yet."
-        )
-
 
 def _resolved_uses(job_id: str, job: JobSpec) -> str | None:
     """
