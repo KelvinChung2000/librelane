@@ -949,6 +949,26 @@ Style Notes
   no longer silently held to Tcl's rules, and a value moved onto a variable's
   current name from a deprecated one keeps the syntax it was written in. A
   `.tcl` configuration's values are read exactly as before.
+* A variable declaring both a string and a list -- `CLOCK_PORT` and
+  `CLOCK_NET`, which are `None | str | list[str]` -- is now coerced instead of
+  being handed to Pydantic unshaped. `-c 'CLOCK_PORT=["clk", "clk_i"]'` named
+  a single clock port whose name was the literal text of that array, under
+  every syntax and in every release that had these variables, because the
+  string member matched before anything looked at the brackets.
+  * From the command line, a value whose first non-blank character is `[` or
+    `{` is now a document and must parse as one; a broken one is an error
+    naming the variable and the grammar, never the text as written. Anything
+    else is still the string, so `-c CLOCK_PORT=clk` is unchanged.
+  * From a `.tcl` file such a value is still the string. Every Tcl value is a
+    word list, so `clk_a clk_b` cannot be told from a one-word list, and the
+    declared string is what these variables have always resolved to there.
+  * From a `.json` or `.yaml` file or an API mapping, a string is a string and
+    an array is a list, as those grammars already say which was meant.
+  * A union that declares no string member at all now reports a value it
+    cannot place as an error naming the variable, rather than passing it on
+    for Pydantic to describe as a bare type mismatch. A value that fits two
+    members equally -- a JSON array where both `list` and `tuple` are declared
+    -- is likewise an error, since nothing knows which was intended.
 * Reworked configuration loading around typed Pydantic models and a staged
   read/layer/process/preprocess/validate pipeline.
 * Added structured configuration diagnostics, replayed after flow log sinks

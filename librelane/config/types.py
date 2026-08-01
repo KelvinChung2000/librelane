@@ -74,6 +74,23 @@ def _shape_tuple(value: Any, args: tuple, syntax: CoercionSyntax) -> tuple:
     )
 
 
+def _parse_json(value: str) -> Any:
+    """
+    Parse text a source wrote as a JSON document, naming it if it will not.
+
+    Parameters
+    ----------
+    value : str
+        The text as the source wrote it. It is quoted back in the error
+        because the key alone does not say which of several sources wrote the
+        value that failed.
+    """
+    try:
+        return json.loads(value, parse_float=Decimal)
+    except json.JSONDecodeError as error:
+        raise CoercionError(f"not valid JSON ({error}): {value}") from None
+
+
 def _read_json(value: str, container: type) -> Any:
     """
     Read a whole product-typed value written as JSON.
@@ -88,14 +105,108 @@ def _read_json(value: str, container: type) -> Any:
         left to Pydantic, which would report it as a bare type error and say
         nothing about the syntax the value was read in.
     """
-    try:
-        parsed = json.loads(value, parse_float=Decimal)
-    except json.JSONDecodeError as error:
-        raise CoercionError(f"not valid JSON: {error}") from None
+    parsed = _parse_json(value)
     if not isinstance(parsed, container):
         expected = "object" if container is dict else "array"
         raise CoercionError(f"not a JSON {expected}: {value}")
     return parsed
+
+
+#: The origins whose values a source may have had to write as text.
+_PRODUCT_ORIGINS = (list, tuple, dict)
+
+
+def _product_origin(annotation: Any) -> Any:
+    """The container an annotation builds, or ``None`` if it builds a scalar."""
+    origin = get_origin(unwrap_annotated(annotation))
+    return origin if origin in _PRODUCT_ORIGINS else None
+
+
+def _sole_member(candidates: list, description: str) -> Any:
+    """
+    The one union member a value's shape calls for.
+
+    A value that fits several members is not resolved by picking one: the
+    union declares both readings as equally intended, so there is nothing here
+    that knows which was meant.
+    """
+    if not candidates:
+        raise CoercionError(f"no member of the union takes {description}")
+    if len(candidates) > 1:
+        members = ", ".join(str(unwrap_annotated(item)) for item in candidates)
+        raise CoercionError(
+            f"{description} fits more than one member of the union"
+            f" ({members}); it cannot be told which was meant"
+        )
+    return candidates[0]
+
+
+def _shape_union(value: Any, args: tuple, syntax: CoercionSyntax) -> Any:
+    """
+    Shape a value towards the member of a union it was written as.
+
+    A union is the one annotation that does not say on its own whether an
+    incoming string is text or a document -- ``CLOCK_PORT`` is
+    ``None | str | list[str]``, so both readings are declared. Left alone, the
+    string reaches Pydantic, whose smart union keeps it a string and quietly
+    makes ``'["a","b"]'`` the name of one clock port. The member is therefore
+    chosen here, before validation, as it is for every other annotation.
+    """
+    members = [member for member in args if member is not type(None)]
+    products = [member for member in members if _product_origin(member)]
+    if not products:
+        # Nothing in the union has a syntax, so every member takes the value as
+        # its source wrote it and the choice is Pydantic's to make.
+        return value
+    if not isinstance(value, str):
+        # Already the shape it was written as, so there is no syntax to apply
+        # and nothing that can fail -- but the member's own contents still need
+        # shaping, or a union would skip the glob expansion and the exact
+        # Decimal conversion the same product type gets on its own. A value
+        # that fits no member, or fits several, is left for Pydantic: only a
+        # parse has to commit to one member, and this is not a parse.
+        if isinstance(value, Mapping):
+            wanted: tuple = (dict,)
+        elif isinstance(value, (list, tuple)):
+            wanted = (list, tuple)
+        else:
+            return value
+        matching = [item for item in products if _product_origin(item) in wanted]
+        return _shape(value, matching[0], syntax) if len(matching) == 1 else value
+    scalars = [member for member in members if not _product_origin(member)]
+    if syntax is CoercionSyntax.JSON:
+        if not value.strip().startswith(("[", "{")):
+            # Not written as a document, so it is the text a scalar member
+            # takes as written, exactly as a non-union scalar would.
+            if scalars:
+                return value
+            raise CoercionError(
+                f"no member of the union takes text, and this is not a JSON"
+                f" array or object: {value}"
+            )
+        # The bracket committed the value to being a document. Reading the
+        # text as a scalar when it fails to parse is the fallback this design
+        # exists to remove.
+        parsed = _parse_json(value)
+        wanted = (dict,) if isinstance(parsed, dict) else (list, tuple)
+        kind = "a JSON object" if isinstance(parsed, dict) else "a JSON array"
+        member = _sole_member(
+            [item for item in products if _product_origin(item) in wanted], kind
+        )
+        return _shape(parsed, member, syntax)
+    if syntax is CoercionSyntax.TCL:
+        if str in members:
+            # Every Tcl value is a word list, so a one-word list and the word
+            # itself are the same text and only the declaration tells them
+            # apart. A union that declares ``str`` has declared the text.
+            return value
+        return _shape(value, _sole_member(products, "a Tcl word list"), syntax)
+    if scalars:
+        return value
+    raise CoercionError(
+        f"no member of the union takes text, and this source carries a list as"
+        f" a list: {value}"
+    )
 
 
 def _shape(value: Any, annotation: Any, syntax: CoercionSyntax) -> Any:
@@ -118,6 +229,10 @@ def _shape(value: Any, annotation: Any, syntax: CoercionSyntax) -> Any:
     # A JSON document is parsed whole, so nothing inside one is text left to
     # parse: a string nested in it was written as a string and stays one.
     inner = CoercionSyntax.TYPED if syntax is CoercionSyntax.JSON else syntax
+    if origin in (Union, types.UnionType):
+        # Only a union of two or more members reaches here: _unwrap_optional
+        # has already replaced a lone member's Optional with the member.
+        return _shape_union(value, args, syntax)
     if origin in (list, tuple):
         if isinstance(value, str):
             if syntax is CoercionSyntax.TCL:

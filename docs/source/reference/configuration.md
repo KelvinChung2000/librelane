@@ -327,6 +327,20 @@ parsed as a JSON document or taken as written:
   grammar. There is no second grammar to fall back to: a space-separated Tcl
   list, which earlier versions accepted here, is now rejected.
 
+* A variable that declares **both** -- `CLOCK_PORT` and `CLOCK_NET` are
+  `None | str | list[str]`, taking one clock port or several -- is the one
+  case the declared type does not settle, so the text decides. A value whose
+  first non-blank character is `[` or `{` is a document; anything else is the
+  string.
+
+  ```console
+  $ librelane -c 'CLOCK_PORT=clk' -c 'CLOCK_NET=["clk", "clk_i"]' config.yaml
+  ```
+
+  The bracket commits the value: `CLOCK_PORT=["clk"` is a JSON error naming
+  the variable, and never a clock port whose name is the literal text
+  `["clk"`.
+
 The [pre-processing](#pre-processing) prefixes apply to an override as they do
 to a value in a JSON or YAML file, and they run before the JSON above, so a
 prefix that produces a list satisfies a list variable without any JSON at all:
@@ -351,6 +365,15 @@ the value has to end up as; the source says how it was written.
 | `.tcl` file | A Tcl word list: `a 1 b 2` is a two-entry dictionary, `p q r` a three-element list. |
 | `--config-override` | A JSON document, as above. |
 | `.json` or `.yaml` file, or an API mapping | An error. These grammars carry a list as a list, so a string was meant as a string. |
+
+A variable that declares a string *and* a list has a row of its own, because
+the string reading is always available and so nothing can be rejected:
+
+| Source | A string for a `str`-or-list variable |
+| --- | --- |
+| `.tcl` file | A string. Every Tcl value is a word list, so `clk_a clk_b` cannot be told from a one-word list, and the declared string wins -- as it has since these variables existed. A `.tcl` file cannot set the list reading. |
+| `--config-override` | A JSON array when the text starts with `[`, the string otherwise. |
+| `.json` or `.yaml` file, or an API mapping | Whichever was written: a string is a string and an array is a list. |
 
 The last source to write a key decides, so a `--config-override` on a key a Tcl
 file also set is read as JSON, and a JSON file that overrides a key a Tcl file
