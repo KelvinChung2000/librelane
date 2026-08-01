@@ -704,8 +704,8 @@ left to judgement.
 ### 611 — save_image aborts the process headlessly unless Qt is told otherwise
 
 `KLayout.Render` already existed but only ever runs at stream-out, because it
-needs a DEF or a GDS; it is registered in the `streamout`/klayout provider
-(`librelane/jobs/providers.py`). The issue asks for images *throughout* the flow, so
+needs a DEF or a GDS; it is a bare step placed immediately after the `streamout`
+job (`librelane/flows/classic.py`). The issue asks for images *throughout* the flow, so
 the new `OpenROAD.SaveImage` reads the **ODB** instead and can be inserted at
 any point. It deliberately declares no outputs, so several instances in one flow
 cannot collide over a single state view.

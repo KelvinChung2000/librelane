@@ -126,7 +126,7 @@ class Classic(StagedFlow):
 
         RUN_POST_GRT_DESIGN_REPAIR: bool = variable(
             False,
-            description="Enables resizer design repair after global placement using the OpenROAD.RepairDesignPostGPL step. This is experimental and may result in hangs and/or extended run times.",
+            description="Enables resizer design repair after global routing using the OpenROAD.RepairDesignPostGRT step. This is experimental and may result in hangs and/or extended run times.",
         )
 
         RUN_CTS: bool = variable(

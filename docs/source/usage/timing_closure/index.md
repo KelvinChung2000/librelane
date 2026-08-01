@@ -481,8 +481,8 @@ closure:
 1. STA performed immediately after the synthesis job will not report any hold
    violations as the clock is considered an ideal net; hence there will be no
    clock skews to cause hold violations. However, you may have setup violations.
-   You can see hold violations at this stage only if your HDL model has an
-   embedded clock tree.
+   You can see hold violations at this point in the flow only if your HDL model
+   has an embedded clock tree.
 1. If your design does not have a hard requirement for the clock frequency (for
    example, USB 1.1 IP core requires a 48MHz system clock to comply with USB
    specifications), focus on hold violations as your chip can be completely

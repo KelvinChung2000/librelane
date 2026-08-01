@@ -88,9 +88,9 @@ def _require_implementation(job_id: str, job: JobSpec) -> str:
     if Job.factory.get(job_id) is None:
         raise FlowSpecError(
             f"Job '{job_id}' declares neither 'uses' nor 'steps', and its id "
-            f"is not a registered template id, so there is nothing to run. "
+            f"is not a registered job id, so there is nothing to run. "
             f"Add 'uses' to name a registered job and provider, or 'steps' "
-            f"to list step IDs inline. Registered template ids: "
+            f"to list step IDs inline. Registered job ids: "
             f"{sorted(Job.factory.list())}."
         )
     return job_id
@@ -108,7 +108,7 @@ def _check_uses(job: str, uses: str) -> None:
     if template is None:
         raise FlowSpecError(
             f"Job '{job}' declares uses '{uses}', but no job with id "
-            f"'{job_id}' is registered. Registered jobs: "
+            f"'{job_id}' is registered. Registered job ids: "
             f"{sorted(Job.factory.list())}."
         )
     if len(parts) == 1:

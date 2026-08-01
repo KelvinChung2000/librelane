@@ -139,8 +139,8 @@ class JobRegistry(object):
                 f"runs nothing cannot satisfy a job contract."
             )
 
-        resolved_job = Job.factory.get(registration.job)
-        if resolved_job is None:
+        template = Job.factory.get(registration.job)
+        if template is None:
             raise JobDefinitionError(
                 f"Provider '{provider}': no job with id "
                 f"'{registration.job}' is registered. Known jobs: "
@@ -153,7 +153,7 @@ class JobRegistry(object):
                 f"'{registration.job}'."
             )
 
-        Self.__check_contract(registration, resolved_job)
+        Self.__check_contract(registration, template)
 
         Self._by_job_and_provider[key] = registration
         Self._all.append(registration)
@@ -163,7 +163,7 @@ class JobRegistry(object):
     def __check_contract(
         Self,
         registration: Registration,
-        job: Job,
+        template: Job,
     ) -> None:
         union = compose_step_sequence(registration.steps)
 
@@ -184,7 +184,7 @@ class JobRegistry(object):
 
         # View plausibility.
         allowed_inputs = set(registration.native_views)
-        allowed_inputs.update(job.requires)
+        allowed_inputs.update(template.requires)
         for view in union.unmet_inputs:
             # An optional input is satisfiable by absence, so it is not a
             # boundary requirement. DesignFormat.mkOptional() returns a copy
@@ -201,7 +201,7 @@ class JobRegistry(object):
                 )
 
         promised = set(registration.provides)
-        promised.update(job.provides)
+        promised.update(template.provides)
         produced = set(union.outputs)
         for view in promised:
             if view not in produced:

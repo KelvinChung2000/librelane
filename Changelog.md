@@ -879,9 +879,9 @@ Style Notes
   `StageEntry` is `JobEntry`. No compatibility aliases are provided: a stage and
   a job were the same thing under two names, and keeping both names would
   preserve the defect.
-* `JobRegistry.register` takes `job="x"` rather than `jobs=["x"]`, and
-  `Registration.jobs`/`Registration.spanning` are removed in favour of
-  `Registration.job`.
+  Under the same qualifier, `JobRegistry.register` takes `job="x"` rather than
+  `stages=["x"]`, and `Registration.stages`/`Registration.spanning` are removed
+  in favour of `Registration.job`.
 * Removed `Job.config_vars` and `Registration.requires_pdk_vars`. Both were
   empty on every shipped job and registration, so the checks reading them
   never checked anything. Provider variable portability is still enforced by
