@@ -21,6 +21,7 @@ from importlib.resources import files
 import os
 import re
 import shutil
+import sys
 import pathlib
 from os.path import abspath
 from decimal import Decimal
@@ -454,7 +455,7 @@ class Filler(Step):
         # Run filler generation
         self.run_subprocess(
             [
-                "python3",
+                sys.executable,
                 script,
                 input_gds,
                 fill_gds,

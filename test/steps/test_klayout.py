@@ -337,3 +337,154 @@ def test_render_png_gives_each_render_its_own_step_id(mocker):
     assert all(name is not None for name in ids), "no per-instance id was given"
     assert ids[0] != ids[1]
     assert all(name.startswith("KLayout.Render") for name in ids)
+
+
+# Issue 45k: run_pya_script's callers invoked a bare "python3" from PATH,
+# which is not necessarily the interpreter running the flow (e.g. a devshell
+# python3 vs. a uv venv's) and dies importing klayout's compiled extension
+# for the wrong ABI. They now all pass sys.executable.
+
+
+def test_run_pya_script_does_not_override_a_caller_supplied_pythonpath(mocker):
+    """run_pya_script used to overwrite PYTHONPATH with
+    site.getsitepackages() + sys.path so a bare "python3" child could still
+    see the flow's installed packages. Now that every caller passes
+    sys.executable, the child is the same interpreter and resolves its own
+    site-packages unaided -- the override is not just unneeded, it would
+    clobber whatever PYTHONPATH the caller set on purpose."""
+    import sys
+    from librelane.steps.klayout.base import KLayoutStep
+    from librelane.steps.step import Step
+
+    class Probe(KLayoutStep):
+        id = "Test.KLayoutPythonpathProbe"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            return {}, {}
+
+    run_subprocess = mocker.patch.object(Step, "run_subprocess", return_value={})
+
+    instance = object.__new__(Probe)
+    given_env = {"PYTHONPATH": "/caller/supplied/only"}
+    instance.run_pya_script([sys.executable, "script.py"], env=given_env)
+
+    passed_env = run_subprocess.call_args.args[4]
+    assert passed_env is given_env
+    assert passed_env["PYTHONPATH"] == "/caller/supplied/only"
+
+
+def _density_argv(mocker, **config_overrides):
+    """Returns the xml_drc_report_to_json argv for KLayout.Density."""
+    from librelane.common import Path
+    from librelane.state import DesignFormat, State
+    from librelane.steps.klayout.checks import Density
+
+    settings = {
+        "PDK": "dummy",
+        "DESIGN_NAME": "whatever",
+        "KLAYOUT_DENSITY_RUNSET": Path("/pdk/dummy/libs.tech/klayout/density.lydrc"),
+        "KLAYOUT_DENSITY_OPTIONS": None,
+        "KLAYOUT_DENSITY_THREADS": None,
+    }
+    settings.update(config_overrides)
+
+    instance = object.__new__(Density)
+    instance.config = Density.Config.model_construct(**settings)
+    instance.step_dir = "/cwd/density"
+    mocker.patch("librelane.steps.klayout.checks.mkdirp")
+    mocker.patch.object(instance, "run_subprocess", return_value={})
+    run_pya_script = mocker.patch.object(
+        instance, "run_pya_script", return_value={"generated_metrics": {}}
+    )
+
+    state_in = State({DesignFormat.GDS: Path("/cwd/density.gds")})
+    instance.run_generic(state_in)
+
+    return [str(arg) for arg in run_pya_script.call_args.args[0]]
+
+
+def test_density_report_conversion_uses_the_flow_interpreter(mocker):
+    """The XML-to-JSON report converter used to hardcode "python3"."""
+    import sys
+
+    argv = _density_argv(mocker)
+
+    assert argv[0] == sys.executable
+
+
+def _drc_generic_argv(mocker, **config_overrides):
+    """Returns the xml_drc_report_to_json argv for KLayout.DRC.run_generic."""
+    from librelane.common import Path
+    from librelane.state import DesignFormat, State
+    from librelane.steps.klayout.drc import DRC
+
+    settings = {
+        "PDK": "dummy",
+        "DESIGN_NAME": "whatever",
+        "KLAYOUT_DRC_RUNSET": Path("/pdk/dummy/libs.tech/klayout/drc.lydrc"),
+        "KLAYOUT_DRC_OPTIONS": None,
+        "KLAYOUT_DRC_THREADS": None,
+    }
+    settings.update(config_overrides)
+
+    instance = object.__new__(DRC)
+    instance.config = DRC.Config.model_construct(**settings)
+    instance.step_dir = "/cwd/drc"
+    mocker.patch("librelane.steps.klayout.drc.mkdirp")
+    mocker.patch.object(instance, "run_subprocess", return_value={})
+    run_pya_script = mocker.patch.object(
+        instance, "run_pya_script", return_value={"generated_metrics": {}}
+    )
+
+    state_in = State({DesignFormat.GDS: Path("/cwd/drc.gds")})
+    instance.run_generic(state_in)
+
+    return [str(arg) for arg in run_pya_script.call_args.args[0]]
+
+
+def test_drc_report_conversion_uses_the_flow_interpreter(mocker):
+    """Same report converter, reached through KLayout.DRC's generic path."""
+    import sys
+
+    argv = _drc_generic_argv(mocker)
+
+    assert argv[0] == sys.executable
+
+
+def _sealring_argv(mocker, **config_overrides):
+    """Returns the sealring-script argv for KLayout.SealRing.run_generic."""
+    from decimal import Decimal
+    from librelane.common import Path
+    from librelane.state import DesignFormat, State
+    from librelane.steps.klayout.physical import SealRing
+
+    settings = {
+        "PDK": "dummy",
+        "PDK_ROOT": "/pdk",
+        "DESIGN_NAME": "whatever",
+        "KLAYOUT_SEALRING_SCRIPT": Path("/pdk/dummy/libs.tech/klayout/sealring.py"),
+        "DIE_AREA": (Decimal(0), Decimal(0), Decimal(100), Decimal(100)),
+    }
+    settings.update(config_overrides)
+
+    instance = object.__new__(SealRing)
+    instance.config = SealRing.Config.model_construct(**settings)
+    instance.step_dir = "/cwd/sealring"
+    run_pya_script = mocker.patch.object(instance, "run_pya_script")
+
+    state_in = State({DesignFormat.GDS: Path("/cwd/in.gds")})
+    instance.run_generic(state_in)
+
+    return [str(arg) for arg in run_pya_script.call_args.args[0]]
+
+
+def test_sealring_script_uses_the_flow_interpreter(mocker):
+    """KLayout.SealRing's own pya script invocation used to hardcode
+    "python3" as well."""
+    import sys
+
+    argv = _sealring_argv(mocker)
+
+    assert argv[0] == sys.executable

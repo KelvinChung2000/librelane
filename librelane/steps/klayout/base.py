@@ -15,8 +15,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 import os
-import sys
-import site
 from os.path import abspath
 from typing import Any, Optional
 from collections.abc import Sequence
@@ -65,13 +63,13 @@ class KLayoutStep(Step):
         env: dict[str, Any] | None = None,
         **kwargs,
     ) -> dict[str, Any]:
+        # Every caller invokes this with cmd[0] == sys.executable, so the
+        # child is the same interpreter that is running this code: it
+        # resolves its own site-packages the same way the parent did, and
+        # inherits PYTHONPATH from the current environment (os.environ, or
+        # the caller's env override) like any other subprocess. No explicit
+        # propagation is needed.
         env = env or os.environ.copy()
-        # Pass site packages
-        python_path_elements = site.getsitepackages() + sys.path
-        if current_pythonpath := env.get("PYTHONPATH"):
-            python_path_elements.append(current_pythonpath)
-
-        env["PYTHONPATH"] = ":".join(python_path_elements)
         return super().run_subprocess(cmd, log_to, silent, report_dir, env, **kwargs)
 
     def get_cli_args(

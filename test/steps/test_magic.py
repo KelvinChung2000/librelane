@@ -40,3 +40,34 @@ def test_mag_gds_reads_the_isosub_variable_it_is_gated_on():
 
     assert "$::env(MAGIC_ADD_ISOSUB)" in script.read_text()
     assert "MAGIC_ADD_ISOSUB" in StreamOut.Config.model_fields
+
+
+def test_filler_script_uses_the_flow_interpreter(mocker):
+    """Issue 45k: Magic.Filler hardcoded "python3" for its own filler
+    script, which is not necessarily the interpreter running the flow."""
+    import sys
+    from librelane.common import Path
+    from librelane.state import DesignFormat, State
+    from librelane.steps.magic import Filler
+
+    settings = {
+        "PDK": "dummy",
+        "PDK_ROOT": "/pdk",
+        "DESIGN_NAME": "whatever",
+        "MAGIC_FILLER_SCRIPT": Path("/pdk/dummy/libs.tech/magic/filler.py"),
+        "MAGIC_FILLER_OPTIONS": None,
+    }
+
+    instance = object.__new__(Filler)
+    instance.config = Filler.Config.model_construct(**settings)
+    instance.step_dir = "/cwd/filler"
+    run_subprocess = mocker.patch.object(instance, "run_subprocess", return_value={})
+
+    state_in = State({DesignFormat.GDS: Path("/cwd/in.gds")})
+    instance.run_generic(state_in)
+
+    # run_generic makes two run_subprocess calls: the filler script itself,
+    # then klayout to combine the fill and layout. The first is the one that
+    # used to hardcode "python3".
+    argv = [str(arg) for arg in run_subprocess.call_args_list[0].args[0]]
+    assert argv[0] == sys.executable

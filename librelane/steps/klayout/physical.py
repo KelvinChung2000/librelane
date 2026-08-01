@@ -17,6 +17,7 @@
 from loguru import logger
 
 import os
+import sys
 import pathlib
 from os.path import abspath
 from typing import Optional
@@ -92,7 +93,7 @@ class SealRing(KLayoutStep):
 
         self.run_pya_script(
             [
-                "python3",
+                sys.executable,
                 script,
                 "--input",
                 abspath(input_gds),

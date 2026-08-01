@@ -18,6 +18,7 @@ from loguru import logger
 
 from importlib.resources import files
 import os
+import sys
 import pathlib
 from os.path import abspath
 from typing import Optional
@@ -167,7 +168,7 @@ class DRC(KLayoutStep):
 
         subprocess_result = self.run_pya_script(
             [
-                "python3",
+                sys.executable,
                 str(
                     files("librelane").joinpath(
                         "scripts", "klayout", "xml_drc_report_to_json.py"
@@ -237,7 +238,7 @@ class DRC(KLayoutStep):
 
         subprocess_result = self.run_pya_script(
             [
-                "python3",
+                sys.executable,
                 str(
                     files("librelane").joinpath(
                         "scripts", "klayout", "xml_drc_report_to_json.py"
@@ -312,7 +313,7 @@ class DRC(KLayoutStep):
 
         subprocess_result = self.run_pya_script(
             [
-                "python3",
+                sys.executable,
                 str(
                     files("librelane").joinpath(
                         "scripts", "klayout", "xml_drc_report_to_json.py"
@@ -381,7 +382,7 @@ class DRC(KLayoutStep):
 
         subprocess_result = self.run_pya_script(
             [
-                "python3",
+                sys.executable,
                 str(
                     files("librelane").joinpath(
                         "scripts", "klayout", "xml_drc_report_to_json.py"
