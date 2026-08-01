@@ -49,6 +49,24 @@ def _document(name: str) -> FlowSpec:
     return spec
 
 
+def _shipped_documents() -> list[str]:
+    """
+    Every ``.yaml`` document shipped inside :mod:`librelane.flows`, discovered.
+
+    Deliberately not a hand-written list. The framework-metric guard below was
+    added for ``classic.yaml`` and extended to two more by name, and in the gap
+    ``vhdl_classic.yaml`` shipped carrying the very defect the guard exists to
+    catch -- it was found by hand, not by the suite. A list someone has to
+    remember to extend is the same defect one level up, so the parametrisation
+    reads the package instead.
+    """
+    return sorted(
+        path.name
+        for path in files("librelane.flows").iterdir()
+        if path.name.endswith(".yaml")
+    )
+
+
 def _jobs_of_each_step(name: str) -> list[tuple[str, str]]:
     """
     Returns
@@ -369,14 +387,6 @@ def test_no_two_classic_jobs_write_the_gds_concurrently():
     _assert_gds_writers_are_ordered(
         "classic.yaml", ["klayout_streamout", "magic_streamout"]
     )
-
-
-def test_the_classic_document_never_runs_openroad_on_a_parallel_branch():
-    """
-    The guard for the class of defect, not the instance. See
-    :func:`_assert_framework_metric_writers_are_never_concurrent`.
-    """
-    _assert_framework_metric_writers_are_never_concurrent("classic.yaml")
 
 
 def test_no_classic_gds_consumer_needs_a_source():
@@ -770,18 +780,38 @@ def test_chip_finishing_is_ungated():
     assert _document("chip.yaml").jobs["chip_finishing"].condition is None
 
 
-@pytest.mark.parametrize("document", ["vhdl_classic.yaml", "chip.yaml"])
-def test_neither_new_document_runs_openroad_on_a_parallel_branch(document):
+@pytest.mark.parametrize("document", _shipped_documents())
+def test_no_shipped_document_runs_openroad_on_a_parallel_branch(document):
     """
-    The same guard classic.yaml carries, for the class of defect rather than
-    the instance. See
-    :func:`_assert_framework_metric_writers_are_never_concurrent`.
+    The guard for the class of defect, applied to every shipped document.
 
-    ``vhdl_classic.yaml`` obeys it by keeping render, write_lef and
-    check_antenna_properties on the chain and fanning out below them, because
-    Odb.CheckDesignAntennaProperties rewrites all three counts. ``chip.yaml``
-    obeys it for free: Chip omits that step, so its last OpenROAD-backed job is
-    ir_drop, which is upstream of the single stream-out chain and therefore an
-    ancestor of every branch.
+    See :func:`_assert_framework_metric_writers_are_never_concurrent` for why
+    the invariant is what it is. This runs over
+    :func:`_shipped_documents`, so a document added later is covered without
+    anyone remembering to name it here -- which is how ``vhdl_classic.yaml``
+    shipped with the defect while a by-name guard was already in the file.
+
+    ``classic.yaml`` and ``vhdl_classic.yaml`` obey it by keeping render,
+    write_lef and check_antenna_properties on the chain and fanning out below
+    them, because Odb.CheckDesignAntennaProperties rewrites all three counts.
+    ``chip.yaml`` obeys it for free: Chip omits that step, so its last
+    OpenROAD-backed job is ir_drop, upstream of the single stream-out chain and
+    therefore an ancestor of every branch. The ``open_in_*`` documents are
+    single-job and have no concurrency to violate.
     """
     _assert_framework_metric_writers_are_never_concurrent(document)
+
+
+def test_the_shipped_document_guard_covers_every_document():
+    """
+    The parametrisation is derived, so this pins that it found them all.
+
+    A discovery helper that silently returns an empty or partial list would
+    make every case above vacuous, and a vacuous guard is worse than none
+    because it reads as coverage.
+    """
+    discovered = set(_shipped_documents())
+    assert "classic.yaml" in discovered
+    assert "vhdl_classic.yaml" in discovered
+    assert "chip.yaml" in discovered
+    assert len(discovered) >= 8
