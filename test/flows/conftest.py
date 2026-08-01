@@ -11,7 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+
 import pytest
+
+from test.conftest import MockConfTree
 
 
 @pytest.fixture
@@ -39,28 +43,50 @@ def MetricIncrementer():
 
 
 @pytest.fixture
-def minimal_design():
+def minimal_design(mock_conf_dir: MockConfTree):
     """
-    The smallest design configuration ``_mock_conf_fs`` supports. Paired with
+    The smallest design configuration the mock tree supports. Paired with
     :func:`mock_pdk`, which supplies the keyword half of a flow constructor.
+
+    Parameters
+    ----------
+    mock_conf_dir : MockConfTree
+        The real-filesystem mock tree, whose design directory the Verilog
+        source is taken from. Real rather than faked because the engine runs
+        its jobs on a thread pool and pyfakefs is single-threaded by design.
+
+    Returns
+    -------
+    dict
+        A design configuration, passed to a flow constructor positionally.
     """
     return {
         "DESIGN_NAME": "WHATEVER",
-        "VERILOG_FILES": ["/cwd/src/a.v"],
+        "VERILOG_FILES": [os.path.join(mock_conf_dir.cwd, "src", "a.v")],
     }
 
 
 @pytest.fixture
-def mock_pdk():
+def mock_pdk(mock_conf_dir: MockConfTree):
     """
-    The PDK keyword arguments that resolve against the fake filesystem
-    ``_mock_conf_fs`` builds. Spread into a flow constructor as ``**mock_pdk``.
+    The PDK keyword arguments that resolve against the mock tree. Spread into
+    a flow constructor as ``**mock_pdk``.
+
+    Parameters
+    ----------
+    mock_conf_dir : MockConfTree
+        The real-filesystem mock tree, whose two roots these arguments name.
+
+    Returns
+    -------
+    dict
+        Keyword arguments for a flow constructor.
     """
     return {
-        "design_dir": "/cwd",
+        "design_dir": mock_conf_dir.cwd,
         "pdk": "dummy",
         "scl": "dummy_scl",
-        "pdk_root": "/pdk",
+        "pdk_root": mock_conf_dir.pdk_root,
     }
 
 

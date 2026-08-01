@@ -16,7 +16,12 @@ import pytest
 import librelane.steps  # noqa: F401  registers mag_gds and klayout_gds
 
 from librelane.common import Path
-from librelane.flows.join import JoinConflictError, join_states
+from librelane.common.errors import FlowError
+from librelane.flows.join import (
+    JoinConflictError,
+    join_sink_states,
+    join_states,
+)
 from librelane.state import DesignFormat, State
 
 pytestmark = pytest.mark.all
@@ -179,3 +184,74 @@ def test_a_source_naming_a_job_that_contributed_nothing_to_the_conflict_raises()
     assert "gds" in message
     assert "magic_streamout" in message
     assert "klayout_streamout" in message
+
+
+def test_a_join_of_no_tokens_names_the_job_rather_than_returning_nothing():
+    # Unreachable from a document today -- every job has at least one input
+    # place -- but an empty State returned here is a silently defaulted input,
+    # and a silent default is the one thing this phase does not do.
+    with pytest.raises(FlowError) as exc_info:
+        join_states({}, {}, "floorplan")
+
+    assert "floorplan" in str(exc_info.value)
+
+
+def test_a_sink_join_of_no_tokens_names_the_flow_rather_than_returning_nothing():
+    with pytest.raises(FlowError) as exc_info:
+        join_sink_states({}, "Classic")
+
+    assert "Classic" in str(exc_info.value)
+
+
+def test_a_single_sink_token_is_returned_unchanged():
+    only = State({DesignFormat.nl: Path("/a/design.nl.v")}, metrics={"x": 1})
+
+    joined = join_sink_states({"synthesis": only}, "Classic")
+
+    assert joined[DesignFormat.nl] == Path("/a/design.nl.v")
+
+
+def test_two_sinks_that_agree_merge_exactly_as_a_job_join_does():
+    shared = Path("/a/design.def")
+    left = State({DesignFormat.def_: shared}, metrics={"left": 2})
+    right = State({DesignFormat.def_: shared}, metrics={"right": 3})
+
+    joined = join_sink_states({"drc": left, "lvs": right}, "Classic")
+
+    assert joined[DesignFormat.def_] == shared
+    assert joined.metrics == {"left": 2, "right": 3}
+
+
+def test_a_sink_conflict_prescribes_final_and_not_source():
+    with pytest.raises(JoinConflictError) as exc_info:
+        join_sink_states(
+            {
+                "magic_streamout": _magic_streamout(),
+                "klayout_streamout": _klayout_streamout(),
+            },
+            "Classic",
+        )
+
+    message = str(exc_info.value)
+    assert "gds" in message
+    assert "magic_streamout" in message
+    assert "klayout_streamout" in message
+    # The remedy has to be the one that exists. No job's 'source' can settle a
+    # sink conflict, because the sink is not a job and has no 'source' to read;
+    # the document's top-level 'final' key is the only thing that can.
+    assert "final: magic_streamout" in message
+    assert "source: {" not in message
+    assert "Job '" not in message
+    assert "flow 'Classic'" in message
+
+
+def test_a_sink_conflict_on_a_metric_reads_the_same_way():
+    left = State({}, metrics={"magic__drc_error__count": 100})
+    right = State({}, metrics={"magic__drc_error__count": 200})
+
+    with pytest.raises(JoinConflictError) as exc_info:
+        join_sink_states({"early_drc": left, "late_drc": right}, "Classic")
+
+    message = str(exc_info.value)
+    assert "metric 'magic__drc_error__count'" in message
+    assert "final: " in message

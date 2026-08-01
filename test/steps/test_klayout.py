@@ -306,3 +306,34 @@ def test_render_png_returns_none_when_there_was_nothing_to_render(mocker):
 
     assert toolbox.render_png(Config({"DESIGN_NAME": "whatever"}), State()) is None
     assert started.called
+
+
+def test_render_png_gives_each_render_its_own_step_id(mocker):
+    """
+    One Toolbox is shared by a whole flow, and under the workflow engine
+    several jobs render at once. The logging layer keys a running step on its
+    id -- the loguru filter behind step.log, LiveLog's registry, the progress
+    row -- so two concurrent renders under a bare class id would write into
+    each other's step.log and unregister each other's display. Every other
+    site that constructs a step per job was given a per-instance id; this one
+    was missed.
+    """
+    from librelane.common import Toolbox
+    from librelane.config import Config
+    from librelane.state import State
+
+    toolbox = object.__new__(Toolbox)
+    constructed = mocker.patch(
+        "librelane.steps.klayout.views.Render.__init__", return_value=None
+    )
+    mocker.patch("librelane.steps.klayout.views.Render.start", return_value=State())
+
+    config = Config({"DESIGN_NAME": "whatever"})
+    toolbox.render_png(config, State())
+    toolbox.render_png(config, State())
+
+    ids = [call.kwargs.get("id") for call in constructed.call_args_list]
+    assert len(ids) == 2
+    assert all(name is not None for name in ids), "no per-instance id was given"
+    assert ids[0] != ids[1]
+    assert all(name.startswith("KLayout.Render") for name in ids)

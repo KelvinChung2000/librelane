@@ -65,6 +65,31 @@ def test_a_bare_uses_on_a_multi_provider_stage_concatenates_every_default():
     assert bare.provider == "magic+klayout"
 
 
+def test_a_job_that_omits_uses_resolves_against_its_own_id():
+    # The document's central convenience rule, and the reason the spec's own
+    # sample 'classic.yaml' writes 'lint:' and 'floorplan:' with nothing under
+    # them. JobSpec deliberately does not reject a job declaring neither 'uses'
+    # nor 'steps' -- the template ids live in the stage registry, which the
+    # model layer does not import -- and spec_validation._require_implementation
+    # admits it whenever the id resolves, so 'uses' really is still None here.
+    implicit = resolve_jobs(_spec({"floorplan": {}}))
+    explicit = resolve_jobs(_spec({"floorplan": {"uses": "floorplan"}}))
+
+    assert implicit["floorplan"].steps == explicit["floorplan"].steps
+    assert implicit["floorplan"].provider == explicit["floorplan"].provider
+    assert implicit["floorplan"].provides == explicit["floorplan"].provides
+    assert implicit["floorplan"].metrics == explicit["floorplan"].metrics
+
+
+def test_a_job_that_omits_uses_may_still_be_a_multi_provider_stage():
+    # 'streamout' defaults to two providers, so the implicit rule has to route
+    # through the same default_providers path a bare 'uses' does rather than
+    # treating the id as a single 'stage/provider' string.
+    implicit = resolve_jobs(_spec({"streamout": {}}))["streamout"]
+
+    assert implicit.provider == "magic+klayout"
+
+
 def test_a_uses_job_inherits_the_stage_contract():
     jobs = resolve_jobs(_spec({"synthesis": {"uses": "synthesis/yosys"}}))
     job = jobs["synthesis"]

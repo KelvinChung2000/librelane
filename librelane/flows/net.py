@@ -122,9 +122,9 @@ class Net:
         """
         if arc in self._marking:
             raise NetError(
-                f"Place {arc} already holds a token. A place holds at most one "
-                f"token, so this is a scheduling bug rather than a "
-                f"configuration error."
+                f"Place {arc} already holds a token, and a place holds at most "
+                f"one. Either the same arc was built twice or its producer "
+                f"fired twice."
             )
         self._marking[arc] = token
 

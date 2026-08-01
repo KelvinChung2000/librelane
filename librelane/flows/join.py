@@ -32,6 +32,7 @@ namespaces cannot be expressed by a mapping keyed on
 :class:`librelane.state.DesignFormat`.
 """
 
+from collections.abc import Callable
 from typing import Any
 
 from librelane.common.errors import FlowError
@@ -46,12 +47,23 @@ class JoinConflictError(FlowError):
     """
 
 
+#: How one contested key is settled: given the namespace, the key and every
+#: ``(producer, value)`` pair that disagreed, either return the winning value
+#: or raise. The two callers differ in exactly this, and in nothing else, so it
+#: is the only thing the shared merge is parameterized on. A job join can be
+#: settled by the job's ``source``; a sink join cannot be settled at all and
+#: always raises, because the sink is not a job and has no ``source``.
+_Resolve = Callable[[str, str, list[tuple[str, Any]]], Any]
+
+
 def join_states(
     tokens: dict[str, State],
     source: dict[str, str],
     job: str,
 ) -> State:
     """
+    Merges the states one job's predecessors produced into the one it runs on.
+
     Parameters
     ----------
     tokens : dict[str, State]
@@ -72,42 +84,147 @@ def join_states(
         On a conflict the document did not declare a ``source``
         for, or on a ``source`` that names a job which contributed no value to
         the conflict it was meant to resolve.
+    FlowError
+        If ``tokens`` is empty. Every job consumes at least one place, so this
+        does not arise from any document; returning an empty state instead
+        would hand the job a silently defaulted input.
     """
+    if not tokens:
+        raise FlowError(
+            f"Job '{job}' was given no predecessor states to join, so there is "
+            f"no state to run it on."
+        )
     if len(tokens) == 1:
         return next(iter(tokens.values()))
+    return _join(tokens, _job_resolver(job, source))
 
+
+def join_sink_states(tokens: dict[str, State], flow: str) -> State:
+    """
+    Merges the states the flow's leaf jobs left on their sink places.
+
+    Separate from :func:`join_states`, and not a call into it with a
+    stand-in job name, because the two conflicts have different remedies and
+    only one of them exists here. No job's ``source`` can settle a sink
+    conflict: the join is not a job, so there is no ``source`` mapping to read.
+    The document's top-level ``final`` key is what names the state the flow
+    returns, and it is what this error prescribes. The wording deliberately
+    matches
+    :func:`librelane.flows.spec_validation._check_sink_join_is_unambiguous`,
+    which catches the *declared* half of the same conflict at load time; this
+    is the run-time backstop for a leaf that returned a view its contract never
+    mentioned.
+
+    Parameters
+    ----------
+    tokens : dict[str, State]
+        Each leaf job's output state, keyed by that job.
+    flow : str
+        The flow's name, named in errors.
+
+    Returns
+    -------
+    The merged state.
+
+    Raises
+    ------
+    JoinConflictError
+        If two leaves produced different values for one view or metric.
+    FlowError
+        If ``tokens`` is empty. A net with at least one job always has at least
+        one sink place, so this does not arise from any document; returning an
+        empty state instead would make the flow report success with nothing in
+        hand.
+    """
+    if not tokens:
+        raise FlowError(
+            f"The final state of flow '{flow}' was joined from no leaf jobs, "
+            f"so there is no state to return."
+        )
+    if len(tokens) == 1:
+        return next(iter(tokens.values()))
+    return _join(tokens, _sink_resolver(flow))
+
+
+def _job_resolver(job: str, source: dict[str, str]) -> _Resolve:
+    """
+    Returns
+    -------
+    A resolver that settles a contested key from ``source``.
+
+    ``source`` is the job's whole mapping, covering both namespaces. It is read
+    only here, for a key whose contributors disagree, because a key exactly one
+    predecessor carries is not ambiguous and there is nothing for a
+    conflict-resolution parameter to resolve.
+    """
+
+    def resolve(kind: str, key: str, produced: list[tuple[str, Any]]) -> Any:
+        producers = [producer for producer, _ in produced]
+        chosen = source.get(key)
+        if chosen is None:
+            raise JoinConflictError(
+                f"Job '{job}' joins {producers}, which produced different "
+                f"values for {kind} '{key}'. Declare which one it comes from "
+                f"with 'source: {{{key}: {producers[0]}}}' or "
+                f"'source: {{{key}: {producers[1]}}}'."
+            )
+        for producer, value in produced:
+            if producer == chosen:
+                return value
+        raise JoinConflictError(
+            f"Job '{job}' sources {kind} '{key}' from '{chosen}', which "
+            f"contributed no value for it to this join. The predecessors "
+            f"that disagree on '{key}' are {producers}."
+        )
+
+    return resolve
+
+
+def _sink_resolver(flow: str) -> _Resolve:
+    """
+    Returns
+    -------
+    A resolver that always raises, naming ``final`` as the remedy.
+    """
+
+    def resolve(kind: str, key: str, produced: list[tuple[str, Any]]) -> Any:
+        producers = [producer for producer, _ in produced]
+        raise JoinConflictError(
+            f"The final state of flow '{flow}' joins leaf jobs {producers}, "
+            f"which produced different values for {kind} '{key}'. No job's "
+            f"'source' can resolve this, because the join is not a job. "
+            f"Declare the top-level 'final' key naming the job whose state the "
+            f"flow returns, for example 'final: {producers[0]}'."
+        )
+
+    return resolve
+
+
+def _join(tokens: dict[str, State], resolve: _Resolve) -> State:
+    """Merges both namespaces of two or more states under one resolver."""
     views = _merge(
         {name: dict(state) for name, state in tokens.items()},
-        source,
-        job,
         "view",
+        resolve,
     )
     metrics = _merge(
         {name: dict(state.metrics) for name, state in tokens.items()},
-        source,
-        job,
         "metric",
+        resolve,
     )
     return State(views, metrics=metrics)
 
 
 def _merge(
     contributions: dict[str, dict[str, Any]],
-    selected: dict[str, str],
-    job: str,
     kind: str,
+    resolve: _Resolve,
 ) -> dict[str, Any]:
     """
     Merges one namespace, either the views or the metrics.
 
-    Gathers each key's contributors first, then decides per key. ``selected``
-    is read only for a key whose contributors disagree, because a key exactly
-    one predecessor carries is not ambiguous and there is nothing for a
-    conflict-resolution parameter to resolve.
-
-    ``selected`` is the job's whole ``source`` mapping, covering both
-    namespaces. An entry addressed at the other namespace matches no key here
-    and is left to that namespace's own pass.
+    Gathers each key's contributors first, then decides per key. ``resolve`` is
+    consulted only for a key whose contributors disagree.
     """
     contributors: dict[str, list[tuple[str, Any]]] = {}
     for producer, mapping in contributions.items():
@@ -120,24 +237,5 @@ def _merge(
         if all(value == first for _, value in produced):
             merged[key] = first
             continue
-
-        producers = [producer for producer, _ in produced]
-        chosen = selected.get(key)
-        if chosen is None:
-            raise JoinConflictError(
-                f"Job '{job}' joins {producers}, which produced different "
-                f"values for {kind} '{key}'. Declare which one it comes from "
-                f"with 'source: {{{key}: {producers[0]}}}' or "
-                f"'source: {{{key}: {producers[1]}}}'."
-            )
-        for producer, value in produced:
-            if producer == chosen:
-                merged[key] = value
-                break
-        else:
-            raise JoinConflictError(
-                f"Job '{job}' sources {kind} '{key}' from '{chosen}', which "
-                f"contributed no value for it to this join. The predecessors "
-                f"that disagree on '{key}' are {producers}."
-            )
+        merged[key] = resolve(kind, key, produced)
     return merged

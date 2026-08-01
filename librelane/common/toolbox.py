@@ -525,7 +525,23 @@ class Toolbox(object):
                 raise TypeError("parameter state_in must be of type State")
 
             with tempfile.TemporaryDirectory(prefix="librelane_klayout_tmp_") as d:
-                render_step = KLayout.Render(config, state_in, _config_quiet=True)
+                render_step = KLayout.Render(
+                    config,
+                    state_in,
+                    _config_quiet=True,
+                    # The logging layer keys a running step on its id: the
+                    # loguru filter behind step.log, LiveLog's registry and the
+                    # progress row read off it. One Toolbox is shared by a
+                    # whole flow, and under
+                    # :class:`librelane.flows.engine.Workflow` several jobs
+                    # render at once, so a bare class id would give every
+                    # concurrent render the same key -- the same collision
+                    # Workflow._run_job and CompositeStep disambiguate against.
+                    # The temporary directory is already unique per call and is
+                    # where this render's artifacts land, so it is what names
+                    # the instance.
+                    id=f"{KLayout.Render.id} ({os.path.basename(d)})",
+                )
                 state_out = render_step.start(self, d)
                 # Both of Render's inputs are optional, so it may decline to
                 # render and produce no view at all.

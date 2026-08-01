@@ -178,3 +178,80 @@ def test_a_flows_logs_exclude_another_concurrent_flows_records(mocker):
     # The level split has to survive the scoping.
     assert "an error" not in warnings
     assert "a warning" not in errors
+
+
+def _warning(text: str):
+    """
+    The smallest thing loguru hands a callable sink: an object with a
+    ``record`` mapping. Built by hand rather than emitted through loguru,
+    because the interleaving below has to be driven from the test and a real
+    emission would drag the whole logging stack into it.
+    """
+    import types
+
+    return types.SimpleNamespace(
+        record={
+            "extra": {},
+            "level": types.SimpleNamespace(name="WARNING"),
+            "message": text,
+        }
+    )
+
+
+def test_the_issue_sink_does_not_lose_a_repeat_under_concurrency():
+    """
+    ``_StepIssueSink.__call__`` is registered as a loguru *callable* sink with
+    no ``enqueue``, so loguru runs it synchronously on the emitting thread.
+    One step ran at a time before the workflow engine; now every concurrent
+    job's steps emit into this one object, and its check-then-act on a plain
+    dict loses whichever ``Record`` the second thread overwrites, taking that
+    message's ``repeats`` and ``similar`` counts out of the end-of-run replay.
+    """
+    import threading
+
+    from librelane.flows.flow import Flow
+
+    sink = Flow._StepIssueSink()
+
+    # Forces the exact interleaving the missing lock allowed: the first thread
+    # is held between "is this key already collected?" and recording its answer
+    # until the second thread has asked the same question, so both see the key
+    # absent and the second Record silently replaces the first. Holding at
+    # __setitem__ rather than at __contains__ is what makes it deterministic --
+    # released at __contains__, the winner runs all the way to its assignment
+    # before the GIL is handed over and the race never happens.
+    #
+    # The wait is bounded, and the bound is the assertion's other half: a
+    # correctly locked sink can never let the second thread reach __contains__
+    # while the first holds the lock, so the timeout expiring is what the lock
+    # working looks like from in here.
+    entered = threading.Condition()
+    askers = [0]
+
+    class Rendezvous(dict):
+        def __contains__(self, key):
+            with entered:
+                askers[0] += 1
+                entered.notify_all()
+            return super().__contains__(key)
+
+        def __setitem__(self, key, value):
+            with entered:
+                entered.wait_for(lambda: askers[0] == 2, timeout=0.5)
+            super().__setitem__(key, value)
+
+    sink.warnings = Rendezvous()
+
+    threads = [
+        threading.Thread(target=lambda: sink(_warning("the same warning")))
+        for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert list(sink.warnings) == ["the same warning"]
+    assert sink.warnings["the same warning"].repeats == 1, (
+        "one of the two emissions was dropped instead of counted"
+    )

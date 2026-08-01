@@ -93,8 +93,15 @@ def _resolve(name: str, spec: JobSpec) -> Job:
             provider=None,
         )
 
-    assert spec.uses is not None, "checked by JobSpec validation"
-    stage_id, _, named = spec.uses.partition("/")
+    # An omitted 'uses' is the document's central convenience: a job whose id
+    # is a registered template id means that template, which is why the sample
+    # 'lint' and 'floorplan' jobs carry no 'uses' at all. JobSpec deliberately
+    # does not reject the "neither" case -- the template ids live in the stage
+    # registry, which the model layer does not import -- and
+    # spec_validation._require_implementation admits it whenever the id
+    # resolves, so a validated document reaches here with 'uses' still None.
+    uses = spec.uses if spec.uses is not None else name
+    stage_id, _, named = uses.partition("/")
     stage = Stage.factory.get(stage_id)
     assert stage is not None, "checked by _check_uses"
     providers = (named,) if named else stage.default_providers

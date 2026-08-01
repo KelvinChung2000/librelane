@@ -112,7 +112,15 @@ def test_depositing_onto_an_occupied_place_raises():
     with pytest.raises(NetError) as exc_info:
         net.put(Arc(None, "streamout"), "again")
 
-    assert "already holds a token" in str(exc_info.value)
+    message = str(exc_info.value)
+    assert "already holds a token" in message
+    # The net sees a marking, not a document, so it cannot know whether the
+    # cause was a scheduler that fired twice or a document that wrote the same
+    # 'needs' entry twice -- and duplicate 'needs' really did reach here and
+    # get told it was not a configuration error. Both possibilities, no verdict.
+    assert "rather than a configuration error" not in message
+    assert "arc was built twice" in message
+    assert "fired twice" in message
 
 
 def test_the_run_is_complete_when_every_job_has_fired():

@@ -451,6 +451,19 @@ class Flow(ABC):
         def __init__(self) -> None:
             self.warnings: dict[str, Flow._StepIssueSink.Record] = {}
             self.errors: dict[str, Flow._StepIssueSink.Record] = {}
+            #: :meth:`__call__` is registered as a loguru *callable* sink,
+            #: with no ``enqueue``, so loguru invokes it synchronously on
+            #: whichever thread emitted the record. Under
+            #: :class:`librelane.flows.engine.Workflow` several jobs run at
+            #: once and every one of their steps emits into this one object,
+            #: so the check-then-act below is a genuine race: two threads that
+            #: both find the key absent both construct a ``Record`` and the
+            #: second assignment discards the first, losing that message's
+            #: ``repeats`` and ``similar`` counts from the end-of-run replay.
+            #: ``FlowProgressBar.__rows_lock`` and
+            #: ``Fingerprinter.__memo_lock`` guard the other two shared
+            #: mutables on the same path.
+            self.__lock = threading.Lock()
 
         def __call__(self, message) -> None:
             record = message.record
@@ -459,19 +472,20 @@ class Flow(ABC):
             collected = self.errors if level in ("ERROR", "CRITICAL") else self.warnings
             text = str(record["message"])
             key = extra.get("key", text)
-            if key in collected:
-                existing = collected[key]
-                if text == existing.message:
-                    existing.repeats += 1
+            with self.__lock:
+                if key in collected:
+                    existing = collected[key]
+                    if text == existing.message:
+                        existing.repeats += 1
+                    else:
+                        existing.similar += 1
                 else:
-                    existing.similar += 1
-            else:
-                collected[key] = Flow._StepIssueSink.Record(
-                    text,
-                    level=level,
-                    step=extra.get("step"),
-                    step_log=extra.get("step_log"),
-                )
+                    collected[key] = Flow._StepIssueSink.Record(
+                        text,
+                        level=level,
+                        step=extra.get("step"),
+                        step_log=extra.get("step_log"),
+                    )
 
     #: Retained under its former name for external callers.
     _StepWarningSink = _StepIssueSink

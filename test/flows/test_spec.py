@@ -135,6 +135,31 @@ def test_a_needs_naming_an_undeclared_job_is_rejected():
     assert "synthesis" in message
 
 
+def test_a_needs_naming_the_same_job_twice_is_rejected():
+    # A duplicate used to load cleanly and die mid-run: edges() returned
+    # ["synthesis", "synthesis"], Net built two equal arcs, and the second
+    # deposit raised NetError -- whose message asserted this was "a scheduling
+    # bug rather than a configuration error", which is precisely backwards.
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "synthesis": {"uses": "synthesis/yosys"},
+                    "floorplan": {
+                        "needs": ["synthesis", "synthesis"],
+                        "uses": "floorplan",
+                    },
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "floorplan" in message
+    assert "synthesis" in message
+    assert "more than once" in message
+
+
 def test_a_cycle_is_rejected_naming_its_members():
     with pytest.raises(FlowSpecError) as exc_info:
         FlowSpec.model_validate(

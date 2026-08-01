@@ -246,12 +246,26 @@ class FlowSpec(BaseModel):
 
     def _check_needs_are_declared(self) -> None:
         for name, job in self.jobs.items():
+            seen: set[str] = set()
             for need in job.needs:
                 if need not in self.jobs:
                     raise FlowSpecError(
                         f"Job '{name}' needs '{need}', which this flow does "
                         f"not declare. Declared jobs: {sorted(self.jobs)}."
                     )
+                # One entry per predecessor, because 'needs' is a set of edges
+                # written as a list. A repeat gives the job two input places on
+                # the same edge, which is not expressible as a marking: the
+                # producer deposits one token per outgoing place and there is
+                # only one such place. Caught here rather than deduplicated,
+                # because a document that says 'a' twice means something the
+                # graph cannot express and should be told so.
+                if need in seen:
+                    raise FlowSpecError(
+                        f"Job '{name}' needs '{need}' more than once. A "
+                        f"'needs' list names each predecessor exactly once."
+                    )
+                seen.add(need)
 
     def _check_acyclic(self) -> None:
         try:

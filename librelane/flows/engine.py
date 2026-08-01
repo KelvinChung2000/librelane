@@ -26,7 +26,7 @@ from librelane.state import State
 from librelane.steps import DeferredStepError, Step, StepError, StepException
 from librelane.flows.flow import Flow, FlowError, FlowException
 from librelane.flows.job import Job, resolve_jobs
-from librelane.flows.join import join_states
+from librelane.flows.join import join_sink_states, join_states
 from librelane.flows.net import Net
 from librelane.flows.resume import resume_key, reusable_state, write_entry
 from librelane.flows.spec import FlowSpec
@@ -253,6 +253,10 @@ class Workflow(Flow):
         ------
         JoinConflictError
             If two leaves disagree and no ``final`` is declared.
+            :func:`librelane.flows.join.join_sink_states` rather than
+            :func:`librelane.flows.join.join_states`, because the two remedies
+            differ: a job join is settled by that job's ``source``, and a sink
+            join can only be settled by the document's top-level ``final``.
         NetError
             If a sink place is unmarked, which
             :meth:`librelane.flows.net.Net.sink_tokens` raises and which means
@@ -263,11 +267,7 @@ class Workflow(Flow):
                 "checked by FlowSpec._check_final_names_a_job"
             )
             return outputs[self.spec.final]
-        return join_states(
-            net.sink_tokens(),
-            {},
-            f"the final state of flow '{self.spec.name}'",
-        )
+        return join_sink_states(net.sink_tokens(), self.spec.name)
 
     def _tokens_for(self, net: Net, job: Job) -> dict[str, State]:
         arcs = net.inputs_of(job.id)
@@ -406,17 +406,52 @@ class Workflow(Flow):
         return self.run_dir / job.id / f"{index + 1}-{slugify(type(step).id)}"
 
     def _check_contract(self, job: Job, state: State) -> None:
+        """
+        Asserts a completed job produced everything its template promised.
+
+        Only a ``uses`` job has a promise to assert, and the asymmetry is
+        deliberate. A stage's ``provides`` and ``metrics`` are curated by hand
+        next to the provider that has to honour them, so every entry is a
+        guarantee. An inline ``steps`` job's ``provides`` is derived in
+        :func:`librelane.flows.job.resolve_jobs` as the union of its steps'
+        ``outputs``, and :class:`librelane.steps.Step` documents ``outputs`` as
+        the views a step *may* emit, not the ones it must: ``Odb.DiodesOnPorts``
+        declares five and emits none when ``DIODE_ON_PORTS`` is ``"none"``,
+        which is the default. Asserting a derived union would therefore make a
+        stock configuration a hard error, and would be a stricter rule than the
+        ``SequentialFlow`` this engine is meant to be equivalent to, which
+        contract-checks no bare step at all.
+
+        The derived ``provides`` is still computed and still correct: phase 1's
+        reachability analysis reads it as a claim about what a job *can*
+        contribute to its successors, which is exactly what a permission is.
+        This method is the one place that would read it as an obligation, and
+        so it is the one place that does not.
+
+        Parameters
+        ----------
+        job : Job
+            The job that completed.
+        state : State
+            The state it produced.
+
+        Raises
+        ------
+        JobContractError
+            If a ``uses`` job is missing a view or metric its stage or provider
+            declared.
+        """
+        if job.provider is None:
+            return
         for view in job.provides:
             if state.get_by_df(view) is None:
                 raise JobContractError(
                     f"Job '{job.id}' completed without producing view "
-                    f"'{view}', which it declares. Provider: "
-                    f"{job.provider or 'inline steps'}."
+                    f"'{view}', which it declares. Provider: {job.provider}."
                 )
         for metric in job.metrics:
             if metric not in state.metrics:
                 raise JobContractError(
                     f"Job '{job.id}' completed without producing metric "
-                    f"'{metric}', which it declares. Provider: "
-                    f"{job.provider or 'inline steps'}."
+                    f"'{metric}', which it declares. Provider: {job.provider}."
                 )

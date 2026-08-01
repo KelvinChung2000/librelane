@@ -30,7 +30,118 @@ def _bool_var(name: str, default: bool) -> dict:
     }
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
+@pytest.fixture(scope="module")
+def contract_stage():
+    """
+    A stage with a hand-curated contract, and five providers for it.
+
+    Every other job in this module is an inline ``steps`` job, and an inline
+    job is deliberately exempt from the output-contract check: its ``provides``
+    is derived from its steps' ``outputs``, which a step declares as a
+    permission rather than an obligation. Only a ``uses`` job carries a
+    contract someone wrote down on purpose, so only a ``uses`` job can exercise
+    :meth:`librelane.flows.engine.Workflow._check_contract` at all -- including
+    its metric half, which nothing else in the phase reaches, because an inline
+    job's ``metrics`` is always empty.
+
+    Module-scoped: ``Stage.factory`` is a process-wide singleton, so
+    registering the same id once per test would raise on the second use.
+
+    Returns
+    -------
+    The :class:`threading.Event` the ``blocking`` provider's step waits on
+    before returning, so a test can pin an interleaving against it.
+    """
+    import pathlib
+    import threading
+
+    from librelane.stages import Stage, StageRegistry
+    from librelane.state import DesignFormat
+    from librelane.steps import DeferredStepError, Step
+
+    Stage(
+        id="engine_contract",
+        full_name="Engine Contract",
+        default_provider="honest",
+        requires=(),
+        provides=(DesignFormat.nl,),
+        metrics=("engine__contract",),
+    ).register()
+
+    released = threading.Event()
+
+    class Base(Step):
+        inputs = []
+        # Declared by every provider, because StageRegistry checks a stage's
+        # 'provides' against its provider's *declared* outputs at registration.
+        # Whether a provider then actually writes the view is the run-time
+        # question these tests are about.
+        outputs = [DesignFormat.nl]
+
+        def netlist(self) -> dict:
+            out = pathlib.Path(self.step_dir) / "design.nl.v"
+            out.write_text("module top(); endmodule")
+            return {DesignFormat.nl: out}
+
+    @Step.factory.register()
+    class Honest(Base):
+        id = "Test.ContractHonest"
+
+        def run(self, state_in, **kwargs):
+            return self.netlist(), {"engine__contract": 1}
+
+    @Step.factory.register()
+    class NoView(Base):
+        id = "Test.ContractNoView"
+
+        def run(self, state_in, **kwargs):
+            return {}, {"engine__contract": 1}
+
+    @Step.factory.register()
+    class NoMetric(Base):
+        id = "Test.ContractNoMetric"
+
+        def run(self, state_in, **kwargs):
+            return self.netlist(), {}
+
+    @Step.factory.register()
+    class Deferring(Base):
+        id = "Test.ContractDeferring"
+
+        def run(self, state_in, **kwargs):
+            raise DeferredStepError("the tool reported 3 violations")
+
+    @Step.factory.register()
+    class Blocking(Base):
+        id = "Test.ContractBlocking"
+
+        def run(self, state_in, **kwargs):
+            from librelane.steps.step.exceptions import StepError
+
+            if not released.wait(timeout=30):
+                raise StepError(
+                    "the sibling job never released this one, so the "
+                    "interleaving the test needs did not happen"
+                )
+            return {}, {"engine__contract": 1}
+
+    for provider, step in (
+        ("honest", Honest),
+        ("no_view", NoView),
+        ("no_metric", NoMetric),
+        ("deferring", Deferring),
+        ("blocking", Blocking),
+    ):
+        StageRegistry.register(
+            stage="engine_contract",
+            provider=provider,
+            steps=[step],
+            namespaces=["ENGINE_CONTRACT_"],
+        )
+
+    return released
+
+
 @mock_variables([flow_module, step_module])
 def test_jobs_fire_in_topological_order(counting_steps, minimal_design, mock_pdk):
     from librelane.flows.engine import Workflow
@@ -53,7 +164,6 @@ def test_jobs_fire_in_topological_order(counting_steps, minimal_design, mock_pdk
     assert order == ["Test.EngineFirst", "Test.EngineSecond"]
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_the_document_name_is_the_flow_name(
     counting_steps, minimal_design, mock_pdk, mocker
@@ -78,7 +188,6 @@ def test_the_document_name_is_the_flow_name(
     assert progress_bar.call_args_list == [mocker.call("Tiny")]
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_a_false_condition_passes_state_through_without_running(
     counting_steps, minimal_design, mock_pdk
@@ -105,7 +214,6 @@ def test_a_false_condition_passes_state_through_without_running(
     assert order == ["Test.EngineSecond"]
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_a_conjunction_runs_the_job_only_when_every_variable_is_true(
     counting_steps, minimal_design, mock_pdk
@@ -131,7 +239,6 @@ def test_a_conjunction_runs_the_job_only_when_every_variable_is_true(
     assert order == ["Test.EngineSecond"]
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_a_conjunction_whose_variables_are_all_true_runs_the_job(
     counting_steps, minimal_design, mock_pdk
@@ -156,7 +263,6 @@ def test_a_conjunction_whose_variables_are_all_true_runs_the_job(
     assert order == ["Test.EngineFirst"]
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_a_skipped_job_passes_state_through_without_running(
     counting_steps, minimal_design, mock_pdk
@@ -181,7 +287,6 @@ def test_a_skipped_job_passes_state_through_without_running(
     assert order == ["Test.EngineSecond"]
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_a_step_writes_into_its_job_s_directory(
     counting_steps, minimal_design, mock_pdk
@@ -200,26 +305,37 @@ def test_a_step_writes_into_its_job_s_directory(
     assert (flow.run_dir / "first" / "1-test-enginefirst").is_dir()
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
-def test_a_job_that_does_not_produce_its_contract_raises(minimal_design, mock_pdk):
-    from librelane.flows.flow import FlowError
+def test_a_uses_job_honours_its_stage_derived_contract(
+    contract_stage, minimal_design, mock_pdk
+):
     from librelane.flows.engine import Workflow
     from librelane.flows.spec import FlowSpec
     from librelane.state import DesignFormat
-    from librelane.steps import Step
-
-    @Step.factory.register()
-    class Liar(Step):
-        id = "Test.EngineLiar"
-        inputs = []
-        outputs = [DesignFormat.nl]
-
-        def run(self, state_in, **kwargs):
-            return {}, {}
 
     spec = FlowSpec.model_validate(
-        {"name": "Tiny", "jobs": {"liar": {"steps": ["Test.EngineLiar"]}}}
+        {"name": "Tiny", "jobs": {"work": {"uses": "engine_contract/honest"}}}
+    )
+
+    final = Workflow(spec, minimal_design, **mock_pdk).start(tag="t")
+
+    # Both halves of the contract came from the stage, not from the step: the
+    # provider's only declaration is 'outputs', which says nothing about
+    # metrics at all.
+    assert final[DesignFormat.nl] is not None
+    assert final.metrics["engine__contract"] == 1
+
+
+@mock_variables([flow_module, step_module])
+def test_a_uses_job_that_does_not_produce_its_declared_view_raises(
+    contract_stage, minimal_design, mock_pdk
+):
+    from librelane.flows.flow import FlowError
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"liar": {"uses": "engine_contract/no_view"}}}
     )
 
     # FlowError rather than JobContractError: a contract miss is collected
@@ -233,25 +349,44 @@ def test_a_job_that_does_not_produce_its_contract_raises(minimal_design, mock_pd
 
     message = str(exc_info.value)
     assert "liar" in message
-    # Quoted, because the bare substring "nl" also occurs in the message's
-    # "inline steps" provider text, so it would hold even if the view were
-    # never interpolated.
     assert "'nl'" in message
+    # The provider is the actionable half: 'engine_contract' has five of them
+    # and only this one broke its promise.
+    assert "Provider: no_view" in message
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
-def test_a_pass_through_job_is_exempt_from_the_output_contract(
-    minimal_design, mock_pdk
+def test_a_uses_job_that_does_not_produce_its_declared_metric_raises(
+    contract_stage, minimal_design, mock_pdk
 ):
+    from librelane.flows.flow import FlowError
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"quiet": {"uses": "engine_contract/no_metric"}}}
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowError) as exc_info:
+        flow.start(tag="t")
+
+    message = str(exc_info.value)
+    assert "quiet" in message
+    assert "'engine__contract'" in message
+    assert "Provider: no_metric" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_an_inline_job_is_exempt_from_the_output_contract(minimal_design, mock_pdk):
     from librelane.flows.engine import Workflow
     from librelane.flows.spec import FlowSpec
     from librelane.state import DesignFormat
     from librelane.steps import Step
 
     @Step.factory.register()
-    class Liar(Step):
-        id = "Test.EngineLiar"
+    class Optional(Step):
+        id = "Test.EngineOptional"
         inputs = []
         outputs = [DesignFormat.nl]
 
@@ -259,50 +394,61 @@ def test_a_pass_through_job_is_exempt_from_the_output_contract(
             return {}, {}
 
     spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"maybe": {"steps": ["Test.EngineOptional"]}}}
+    )
+
+    # Step.outputs is documented as the views a step *may* emit.
+    # Odb.DiodesOnPorts declares five and emits none whenever DIODE_ON_PORTS is
+    # "none", which is the default, so asserting an inline job's derived
+    # 'provides' would make a stock configuration a hard error -- and a
+    # stricter rule than the SequentialFlow this engine is equivalent to, which
+    # contract-checks no bare step at all. A 'uses' job, whose contract someone
+    # curated by hand, is still checked.
+    Workflow(spec, minimal_design, **mock_pdk).start(tag="t")
+
+
+@mock_variables([flow_module, step_module])
+def test_a_pass_through_job_is_exempt_from_the_output_contract(
+    contract_stage, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
         {
             "name": "Tiny",
             "config": [_bool_var("RUN_LIAR", False)],
             "jobs": {
-                "liar": {"steps": ["Test.EngineLiar"], "if": "RUN_LIAR"},
+                "liar": {"uses": "engine_contract/no_view", "if": "RUN_LIAR"},
             },
         }
     )
 
     flow = Workflow(spec, minimal_design, **mock_pdk)
 
-    # The job declares 'nl' and produces nothing, but it never ran, so there is
-    # no contract to have broken. Raising here would make every gated-off job
-    # in a document a hard error.
+    # The job's stage declares 'nl' and the job produces nothing, but it never
+    # ran, so there is no contract to have broken. Raising here would make
+    # every gated-off job in a document a hard error.
     flow.start(tag="t")
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
-def test_a_deferred_error_is_not_replaced_by_a_contract_error(minimal_design, mock_pdk):
+def test_a_deferred_error_is_not_replaced_by_a_contract_error(
+    contract_stage, minimal_design, mock_pdk
+):
     from librelane.flows.engine import JobContractError, Workflow
     from librelane.flows.flow import FlowError
     from librelane.flows.spec import FlowSpec
-    from librelane.state import DesignFormat
-    from librelane.steps import DeferredStepError, Step
-
-    @Step.factory.register()
-    class Deferrer(Step):
-        id = "Test.EngineDeferrer"
-        inputs = []
-        outputs = [DesignFormat.nl]
-
-        def run(self, state_in, **kwargs):
-            raise DeferredStepError("the tool reported 3 violations")
 
     spec = FlowSpec.model_validate(
-        {"name": "Tiny", "jobs": {"deferrer": {"steps": ["Test.EngineDeferrer"]}}}
+        {"name": "Tiny", "jobs": {"deferrer": {"uses": "engine_contract/deferring"}}}
     )
 
     flow = Workflow(spec, minimal_design, **mock_pdk)
     with pytest.raises(FlowError) as exc_info:
         flow.start(tag="t")
 
-    # The step deferred, so it never produced the 'nl' it declares. The
+    # The step deferred, so it never produced the 'nl' its stage declares. The
     # deferred error is the real diagnosis and must be what surfaces.
     assert "the tool reported 3 violations" in str(exc_info.value)
     assert not isinstance(exc_info.value, JobContractError)
@@ -372,7 +518,6 @@ def _two_streamouts(final: str | None = None) -> dict:
     return document
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_the_final_state_is_the_join_of_the_leaves(
     counting_steps, minimal_design, mock_pdk
@@ -398,7 +543,6 @@ def test_the_final_state_is_the_join_of_the_leaves(
     assert final.metrics["second"] == 1
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_two_leaves_with_conflicting_views_are_a_run_time_conflict(
     gds_writers, minimal_design, mock_pdk
@@ -417,9 +561,20 @@ def test_two_leaves_with_conflicting_views_are_a_run_time_conflict(
     assert "gds" in message
     assert "magic_streamout" in message
     assert "klayout_streamout" in message
+    # The remedy, which is the half a document author acts on. Spec lines
+    # 96-100: no job's 'source' can resolve a sink conflict, because the sink
+    # is not a job, which is exactly why the document has a top-level 'final'.
+    # Routing this join through the job-join message prescribed 'source' and
+    # named a whole English sentence where a job id belongs.
+    assert "final: " in message
+    assert "'source' can resolve this" in message
+    assert "source: {" not in message
+    # The flow's name, not a sentence about it wrapped in the quotes that a job
+    # id would have carried.
+    assert "flow 'Streamout'" in message
+    assert "Job 'the final state" not in message
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_final_names_the_job_whose_state_is_returned(
     gds_writers, minimal_design, mock_pdk
@@ -438,7 +593,6 @@ def test_final_names_the_job_whose_state_is_returned(
     )
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_independent_branches_both_run(minimal_design, mock_pdk):
     from librelane.flows.engine import Workflow
@@ -505,7 +659,7 @@ def two_workers():
     pool.shutdown()
 
 
-@pytest.mark.usefixtures("_mock_conf_fs", "two_workers")
+@pytest.mark.usefixtures("two_workers")
 @mock_variables([flow_module, step_module])
 def test_two_enabled_jobs_run_at_the_same_time(minimal_design, mock_pdk):
     import threading
@@ -556,7 +710,6 @@ def test_two_enabled_jobs_run_at_the_same_time(minimal_design, mock_pdk):
     assert not barrier.broken
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_a_failure_reports_every_failed_job_not_just_the_first(
     minimal_design, mock_pdk
@@ -607,7 +760,6 @@ def test_a_failure_reports_every_failed_job_not_just_the_first(
     assert "right exploded" in message
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_a_job_downstream_of_a_failure_does_not_run(minimal_design, mock_pdk):
     from librelane.flows.flow import FlowError
@@ -656,19 +808,15 @@ def test_a_job_downstream_of_a_failure_does_not_run(minimal_design, mock_pdk):
     assert ran == []
 
 
-@pytest.mark.usefixtures("_mock_conf_fs", "two_workers")
+@pytest.mark.usefixtures("two_workers")
 @mock_variables([flow_module, step_module])
 def test_one_job_s_deferral_does_not_exempt_another_from_its_contract(
-    minimal_design, mock_pdk
+    contract_stage, minimal_design, mock_pdk
 ):
-    import threading
-
     from librelane.flows.flow import FlowError
     from librelane.flows.engine import Workflow
     from librelane.flows.spec import FlowSpec
-    from librelane.state import DesignFormat
     from librelane.steps import DeferredStepError, Step
-    from librelane.steps.step.exceptions import StepError
 
     # The interleaving is the whole test, and it has to be exact. An engine
     # keeping one shared list of deferrals gets the right answer by accident
@@ -679,8 +827,13 @@ def test_one_job_s_deferral_does_not_exempt_another_from_its_contract(
     #
     # So 'deferrer' gets a second step. The engine records a deferral before
     # moving to the next step of the same job, so reaching Announce proves the
-    # deferral is recorded, and 'liar' does not return until it does.
-    deferral_recorded = threading.Event()
+    # deferral is recorded, and 'liar' -- the 'blocking' provider, which waits
+    # on the very event Announce sets -- does not return until it does.
+    #
+    # 'liar' is a 'uses' job now: an inline job carries no contract to be
+    # exempted from, so only a curated one can make this question meaningful.
+    deferral_recorded = contract_stage
+    deferral_recorded.clear()
 
     @Step.factory.register()
     class Deferrer(Step):
@@ -701,26 +854,12 @@ def test_one_job_s_deferral_does_not_exempt_another_from_its_contract(
             deferral_recorded.set()
             return {}, {}
 
-    @Step.factory.register()
-    class Liar(Step):
-        id = "Test.EngineLiar"
-        inputs = []
-        outputs = [DesignFormat.nl]
-
-        def run(self, state_in, **kwargs):
-            if not deferral_recorded.wait(timeout=30):
-                raise StepError(
-                    "'deferrer' never recorded its deferral, so the "
-                    "interleaving this test needs did not happen"
-                )
-            return {}, {}
-
     spec = FlowSpec.model_validate(
         {
             "name": "Tiny",
             "jobs": {
                 "deferrer": {"steps": ["Test.EngineDeferrer", "Test.EngineAnnounce"]},
-                "liar": {"steps": ["Test.EngineLiar"]},
+                "liar": {"uses": "engine_contract/blocking"},
             },
         }
     )
@@ -739,7 +878,7 @@ def test_one_job_s_deferral_does_not_exempt_another_from_its_contract(
     assert "'nl'" in message
 
 
-@pytest.mark.usefixtures("_mock_conf_fs", "two_workers")
+@pytest.mark.usefixtures("two_workers")
 @mock_variables([flow_module, step_module])
 def test_two_jobs_running_one_step_class_do_not_share_a_log(minimal_design, mock_pdk):
     import os
@@ -797,7 +936,6 @@ def test_two_jobs_running_one_step_class_do_not_share_a_log(minimal_design, mock
     assert "marker for a" not in b_log
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow_module, step_module])
 def test_an_error_scheduling_a_job_is_collected_not_raised_from_the_sweep(
     gds_writers, minimal_design, mock_pdk
@@ -831,3 +969,99 @@ def test_an_error_scheduling_a_job_is_collected_not_raised_from_the_sweep(
     # progress bar and this run's loguru sinks with jobs still in flight,
     # leaving them writing to sinks that no longer exist.
     assert "Job 'sink':" in str(exc_info.value)
+
+
+@mock_variables([flow_module, step_module])
+def test_a_job_that_omits_uses_runs_the_template_its_id_names(
+    contract_stage, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+    from librelane.state import DesignFormat
+
+    # The document's central convenience, and the reason the spec's own sample
+    # 'classic.yaml' writes 'lint:' and 'floorplan:' with nothing under them.
+    # It has to survive all the way to a run: Workflow.__init__ calls
+    # resolve_jobs, so a job that could not be resolved would not merely fail
+    # to run, it would kill the document on construction.
+    spec = FlowSpec.model_validate({"name": "Tiny", "jobs": {"engine_contract": {}}})
+
+    final = Workflow(spec, minimal_design, **mock_pdk).start(tag="t")
+
+    assert final[DesignFormat.nl] is not None
+    assert final.metrics["engine__contract"] == 1
+
+
+@mock_variables([flow_module, step_module])
+def test_a_resumed_workflow_executes_nothing(minimal_design, mock_pdk):
+    import pathlib
+
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+    from librelane.state import DesignFormat, State
+    from librelane.steps import Step
+
+    runs: dict[str, int] = {}
+
+    class Base(Step):
+        inputs = []
+        outputs = [DesignFormat.JSON_HEADER]
+
+        def payload(self, state_in: State) -> str:
+            """
+            What this step's output is derived from, so that a re-run really
+            would change the next step's input and a broken resume would
+            cascade rather than stopping at one step.
+            """
+            incoming = state_in.get(DesignFormat.JSON_HEADER)
+            if incoming is None:
+                return ""
+            return pathlib.Path(str(incoming)).read_text()
+
+        def run(self, state_in, **kwargs):
+            runs[type(self).id] = runs.get(type(self).id, 0) + 1
+            out = pathlib.Path(self.step_dir) / "whatever.json"
+            out.write_text(
+                f'{{"by": "{type(self).id}", "from": {self.payload(state_in)!r}}}'
+            )
+            return {DesignFormat.JSON_HEADER: out}, {}
+
+    @Step.factory.register()
+    class Upstream(Base):
+        id = "Test.EngineResumeUpstream"
+
+    @Step.factory.register()
+    class Downstream(Base):
+        id = "Test.EngineResumeDownstream"
+        inputs = [DesignFormat.JSON_HEADER]
+
+    document = {
+        "name": "Resume",
+        "jobs": {
+            "up": {"steps": ["Test.EngineResumeUpstream"]},
+            "down": {
+                "needs": ["up"],
+                "steps": ["Test.EngineResumeDownstream"],
+            },
+        },
+    }
+
+    def make():
+        return Workflow(FlowSpec.model_validate(document), minimal_design, **mock_pdk)
+
+    make().start(tag="t")
+    assert runs == {
+        "Test.EngineResumeUpstream": 1,
+        "Test.EngineResumeDownstream": 1,
+    }
+
+    make().start(tag="t")
+
+    # Resume is the no-regression pin phase 4 depends on. It works through
+    # Workflow today because dir_for_job_step is keyed on the job rather than
+    # on a global step counter, which is exactly what a concurrent engine
+    # cannot have; nothing pinned it until now.
+    assert runs == {
+        "Test.EngineResumeUpstream": 1,
+        "Test.EngineResumeDownstream": 1,
+    }
