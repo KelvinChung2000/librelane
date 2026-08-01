@@ -233,37 +233,6 @@ def apply_initial_state_overrides(request: FlowRequest) -> State | None:
     return type(state)(state, overrides=overrides)
 
 
-def format_explanation(explanation: Explanation) -> str:
-    """
-    Renders an :class:`librelane.flows.Explanation` as a fixed-width table.
-
-    Parameters
-    ----------
-    explanation : Explanation
-        What the flow reported.
-
-    Returns
-    -------
-    str
-        The table, without a trailing newline.
-    """
-    width = max((len(d.step_id) for d in explanation.steps), default=0)
-    lines = [f"{'STEP'.ljust(width)}  RUN  MECHANISM  REASON"]
-    for disposition in explanation.steps:
-        mark = "yes" if disposition.will_run else "no "
-        mechanism = (disposition.mechanism or "").ljust(9)
-        lines.append(
-            f"{disposition.step_id.ljust(width)}  {mark}  {mechanism}  "
-            f"{disposition.reason}"
-        )
-    if explanation.unselected_jobs:
-        lines.append("")
-        lines.append(
-            "Jobs contributing no steps: " + ", ".join(explanation.unselected_jobs)
-        )
-    return "\n".join(lines)
-
-
 def format_job_explanation(explanation: Explanation) -> str:
     """
     Renders the job half of an :class:`librelane.flows.Explanation` as a

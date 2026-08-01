@@ -91,24 +91,31 @@ The {class}`librelane.flows.Flow` class is an
 [abstract base class](https://docs.python.org/3/glossary.html#term-abstract-base-class)
 from which all other flows inherit.
 
-### Sequential Flows
+### Workflows
 
-A subclass of Flows, {class}`librelane.flows.SequentialFlow` will, as the name
-implies, run its declared steps in sequence with the same configuration object
-and a consecutive states, i.e.
+The flow LibreLane ships is not written in Python at all. It is a **workflow
+document**: a YAML file declaring a graph of named **jobs** and the edges
+between them. {class}`librelane.flows.engine.Workflow` is the one concrete
+`Flow` in the codebase, and running a document means handing it to that class.
+
+Within a job, steps run in sequence, sharing one configuration object and
+threading a state through, i.e.
 
 ```{math}
   State_{i} = Step_{i}(State_{i - 1}, Config)
 ```
 
-So, for a flow of {math}`n` steps, the final state, {math}`State_{n}` will be
-the output of the entire flow.
+So, for a job of {math}`n` steps, {math}`State_{n}` is what that job
+contributes.
+
+Between jobs, the engine runs the graph as a Petri net: a job fires once every
+edge into it has delivered a state, and two jobs with no path between them run
+concurrently. The run's final state is the join of the leaves.
 
 The default flow of LibreLane when run from the command-line is the workflow
 document named [`Classic`](./flows.md#classic), which is based off of OpenLane.
-A document declares jobs and the edges between them, and the engine runs it as a
-Petri net, so the equation above describes one job's step sequence rather than
-the whole flow.
+See [Writing Custom Flows](../usage/writing_custom_flows.md) for how to write
+one of your own.
 
 ## Configuration
 

@@ -18,36 +18,6 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class StepDisposition:
-    """
-    Why one step will or will not run, for one prospective invocation.
-
-    Parameters
-    ----------
-    step_id : str
-        The step's ID, as it appears in the resolved step list.
-    will_run : bool
-        Whether this invocation would execute the step.
-    reason : str
-        A sentence naming the cause, suitable for printing.
-    mechanism : str | None
-        ``None`` when :attr:`will_run` is true, and otherwise
-        one of ``gate``, ``skip`` or ``window``.
-
-        Those three are the only values a step entry can carry, because they
-        are the only mechanisms that exclude a step which is present in the
-        resolved list. A step dropped by a ``TOOLS`` selection is not in the
-        list at all and so has no entry, which is why provider selection is
-        not among them.
-    """
-
-    step_id: str
-    will_run: bool
-    reason: str
-    mechanism: str | None
-
-
-@dataclass(frozen=True)
 class JobDisposition:
     """
     Why one job will or will not run its steps, for one prospective invocation.
@@ -157,25 +127,13 @@ class Explanation:
 
     Parameters
     ----------
-    steps : tuple[StepDisposition, ...]
-        One entry per step in the resolved step list, in execution
-        order.
-    unselected_jobs : tuple[str, ...]
-        Jobs that contributed no steps, because
-        ``TOOLS`` left them out or because their default provider is ``None``.
-        These cannot be step entries, having no steps. Always empty for a flow
-        that declares ``Steps`` directly and so has no jobs.
     jobs : tuple[JobDisposition, ...]
-        One entry per job the document declares, in topological order. Empty
-        for a ``SequentialFlow``, which has jobs no more than a ``Workflow``
-        has stages. Both halves live here until phase 5 deletes the first.
+        One entry per job the document declares, in topological order.
     variables : tuple[VariableDisposition, ...]
         One entry per configuration variable the flow resolves, plus one more
-        for each further value a job resolved it to. Empty for a
-        ``SequentialFlow``, whose steps all read one configuration.
+        for each further value a job resolved it to. Empty when the caller
+        asked for the job table only.
     """
 
-    steps: tuple[StepDisposition, ...]
-    unselected_jobs: tuple[str, ...]
     jobs: tuple[JobDisposition, ...] = ()
     variables: tuple[VariableDisposition, ...] = ()

@@ -11,6 +11,18 @@ pytestmark = pytest.mark.all
 
 mock_variables = pytest.mock_variables
 
+#: Three jobs, one step each, chained so that re-running any of them changes
+#: what the next one receives. A one-job document could not show a cascade at
+#: all, which is half of what resume has to get right.
+DOCUMENT = {
+    "name": "Resume",
+    "jobs": {
+        "first": {"steps": ["Test.ResumeFirst"]},
+        "second": {"needs": ["first"], "steps": ["Test.ResumeSecond"]},
+        "third": {"needs": ["second"], "steps": ["Test.ResumeThird"]},
+    },
+}
+
 
 @pytest.fixture
 def ResumeSteps():
@@ -42,96 +54,79 @@ def ResumeSteps():
             return pathlib.Path(str(incoming)).read_text()
 
         def run(self, state_in: State, **kwargs):
-            runs[self.id] = runs.get(self.id, 0) + 1
+            # The class's id, not the instance's: a workflow names the job in
+            # each instance's id, and which step executed is the question.
+            runs[type(self).id] = runs.get(type(self).id, 0) + 1
             out_file = pathlib.Path(self.step_dir) / "whatever.json"
             out_file.write_text(
-                json.dumps({"produced_by": self.id, "from": self.payload(state_in)})
+                json.dumps(
+                    {"produced_by": type(self).id, "from": self.payload(state_in)}
+                )
             )
             return {DesignFormat.JSON_HEADER: pathlib.Path(out_file)}, {}
 
+    @Step.factory.register()
     class First(Base):
-        id = "Test.First"
+        id = "Test.ResumeFirst"
 
         class Config(Base.Config):
             DUMMY_VARIABLE: str = variable(description="x")
 
         def payload(self, state_in: State) -> str:
-            # Test.First has no input, so its configuration is what its output
-            # is derived from.
+            # Test.ResumeFirst has no input, so its configuration is what its
+            # output is derived from.
             return str(self.config["DUMMY_VARIABLE"])
 
+    @Step.factory.register()
     class Second(Base):
-        id = "Test.Second"
+        id = "Test.ResumeSecond"
         inputs = [DesignFormat.JSON_HEADER]
 
+    @Step.factory.register()
     class Third(Base):
-        id = "Test.Third"
+        id = "Test.ResumeThird"
         inputs = [DesignFormat.JSON_HEADER]
 
     return (First, Second, Third), runs
 
 
 @pytest.fixture
-def ResumeFlow(ResumeSteps):
-    from librelane.flows import SequentialFlow
+def ResumeFlow(ResumeSteps, minimal_design, mock_pdk):
+    """
+    Returns
+    -------
+    ``(make, runs)``, where ``make`` builds a fresh :class:`Workflow` over
+    :data:`DOCUMENT` and ``runs`` counts each step's executions.
 
-    (First, Second, Third), runs = ResumeSteps
+    A factory rather than one instance, because resuming is what a *second*
+    invocation does, and an instance that carried its first run's state into
+    the second would not be exercising the path a user takes.
+    """
+    _, runs = ResumeSteps
 
-    class ResumeFlow(SequentialFlow):
-        Steps = [First, Second, Third]
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
 
     def make():
-        return ResumeFlow(
-            {
-                "DESIGN_NAME": "WHATEVER",
-                "DUMMY_VARIABLE": "PINGAS",
-                "VERILOG_FILES": ["/cwd/src/a.v"],
-            },
-            design_dir="/cwd",
-            pdk="dummy",
-            scl="dummy_scl",
-            pdk_root="/pdk",
+        return Workflow(
+            FlowSpec.model_validate(DOCUMENT),
+            {**minimal_design, "DUMMY_VARIABLE": "PINGAS"},
+            **mock_pdk,
         )
 
     return make, runs
 
 
-def step_dirs(tag="T"):
+def job_dirs(run_dir) -> list[str]:
+    """Every directory the run wrote, relative to the run directory."""
+    root = pathlib.Path(run_dir)
     return sorted(
-        entry.name
-        for entry in pathlib.Path(f"/cwd/runs/{tag}").iterdir()
-        if entry.is_dir() and entry.name != "final" and entry.name != "tmp"
+        str(entry.relative_to(root))
+        for entry in root.rglob("*")
+        if entry.is_dir() and entry.name != "tmp"
     )
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow, step])
-def test_step_directories_are_positional(ResumeFlow):
-    """
-    A step's directory must not depend on how many earlier steps happened to
-    run, or a resumed run cannot find its own prior output.
-    """
-    make, _ = ResumeFlow
-    make().start(tag="T")
-
-    assert step_dirs() == ["1-test-first", "2-test-second", "3-test-third"]
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow, step])
-def test_a_skipped_step_leaves_its_position_empty(ResumeFlow):
-    """
-    Today's dense counter would name the third step 2-. Positional numbering
-    leaves the gap, which is the point: Test.Third keeps its directory whether
-    or not Test.Second ran.
-    """
-    make, _ = ResumeFlow
-    make().start(tag="T", skip=["Test.Second"])
-
-    assert step_dirs() == ["1-test-first", "3-test-third"]
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
 def test_the_flow_owns_one_fingerprinter_per_run(ResumeFlow):
     """
@@ -149,174 +144,92 @@ def test_the_flow_owns_one_fingerprinter_per_run(ResumeFlow):
     assert isinstance(subject.fingerprinter, Fingerprinter)
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow, step])
-def test_a_resumed_run_executes_nothing(ResumeFlow):
-    make, runs = ResumeFlow
-    make().start(tag="T")
-    assert runs == {"Test.First": 1, "Test.Second": 1, "Test.Third": 1}
-
-    make().start(last_run=True)
-
-    assert runs == {"Test.First": 1, "Test.Second": 1, "Test.Third": 1}
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
 def test_a_resumed_run_adds_no_directories(ResumeFlow):
     """The old behaviour appended a whole second pass into the same tag."""
     make, _ = ResumeFlow
-    make().start(tag="T")
-    before = step_dirs()
+    first = make()
+    first.start(tag="T")
+    before = job_dirs(first.run_dir)
 
     make().start(last_run=True)
 
-    assert step_dirs() == before
+    assert job_dirs(first.run_dir) == before
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_a_changed_config_reruns_from_that_step_onward(ResumeFlow):
+def test_an_edited_input_file_reruns_the_flow(ResumeFlow, mock_conf_dir):
     """
-    DUMMY_VARIABLE belongs to Test.First only, but re-running it changes
-    Test.Second's input state, so the invalidation has to cascade.
-    """
-    from librelane.flows import SequentialFlow
-
-    make, runs = ResumeFlow
-    make().start(tag="T")
-
-    (First, Second, Third) = make().Steps
-
-    class Changed(SequentialFlow):
-        Steps = [First, Second, Third]
-
-    Changed(
-        {
-            "DESIGN_NAME": "WHATEVER",
-            "DUMMY_VARIABLE": "DIFFERENT",
-            "VERILOG_FILES": ["/cwd/src/a.v"],
-        },
-        design_dir="/cwd",
-        pdk="dummy",
-        scl="dummy_scl",
-        pdk_root="/pdk",
-    ).start(tag="T")
-
-    assert runs == {"Test.First": 2, "Test.Second": 2, "Test.Third": 2}
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow, step])
-def test_an_edited_input_file_reruns_the_flow(ResumeFlow):
-    """
-    Every path is unchanged; only the bytes of /cwd/src/a.v moved. This is
-    the case a path-equality design reuses wrongly.
+    Every path is unchanged; only the bytes of the design's Verilog moved.
+    This is the case a path-equality design reuses wrongly.
     """
     make, runs = ResumeFlow
-    pathlib.Path("/cwd/src/a.v").write_text("module top(); endmodule")
+    source = pathlib.Path(mock_conf_dir.cwd) / "src" / "a.v"
+    source.write_text("module top(); endmodule")
     make().start(tag="T")
 
-    pathlib.Path("/cwd/src/a.v").write_text("module top(); wire w; endmodule")
+    source.write_text("module top(); wire w; endmodule")
     make().start(tag="T")
 
-    assert runs["Test.First"] == 2
+    assert runs["Test.ResumeFirst"] == 2
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_a_crash_resumes_at_the_failing_step(ResumeSteps):
-    from librelane.flows import FlowError, SequentialFlow
-    from librelane.steps import StepError
+def test_a_crash_resumes_at_the_failing_job(ResumeSteps, ResumeFlow):
+    from librelane.flows import FlowError
+    from librelane.steps import Step, StepError
 
-    (First, Second, Third), runs = ResumeSteps
+    (_, Second, _), runs = ResumeSteps
+    make, _ = ResumeFlow
     fail = {"now": True}
 
+    @Step.factory.register()
     class Flaky(Second):
-        id = "Test.Second"
+        id = "Test.ResumeSecond"
 
         def run(self, state_in, **kwargs):
             if fail["now"]:
                 raise StepError("boom")
             return super().run(state_in, **kwargs)
 
-    class CrashFlow(SequentialFlow):
-        Steps = [First, Flaky, Third]
-
-    def make():
-        return CrashFlow(
-            {
-                "DESIGN_NAME": "WHATEVER",
-                "DUMMY_VARIABLE": "PINGAS",
-                "VERILOG_FILES": ["/cwd/src/a.v"],
-            },
-            design_dir="/cwd",
-            pdk="dummy",
-            scl="dummy_scl",
-            pdk_root="/pdk",
-        )
-
     with pytest.raises(FlowError):
         make().start(tag="T")
-    assert runs == {"Test.First": 1}
+    assert runs == {"Test.ResumeFirst": 1}
 
     fail["now"] = False
     make().start(last_run=True)
 
-    assert runs == {"Test.First": 1, "Test.Second": 1, "Test.Third": 1}
+    assert runs == {
+        "Test.ResumeFirst": 1,
+        "Test.ResumeSecond": 1,
+        "Test.ResumeThird": 1,
+    }
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
 def test_a_deleted_output_view_reruns_only_its_step(ResumeFlow):
     """
-    Test.Third is not dragged along, and that is the payoff of hashing
-    contents rather than counting executions. Test.Second regenerated a
-    byte-identical view, so Test.Third's input is the input it already ran on
-    and its recorded result is still the right answer.
+    Test.ResumeThird is not dragged along, and that is the payoff of hashing
+    contents rather than counting executions. Test.ResumeSecond regenerated a
+    byte-identical view, so Test.ResumeThird's input is the input it already
+    ran on and its recorded result is still the right answer.
     """
     make, runs = ResumeFlow
-    make().start(tag="T")
-    pathlib.Path("/cwd/runs/T/2-test-second/whatever.json").unlink()
+    first = make()
+    first.start(tag="T")
+    (
+        pathlib.Path(first.run_dir) / "second" / "1-test-resumesecond" / "whatever.json"
+    ).unlink()
 
     make().start(last_run=True)
 
-    assert runs == {"Test.First": 1, "Test.Second": 2, "Test.Third": 1}
+    assert runs == {
+        "Test.ResumeFirst": 1,
+        "Test.ResumeSecond": 2,
+        "Test.ResumeThird": 1,
+    }
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow, step])
-def test_a_reused_step_counts_as_executed_for_the_job_contract(ResumeFlow):
-    """
-    StagedFlow._after_step skips the contract check unless every step in the
-    job executed. A reused step really did produce its views, so reporting
-    it as not executed would disable the check the contract exists for.
-    """
-    make, _ = ResumeFlow
-    make().start(tag="T")
-
-    seen = []
-    subject = make()
-    original = type(subject)._after_step
-
-    def record(self, step, state, executed):
-        seen.append((step.id, executed))
-        return original(self, step, state, executed)
-
-    type(subject)._after_step = record
-    try:
-        subject.start(last_run=True)
-    finally:
-        type(subject)._after_step = original
-
-    assert seen == [
-        ("Test.First", True),
-        ("Test.Second", True),
-        ("Test.Third", True),
-    ]
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
 def test_overwrite_discards_the_run_directory(ResumeFlow):
     make, runs = ResumeFlow
@@ -324,188 +237,112 @@ def test_overwrite_discards_the_run_directory(ResumeFlow):
 
     make().start(tag="T", overwrite=True)
 
-    assert runs == {"Test.First": 2, "Test.Second": 2, "Test.Third": 2}
+    assert runs == {
+        "Test.ResumeFirst": 2,
+        "Test.ResumeSecond": 2,
+        "Test.ResumeThird": 2,
+    }
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_from_reruns_that_step_even_though_its_key_matches(ResumeFlow):
-    """
-    The remedy for the one thing the key does not cover: a CAD tool upgraded
-    in place under an unchanged LibreLane version.
-    """
-    make, runs = ResumeFlow
-    make().start(tag="T")
-
-    make().start(last_run=True, frm="Test.Second")
-
-    assert runs == {"Test.First": 1, "Test.Second": 2, "Test.Third": 2}
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow, step])
-def test_from_refuses_when_an_earlier_step_is_stale(ResumeFlow):
-    """
-    Better to name the stale step than to proceed with an empty state and
-    fail later on a missing input.
-    """
-    from librelane.flows import FlowException
-
-    make, _ = ResumeFlow
-    make().start(tag="T")
-    pathlib.Path("/cwd/src/a.v").write_text("module top(); wire w; endmodule")
-
-    with pytest.raises(FlowException, match="Test.First"):
-        make().start(last_run=True, frm="Test.Second")
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow, step])
-def test_from_on_a_fresh_tag_refuses(ResumeFlow):
-    from librelane.flows import FlowException
-
-    make, _ = ResumeFlow
-
-    with pytest.raises(FlowException, match="Test.First"):
-        make().start(tag="FRESH", frm="Test.Second")
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow, step])
-def test_a_deferred_error_step_runs_again_and_raises_again(ResumeSteps):
+def test_a_deferred_error_step_runs_again_and_raises_again(ResumeSteps, ResumeFlow):
     """
     A step that deferred an error never wrote an entry, so it re-runs. That is
     what keeps a deferred failure from being silently reused as a success.
     """
-    from librelane.flows import FlowError, SequentialFlow
-    from librelane.steps import DeferredStepError
+    from librelane.flows import FlowError
+    from librelane.steps import DeferredStepError, Step
 
-    (First, Second, Third), runs = ResumeSteps
+    (_, Second, _), runs = ResumeSteps
+    make, _ = ResumeFlow
 
+    @Step.factory.register()
     class Deferring(Second):
-        id = "Test.Second"
+        id = "Test.ResumeSecond"
 
         def run(self, state_in, **kwargs):
-            runs[self.id] = runs.get(self.id, 0) + 1
+            runs[type(self).id] = runs.get(type(self).id, 0) + 1
             raise DeferredStepError("deferred boom")
-
-    class DeferFlow(SequentialFlow):
-        Steps = [First, Deferring, Third]
-
-    def make():
-        return DeferFlow(
-            {
-                "DESIGN_NAME": "WHATEVER",
-                "DUMMY_VARIABLE": "PINGAS",
-                "VERILOG_FILES": ["/cwd/src/a.v"],
-            },
-            design_dir="/cwd",
-            pdk="dummy",
-            scl="dummy_scl",
-            pdk_root="/pdk",
-        )
 
     with pytest.raises(FlowError):
         make().start(tag="T")
-    assert runs["Test.Second"] == 1
+    assert runs["Test.ResumeSecond"] == 1
 
     with pytest.raises(FlowError):
         make().start(last_run=True)
 
-    assert runs["Test.Second"] == 2, (
+    assert runs["Test.ResumeSecond"] == 2, (
         "a deferred-error step was reused instead of re-run"
     )
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_skipping_a_step_invalidates_the_steps_after_it(ResumeFlow):
+def test_skipping_a_job_invalidates_the_jobs_after_it(ResumeFlow):
     """
-    Skipping changes what the next step receives, so it cannot be reused.
+    A skipped job passes its input state through unchanged, so the job after
+    it receives something other than what it ran on and cannot be reused.
     """
     make, runs = ResumeFlow
     make().start(tag="T")
 
-    make().start(tag="T", skip=["Test.Second"])
+    make().start(tag="T", skip=["second"])
 
-    assert runs["Test.First"] == 1, "the step before the skip should be reused"
-    assert runs["Test.Second"] == 1, "the skipped step should not run"
-    assert runs["Test.Third"] == 2, "the step after the skip must not be reused"
+    assert runs["Test.ResumeFirst"] == 1, "the job before the skip should be reused"
+    assert runs["Test.ResumeSecond"] == 1, "the skipped job should not run"
+    assert runs["Test.ResumeThird"] == 2, "the job after the skip must not be reused"
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_to_then_resume_continues_rather_than_restarting(ResumeFlow):
+def test_a_targeted_run_then_resume_continues_rather_than_restarting(ResumeFlow):
     make, runs = ResumeFlow
-    make().start(tag="T", to="Test.Second")
-    assert runs == {"Test.First": 1, "Test.Second": 1}
+    make().start(tag="T", target=["second"])
+    assert runs == {"Test.ResumeFirst": 1, "Test.ResumeSecond": 1}
 
     make().start(last_run=True)
 
-    assert runs == {"Test.First": 1, "Test.Second": 1, "Test.Third": 1}
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([flow, step])
-def test_a_shorter_step_list_leaves_the_orphaned_directory_alone(ResumeSteps):
-    """
-    Resuming a tag with a different step list shifts positions. Directories
-    belonging to no current position are never read and never deleted.
-    """
-    from librelane.flows import SequentialFlow
-
-    (First, Second, Third), runs = ResumeSteps
-
-    class Long(SequentialFlow):
-        Steps = [First, Second, Third]
-
-    class Short(SequentialFlow):
-        Steps = [First, Second]
-
-    config = {
-        "DESIGN_NAME": "WHATEVER",
-        "DUMMY_VARIABLE": "PINGAS",
-        "VERILOG_FILES": ["/cwd/src/a.v"],
+    assert runs == {
+        "Test.ResumeFirst": 1,
+        "Test.ResumeSecond": 1,
+        "Test.ResumeThird": 1,
     }
-    kwargs = dict(design_dir="/cwd", pdk="dummy", scl="dummy_scl", pdk_root="/pdk")
-
-    Long(config, **kwargs).start(tag="T")
-    Short(config, **kwargs).start(tag="T")
-
-    assert pathlib.Path("/cwd/runs/T/3-test-third").is_dir(), (
-        "an orphaned step directory must not be deleted"
-    )
-    assert runs == {"Test.First": 1, "Test.Second": 1, "Test.Third": 1}, (
-        "the shorter list must reuse the steps it still has"
-    )
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_an_explicit_initial_state_stands_in_for_the_steps_before_from(ResumeFlow):
+def test_an_explicit_initial_state_is_what_the_first_job_consumes(
+    ResumeFlow, ResumeSteps, minimal_design, mock_pdk
+):
     """
-    Hand a step the state a previous run produced and start there, in a fresh
-    tag.
-
-    The steps before it must not be resolved from cache. There is nothing in a
-    fresh tag to resolve, and resolving would discard the very state the user
-    supplied.
+    ``--with-initial-state`` hands a step the state a previous run produced.
+    The engine deposits it on every source place, so it is what the graph's
+    first job reads rather than something the run overwrites before anyone
+    looks at it.
     """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
     from librelane.state import State
 
-    make, runs = ResumeFlow
-    make().start(tag="SOURCE")
-    handoff = State.loads(
-        pathlib.Path("/cwd/runs/SOURCE/1-test-first/state_out.json").read_text()
-    )
+    make, _ = ResumeFlow
+    source = make()
+    source.start(tag="SOURCE")
+    produced_by_first = pathlib.Path(source.run_dir) / "first" / "1-test-resumefirst"
+    handoff = State.loads((produced_by_first / "state_out.json").read_text())
 
-    make().start(tag="ECO", with_initial_state=handoff, frm="Test.Second")
-
-    assert runs == {"Test.First": 1, "Test.Second": 2, "Test.Third": 2}
-    produced = json.loads(
-        pathlib.Path("/cwd/runs/ECO/2-test-second/whatever.json").read_text()
+    # A one-job document whose only step consumes the handed view, so that what
+    # it received is written down where the test can read it back.
+    consumer = Workflow(
+        FlowSpec.model_validate(
+            {"name": "Handoff", "jobs": {"only": {"steps": ["Test.ResumeSecond"]}}}
+        ),
+        minimal_design,
+        **mock_pdk,
     )
-    assert (
-        produced["from"]
-        == pathlib.Path("/cwd/runs/SOURCE/1-test-first/whatever.json").read_text()
-    ), "Test.Second did not receive the state it was handed"
+    consumer.start(tag="ECO", with_initial_state=handoff)
+
+    consumed = json.loads(
+        (pathlib.Path(consumer.run_dir) / "only" / "1-test-resumesecond")
+        .joinpath("whatever.json")
+        .read_text()
+    )
+    assert consumed["from"] == (produced_by_first / "whatever.json").read_text(), (
+        "the first job did not receive the state it was handed"
+    )

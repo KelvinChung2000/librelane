@@ -25,12 +25,9 @@ from librelane.flows.flow import FlowError, FlowException, FlowProgressBar, Flow
 from librelane.flows.explanation import (
     Explanation,
     JobDisposition,
-    StepDisposition,
     VariableDisposition,
 )
-from librelane.flows.sequential import SequentialFlow
 from librelane.flows.spec import load_flow_spec
-from librelane.flows.staged import Boundary, StagedFlow
 
 # Every workflow document shipped inside this package, registered by importing
 # the package.
@@ -38,7 +35,7 @@ from librelane.flows.staged import Boundary, StagedFlow
 # Sorted by name so the registration order is the same on every machine, which
 # makes a duplicate-name error name the same document everywhere.
 # ``load_flow_spec`` runs the structural checks only -- they do not touch the
-# step or stage registries -- so this does not pull ``librelane.steps`` into
+# step or job registries -- so this does not pull ``librelane.steps`` into
 # this package's import graph. ``Workflow.__init__`` is where
 # ``validate_against_registry`` runs.
 for _document in sorted(files(__name__).iterdir(), key=lambda entry: entry.name):

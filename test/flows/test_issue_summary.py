@@ -14,9 +14,10 @@ mock_variables = pytest.mock_variables
 pytestmark = pytest.mark.all
 
 
-def run_noisy_flow(mocker, tag):
+def run_noisy_flow(mocker, tag, minimal_design, mock_pdk):
     """Runs a flow whose step emits a warning and an error, returns the terminal."""
-    from librelane.flows import SequentialFlow
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
     from librelane.logging import logger as logger_module
     from librelane.steps import Step
 
@@ -27,6 +28,7 @@ def run_noisy_flow(mocker, tag):
     )
     logger_module.initialize_logger()
 
+    @Step.factory.register()
     class NoisyStep(Step):
         id = "Test.NoisyStep"
         inputs = []
@@ -40,56 +42,46 @@ def run_noisy_flow(mocker, tag):
             logger.error("an error that scrolled past")
             return {}, {}
 
-    class NoisyFlow(SequentialFlow):
-        Steps = [NoisyStep]
+    spec = FlowSpec.model_validate(
+        {"name": "Noisy", "jobs": {"noisy": {"steps": ["Test.NoisyStep"]}}}
+    )
 
     try:
-        NoisyFlow(
-            {
-                "meta": {"version": 1},
-                "DESIGN_NAME": "WHATEVER",
-                "VERILOG_FILES": ["/cwd/src/a.v"],
-            },
-            design_dir="/cwd",
-            pdk="dummy",
-            scl="dummy_scl",
-            pdk_root="/pdk",
-        ).start(tag=tag)
+        Workflow(spec, minimal_design, **mock_pdk).start(tag=tag)
         logger_module.live.drain()
         return console.file.getvalue()
     finally:
         logger_module.initialize_logger()
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_errors_are_restated_at_the_end_of_the_run(mocker):
+def test_errors_are_restated_at_the_end_of_the_run(mocker, minimal_design, mock_pdk):
     """
     Warnings were already replayed at flow end; errors were not, so an error
     early in a long run could scroll away unseen.
     """
-    output = run_noisy_flow(mocker, "ERRSUM")
+    output = run_noisy_flow(mocker, "ERRSUM", minimal_design, mock_pdk)
 
     tail = output[output.index("a warning that scrolled past") :]
     assert "an error that scrolled past" in tail
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_the_summary_says_which_step_an_issue_came_from(mocker):
-    output = run_noisy_flow(mocker, "STEPSUM")
+def test_the_summary_says_which_step_an_issue_came_from(
+    mocker, minimal_design, mock_pdk
+):
+    output = run_noisy_flow(mocker, "STEPSUM", minimal_design, mock_pdk)
 
     assert "Test.NoisyStep" in output
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_the_summary_points_into_the_step_log(mocker):
+def test_the_summary_points_into_the_step_log(mocker, minimal_design, mock_pdk):
     """
     The terminal is a live view; the step log is the durable record. A summary
     that cannot be followed back to the log leaves you grepping.
     """
-    output = run_noisy_flow(mocker, "PTRSUM")
+    output = run_noisy_flow(mocker, "PTRSUM", minimal_design, mock_pdk)
 
     pointers = re.findall(r"(\S*step\.log):(\d+)", output)
     assert pointers, f"summary carried no step.log pointer:\n{output}"
@@ -109,9 +101,10 @@ def test_the_summary_points_into_the_step_log(mocker):
     )
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_a_flows_logs_exclude_another_concurrent_flows_records(mocker):
+def test_a_flows_logs_exclude_another_concurrent_flows_records(
+    mocker, minimal_design, mock_pdk
+):
     """
     Issue 889: error.log and warning.log filtered on level alone, and Loguru
     sinks are process-wide, so a second flow running at the same time had its
@@ -121,7 +114,8 @@ def test_a_flows_logs_exclude_another_concurrent_flows_records(mocker):
     another flow's context, which is what a concurrent flow looks like to this
     flow's sinks.
     """
-    from librelane.flows import SequentialFlow
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
     from librelane.logging import flow_context
     from librelane.logging import logger as logger_module
     from librelane.steps import Step
@@ -133,6 +127,7 @@ def test_a_flows_logs_exclude_another_concurrent_flows_records(mocker):
     )
     logger_module.initialize_logger()
 
+    @Step.factory.register()
     class StepUnderTwoFlows(Step):
         id = "Test.StepUnderTwoFlows"
         inputs = []
@@ -148,21 +143,12 @@ def test_a_flows_logs_exclude_another_concurrent_flows_records(mocker):
                 logger.error("theirs: an error")
             return {}, {}
 
-    class OneFlow(SequentialFlow):
-        Steps = [StepUnderTwoFlows]
+    spec = FlowSpec.model_validate(
+        {"name": "OneFlow", "jobs": {"only": {"steps": ["Test.StepUnderTwoFlows"]}}}
+    )
 
     try:
-        instance = OneFlow(
-            {
-                "meta": {"version": 1},
-                "DESIGN_NAME": "WHATEVER",
-                "VERILOG_FILES": ["/cwd/src/a.v"],
-            },
-            design_dir="/cwd",
-            pdk="dummy",
-            scl="dummy_scl",
-            pdk_root="/pdk",
-        )
+        instance = Workflow(spec, minimal_design, **mock_pdk)
         instance.start(tag="two_flows")
         run_dir = pathlib.Path(instance.run_dir)
     finally:

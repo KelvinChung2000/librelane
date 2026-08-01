@@ -15,10 +15,10 @@
 # The VHDLClassic flow's Stages list and gating table, as a graph.
 #
 # Written out in full rather than derived from classic.yaml, deliberately, for
-# the reason classic.py:276-283 gives about VHDLClassic.Stages: a flow is a
-# self-contained declaration of what it runs, and a filter expression over
-# another flow's list is a substitution map wearing a different hat. That is
-# also why the document schema has no 'extends' key.
+# the reason the VHDLClassic class gave: a flow is a self-contained declaration
+# of what it runs, and a filter expression over another flow's list is a
+# substitution map wearing a different hat. That is also why the document
+# schema has no 'extends' key.
 #
 # The differences from Classic are the pinned synthesis provider and four
 # omitted entries: the lint stage, Odb.SetPowerConnections,

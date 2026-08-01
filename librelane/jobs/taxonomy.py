@@ -14,14 +14,13 @@
 """
 The job taxonomy.
 
-Job boundaries were derived from the ``Classic`` flow class's
-``gating_config_vars``, which contained 22 distinct ``RUN_*`` variables. (The
-class is gone; ``librelane/flows/classic.yaml`` is what ships those variables
-now.) Each is a place where users already demanded the ability to turn one
-phase off independently, which makes it a place where they would plausibly want
-to change tools or re-enter the flow. Fifteen of those variables become job
-gates here; the remaining seven gate one tool within a job and stay
-step-level.
+Job boundaries were derived from the 22 distinct ``RUN_*`` variables the
+``Classic`` flow class used to gate its steps with. (The class is gone;
+``librelane/flows/classic.yaml`` is what ships those variables now.) Each is a
+place where users already demanded the ability to turn one phase off
+independently, which makes it a place where they would plausibly want to change
+tools or re-enter the flow. Fifteen of those variables become job gates here;
+the remaining seven gate one tool within a job and stay step-level.
 
 ``requires`` and ``provides`` values are literals, not computed. See the
 implementation plan for how they were derived.
@@ -316,12 +315,12 @@ Job(
 ).register()
 
 
-#: The canonical reference order of every job, and the order a ``StagedFlow``
-#: is expected to declare its own jobs in. A flow may omit jobs and may
-#: interleave plain steps. Nothing enforces the order itself: ``resolve()``
-#: expands a ``Stages`` list exactly as written, and two jobs swapped relative
-#: to each other are caught only if the swap strands a view consumer, which the
-#: view preflight then reports.
+#: The canonical reference order of every job: the order in which each job's
+#: ``requires`` is satisfied by some earlier job's ``provides``. A document may
+#: omit jobs and may order the ones it declares however its ``needs`` edges
+#: say, so nothing enforces this order at run time. It is what the taxonomy's
+#: own consistency checks read, and the order a document is expected to declare
+#: its jobs in for a reader's sake.
 JOB_ORDER: tuple[str, ...] = (
     "lint",
     "synthesis",

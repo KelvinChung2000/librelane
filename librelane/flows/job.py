@@ -28,9 +28,7 @@ from librelane.steps import Step
 #: A ``TOOLS`` value as the pre-pass hands it over. A list is accepted here and
 #: rejected with an explanation by :func:`_checked_selections`, rather than
 #: being refused by the configuration model with a type error that does not say
-#: what replaced it. Not to be confused with
-#: :func:`librelane.jobs.resolution._check_tool_keys`, which is the equivalent
-#: for the ``StagedFlow`` resolver and takes stage ids.
+#: what replaced it.
 ToolSelection = str | list[str]
 
 

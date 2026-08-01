@@ -483,10 +483,8 @@ def test_an_inline_job_is_exempt_from_the_output_contract(minimal_design, mock_p
     # Step.outputs is documented as the views a step *may* emit.
     # Odb.DiodesOnPorts declares five and emits none whenever DIODE_ON_PORTS is
     # "none", which is the default, so asserting an inline job's derived
-    # 'provides' would make a stock configuration a hard error -- and a
-    # stricter rule than the SequentialFlow this engine is equivalent to, which
-    # contract-checks no bare step at all. A 'uses' job, whose contract someone
-    # curated by hand, is still checked.
+    # 'provides' would make a stock configuration a hard error. A 'uses' job,
+    # whose contract someone curated by hand, is still checked.
     Workflow(spec, minimal_design, **mock_pdk).start(tag="t")
 
 
@@ -1685,7 +1683,7 @@ def test_a_reproducible_run_frames_an_ancestor_s_deferred_errors(
     The reproducible path has its own deferred raise, separate from the
     ordinary tail, and nothing else reaches it. An ancestor that deferred must
     still fail the run after the reproducible is written -- and must say what
-    the list of messages is, as ``SequentialFlow`` does.
+    the list of messages is.
     """
     from librelane.flows.engine import Workflow
     from librelane.flows.flow import FlowError
@@ -1735,8 +1733,7 @@ def test_reproducible_returns_the_state_the_named_step_would_have_consumed(
     final = flow.start(tag="repro-state", reproducible="second/Test.EngineSecond")
 
     # The run stopped at the named step, so the last thing it knows is the
-    # state that step was about to be given. This is what SequentialFlow
-    # returns for the same request.
+    # state that step was about to be given.
     assert final.metrics["first"] == 1
     assert "second" not in final.metrics
 
@@ -2057,9 +2054,8 @@ def test_a_reproducible_run_still_writes_a_final_snapshot(
 ):
     """
     ``--reproducible`` stops the run at the named step, and the state that step
-    would have consumed is the run's final state for the same reason it is in
-    SequentialFlow, which snapshots it before returning. Nothing about the
-    request says to stop writing the run's artefacts.
+    would have consumed is the run's final state, snapshotted before returning.
+    Nothing about the request says to stop writing the run's artefacts.
     """
     from librelane.flows.engine import Workflow
     from librelane.flows.spec import FlowSpec
@@ -2207,8 +2203,8 @@ def test_a_first_run_reports_no_reuse(caplog, counting_steps, minimal_design, mo
 
     Workflow(spec, minimal_design, **mock_pdk).start(tag="no-reuse")
 
-    # Nothing was reused, so there is nothing to report. SequentialFlow says
-    # the same by saying nothing.
+    # Nothing was reused, so there is nothing to report, and the run says so
+    # by saying nothing.
     assert "Reused" not in caplog.text
     assert "Flow complete." in caplog.text
 
@@ -2219,8 +2215,7 @@ def test_a_deferring_run_reports_neither_reuse_nor_completion(
 ):
     """
     The reuse report and 'Flow complete.' both sit after the deferred-error
-    raise, as they do in SequentialFlow. A run that is about to fail must not
-    announce that it finished.
+    raise. A run that is about to fail must not announce that it finished.
     """
     from librelane.flows.engine import Workflow
     from librelane.flows.flow import FlowError
@@ -2239,8 +2234,8 @@ def test_a_deferring_run_reports_neither_reuse_nor_completion(
 
     # The frame, not just the violations. Without it the CLI prints "The flow
     # encountered the following error:" and then the deferred lines run
-    # together with nothing saying what the list is. SequentialFlow frames
-    # them; matching only on the violation text would pass either way.
+    # together with nothing saying what the list is. Matching only on the
+    # violation text would pass either way.
     assert "One or more deferred errors were encountered" in str(exc_info.value)
 
     assert "Flow complete." not in caplog.text
@@ -2324,3 +2319,49 @@ def test_the_instance_help_reports_the_provider_tools_selected(
 
     assert "| `work` | `engine_contract` | `honest` |" in declared
     assert "| `work` | `engine_contract` | `no_metric` |" in flow.get_help_md()
+
+
+@mock_variables([flow_module, step_module])
+def test_the_run_gets_an_aggregate_runtimes_csv(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    Issue 812: every step drops a runtime.txt in its own directory, so asking
+    "what was slow?" meant walking every step directory and collating by hand.
+
+    The two jobs run one step class each, and the ids in the file are the
+    instances' -- ``<step id> (<job id>)`` -- because a row that named only the
+    class would be ambiguous the moment two jobs ran the same step, which is
+    exactly what a concurrent engine invites.
+    """
+    import csv
+    import pathlib
+
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Timed",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="t")
+
+    with open(pathlib.Path(flow.run_dir) / "runtimes.csv", encoding="utf8") as f:
+        rows = list(csv.DictReader(f))
+
+    assert [row["step_id"] for row in rows] == [
+        "Test.EngineFirst (first)",
+        "Test.EngineSecond (second)",
+    ]
+    for row in rows:
+        # The step directory is what lines a row up with the run on disk.
+        assert row["step_dir"]
+        assert float(row["elapsed_seconds"]) >= 0.0
+        assert row["elapsed"].count(":") == 2

@@ -739,7 +739,7 @@ def test_flow_control_variable_raises():
     """
     from librelane.steps import Step
 
-    with pytest.raises(TypeError, match="gating_config_vars"):
+    with pytest.raises(TypeError, match="'if' on the job that runs it"):
 
         class Gating(Step):
             id = "Test.FlowControlVariable"

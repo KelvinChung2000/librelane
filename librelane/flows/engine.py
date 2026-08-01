@@ -261,11 +261,9 @@ class _ReproducibleCreated(Exception):
     path
         Where the reproducible was written.
     state
-        The state the named step would have consumed. It is the run's final
-        state, for the same reason it is in
-        :class:`librelane.flows.sequential.SequentialFlow`: the flow stopped
-        there, so the last thing it knows about the design is what that step
-        was about to be handed.
+        The state the named step would have consumed. It is also the run's
+        final state: the run stopped there, so the last thing it knows about
+        the design is what that step was about to be handed.
     """
 
     def __init__(self, path: pathlib.Path, state: State) -> None:
@@ -331,8 +329,7 @@ class _InFlight:
         How many steps resolved from a previous run instead of running.
     executed
         How many steps ran. A step that deferred an error ran, so it is counted
-        here, exactly as
-        :class:`librelane.flows.sequential.SequentialFlow` counts it.
+        here.
     """
 
     name: str
@@ -741,10 +738,9 @@ class Workflow(Flow):
                     )
                     logger.success(f"Wrote a reproducible to '{created.path}'.")
                     # Before the deferred raise, for the reason the ordinary
-                    # path puts it there, and on this path at all because
-                    # SequentialFlow's --reproducible breaks out of its step
-                    # loop into the same tail: the run stopped, and what it
-                    # knows about the design is worth writing down either way.
+                    # path puts it there, and on this path at all because the
+                    # run stopped: what it knows about the design is worth
+                    # writing down either way.
                     self._save_final_snapshot(created.state)
                     if deferred:
                         # The reproducible is written either way, and the
@@ -787,10 +783,9 @@ class Workflow(Flow):
         # Ahead of the deferred raise, unlike the two checks above. A run that
         # failed or stalled has no final state to speak of, but a deferred
         # error is by definition one the run continued past, so it produced
-        # views and SequentialFlow snapshots them. What follows is then in
-        # sequential.py's order: snapshot, raise, report, and a run that is
-        # about to fail therefore never announces that it reused anything or
-        # that it is complete.
+        # views worth snapshotting. What follows is then in that order:
+        # snapshot, raise, report, and a run that is about to fail therefore
+        # never announces that it reused anything or that it is complete.
         final = self._final_state(net, outputs, plan.selected)
         self._save_final_snapshot(final)
 
@@ -873,9 +868,8 @@ class Workflow(Flow):
             happen, so the two share one derivation of what the arguments
             select rather than each deriving their own.
 
-        Resume is deliberately not reported, for the reason given on
-        :meth:`librelane.flows.SequentialFlow.explain`. A resume verdict depends
-        on content fingerprints of files that later jobs in the same run will
+        Resume is deliberately not reported. A resume verdict depends on
+        content fingerprints of files that later jobs in the same run will
         rewrite, so it cannot be known before the run.
         """
         edges = self.spec.edges()
@@ -934,8 +928,6 @@ class Workflow(Flow):
                 continue
             dispositions.append(JobDisposition(job_id, needs, True, "will run", None))
         return Explanation(
-            steps=(),
-            unselected_jobs=(),
             jobs=tuple(dispositions),
             variables=self._variable_dispositions() if variables else (),
         )
@@ -1157,7 +1149,7 @@ class Workflow(Flow):
             job_id, step_index = self._resolve_reproducible(reproducible)
             # Ahead of every skip test, so that a request for a step this
             # configuration would never execute is diagnosed rather than
-            # silently discarded. This mirrors SequentialFlow.run.
+            # silently discarded.
             if job_id in skipped:
                 raise FlowException(
                     f"Cannot create a reproducible for a step of job "
@@ -1314,12 +1306,10 @@ class Workflow(Flow):
         ----------
         name : str
             Either ``<step id>`` or ``<job id>/<step id>``. The step half is
-            matched case-insensitively and accepts ``fnmatch`` wildcards,
-            exactly as :meth:`librelane.flows.SequentialFlow._resolve_step_id`
-            matches the same argument. Both are kept because this is the switch
-            people reach for once something has already gone wrong, and losing
-            either of them on the document path would be a regression in the
-            worst place to have one.
+            matched case-insensitively and accepts ``fnmatch`` wildcards. Both
+            forms are kept because this is the switch people reach for once
+            something has already gone wrong, and losing either of them would
+            be a regression in the worst place to have one.
 
         Returns
         -------
@@ -1567,8 +1557,7 @@ class Workflow(Flow):
                 # Before the resume check, and without the rmtree below: the
                 # step is not going to run, so neither reusing its previous
                 # result nor deleting it is meaningful. It is also not appended
-                # to 'steps', because it never ran, which is what SequentialFlow
-                # does for the same request.
+                # to 'steps', because it never ran.
                 written = step_dir / "reproducible"
                 step.create_reproducible(written)
                 raise _ReproducibleCreated(written, current)
@@ -1646,9 +1635,7 @@ class Workflow(Flow):
         the views a step *may* emit, not the ones it must: ``Odb.DiodesOnPorts``
         declares five and emits none when ``DIODE_ON_PORTS`` is ``"none"``,
         which is the default. Asserting a derived union would therefore make a
-        stock configuration a hard error, and would be a stricter rule than the
-        ``SequentialFlow`` this engine is meant to be equivalent to, which
-        contract-checks no bare step at all.
+        stock configuration a hard error.
 
         The derived ``provides`` is still computed and still correct: phase 1's
         reachability analysis reads it as a claim about what a job *can*

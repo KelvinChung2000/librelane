@@ -265,36 +265,45 @@ def test_progress_bar(DummyFlow: type[flow.Flow]):
     flow.start()
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple, monkeypatch):
+def test_run_tags(
+    caplog: pytest.LogCaptureFixture,
+    MockStepTuple,
+    monkeypatch,
+    mock_conf_dir,
+):
     import importlib
 
-    from librelane.flows import FlowException, SequentialFlow
+    from librelane.flows import FlowException
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+    from librelane.steps import Step
 
     StepA, StepB, _ = MockStepTuple
+    Step.factory.register()(StepA)
+    Step.factory.register()(StepB)
 
-    class DummySeq(SequentialFlow):
-        Steps = [StepB, StepA]
+    runs_dir = pathlib.Path(mock_conf_dir.cwd) / "runs"
 
-    def create_dir(path):
-        pathlib.Path(path).mkdir(parents=True, exist_ok=True)
-
-    def create_file(path, contents):
-        create_dir(os.path.dirname(path))
-        with open(path, "w") as f:
-            f.write(contents)
-
-    flow = DummySeq(
+    subject = Workflow(
+        FlowSpec.model_validate(
+            {
+                "name": "Tagged",
+                "jobs": {
+                    "b": {"steps": ["Test.StepB"]},
+                    "a": {"needs": ["b"], "steps": ["Test.StepA"]},
+                },
+            }
+        ),
         {
             "DESIGN_NAME": "WHATEVER",
             "DUMMY_VARIABLE": "PINGAS",
-            "VERILOG_FILES": ["/cwd/src/a.v"],
+            "VERILOG_FILES": [os.path.join(mock_conf_dir.cwd, "src", "a.v")],
         },
-        design_dir="/cwd",
+        design_dir=mock_conf_dir.cwd,
         pdk="dummy",
         scl="dummy_scl",
-        pdk_root="/pdk",
+        pdk_root=mock_conf_dir.pdk_root,
     )
 
     flow_module = importlib.import_module("librelane.flows.flow")
@@ -309,24 +318,24 @@ def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple, monkeypatch):
         with pytest.raises(
             FlowException, match="tag and last_run cannot be used simultaneously"
         ):
-            flow.start(tag="NotNone", last_run=True)
+            subject.start(tag="NotNone", last_run=True)
 
         with pytest.raises(
             FlowException, match="last_run used without any existing runs"
         ):
-            flow.start(last_run=True)
+            subject.start(last_run=True)
 
-    create_dir("/cwd/runs/MY_TAG")
-    flow.start(tag="MY_TAG")
+    (runs_dir / "MY_TAG").mkdir(parents=True)
+    subject.start(tag="MY_TAG")
     assert "Starting a new run of the" in caplog.text, (
         ".start() with an empty folder did not print a message about a new run"
     )
     caplog.clear()
 
-    flow.start(tag="MY_TAG2")
+    subject.start(tag="MY_TAG2")
     caplog.clear()
 
-    state = flow.start(tag="MY_TAG2")
+    state = subject.start(tag="MY_TAG2")
     assert "Using existing run at" in caplog.text, (
         ".start() with a non-empty folder did not print a message about an existing run"
     )
@@ -335,27 +344,28 @@ def test_run_tags(caplog: pytest.LogCaptureFixture, MockStepTuple, monkeypatch):
     )
     caplog.clear()
 
-    flow.start(last_run=True)
-    assert flow.run_dir is not None
-    assert flow.run_dir.name == "MY_TAG2", (
+    subject.start(last_run=True)
+    assert subject.run_dir is not None
+    assert subject.run_dir.name == "MY_TAG2", (
         ".start() with last_run failed to return latest run"
     )
 
-    create_file("/cwd/runs/MY_TAG3", contents="")
+    (runs_dir / "MY_TAG3").write_text("")
     with pytest.raises(
         FlowException, match="already exists as a file and not a directory"
     ):
-        flow.start(tag="MY_TAG3")
+        subject.start(tag="MY_TAG3")
 
 
-@pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
-def test_flow_log_artifacts():
+def test_flow_log_artifacts(mock_conf_dir):
     from loguru import logger
 
-    from librelane.flows import SequentialFlow
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
     from librelane.steps import Step
 
+    @Step.factory.register()
     class LoggingStep(Step):
         id = "Test.LoggingStep"
         inputs = []
@@ -368,24 +378,27 @@ def test_flow_log_artifacts():
             step_logger.error("error artifact marker")
             return {}, {}
 
-    class LoggingFlow(SequentialFlow):
-        Steps = [LoggingStep]
-
-    logging_flow = LoggingFlow(
+    logging_flow = Workflow(
+        FlowSpec.model_validate(
+            {"name": "Logging", "jobs": {"logging": {"steps": ["Test.LoggingStep"]}}}
+        ),
         {
+            # Version 1 puts the loader in permissive mode, which downgrades
+            # the unknown key below from an error to the warning this test
+            # reads out of the logs.
             "meta": {"version": 1},
             "DESIGN_NAME": "WHATEVER",
-            "VERILOG_FILES": ["/cwd/src/a.v"],
+            "VERILOG_FILES": [os.path.join(mock_conf_dir.cwd, "src", "a.v")],
             "UNKNOWN_DIAGNOSTIC_KEY": "marker",
         },
-        design_dir="/cwd",
+        design_dir=mock_conf_dir.cwd,
         pdk="dummy",
         scl="dummy_scl",
-        pdk_root="/pdk",
+        pdk_root=mock_conf_dir.pdk_root,
     )
     logging_flow.start(tag="LOGGING")
 
-    run_dir = pathlib.Path("/cwd/runs/LOGGING")
+    run_dir = pathlib.Path(logging_flow.run_dir)
     flow_log = (run_dir / "flow.log").read_text()
     warning_log = (run_dir / "warning.log").read_text()
     error_log = (run_dir / "error.log").read_text()

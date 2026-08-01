@@ -22,15 +22,15 @@ link](../reference/architecture.md). This page assumes you already know what a
 
 ## Jobs
 
-A `Flow` built on `StagedFlow`, such as `Classic`, is not written as one fixed
-list of steps. It is written as a list of **jobs**. A job is a named phase
-of the flow, such as `detailed_routing` or `streamout`, and it never executes
-anything by itself. A *provider* registration binds a job to the concrete
-steps that actually implement it for one tool. This split is what makes a
-job the unit of two things at once, which tool runs a phase and whether that
-phase can be turned off independently of every other phase. `Classic` and
-`VHDLClassic` are both `StagedFlow`s; their `Stages` lists live in
-`librelane/flows/classic.py`.
+A flow, such as `Classic`, is not written as one fixed list of steps. It is
+written as a graph of **jobs**. A job is a named phase of the flow, such as
+`detailed_routing` or `streamout`, and it never executes anything by itself.
+A *provider* registration binds a job's template to the concrete steps that
+actually implement it for one tool. This split is what makes a job the unit of
+two things at once, which tool runs a phase and whether that phase can be
+turned off independently of every other phase. `Classic` and `VHDLClassic` are
+workflow documents; they live in `librelane/flows/classic.yaml` and
+`librelane/flows/vhdl_classic.yaml`.
 
 ## The `TOOLS` configuration variable
 
@@ -38,12 +38,10 @@ phase can be turned off independently of every other phase. `Classic` and
 An entry you do not list keeps the provider the flow already chose; you only
 need to name the jobs you are changing.
 
-**A job id is the id the flow gives the job, which is not always the id of the
-stage it runs.** A `StagedFlow` names each job after its stage, so the two
-coincide there. A workflow document names its own jobs, and `classic.yaml`
-runs the `streamout` stage under two of them, `magic_streamout` and
-`klayout_streamout`. See
-[Job ids in a workflow document](#job-ids-in-a-workflow-document).
+**A job id is the id the document gives the job, which is not always the id of
+the stage it runs.** A document names its own jobs, and `classic.yaml` runs the
+`streamout` stage under two of them, `magic_streamout` and `klayout_streamout`.
+See [Job ids in a workflow document](#job-ids-in-a-workflow-document).
 
 Synthesizing from VHDL sources instead of Verilog:
 
@@ -60,15 +58,13 @@ Synthesizing from VHDL sources instead of Verilog:
 `Odb.WriteVerilogHeader` consume the `json_h` view that only
 `Yosys.JsonHeader` produces, and that step belongs to the `synthesis` job's
 `yosys` provider rather than to `yosys_vhdl`. Use the `VHDLClassic` flow,
-described below: it is the same selection, made by the flow instead of by a
+described below: it is the same selection, made by the document instead of by a
 configuration.
 
-Where the mistake surfaces depends on which mechanism runs the flow. The
-`Classic` *class* rejects it before the run starts, naming `json_h`. The
-`Classic` *document*, which is what `librelane --flow Classic` runs, accepts
-it at load and fails during the run at the first step that cannot find the
-header: a document's structural check reasons over the declared graph, and
-re-pointing a job at another provider does not change that graph.
+The mistake is not caught at load. `Classic` accepts the entry and fails during
+the run at the first step that cannot find the header, because a document's
+structural check reasons over the declared graph and re-pointing a job at
+another provider does not change that graph.
 ```
 
 **What can be selected at all is the Alternatives column of
@@ -145,44 +141,34 @@ A `TOOLS` key naming a job that lists its steps inline is also rejected: an
 inline job has no provider to override, and accepting the key would silently
 do nothing.
 
-## `VHDLClassic`: a flow declared entirely as jobs
+## `VHDLClassic`: a document that pins a provider
 
-`VHDLClassic` is the canonical demonstration of what a `Stages` list looks
-like once tool selection is pulled out of it. It is not `Classic` with
-`TOOLS` set: `Classic`'s own `Stages` list contains plain steps (the Verilog
-header handling above) that a VHDL-only flow cannot run, so `VHDLClassic`
-declares its own list rather than being reachable through `Classic`'s
-configuration. What it shares with `Classic` is the mechanism: a `Job`
-object pinned to a provider with `Job.using`.
+`VHDLClassic` is the canonical demonstration of a document choosing a tool for
+itself. It is not `Classic` with `TOOLS` set: `Classic`'s graph contains jobs
+(the Verilog header handling above) that a VHDL-only flow cannot run, so
+`VHDLClassic` declares its own graph rather than being reachable through
+`Classic`'s configuration. What it shares with `Classic` is the mechanism, a
+`uses` naming a provider as well as a template:
 
-```python
-Stages = [
-    Job.synthesis.using("yosys_vhdl"),
-    Job.pre_pnr_sta,
-    Job.floorplan,
-    Job.macro_placement,
-    OpenROAD.CutRows,
-    Job.tapcell_insertion,
-    Job.power_grid,
-    # ...
-    Job.streamout,
-    Magic.WriteLEF,
-    # ...
-    Job.drc,
-    Job.lvs,
-    # ...
-]
+```yaml
+jobs:
+  synthesis:
+    uses: synthesis/yosys_vhdl
+  pre_pnr_sta:
+    needs: [synthesis]
+    uses: pre_pnr_sta
+  floorplan:
+    needs: [pre_pnr_sta]
+    uses: floorplan
+  # ...
 ```
 
-`Job.synthesis.using("yosys_vhdl")` returns a copy of the `synthesis` job
-template whose default provider is pinned to `yosys_vhdl`, for use inside this
-one flow's list. A pin is the flow's default, not a lock on what a user can
-still request: a `TOOLS` entry for the same job overrides the pin, because
-resolution consults `TOOLS` before a job's `default_provider`.
-
-A document's `uses: synthesis/yosys_vhdl` is the same pin written in YAML, and
-`TOOLS` overrides it the same way. What `TOOLS` never overrides is the stage
-half of `uses`: a job keeps both its name and the stage it runs.
+`uses: synthesis/yosys_vhdl` runs the `synthesis` template's `yosys_vhdl`
+provider. A pin is the document's default, not a lock on what a user can still
+request: a `TOOLS` entry for the same job overrides it, because resolution
+consults `TOOLS` before a job's `default_provider`. What `TOOLS` never overrides
+is the template half of `uses`: a job keeps both its name and the phase it
+implements.
 
 ## The job table
 
@@ -241,9 +227,9 @@ Classic`, current as of this page:
 | `formal_equivalence` | `formal_equivalence` | `yosys` | none |
 | `final_checks` | inline steps | | |
 
-Three things about this table are properties of a document rather than of the
-old `Stages` list. The **Job** column is the id the document chose, so one
-template appears under two names wherever the flow runs it twice, as
+Three things about this table follow from a document naming its own jobs. The
+**Job** column is the id the document chose, so one template appears under two
+names wherever the flow runs it twice, as
 `streamout` and `drc` do. The **Template** column is the phase that job
 implements, which is what a provider registers against. And a job that lists
 its steps inline has no provider to name, so `TOOLS` cannot address it and its
@@ -277,9 +263,11 @@ provider from `TOOLS` simply runs one deck instead of two, with no downstream
 comparison step depending on the other.
 
 ```{note}
-A list is a `StagedFlow` value only. A workflow document runs one provider per
-job and expresses two tools as two jobs, so `TOOLS` names exactly one provider
-there and a list is rejected with a message saying so.
+A workflow document runs one provider per job and expresses two tools as two
+jobs, so `TOOLS` names exactly one provider and a list is rejected with a
+message saying so. The multi-provider job templates below keep their list-valued
+`default_provider` because that is what makes both tools' steps available; it is
+the `TOOLS` *override* that must name one.
 ```
 
 ## The two `lvs` providers write the same metric key

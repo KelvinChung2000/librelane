@@ -10,45 +10,59 @@ using the Classic flow, and may require you to write your own custom-based flow.
 
 This defines many of the terms used and enumerates strictures mentioned in this document.
 
-## Custom Sequential Flows
+## Writing a Workflow Document
 
-### Using the API
+A flow is a YAML file. It declares a graph of named **jobs**, each of which
+runs some steps, and the edges between them. Nothing about it is Python, and
+LibreLane's own flows -- `Classic`, `VHDLClassic`, `Chip` and the five
+open-in flows -- are exactly this and nothing else; they live in
+`librelane/flows/*.yaml`.
 
-#### By Listing Steps
+### Listing steps
 
-You'll need to import the `Flow` class as well as any steps you intend to use.
+The smallest document names itself and gives one job a list of step ids:
 
-A flow that entirely relies on built-in steps looks something like this:
+```yaml
+name: MyFlow
+description: A hand-listed place-and-route flow.
 
-```python
-from librelane.flows import SequentialFlow
-from librelane.steps import Yosys, Misc, OpenROAD, Magic, Netgen
-
-
-class MyFlow(SequentialFlow):
-    Steps = [
-        Yosys.Synthesis,
-        OpenROAD.CheckSDCFiles,
-        OpenROAD.Floorplan,
-        OpenROAD.TapEndcapInsertion,
-        OpenROAD.GeneratePDN,
-        OpenROAD.IOPlacement,
-        OpenROAD.GlobalPlacement,
-        OpenROAD.DetailedPlacement,
-        OpenROAD.GlobalRouting,
-        OpenROAD.DetailedRouting,
-        OpenROAD.FillInsertion,
-        Magic.StreamOut,
-        Magic.DRC,
-        Magic.SpiceExtraction,
-        Netgen.LVS,
-    ]
+jobs:
+  synthesis:
+    steps: [Yosys.Synthesis, OpenROAD.CheckSDCFiles]
+  floorplan:
+    needs: [synthesis]
+    steps:
+      - OpenROAD.Floorplan
+      - OpenROAD.TapEndcapInsertion
+      - OpenROAD.GeneratePDN
+      - OpenROAD.IOPlacement
+  placement:
+    needs: [floorplan]
+    steps: [OpenROAD.GlobalPlacement, OpenROAD.DetailedPlacement]
+  routing:
+    needs: [placement]
+    steps:
+      - OpenROAD.GlobalRouting
+      - OpenROAD.DetailedRouting
+      - OpenROAD.FillInsertion
+  signoff:
+    needs: [routing]
+    steps: [Magic.StreamOut, Magic.DRC, Magic.SpiceExtraction, Netgen.LVS]
 ```
 
-You may then instantiate and start the flow as shown:
+`needs` is what orders the run. Two jobs with no path between them run
+concurrently, so splitting a chain into branches is how a document says
+"these are independent" -- something a flat list of steps had no way to
+express.
+
+Load and run it from Python:
 
 ```python
-flow = MyFlow(
+from librelane.flows import load_flow_spec
+from librelane.flows.engine import Workflow
+
+flow = Workflow(
+    load_flow_spec("./my_flow.yaml"),
     {
         "PDK": "sky130A",
         "DESIGN_NAME": "spm",
@@ -61,10 +75,18 @@ flow = MyFlow(
 flow.start()
 ```
 
-The {py:meth}`librelane.flows.Flow.start` method will return a tuple comprised of:
+{py:meth}`librelane.flows.Flow.start` returns the final output state. The step
+objects the run created are left on the flow instance as `step_objects`.
 
-* The final output state ({math}`State_{n}`).
-* A list of all step objects created during the running of this flow object.
+`--flow` on the command line takes a *registered* name, not a path, so to run
+your document that way register it at import time and load your module as a
+[plugin](./writing_plugins.md):
+
+```python
+from librelane.flows import Flow, load_flow_spec
+
+Flow.factory.register_document(load_flow_spec("./my_flow.yaml"))
+```
 
 ```{important}
 Do NOT call the `run` method of any `Flow` from outside of `Flow` and its
@@ -74,63 +96,94 @@ does some incredibly important processing.
 You should not be overriding `start` either.
 ```
 
-## Declaring a Flow as Jobs
+### Naming jobs instead of steps
 
-`Classic` and `VHDLClassic` are both built on {class}`librelane.flows.StagedFlow`,
-a `SequentialFlow` whose `Steps` list is expanded from a `Stages` list rather
-than written out directly. A `Stages` entry is either a `Job` object, which
-expands into whichever concrete steps implement it for the tool it selects, or
-a plain `Step` class, for a provider-neutral utility or a step that sits at a
-job boundary. This is a third way to build a sequential flow, alongside
-substituting and listing steps above, and the one `Classic` itself uses.
+A job may name a **job template** with `uses` rather than list steps. The
+template expands into whichever concrete steps implement that phase for the
+tool selected for it:
 
-```python
-from librelane.flows import StagedFlow
-from librelane.jobs import Job
+```yaml
+name: MyFlow
+description: A place-and-route flow written as job templates.
 
-
-class MyStagedFlow(StagedFlow):
-    Stages = [
-        Job.synthesis,
-        Job.pre_pnr_sta,
-        Job.floorplan,
-        Job.macro_placement,
-        Job.power_grid,
-        Job.io_placement,
-        Job.global_placement,
-        Job.detailed_placement,
-        Job.global_routing,
-        Job.streamout,
-        Job.drc,
-    ]
+jobs:
+  synthesis:
+    uses: synthesis
+  pre_pnr_sta:
+    needs: [synthesis]
+    uses: pre_pnr_sta
+  floorplan:
+    needs: [pre_pnr_sta]
+    uses: floorplan
+  macro_placement:
+    needs: [floorplan]
+    uses: macro_placement
+  power_grid:
+    needs: [macro_placement]
+    uses: power_grid
+  io_placement:
+    needs: [power_grid]
+    uses: io_placement
+  global_placement:
+    needs: [io_placement]
+    uses: global_placement
+  detailed_placement:
+    needs: [global_placement]
+    uses: detailed_placement
+  global_routing:
+    needs: [detailed_placement]
+    uses: global_routing
+  streamout:
+    needs: [global_routing]
+    uses: streamout
+  drc:
+    needs: [streamout]
+    uses: drc
 ```
 
-Every job here happens to have no gating variable of its own, which keeps
-the example self-contained. A job that does declare one, such as `cts` or
-`detailed_routing`, needs the matching Boolean declared in the flow's own
-`Config`, exactly as any other configuration variable a step reads would; see
-`Classic`'s `Config` in `librelane/flows/classic.py` for a complete example.
+What `uses` buys over a `steps` list is that the tool behind each job becomes a
+configuration choice instead of a hardcoded step class. A user sets the `TOOLS`
+configuration variable to pick a different provider for one or more jobs, for
+example `{"streamout": "klayout"}` to run KLayout's stream-out instead of
+Magic's. The key is the job's name in *this* document, which need not be the
+name of the template it uses: `classic.yaml` runs the `streamout` template
+under two jobs, `magic_streamout` and `klayout_streamout`.
 
-`Steps` is populated from `Stages` at class-definition time, using each
-job's default provider, so every existing `SequentialFlow` facility -
-`get_help_md`, step IDs and step directory names - keeps working unchanged.
-
-What a `Stages` list buys over a plain `Steps` list is that the tool behind
-each job becomes a configuration choice instead of a hardcoded step class.
-A user sets the `TOOLS` configuration variable to pick a different provider
-for one or more jobs, for example `{"streamout": "klayout"}` to run only
-KLayout's stream-out instead of both Magic's and KLayout's. The key is a job
-id, which for a `Stages` list is the stage id because that is what the job is
-called there; a workflow document names its own jobs and `TOOLS` follows those
-names instead. A flow author can
-also pin a job to a specific provider from inside the `Stages` list itself
-with `Job.using`, as `VHDLClassic` does for `synthesis`; a pin is the flow's
-default, not a lock, since a matching `TOOLS` entry still overrides it.
+A document may also pin a provider itself, by writing `uses: synthesis/yosys_vhdl`
+rather than `uses: synthesis`, as `vhdl_classic.yaml` does. A pin is the
+document's default, not a lock: a matching `TOOLS` entry still overrides it.
 
 See [Swapping Tools](./swapping_tools.md) for the full `TOOLS` reference,
 including multi-provider jobs and its limitations, and
 [Writing Tool Backends](./writing_tool_backends.md) for how to register a new
 provider.
+
+### Turning a job off
+
+A job may carry an `if` naming a Boolean configuration variable. When that
+variable is false the job fires without running anything: it passes its input
+state straight through, so every job downstream of it still runs.
+
+The variable has to exist, which a document declares in its own `config`
+section:
+
+```yaml
+config:
+  - name: RUN_CTS
+    type: bool
+    default: true
+    description: Enables clock tree synthesis using the OpenROAD.CTS step.
+
+jobs:
+  cts:
+    needs: [detailed_placement]
+    uses: cts
+    if: RUN_CTS
+```
+
+See `librelane/flows/classic.yaml` for a complete example: half of its
+forty-eight jobs carry an `if`, and the variables they name are declared in its
+own `config` section.
 
 ## Fully Customized Flows
 
@@ -173,9 +226,9 @@ config_altered = config.copy(FP_CORE_UTIL=9)
 Which will create a new configuration object with one or more attributes modified.
 You can pass these to steps as you desire.
 
-Another advantage of this over sequential flows is that you can handle Step failures
-more elegantly, i.e., by trying something else when a particular Step (or set of steps) fail.
-There are a lot of possibilities.
+An advantage of this over a document is that you can handle Step failures more
+elegantly, i.e., by trying something else when a particular Step (or set of
+steps) fail. There are a lot of possibilities.
 
 ### Reporting Progress
 
@@ -192,11 +245,11 @@ The Flow object has methods to manage this progress bar:
 * {py:meth}`librelane.flows.Flow.progress_bar.start_stage`
 * {py:meth}`librelane.flows.Flow.progress_bar.end_stage`.
 
-They are to be called from inside the `run` method. In Sequential Flows the bar
-advances once per step, so {math}`|Steps| = n`, but in custom flows one bar
-stage can incorporate any
-number of steps. This is useful for example when running series of steps in parallel
-as shown in the next section, where incrementing by step is not exactly viable.
+They are to be called from inside the `run` method. A workflow advances the bar
+once per step, so {math}`|Steps| = n`, but in a custom flow one bar stage can
+incorporate any number of steps. This is useful for example when running series
+of steps in parallel as shown in the next section, where incrementing by step is
+not exactly viable.
 
 ### Multi-Threading
 
@@ -268,14 +321,14 @@ As a rule of thumb, it is sufficient to forward these errors as one of these two
 * {exc}`librelane.flows.FlowError`
   * {exc}`librelane.flows.FlowException`
 
-Which share a similar hierarchy. Here is how `SequentialFlow`, for example, handles
-its `StepError`s:
+Which share a similar hierarchy. Here is how the workflow engine handles a
+step's errors:
 
-```{literalinclude} ../../../librelane/flows/sequential.py
+```{literalinclude} ../../../librelane/flows/engine.py
 ---
 language: python
-start-after: "step_list.append(step)"
-end-before: "self.progress_bar.end_stage(increment_ordinal=executed)"
+start-after: "shutil.rmtree(step_dir, ignore_errors=True)"
+end-before: "submitted.executed += 1"
 ---
 ```
 

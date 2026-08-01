@@ -600,8 +600,6 @@ class TestJobExplanationTable:
 
         rendered = format_job_explanation(
             Explanation(
-                steps=(),
-                unselected_jobs=(),
                 jobs=(
                     JobDisposition("lint", (), True, "will run", None),
                     JobDisposition("synthesis", ("lint",), True, "will run", None),
@@ -633,8 +631,6 @@ class TestJobExplanationTable:
 
         rendered = format_job_explanation(
             Explanation(
-                steps=(),
-                unselected_jobs=(),
                 jobs=(
                     JobDisposition("lint", (), True, "will run", None),
                     JobDisposition(
@@ -657,8 +653,8 @@ class TestJobExplanationTable:
 
     def test_explain_renders_the_job_half_and_exits(self, mocker, tmp_path: Path):
         """
-        `--explain` must reach `format_job_explanation`, not the step-table
-        `format_explanation` that phase 5 deletes with the sequential engine.
+        `--explain` must reach `format_job_explanation` and exit before the
+        run, so that asking what a flow would do never starts one.
         """
         import typer
 

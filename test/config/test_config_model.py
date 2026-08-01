@@ -212,9 +212,8 @@ def test_the_model_bridge_leaves_a_plain_annotation_plain():
     ``variable()`` appends a deprecated-names marker to every field, and
     `Variable` carries deprecated names in a field of its own. Reattaching all
     metadata indiscriminately would make even a `bool` an ``Annotated`` alias,
-    which the gating-variable checks in
-    :class:`librelane.flows.SequentialFlow` and
-    :mod:`librelane.flows.spec` compare against a bare type with ``==``.
+    which the condition-variable checks in :mod:`librelane.flows.spec` compare
+    against a bare type with ``==``.
     """
     from librelane.config import BaseConfigModel, model_to_variables, variable
 

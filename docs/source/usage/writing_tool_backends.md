@@ -81,45 +81,45 @@ import rather than quietly at run time:
   `native_views`. Every view your registration or its job promises in
   `provides` must actually appear in some step's `outputs`.
 
-**Resolution time** runs once a flow's job set and its `TOOLS` selection are
-both known, and before any configuration exists. It rejects an unknown
-provider name and an unknown key in `TOOLS`. For a `StagedFlow` this is
-`resolve()`, working from a `Stages` list, which also rejects a list supplied
-for a job that is not `multi_provider`. For a workflow document it is
-`resolve_jobs()`, working from the document's jobs, which rejects a list
-outright and rejects a key naming a job that lists its steps inline.
+**Resolution time** runs once a document's job set and its `TOOLS` selection are
+both known, and before any configuration exists. `resolve_jobs()` works from the
+document's jobs and rejects an unknown provider name, an unknown key in `TOOLS`,
+a list value, and a key naming a job that lists its steps inline.
 
-**Startup time**, inside `StagedFlow.__init__` once `Config.load` has produced
-a resolved configuration, runs the preflight. It needs a configuration and so
-cannot live in `resolve()`; if you are chasing one of its messages, that is the
-place to look.
+**Load time** is where the document's own structural check runs, over the
+declared graph rather than over a resolved step list. `_check_requirements_are_reachable`
+in `librelane/flows/spec_validation.py` checks that every view a job `requires`
+is `provide`d by some job upstream of it. This is what makes an untested
+document safe to attempt, because a graph that leaves a consumer stranded is
+refused before the run starts, naming the view and the job, rather than crashing
+once some tool reaches for a file that was never written.
 
-* `StagedFlow._preflight_views` walks the resolved step list and checks that
-  every non-optional input a step consumes is actually produced by an earlier
-  step, with steps whose gating variables are false excluded. This is what
-  makes an untested `TOOLS` combination safe to attempt, because a provider
-  selection that leaves a consumer stranded fails at flow construction, naming
-  the view, the step, and the last job before it, rather than crashing once
-  some tool reaches for a file that was never written.
+Note what this does *not* cover, and why: re-pointing a job at another provider
+with `TOOLS` does not change the declared graph, so a selection whose steps stop
+producing a view the graph promised is not caught here. It surfaces during the
+run, at the first step that cannot find the view.
 
-**Run time**, inside `StagedFlow`, enforces the job contract at two
-granularities. A backend that does not actually emit `route__drc_errors` must
-not be able to let a downstream checker pass on an unexamined design.
+**Run time**, inside `Workflow`, enforces the job contract. A backend that does
+not actually emit `route__drc_errors` must not be able to let a downstream
+checker pass on an unexamined design.
 
-* Once the last step of *your registration* completes, every view in your
-  registration's own `provides` must be in the state and every metric in its
-  own `metrics` must have been emitted. Your contract is yours alone, so on a
-  `multi_provider` job it still holds when the other tool of that job is
-  gated off.
-* Once the last step of the *whole job* completes, every view in the job's
-  `provides` and every metric in the job's `metrics` must likewise be there.
-  This one the selected providers satisfy jointly, which is what lets both
-  `streamout` tools share the obligation to produce a neutral `gds` while
-  `PRIMARY_GDSII_STREAMOUT_TOOL` decides which of them writes it.
+Once a job completes, every view in its `provides` must be in the state it
+produced and every metric in its `metrics` must have been emitted. The union of
+the job's template and your registration is what it owes: the template's
+entries are the phase's obligations whichever tool implements it, and yours are
+the ones only your tool can be held to.
 
-Either check is skipped when the run it covers did not execute every one of its
-steps, since views and metrics that were never attempted cannot be owed. That
-is what allows `RUN_MAGIC_STREAMOUT=false`.
+A document runs one provider per job, so this one check is both the job's and
+your registration's. Two tools of one phase are two jobs, each contract-checked
+against its own provider, which is what lets both `streamout` jobs share the
+obligation to produce a neutral `gds` while `PRIMARY_GDSII_STREAMOUT_TOOL`
+decides which of them writes it.
+
+The check is skipped for a job that did not run -- one an `if` turned off, or
+one outside a `--target` -- since views and metrics that were never attempted
+cannot be owed. That is what allows `RUN_MAGIC_STREAMOUT=false`. It is also
+skipped for a job that deferred an error, so that the deferred message is what
+you see rather than a contract failure that follows from it.
 
 (namespaces)=
 ## `namespaces`

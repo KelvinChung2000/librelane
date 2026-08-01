@@ -597,8 +597,8 @@ def test_each_open_in_document_registers_under_the_name_users_type(
     document, registered_name
 ):
     """
-    The five Open-In flows used to be ``SequentialFlow`` subclasses whose
-    ``name`` carried a display string such as "Opening in KLayout", while the
+    The five Open-In flows used to be Python flow classes whose ``name``
+    carried a display string such as "Opening in KLayout", while the
     registration key -- the string a user types after ``--flow`` -- was the
     class name. A document's ``name`` is the registration key, so these had to
     survive the migration character for character; the display string became
@@ -822,8 +822,9 @@ def test_chip_declares_run_rmp_without_running_rmp():
 
 def test_chip_finishing_is_ungated():
     """
-    All six of its steps are ungated in ``Chip.gating_config_vars``, so the job
-    carries no ``if``. Pinned separately from the gating comparison because that
+    None of its six steps was gated by the ``Chip`` flow class this document
+    replaces, so the job carries no ``if``. Pinned separately from the gating
+    comparison because that
     test compares job-to-step attributions, and an ``if`` wrongly added here
     would also need a variable to hang it on.
     """
@@ -1041,8 +1042,9 @@ def test_help_for_a_document_documents_the_tools_variable():
     pointers, so the variable they point at has to be on the page with its
     type, its default and its description.
 
-    The class each document replaces carried it: ``StagedFlow.Config`` declares
-    ``TOOLS``, which put it at the head of ``Classic.config_vars``.
+    The class each document replaces carried it: it declared ``TOOLS`` on its
+    own configuration model, which put the variable at the head of ``Classic``'s
+    list.
     """
     from librelane.flows.engine import Workflow
 

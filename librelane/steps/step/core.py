@@ -359,8 +359,8 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
             raise TypeError(
                 f"Step '{cls.__name__}' defines 'flow_control_variable', which "
                 f"nothing has read since 2.0, so the step silently failed to "
-                f"gate. Gate it from the flow instead, with an entry in that "
-                f"flow's 'gating_config_vars'."
+                f"gate. Gate it from the workflow document instead, with an "
+                f"'if' on the job that runs it."
             )
         if cls.id != NotImplemented:
             if f".{cls.__name__}" not in cls.id:

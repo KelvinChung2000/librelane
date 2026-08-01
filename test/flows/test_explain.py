@@ -13,11 +13,7 @@
 # limitations under the License.
 import pytest
 
-from librelane.flows import (
-    engine as engine_module,
-    flow as flow_module,
-    sequential as sequential_module,
-)
+from librelane.flows import engine as engine_module, flow as flow_module
 from librelane.steps import step as step_module
 from test.conftest import COMMON_FLOW_VARS, MockConfTree
 
@@ -33,105 +29,6 @@ def _bool_var(name: str, default: bool) -> dict:
         "description": "x",
         "default": default,
     }
-
-
-@mock_variables([flow_module, sequential_module, step_module])
-def test_every_step_of_an_unconstrained_flow_will_run(
-    MetricIncrementer, minimal_design, mock_pdk
-):
-    from librelane.flows import SequentialFlow
-
-    class Dummy(SequentialFlow):
-        Steps = [MetricIncrementer]
-
-    explanation = Dummy(minimal_design, **mock_pdk).explain()
-
-    assert [d.step_id for d in explanation.steps] == ["Test.MetricIncrementer"]
-    assert all(d.will_run for d in explanation.steps)
-    assert all(d.mechanism is None for d in explanation.steps)
-    assert explanation.unselected_jobs == ()
-    # A SequentialFlow has jobs no more than a Workflow has stages, and the new
-    # field defaults so that the two halves can ship side by side until phase 5
-    # deletes this one.
-    assert explanation.jobs == ()
-
-
-@mock_variables([flow_module, sequential_module, step_module])
-def test_a_gated_step_names_its_gate(MetricIncrementer, minimal_design, mock_pdk):
-    from librelane.config import Variable
-    from librelane.flows import SequentialFlow
-
-    class Gated(MetricIncrementer):
-        id = "Test.ExplainGated"
-
-    class Dummy(SequentialFlow):
-        Steps = [MetricIncrementer, Gated]
-
-        config_vars = [Variable("TEST_GATE", bool, description="x", default=False)]
-
-        gating_config_vars = {"Test.ExplainGated": ["TEST_GATE"]}
-
-    explanation = Dummy(minimal_design, **mock_pdk).explain()
-
-    gated = explanation.steps[1]
-    assert gated.step_id == "Test.ExplainGated"
-    assert gated.will_run is False
-    assert gated.mechanism == "gate"
-    assert "TEST_GATE" in gated.reason
-
-
-@mock_variables([flow_module, sequential_module, step_module])
-def test_skip_and_window_attribute_correctly(
-    MetricIncrementer, minimal_design, mock_pdk
-):
-    from librelane.flows import SequentialFlow
-
-    class Second(MetricIncrementer):
-        id = "Test.ExplainSecond"
-
-    class Third(MetricIncrementer):
-        id = "Test.ExplainThird"
-
-    class Fourth(MetricIncrementer):
-        id = "Test.ExplainFourth"
-
-    class Dummy(SequentialFlow):
-        Steps = [MetricIncrementer, Second, Third, Fourth]
-
-    explanation = Dummy(minimal_design, **mock_pdk).explain(
-        frm="Test.ExplainSecond",
-        to="Test.ExplainThird",
-        skip=["Test.ExplainSecond"],
-    )
-
-    by_id = {d.step_id: d for d in explanation.steps}
-    assert by_id["Test.MetricIncrementer"].mechanism == "window"
-    assert "--from" in by_id["Test.MetricIncrementer"].reason
-    assert by_id["Test.ExplainSecond"].mechanism == "skip"
-    assert by_id["Test.ExplainThird"].will_run is True
-    assert by_id["Test.ExplainFourth"].mechanism == "window"
-    assert "--to" in by_id["Test.ExplainFourth"].reason
-
-
-def test_format_explanation_renders_every_row():
-    from librelane.cli.run import format_explanation
-    from librelane.flows import Explanation, StepDisposition
-
-    rendered = format_explanation(
-        Explanation(
-            steps=(
-                StepDisposition("Test.Alpha", True, "will run", None),
-                StepDisposition("Test.Beta", False, "gated off by RUN_BETA", "gate"),
-            ),
-            unselected_jobs=("post_route_opt",),
-        )
-    )
-
-    assert "Test.Alpha" in rendered
-    assert "Test.Beta" in rendered
-    assert "RUN_BETA" in rendered
-    assert "gate" in rendered
-    assert "post_route_opt" in rendered
 
 
 @mock_variables([flow_module, step_module])
@@ -633,7 +530,7 @@ def _classic_workflow(mock_conf_dir: MockConfTree):
     return Workflow(spec, base.copy(**defaults))
 
 
-@mock_variables([flow_module, sequential_module, step_module])
+@mock_variables([flow_module, step_module])
 def test_explain_reports_every_job_of_the_classic_document(mock_conf_dir):
     """
     The no-suppression guard, on a real 48-job document rather than a
@@ -655,7 +552,7 @@ def test_explain_reports_every_job_of_the_classic_document(mock_conf_dir):
     assert all(d.will_run is False for d in gated.values())
 
 
-@mock_variables([flow_module, sequential_module, step_module])
+@mock_variables([flow_module, step_module])
 def test_explain_keeps_every_row_when_a_target_narrows_the_classic_document(
     mock_conf_dir,
 ):
@@ -1043,7 +940,7 @@ def test_explain_reports_a_row_for_every_configuration_variable(
 def _variables(*rows):
     from librelane.flows import Explanation
 
-    return Explanation(steps=(), unselected_jobs=(), variables=rows)
+    return Explanation(variables=rows)
 
 
 def test_format_variable_explanation_renders_every_row():
