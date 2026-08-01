@@ -69,7 +69,9 @@ ConfigOverridesOption = Annotated[
         "-c",
         help=(
             "Override a configuration variable for this run, in KEY=VALUE "
-            "format. May be specified multiple times; values must be valid JSON."
+            "format. May be specified multiple times. A list or dictionary "
+            "variable takes JSON; any other variable takes the text as "
+            "written."
         ),
         rich_help_panel=FLOW_OPTIONS,
     ),

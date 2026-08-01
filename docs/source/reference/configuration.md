@@ -138,8 +138,9 @@ i.e., the second example with the sky130A PDK simply becomes:
 If a string's value starts with `ref::`, you can interpolate exactly one
 **string** variable at the beginning of your string.
 
-The order of declarations matter: i.e., you cannot reference a variable that is
-declared after the current expression.
+The order of declarations does not matter: references are resolved as a
+dependency graph, so a variable may reference one declared later in the file.
+The only ordering error is a cycle, which is rejected with the cycle's path.
 
 ```json
 {
@@ -153,9 +154,7 @@ declared after the current expression.
 }
 ```
 
-> In this example, the first configuration is invalid, as B is referenced before
-> it is declared, but the latter is OK, where the value will be "vdd gnd" as
-> well.
+> These two configurations are equivalent: in both, A resolves to "vdd gnd".
 
 Do note that unlike Tcl config files, environment variables are not exposed to
 `config.{yml/yaml/json}` by default. You only have access to four specific
@@ -197,9 +196,8 @@ Parentheses (`()`) are also supported to prioritize certain operations.
 Your expressions must return exactly one value: multiple expressions in the same
 `expr::`-prefixed value are considered invalid and so are empty expressions.
 
-It is important to note that, like variable referencing and conditional
-execution, the order of declarations matter: i.e., you cannot reference a
-variable that is declared after the current expression.
+As with variable referencing, the order of declarations does not matter:
+operands are resolved as a dependency graph, and only a cycle is an error.
 
 ```json
 {
@@ -213,9 +211,7 @@ variable that is declared after the current expression.
 }
 ```
 
-> In this example, the first configuration is invalid, as B is used in a
-> mathematical expression before declaration, but the latter is OK, evaluating
-> to 8.
+> These two configurations are equivalent: in both, A evaluates to 8.
 
 You can also simply reference another number using this prefix:
 
@@ -338,9 +334,10 @@ prefix that produces a list satisfies a list variable without any JSON at all:
 $ librelane -c 'VERILOG_FILES=dir::src/*.v' config.yaml
 ```
 
-A prefix written **inside** a JSON array is not expanded, because by then the
-value is a list and not a string. Write the paths out, or use a prefix for the
-whole value as above.
+A prefix written **inside** a JSON array is not expanded: prefixes are
+recognized only at the start of a whole value, and a value that begins with
+`[` begins with JSON, not a prefix. Write the paths out, or use a prefix for
+the whole value as above.
 
 ## How a value's syntax is decided
 

@@ -914,15 +914,36 @@ Style Notes
   * Each source's sections are now expanded into that source before the
     sources are layered, so a section overrides the file that carried it and
     nothing else, and an override beats every file.
-  * A matching section now overrides its own file's top-level value wherever
-    the block is written rather than only below it. Every shipped
-    configuration writes its sections last, so no shipped file changes
-    meaning; moving one no longer changes what it resolves to.
   * A key promoted out of a section is now attributed to the file that carried
     the section. `--explain-variables` reported `default` for the example's
     `FP_CORE_UTIL`, or the PDK for a variable the PDK also sets, because the
     attribution was recorded under the section's own key and dropped when that
     key did not survive.
+* A matching `pdk::`/`scl::` section now overrides its own file's top-level
+  value wherever the block is written, rather than only when it appears below
+  the key. Every shipped configuration writes its sections last, so no shipped
+  file changes meaning; moving a section within a file no longer changes what
+  it resolves to. Documented behaviour before this release said document
+  order decided.
+* A `--config-override` for a `list`- or `dict`-typed variable is now read as
+  JSON, which is what `--override-config`'s own help text and the `TOOLS`
+  reader in `librelane.jobs.tools` have always said it is. Every such variable
+  was unusable from the command line before: the value was split as a Tcl
+  list, so `-c 'TOOLS={"lvs": "klayout"}'` died with `uneven Tcl dictionary`.
+  * A scalar variable still takes the text exactly as written, so
+    `-c CLOCK_PERIOD=15` is unchanged. A space-separated list, which the
+    command line used to accept for a list variable, is now an error naming
+    the variable and the syntax: write `-c 'CELL_PAD_EXCLUDE=["*decap*"]'`.
+    The `dir::`, `refg::`, `ref::` and `expr::` prefixes still apply to a
+    whole override, so `-c 'VERILOG_FILES=dir::src/*.v'` needs no JSON.
+* How a string reaching a `list`- or `dict`-typed variable is read is now a
+  property of the source that wrote it rather than a flag on the key: Tcl for
+  a `.tcl` file, JSON for the command line, and an error for a `.json`,
+  `.yaml` or API mapping, whose grammars carry a list as a list. The source
+  that wrote a key last decides, so a mapping layered over a `.tcl` file is
+  no longer silently held to Tcl's rules, and a value moved onto a variable's
+  current name from a deprecated one keeps the syntax it was written in. A
+  `.tcl` configuration's values are read exactly as before.
 * Reworked configuration loading around typed Pydantic models and a staged
   read/layer/process/preprocess/validate pipeline.
 * Added structured configuration diagnostics, replayed after flow log sinks
