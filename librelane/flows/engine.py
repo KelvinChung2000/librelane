@@ -38,6 +38,33 @@ from librelane.flows.spec_graph import ancestors, descendants
 from librelane.flows.spec_validation import validate_against_registry
 
 
+class _ReproducibleCreated(Exception):
+    """
+    Raised by a worker once it has written a reproducible, so that the job
+    unwinds the way an error does without being one.
+
+    It never leaves :meth:`Workflow.run`. A private control-flow exception
+    reaching the CLI would be reported as a flow failure, which is the opposite
+    of what happened.
+
+    Parameters
+    ----------
+    path
+        Where the reproducible was written.
+    state
+        The state the named step would have consumed. It is the run's final
+        state, for the same reason it is in
+        :class:`librelane.flows.sequential.SequentialFlow`: the flow stopped
+        there, so the last thing it knows about the design is what that step
+        was about to be handed.
+    """
+
+    def __init__(self, path: pathlib.Path, state: State) -> None:
+        super().__init__(f"Wrote a reproducible to '{path}'.")
+        self.path = path
+        self.state = state
+
+
 @dataclass
 class _InFlight:
     """
@@ -175,6 +202,7 @@ class Workflow(Flow):
         target: Iterable[str] | None = None,
         invalidate: Iterable[str] | None = None,
         skip: Iterable[str] | None = None,
+        reproducible: str | None = None,
         **kwargs,
     ) -> tuple[State, list[Step]]:
         """
@@ -190,10 +218,16 @@ class Workflow(Flow):
             reusable result.
         skip : Iterable[str] | None
             Job ids to fire as pass-through without running.
+        reproducible : str | None
+            Write a reproducible for this step, named either ``<step id>`` or
+            ``<job id>/<step id>``, instead of running it. The step's job and
+            its ancestors run, and nothing else does.
 
         Returns
         -------
-        ``(final_state, steps_run)``
+        ``(final_state, steps_run)``. Under ``reproducible`` the final state is
+        the one the named step would have consumed, because the run stopped
+        there.
 
         Raises
         ------
@@ -201,11 +235,11 @@ class Workflow(Flow):
             If any named job is not declared, or lies outside the ``target``
             subgraph.
         """
-        # The three compose in a fixed order: --target restricts the graph
-        # first, and --skip and --invalidate then apply within the
-        # restriction. Naming a job outside it is an error rather than a
-        # silent no-op, because the option would otherwise do nothing at all
-        # and say nothing about it.
+        # They compose in a fixed order: --target restricts the graph first,
+        # and --skip and --invalidate then apply within the restriction.
+        # Naming a job outside it is an error rather than a silent no-op,
+        # because the option would otherwise do nothing at all and say nothing
+        # about it.
         edges = self.spec.edges()
 
         selected = set(self.jobs)
@@ -221,6 +255,42 @@ class Workflow(Flow):
         self._require_declared(sorted(skipped), "--skip")
         invalidated = set(invalidate or ())
         self._require_declared(sorted(invalidated), "--invalidate")
+
+        # After --skip is read, because a request for a step this run would
+        # never execute is refused against it, and before the subgraph check
+        # below, because --reproducible narrows the subgraph the check is made
+        # against.
+        reproducible_at: tuple[str, int] | None = None
+        if reproducible is not None:
+            if target is not None:
+                raise FlowException(
+                    "--reproducible and --target both say what should run. "
+                    "--reproducible already runs the named step's job and its "
+                    "ancestors, so drop --target."
+                )
+            job_id, step_index = self._resolve_reproducible(reproducible)
+            # Ahead of every skip test, so that a request for a step this
+            # configuration would never execute is diagnosed rather than
+            # silently discarded. This mirrors SequentialFlow.run.
+            if job_id in skipped:
+                raise FlowException(
+                    f"Cannot create a reproducible for a step of job "
+                    f"'{job_id}': it is named by --skip, so this run would "
+                    f"never execute it. Drop it from --skip, or name another "
+                    f"step."
+                )
+            reason = self._pass_through_reason(self.jobs[job_id], skipped=False)
+            if reason is not None:
+                raise FlowException(
+                    f"Cannot create a reproducible for a step of job "
+                    f"'{job_id}': {reason}, so this configuration would never "
+                    f"execute it. Name another step, or change the condition."
+                )
+            # The spec says --reproducible is unchanged in meaning and runs the
+            # ancestors of the step's job, which is exactly what --target does,
+            # so it reuses the restriction rather than adding a second one.
+            selected = {job_id} | ancestors(edges, job_id)
+            reproducible_at = (job_id, step_index)
 
         outside = (skipped | invalidated) - selected
         if outside:
@@ -305,6 +375,7 @@ class Workflow(Flow):
                                 submitted.steps,
                                 submitted.deferred,
                                 name in forced,
+                                reproducible_at,
                             )
                         ] = submitted
                     except Exception as e:
@@ -346,6 +417,26 @@ class Workflow(Flow):
                     if not finished.deferred:
                         self._check_contract(self.jobs[finished.name], state_out)
                     net.fire(finished.name, state_out)
+                except _ReproducibleCreated as created:
+                    # Returning from the middle of the loop abandons no worker.
+                    # --reproducible restricted the graph to the named job and
+                    # its ancestors, and a job is enabled only once every one
+                    # of its predecessors has fired, so by the time this job
+                    # was even submitted nothing else was left to run.
+                    assert not pending, (
+                        "a reproducible unwound while "
+                        f"{sorted(other.name for other in pending.values())} "
+                        "were still running"
+                    )
+                    logger.success(f"Wrote a reproducible to '{created.path}'.")
+                    if deferred:
+                        # The reproducible is written either way, and the
+                        # message above says so, but an ancestor that deferred
+                        # an error still failed and dropping it here would be
+                        # the silent failure --reproducible was moved onto the
+                        # engine to avoid.
+                        raise FlowError("\n".join(deferred)) from None
+                    return created.state, steps_run
                 except Exception as e:
                     # Collected rather than raised, because raising here would
                     # abandon the jobs still running and hide a second,
@@ -399,6 +490,54 @@ class Workflow(Flow):
                     f"'{self.spec.name}' does not declare. Declared jobs: "
                     f"{sorted(self.jobs)}."
                 )
+
+    def _resolve_reproducible(self, name: str) -> tuple[str, int]:
+        """
+        Parameters
+        ----------
+        name : str
+            Either ``<step id>`` or ``<job id>/<step id>``. Step ids are
+            matched case-insensitively, as the old ``--reproducible`` matched
+            them.
+
+        Returns
+        -------
+        tuple[str, int]
+            The job that runs the step, and the step's index within that job's
+            sequence.
+
+        Raises
+        ------
+        FlowException
+            If no job runs that step, or if several do and the argument named
+            no job. Naming one of several would run a step the user did not ask
+            for.
+        """
+        job_id, separator, step_id = name.rpartition("/")
+        if separator:
+            self._require_declared([job_id], "--reproducible")
+        wanted = step_id.lower()
+
+        matches = [
+            (candidate, index)
+            for candidate, job in self.jobs.items()
+            if not separator or candidate == job_id
+            for index, step in enumerate(job.steps)
+            if step.id.lower() == wanted
+        ]
+        if not matches:
+            raise FlowException(
+                f"--reproducible names step '{step_id}', which flow "
+                f"'{self.spec.name}' does not run"
+                + (f" in job '{job_id}'." if separator else ".")
+            )
+        if len(matches) > 1:
+            raise FlowException(
+                f"--reproducible names step '{step_id}', which runs in "
+                f"{sorted({candidate for candidate, _ in matches})}. Name one "
+                f"of them as '<job>/{step_id}'."
+            )
+        return matches[0]
 
     def _final_state(
         self, net: Net, outputs: dict[str, State], selected: set[str]
@@ -481,6 +620,7 @@ class Workflow(Flow):
         steps: list[Step],
         deferred: list[str],
         forced: bool,
+        reproducible_at: tuple[str, int] | None,
     ) -> State:
         """
         Runs one job's steps in order. Called on a worker thread, so ``steps``
@@ -502,6 +642,11 @@ class Workflow(Flow):
             than defaulting to ``False``, so that a future caller cannot forget
             it and silently consult the cache. A forced step still *writes* its
             entry, so the next run reuses it.
+        reproducible_at : tuple[str, int] | None
+            The job and step index a reproducible was asked for, or ``None``.
+            Required for the same reason ``forced`` is: a caller that forgot it
+            would run the step instead of writing a reproducible for it, and
+            say nothing.
 
         Returns
         -------
@@ -513,6 +658,9 @@ class Workflow(Flow):
             If a step raised :class:`librelane.steps.StepError`.
         FlowException
             If a step raised :class:`librelane.steps.StepException`.
+        _ReproducibleCreated
+            If this job runs the step ``reproducible_at`` names, once the
+            reproducible is written. Caught by :meth:`run`.
         """
         current = state_in
         for index, cls in enumerate(job.steps):
@@ -533,6 +681,15 @@ class Workflow(Flow):
                 id=f"{cls.id} ({job.id})",
             )
             step_dir = self.dir_for_job_step(job, index, step)
+            if (job.id, index) == reproducible_at:
+                # Before the resume check, and without the rmtree below: the
+                # step is not going to run, so neither reusing its previous
+                # result nor deleting it is meaningful. It is also not appended
+                # to 'steps', because it never ran, which is what SequentialFlow
+                # does for the same request.
+                written = step_dir / "reproducible"
+                step.create_reproducible(written)
+                raise _ReproducibleCreated(written, current)
             assert self.fingerprinter is not None
             key = resume_key(step, current, self.fingerprinter)
             reused = (

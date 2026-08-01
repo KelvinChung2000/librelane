@@ -1421,3 +1421,235 @@ def test_the_engine_rejects_a_tools_key_naming_no_job(
 
     with pytest.raises(JobResolutionError, match="contracts"):
         Workflow(spec, dict(minimal_design, TOOLS={"contracts": "honest"}), **mock_pdk)
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_stops_before_the_named_step(
+    counting_steps, minimal_design, mock_pdk, mocker
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, First, _ = counting_steps
+    created = mocker.patch.object(First, "create_reproducible")
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="repro", reproducible="first/Test.EngineFirst")
+
+    # Neither the named step nor anything downstream of its job: the step is
+    # replaced by the reproducible, and 'second' is not a node of the run.
+    assert order == []
+    assert created.call_count == 1
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_runs_the_named_job_s_ancestors(
+    counting_steps, minimal_design, mock_pdk, mocker
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    order, _, Second = counting_steps
+    mocker.patch.object(Second, "create_reproducible")
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="repro-ancestors", reproducible="second/Test.EngineSecond")
+
+    # A reproducible is only reproducible if it is handed the input the step
+    # would really have received, so the ancestors have to run for it.
+    assert order == ["Test.EngineFirst"]
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_returns_the_state_the_named_step_would_have_consumed(
+    counting_steps, minimal_design, mock_pdk, mocker
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    _, _, Second = counting_steps
+    mocker.patch.object(Second, "create_reproducible")
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    final = flow.start(tag="repro-state", reproducible="second/Test.EngineSecond")
+
+    # The run stopped at the named step, so the last thing it knows is the
+    # state that step was about to be given. This is what SequentialFlow
+    # returns for the same request.
+    assert final.metrics["first"] == 1
+    assert "second" not in final.metrics
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_is_written_under_the_named_step_s_directory(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="repro-dir", reproducible="second/Test.EngineSecond")
+
+    # The real Step.create_reproducible, not a mock: what makes '<job>/<step>'
+    # the natural address is that the reproducible lands inside the directory
+    # that address already names, and only running it proves that.
+    written = flow.run_dir / "second" / "1-test-enginesecond" / "reproducible"
+    assert (written / "run_ol.sh").is_file()
+    # The state 'first' produced, carried into the reproducible rather than
+    # the empty state a run starts from.
+    assert '"first": 1' in (written / "state_in.json").read_text()
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_for_a_step_in_several_jobs_is_ambiguous(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "once": {"steps": ["Test.EngineFirst"]},
+                "twice": {"needs": ["once"], "steps": ["Test.EngineFirst"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="ambiguous", reproducible="Test.EngineFirst")
+
+    message = str(exc_info.value)
+    assert "once" in message
+    assert "twice" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_naming_a_step_no_job_runs_is_an_error(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="unknown-step", reproducible="first/Test.EngineSecond")
+
+    message = str(exc_info.value)
+    assert "Test.EngineSecond" in message
+    assert "first" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_for_a_job_a_false_condition_stops_is_refused(
+    counting_steps,
+    minimal_design,
+    mock_pdk,
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "config": [_bool_var("RUN_FIRST", False)],
+            "jobs": {"first": {"steps": ["Test.EngineFirst"], "if": "RUN_FIRST"}},
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="gated", reproducible="first/Test.EngineFirst")
+
+    assert "RUN_FIRST" in str(exc_info.value)
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_for_a_skipped_job_is_refused(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="skipped", reproducible="first/Test.EngineFirst", skip=["first"])
+
+    message = str(exc_info.value)
+    assert "--skip" in message
+    assert "first" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_and_target_together_are_refused(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(
+            tag="both",
+            target=["first"],
+            reproducible="first/Test.EngineFirst",
+        )
+
+    assert "--reproducible" in str(exc_info.value)
+    assert "--target" in str(exc_info.value)
