@@ -566,7 +566,7 @@ class SequentialFlow(Flow):
                         # executed stays True, so the _after_step hook below
                         # sees the step as executed against a state that never
                         # received its output. That matters to
-                        # librelane.flows.StagedFlow, which checks a stage
+                        # librelane.flows.StagedFlow, which checks a job
                         # contract there: a provider whose final step both emits
                         # a contracted metric and defers an error would raise
                         # JobContractError and bury the real deferred error.

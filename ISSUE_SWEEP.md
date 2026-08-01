@@ -1303,10 +1303,10 @@ upstream issue number.
    died at that stage boundary with "completed without producing views
    ['sdc']". Reproduced on the bundled spm example with no local changes
    applied. Root cause was `MultiCornerSTA.outputs` declaring a view the class
-   never writes, which `Stage(pre_pnr_sta).provides` was then derived from and
-   which `StageRegistry` accepted because it checks *declared* outputs. A
+   never writes, which `Job(pre_pnr_sta).provides` was then derived from and
+   which `JobRegistry` accepted because it checks *declared* outputs. A
    step's declared outputs are not enforced anywhere else, so the lie had
-   nowhere to surface until stage contracts started reading it. The same
+   nowhere to surface until job contracts started reading it. The same
    pattern was in `PrimeTime.STAPrePNR` (`SDC`, copied from the comment),
    `OpenROAD.DumpRCValues` (five views, script writes only reports) and the
    three vendor `Floorplan` scaffolds (an `SDC` *input* nothing produces).
@@ -1319,9 +1319,10 @@ Found while implementing; none of them are written down anywhere else.
 - **A stage provider's config variables are namespace-checked at import time.**
   `librelane/jobs/registry.py` rejects a variable declared on a provider step
   that is neither a common flow variable nor prefixed with one of the provider's
-  namespaces, raising `StageError` when the module is imported. So an unprefixed
-  name on, say, `KLayout.StreamOut` is not merely bad style, it fails to import:
-  `Provider 'klayout' for stage 'streamout' declares variable 'ISOSUB_LAYER',
+  namespaces, raising `JobDefinitionError` when the module is imported. So an
+  unprefixed name on, say, `KLayout.StreamOut` is not merely bad style, it fails
+  to import:
+  `Provider 'klayout' for job 'streamout' declares variable 'ISOSUB_LAYER',
   which is neither a common flow variable nor prefixed with any of
   ['KLAYOUT_']`. A variable two tools both need belongs in `config/flow.py`,
   not on one of them.
