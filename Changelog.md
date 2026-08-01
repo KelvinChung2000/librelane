@@ -600,8 +600,10 @@ Style Notes
   metric in its `metrics` must have been emitted, or the run fails. There is no
   warn-and-continue: a backend that does not report `route__drc_errors` must not
   be able to let `Checker.TrDRC` pass on an unexamined design. Metrics are
-  compared on base names, so a provider emitting only per-net or per-corner
-  variants of a contracted metric still satisfies it.
+  compared by exact name. A provider that measures per corner or per net
+  satisfies the contract by aggregating its variants into the base-named
+  metric, which is what `aggregate_metrics` does with the METRICS2.1
+  modifiers; the variants on their own do not satisfy it.
   * A run that did not execute every step it covers, because they were gated,
     skipped, or left outside a `--target`, is not checked. Its views and
     metrics were never attempted.
@@ -614,19 +616,20 @@ Style Notes
     tools share the promise of a neutral `gds` view while
     `PRIMARY_GDSII_STREAMOUT_TOOL` decides which of them writes it.
 * View availability is checked before any tool runs. Every non-optional view a
-  step consumes must be produced by an earlier step that the resolved
-  configuration actually runs, or the flow fails at startup naming the view, the
-  step consuming it, and the last job before it. An optional input is
-  satisfiable by absence and is not a failure. This is what makes a mixed-tool
-  `TOOLS` selection safe to attempt: picking a synthesis frontend that emits no
-  Verilog header now says so immediately instead of crashing once floorplanning
-  reaches for it.
-  * A configuration that was already broken now fails at startup rather than
-    part-way through a run. `{"synthesis": "yosys_vhdl"}` on `Classic` is
-    rejected, because `Classic` runs steps that hard-require the Verilog header
-    only Verilog synthesis emits; use the `VHDLClassic` flow, which does not.
-  * The error names the provider that declares the missing view, so it says
-    which tool was dropped rather than leaving that to be worked out.
+  job requires must be produced by one of its predecessors in the document, or
+  the flow fails at startup naming the view, the job requiring it, and the
+  predecessors it does have. An optional input is satisfiable by absence and is
+  not a failure. A view no job in the document produces at all is presumed to
+  arrive in the initial state and is left to the run, which is what lets a
+  document start mid-flow from `--with-initial-state`.
+  * The check reasons over the graph the document declares, so it is not
+    configuration-aware, and a `TOOLS` entry re-points a job at another
+    provider without changing that graph. `{"synthesis": "yosys_vhdl"}` on
+    `Classic` is therefore accepted at load and still fails during the run, at
+    the first step reaching for the Verilog header only the `yosys` provider
+    emits. Use the `VHDLClassic` flow, which makes the same selection in the
+    document, where the check can see it. See
+    {doc}`/usage/swapping_tools`.
 * Audited step ownership across every provider, against one rule: a step that
   only makes sense when a particular tool was selected belongs inside that
   tool's provider registration, so deselecting the tool removes the step with
@@ -851,8 +854,14 @@ Style Notes
     document with `Flow.factory.register(load_flow_spec("./my_flow.yaml"))`.
   * `Flow` itself remains, as machinery rather than as a declaration base. It
     is still an abstract base class whose one abstract method is `run`, and
-    `Flow.Steps`, `Flow.start_step`, `Flow.start_step_async` and
-    `Flow.dir_for_step` are unchanged. A flow that has to decide what to run
+    `Flow.start_step` and `Flow.start_step_async` keep their signatures. Two
+    members did change: `Flow.dir_for_step` returns a `pathlib.Path` rather
+    than a `str`, and `Flow.Steps` defaults to `[]` rather than to
+    `NotImplemented`, because `Flow.__init__` iterates it before a subclass
+    that leaves it to `Workflow` has one. `start_step_async` submits to the
+    process-wide pool `Workflow` fills with whole jobs, so a flow that calls
+    it from inside a job waits on a worker that will not free up.
+    A flow that has to decide what to run
     next from what a step just produced is still written in Python against it,
     which a document cannot yet express; see
     {doc}`/usage/writing_custom_flows`. Such a flow has no registered name and
