@@ -142,6 +142,89 @@ def contract_job():
     return released
 
 
+#: A diamond with one leg longer than the other, for the resume question a
+#: graph asks and a list cannot: a change to 'knob' must reach 'leaf', which
+#: consumes it, and must not reach 'root', which precedes it, or 'sibling',
+#: which runs beside it.
+CASCADE_SPEC = {
+    "name": "Cascade",
+    "jobs": {
+        "root": {"steps": ["Test.CascadeRoot"]},
+        "knob": {"needs": ["root"], "steps": ["Test.CascadeKnob"]},
+        "leaf": {"needs": ["knob"], "steps": ["Test.CascadeLeaf"]},
+        "sibling": {"needs": ["root"], "steps": ["Test.CascadeSibling"]},
+    },
+}
+
+
+@pytest.fixture
+def cascading_steps():
+    """
+    The four steps :data:`CASCADE_SPEC` runs, counting their own executions.
+
+    ``Test.CascadeKnob`` writes its variable out as a metric, so that changing
+    ``TEST_CASCADE_KNOB`` really does change what the job downstream of it
+    receives. A step whose output ignored its configuration would produce a
+    byte-identical state, its successor would correctly stay reusable, and the
+    cascade under test would be unobservable.
+
+    Returns
+    -------
+    The dict counting how many times each step class has executed, keyed by
+    class id. A step that was reused never runs and so never appears.
+    """
+    from librelane.config import variable
+    from librelane.steps import Step
+
+    runs: dict[str, int] = {}
+
+    class Base(Step):
+        inputs = []
+        outputs = []
+
+        def count(self) -> None:
+            # The class's id, not the instance's: Workflow names the job in
+            # each instance's id, and which step executed is the question.
+            runs[type(self).id] = runs.get(type(self).id, 0) + 1
+
+    @Step.factory.register()
+    class Root(Base):
+        id = "Test.CascadeRoot"
+
+        def run(self, state_in, **kwargs):
+            self.count()
+            return {}, {"cascade__root": 1}
+
+    @Step.factory.register()
+    class Knob(Base):
+        id = "Test.CascadeKnob"
+
+        class Config(Base.Config):
+            TEST_CASCADE_KNOB: int = variable(description="x")
+
+        def run(self, state_in, **kwargs):
+            self.count()
+            return {}, {"cascade__knob": self.config["TEST_CASCADE_KNOB"]}
+
+    @Step.factory.register()
+    class Leaf(Base):
+        id = "Test.CascadeLeaf"
+
+        def run(self, state_in, **kwargs):
+            self.count()
+            return {}, {"cascade__leaf": 1}
+
+    @Step.factory.register()
+    class Sibling(Base):
+        id = "Test.CascadeSibling"
+
+        def run(self, state_in, **kwargs):
+            self.count()
+            return {}, {"cascade__sibling": 1}
+
+    return runs
+
+
 @mock_variables([flow_module, step_module])
 def test_jobs_fire_in_topological_order(counting_steps, minimal_design, mock_pdk):
     from librelane.flows.engine import Workflow
@@ -1182,7 +1265,50 @@ def test_skip_outside_the_target_subgraph_is_an_error(
     with pytest.raises(FlowException) as exc_info:
         flow.start(tag="outside", target=["first"], skip=["second"])
 
-    assert "second" in str(exc_info.value)
+    message = str(exc_info.value)
+    assert "second" in message
+    # Names the option that narrowed the graph, and says why the request was
+    # refused rather than only which job was rejected. Asserted because a
+    # message naming the wrong option is the defect this pins.
+    assert "--target" in message
+    assert "outside" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_the_out_of_subgraph_error_names_reproducible_when_it_narrowed(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    ``--reproducible`` restricts the graph exactly as ``--target`` does, so the
+    refusal must name it. A fixed ``--target`` here told a user who passed only
+    ``--reproducible`` about an option they never used.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(
+            tag="outside-repro",
+            reproducible="first/Test.EngineFirst",
+            invalidate=["second"],
+        )
+
+    message = str(exc_info.value)
+    assert "--reproducible" in message
+    assert "--target" not in message
+    assert "second" in message
 
 
 @mock_variables([flow_module, step_module])
@@ -1653,3 +1779,256 @@ def test_reproducible_and_target_together_are_refused(
 
     assert "--reproducible" in str(exc_info.value)
     assert "--target" in str(exc_info.value)
+
+
+@mock_variables([flow_module, step_module])
+def test_the_run_writes_a_final_snapshot(counting_steps, minimal_design, mock_pdk):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="snapshot")
+
+    assert flow.run_dir is not None
+    assert (flow.run_dir / "final" / "metrics.json").exists()
+    assert (flow.run_dir / "final" / "metrics.csv").exists()
+
+
+@mock_variables([flow_module, step_module])
+def test_the_snapshot_holds_the_flow_s_final_state(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    Two leaves, so the snapshot is only right if it was taken from the join of
+    both rather than from whichever branch happened to finish last.
+    """
+    import json
+
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "left": {"steps": ["Test.EngineFirst"]},
+                "right": {"steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="snapshot-join")
+
+    assert flow.run_dir is not None
+    written = json.loads((flow.run_dir / "final" / "metrics.json").read_text())
+    assert written["first"] == 1
+    assert written["second"] == 1
+
+
+@mock_variables([flow_module, step_module])
+def test_a_deferring_run_still_leaves_a_final_snapshot(
+    contract_job, minimal_design, mock_pdk
+):
+    """
+    A deferred error is one the run continued past, so the run produced views
+    and the snapshot of them is exactly what the user needs to diagnose it.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {"contracts": {"uses": "engine_contract"}},
+        }
+    )
+
+    flow = Workflow(
+        spec, dict(minimal_design, TOOLS={"contracts": "deferring"}), **mock_pdk
+    )
+    with pytest.raises(FlowError, match="3 violations"):
+        flow.start(tag="deferred-snapshot")
+
+    assert flow.run_dir is not None
+    assert (flow.run_dir / "final" / "metrics.json").exists()
+
+
+@mock_variables([flow_module, step_module])
+def test_a_reproducible_run_still_writes_a_final_snapshot(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    ``--reproducible`` stops the run at the named step, and the state that step
+    would have consumed is the run's final state for the same reason it is in
+    SequentialFlow, which snapshots it before returning. Nothing about the
+    request says to stop writing the run's artefacts.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="repro-snapshot", reproducible="second/Test.EngineSecond")
+
+    assert flow.run_dir is not None
+    assert (flow.run_dir / "final" / "metrics.json").exists()
+
+
+@mock_variables([flow_module, step_module])
+def test_the_flow_remembers_the_state_it_returned(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    Two leaves, so the last step to fire carries one branch's metrics and the
+    flow's final state carries the join of both. _save_snapshot_ef must use the
+    second, and on a list the two coincided.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "left": {"steps": ["Test.EngineFirst"]},
+                "right": {"steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    state_out = flow.start(tag="two-leaves")
+
+    assert flow.final_state is state_out
+    assert {"first", "second"} <= set(state_out.metrics)
+    assert flow.step_objects is not None
+    assert set(flow.step_objects[-1].state_out.metrics) != set(state_out.metrics)
+
+
+@mock_variables([flow_module, step_module])
+def test_the_run_reports_what_it_reused(
+    caplog, counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    Workflow(spec, minimal_design, **mock_pdk).start(tag="reuse")
+    caplog.clear()
+    Workflow(spec, minimal_design, **mock_pdk).start(tag="reuse")
+
+    assert "Reused 1 step(s)" in caplog.text
+    assert "Flow complete." in caplog.text
+
+
+@mock_variables([flow_module, step_module])
+def test_a_first_run_reports_no_reuse(caplog, counting_steps, minimal_design, mock_pdk):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    Workflow(spec, minimal_design, **mock_pdk).start(tag="no-reuse")
+
+    # Nothing was reused, so there is nothing to report. SequentialFlow says
+    # the same by saying nothing.
+    assert "Reused" not in caplog.text
+    assert "Flow complete." in caplog.text
+
+
+@mock_variables([flow_module, step_module])
+def test_a_deferring_run_reports_neither_reuse_nor_completion(
+    caplog, contract_job, minimal_design, mock_pdk
+):
+    """
+    The reuse report and 'Flow complete.' both sit after the deferred-error
+    raise, as they do in SequentialFlow. A run that is about to fail must not
+    announce that it finished.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {"contracts": {"uses": "engine_contract"}},
+        }
+    )
+
+    config = dict(minimal_design, TOOLS={"contracts": "deferring"})
+    with pytest.raises(FlowError, match="3 violations"):
+        Workflow(spec, config, **mock_pdk).start(tag="deferred-report")
+
+    assert "Flow complete." not in caplog.text
+    assert "Reused" not in caplog.text
+
+
+@mock_variables([flow_module, step_module])
+def test_an_unchanged_rerun_reuses_every_job(cascading_steps, minimal_design, mock_pdk):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(CASCADE_SPEC)
+    config = dict(minimal_design, TEST_CASCADE_KNOB=1)
+
+    Workflow(spec, config, **mock_pdk).start(tag="cascade-unchanged")
+    first_run = {
+        "Test.CascadeRoot": 1,
+        "Test.CascadeKnob": 1,
+        "Test.CascadeLeaf": 1,
+        "Test.CascadeSibling": 1,
+    }
+    assert cascading_steps == first_run
+
+    Workflow(spec, config, **mock_pdk).start(tag="cascade-unchanged")
+
+    # Not one count moved, so every job resolved from its previous result.
+    assert cascading_steps == first_run
+
+
+@mock_variables([flow_module, step_module])
+def test_a_changed_variable_reruns_only_that_job_and_its_descendants(
+    cascading_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(CASCADE_SPEC)
+
+    Workflow(spec, dict(minimal_design, TEST_CASCADE_KNOB=1), **mock_pdk).start(
+        tag="cascade-changed"
+    )
+    Workflow(spec, dict(minimal_design, TEST_CASCADE_KNOB=2), **mock_pdk).start(
+        tag="cascade-changed"
+    )
+
+    # 'knob' re-ran because its configuration changed and 'leaf' because what
+    # it consumes did. 'root' precedes the change and 'sibling' runs beside it,
+    # and a resume key that reached either would make every edit a full re-run.
+    assert cascading_steps == {
+        "Test.CascadeRoot": 1,
+        "Test.CascadeKnob": 2,
+        "Test.CascadeLeaf": 2,
+        "Test.CascadeSibling": 1,
+    }

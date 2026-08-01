@@ -68,14 +68,16 @@ class _ReproducibleCreated(Exception):
 @dataclass
 class _InFlight:
     """
-    One submitted job, and the two lists its worker writes into.
+    One submitted job, and everything its worker writes down about it.
 
-    The lists belong to this record rather than to the run, so a worker shares
-    nothing with another worker or with the main thread. The main thread merges
-    them into the run's lists when the future resolves, which is also what
-    keeps a deferral a fact about *this* job: a single shared list's length,
-    compared before and after, cannot say which job appended to it once two
-    jobs run at once.
+    The record belongs to this submission rather than to the run, so a worker
+    shares nothing with another worker or with the main thread. The main thread
+    merges it into the run's lists and totals when the future resolves, which is
+    also what keeps a deferral a fact about *this* job: a single shared list's
+    length, compared before and after, cannot say which job appended to it once
+    two jobs run at once. The same argument is why the two counts are per-record
+    and summed here rather than being one shared integer each worker increments,
+    which is a read-modify-write and would lose counts under concurrency.
 
     Parameters
     ----------
@@ -85,11 +87,19 @@ class _InFlight:
         Every step the job constructed, in the order it ran them.
     deferred
         The message of every error a step of this job deferred.
+    reused
+        How many steps resolved from a previous run instead of running.
+    executed
+        How many steps ran. A step that deferred an error ran, so it is counted
+        here, exactly as
+        :class:`librelane.flows.sequential.SequentialFlow` counts it.
     """
 
     name: str
     steps: list[Step] = field(default_factory=list)
     deferred: list[str] = field(default_factory=list)
+    reused: int = 0
+    executed: int = 0
 
 
 class Workflow(Flow):
@@ -243,6 +253,7 @@ class Workflow(Flow):
         edges = self.spec.edges()
 
         selected = set(self.jobs)
+        restricted_by = "--target"
         if target is not None:
             targets = list(target)
             self._require_declared(targets, "--target")
@@ -291,13 +302,17 @@ class Workflow(Flow):
             # so it reuses the restriction rather than adding a second one.
             selected = {job_id} | ancestors(edges, job_id)
             reproducible_at = (job_id, step_index)
+            restricted_by = "--reproducible"
 
         outside = (skipped | invalidated) - selected
         if outside:
             names = sorted(outside)
+            # Names whichever option narrowed the graph. Both --target and
+            # --reproducible do, so a fixed '--target' here would tell a user
+            # who passed only --reproducible about an option they never used.
             raise FlowException(
                 f"{names} {'lies' if len(names) == 1 else 'lie'} outside the "
-                f"--target subgraph {sorted(selected)}, so naming "
+                f"{restricted_by} subgraph {sorted(selected)}, so naming "
                 f"{'it' if len(names) == 1 else 'them'} would do nothing."
             )
 
@@ -327,6 +342,8 @@ class Workflow(Flow):
         steps_run: list[Step] = []
         deferred: list[str] = []
         failures: list[str] = []
+        reused_count = 0
+        executed_count = 0
         outputs: dict[str, State] = {}
         pending: dict[Future[State], _InFlight] = {}
 
@@ -372,8 +389,7 @@ class Workflow(Flow):
                                 self._run_job,
                                 job,
                                 state_in,
-                                submitted.steps,
-                                submitted.deferred,
+                                submitted,
                                 name in forced,
                                 reproducible_at,
                             )
@@ -403,6 +419,8 @@ class Workflow(Flow):
                 finished = pending.pop(future)
                 steps_run.extend(finished.steps)
                 deferred.extend(finished.deferred)
+                reused_count += finished.reused
+                executed_count += finished.executed
                 try:
                     state_out = future.result()
                     # A job that deferred an error did not complete, so its
@@ -429,6 +447,12 @@ class Workflow(Flow):
                         "were still running"
                     )
                     logger.success(f"Wrote a reproducible to '{created.path}'.")
+                    # Before the deferred raise, for the reason the ordinary
+                    # path puts it there, and on this path at all because
+                    # SequentialFlow's --reproducible breaks out of its step
+                    # loop into the same tail: the run stopped, and what it
+                    # knows about the design is worth writing down either way.
+                    self._save_final_snapshot(created.state)
                     if deferred:
                         # The reproducible is written either way, and the
                         # message above says so, but an ancestor that deferred
@@ -463,9 +487,49 @@ class Workflow(Flow):
                 f"Flow '{self.spec.name}' stalled: no job is enabled and "
                 f"{sorted(net.stalled())} never ran."
             )
+
+        # Ahead of the deferred raise, unlike the two checks above. A run that
+        # failed or stalled has no final state to speak of, but a deferred
+        # error is by definition one the run continued past, so it produced
+        # views and SequentialFlow snapshots them. What follows is then in
+        # sequential.py's order: snapshot, raise, report, and a run that is
+        # about to fail therefore never announces that it reused anything or
+        # that it is complete.
+        final = self._final_state(net, outputs, selected)
+        self._save_final_snapshot(final)
+
         if deferred:
             raise FlowError("\n".join(deferred))
-        return self._final_state(net, outputs, selected), steps_run
+
+        if reused_count:
+            logger.info(
+                f"Reused {reused_count} step(s) from a previous run; "
+                f"executed {executed_count}."
+            )
+        logger.success("Flow complete.")
+        return final, steps_run
+
+    def _save_final_snapshot(self, final: State) -> None:
+        """
+        Writes ``runs/<tag>/final``: every view of the run's final state, laid
+        out by design format, and ``metrics.csv`` and ``metrics.json`` beside
+        them.
+
+        Parameters
+        ----------
+        final : State
+            The state to snapshot.
+
+        Raises
+        ------
+        FlowException
+            If the snapshot could not be written.
+        """
+        assert self.run_dir is not None, "start() assigns it before calling run()"
+        try:
+            final.save_snapshot(self.run_dir / "final")
+        except Exception as error:
+            raise FlowException(f"Failed to save final views: {error}")
 
     def _require_declared(self, names: Iterable[str], option: str) -> None:
         """
@@ -617,15 +681,14 @@ class Workflow(Flow):
         self,
         job: ResolvedJob,
         state_in: State,
-        steps: list[Step],
-        deferred: list[str],
+        submitted: _InFlight,
         forced: bool,
         reproducible_at: tuple[str, int] | None,
     ) -> State:
         """
-        Runs one job's steps in order. Called on a worker thread, so ``steps``
-        and ``deferred`` are this job's own lists and no other thread reads
-        them until the future resolves.
+        Runs one job's steps in order. Called on a worker thread, so
+        ``submitted`` is this job's own record and no other thread reads it
+        until the future resolves.
 
         Parameters
         ----------
@@ -633,10 +696,9 @@ class Workflow(Flow):
             The job to run.
         state_in : State
             The state its first step consumes.
-        steps : list[Step]
-            Appended to with every step constructed, in the order run.
-        deferred : list[str]
-            Appended to with the message of every error a step deferred.
+        submitted : _InFlight
+            This job's record. Its ``steps``, ``deferred``, ``reused`` and
+            ``executed`` are filled in here.
         forced : bool
             Whether this job must ignore any reusable result. Required rather
             than defaulting to ``False``, so that a future caller cannot forget
@@ -699,21 +761,23 @@ class Workflow(Flow):
                 logger.info(f"Reusing '{step.name}' from a previous run…")
                 step.step_dir = step_dir
                 step.state_out = reused
-                steps.append(step)
+                submitted.steps.append(step)
+                submitted.reused += 1
                 current = reused
                 continue
             shutil.rmtree(step_dir, ignore_errors=True)
-            steps.append(step)
+            submitted.steps.append(step)
             try:
                 current = step.start(toolbox=self.toolbox, step_dir=step_dir)
             except StepException as e:
                 raise FlowException(str(e)) from None
             except DeferredStepError as e:
-                deferred.append(str(e))
+                submitted.deferred.append(str(e))
             except StepError as e:
                 raise FlowError(str(e)) from None
             else:
                 write_entry(step_dir, step, key)
+            submitted.executed += 1
         return current
 
     def dir_for_job_step(

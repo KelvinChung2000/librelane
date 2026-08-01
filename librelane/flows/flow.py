@@ -499,6 +499,14 @@ class Flow(ABC):
         pass
 
     step_objects: list[Step] | None = None
+
+    #: The state the last :meth:`start` returned. Assigned there rather than in
+    #: a subclass's ``run`` so that every engine has it, and read by
+    #: :meth:`_save_snapshot_ef`, which cannot ask the step list for it: on a
+    #: graph the last step to finish is an arbitrary leaf, and the flow's final
+    #: state is the join of all of them.
+    final_state: State | None = None
+
     run_dir: pathlib.Path | None = None
     toolbox: Toolbox | None = None
 
@@ -868,6 +876,7 @@ class Flow(ABC):
 
                 # Stored until next start()
                 self.step_objects += step_objects
+                self.final_state = final_state
                 self._write_runtimes_csv()
 
         finally:
@@ -1065,7 +1074,8 @@ class Flow(ABC):
 
     def _save_snapshot_ef(self, path: str | os.PathLike):
         if (
-            self.step_objects is None
+            self.final_state is None
+            or self.step_objects is None
             or self.toolbox is None
             or self.config_resolved_path is None
         ):
@@ -1077,16 +1087,10 @@ class Flow(ABC):
             # No steps, no data
             return
 
-        last_step = self.step_objects[-1]
-        last_state = last_step.state_out
-
-        if last_state is None:
-            raise FlowException(
-                f"Misconfigured flow: Step {last_step.id} was appended to step objects without having been run first."
-            )
+        final_state = self.final_state
 
         # 1. Copy Files
-        last_state.validate()
+        final_state.validate()
         logger.info(
             f"Saving views in the Efabless/Caravel User Project format to '{os.path.abspath(path)}'…"
         )
@@ -1138,7 +1142,7 @@ class Flow(ABC):
             mkdirp(target_dir)
             shutil.copyfile(value, target_path, follow_symlinks=True)
 
-        last_state._walk(last_state.to_raw_dict(metrics=False), path, visit=visitor)
+        final_state._walk(final_state.to_raw_dict(metrics=False), path, visit=visitor)
 
         # 2. Copy Logs, Reports, & Signoff Information
         def copy_dir_contents(from_dir, to_dir, filter="*"):
@@ -1170,7 +1174,7 @@ class Flow(ABC):
 
         ## metrics
         with open(os.path.join(signoff_dir, "metrics.csv"), "w", encoding="utf8") as f:
-            last_state.metrics_to_csv(f)
+            final_state.metrics_to_csv(f)
 
         ## flow logs
         mkdirp(openlane_signoff_dir)
@@ -1225,7 +1229,7 @@ class Flow(ABC):
 
         # 3. SDF
         #   (This one, as with many things in the Efabless format, is special)
-        if sdf := last_state[DesignFormat.SDF]:
+        if sdf := final_state[DesignFormat.SDF]:
             assert isinstance(sdf, dict), "SDF is not a dictionary"
             for corner, view in sdf.items():
                 assert isinstance(view, pathlib.Path), (
