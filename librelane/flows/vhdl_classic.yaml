@@ -332,47 +332,61 @@ jobs:
   # its outputs are empty, so it satisfies no part of the job's 'gds' contract
   # and carries no view across the job boundary. It is also ungated, where
   # KLayout.StreamOut is gated.
+  #
+  # render, write_lef and check_antenna_properties stay on the chain in flow
+  # order, and the fan-out is below them rather than here, for the reason
+  # classic.yaml records: every OpenROAD invocation writes
+  # 'flow__warnings__count', 'flow__errors__count' and
+  # 'flow__warnings__type_count' into its '-metrics' JSON, which
+  # OpenROADStep.get_command and OdbpyStep.get_command pass unconditionally.
+  # check_antenna_properties runs Odb.CheckDesignAntennaProperties and so
+  # rewrites all three. Fanned out here, it would be one branch carrying fresh
+  # counts while its siblings carried ir_drop's, and the join at final_checks
+  # would raise JoinConflictError on the first real run.
   render:
     needs: [klayout_streamout]
     steps: [KLayout.Render]
   write_lef:
-    needs: [klayout_streamout]
+    needs: [render]
     steps: [Magic.WriteLEF]
     if: RUN_MAGIC_WRITE_LEF
-  # The one data edge in the signoff tail that is not a stream-out edge:
-  # Odb.CheckDesignAntennaProperties consumes 'lef', and Magic.WriteLEF is the
-  # only step here that produces one.
+  # Also a real data edge: Odb.CheckDesignAntennaProperties consumes 'lef', and
+  # Magic.WriteLEF is the only step here that produces one.
   check_antenna_properties:
     needs: [write_lef]
     steps: [Odb.CheckDesignAntennaProperties]
+  # The fan-out point: the last OpenROAD-backed job in the flow, and the four
+  # jobs below it are the heavy ones. render and write_lef are cheap, so
+  # keeping them on the chain costs almost nothing.
+  #
   # A three-variable conjunction, because KLayout.XOR genuinely consumes
   # mag_gds from one stream-out and klayout_gds from the other and cannot run
   # unless both fired.
   xor:
-    needs: [klayout_streamout]
+    needs: [check_antenna_properties]
     steps: [KLayout.XOR, Checker.XOR]
     if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
   magic_drc:
-    needs: [klayout_streamout]
+    needs: [check_antenna_properties]
     uses: drc/magic
     if: RUN_MAGIC_DRC
   klayout_drc:
-    needs: [klayout_streamout]
+    needs: [check_antenna_properties]
     uses: drc/klayout
     if: RUN_KLAYOUT_DRC
   lvs:
-    needs: [klayout_streamout]
+    needs: [check_antenna_properties]
     uses: lvs
     if: RUN_LVS
   # Every leaf, so that the flow has one sink, exactly as classic.yaml explains.
   # 'lvs' is named directly here where classic.yaml reaches it through
   # formal_equivalence, which this flow does not run: without that edge lvs
   # would be a second sink and its metrics would never reach
-  # Misc.ReportManufacturability.
+  # Misc.ReportManufacturability. render and check_antenna_properties are not
+  # named because they are no longer leaves: both are ancestors of all four
+  # jobs below, so their metrics arrive anyway.
   final_checks:
     needs:
-      - render
-      - check_antenna_properties
       - xor
       - magic_drc
       - klayout_drc

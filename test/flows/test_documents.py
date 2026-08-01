@@ -770,39 +770,12 @@ def test_chip_finishing_is_ungated():
     assert _document("chip.yaml").jobs["chip_finishing"].condition is None
 
 
-def _framework_metric_writers(name: str) -> set[str]:
-    """
-    Every job that rewrites the framework metrics no contract declares.
-
-    ``OpenROADStep.get_command`` and ``OdbpyStep.get_command`` both pass
-    ``-metrics`` unconditionally, and OpenROAD's logger writes
-    ``flow__warnings__count``, ``flow__errors__count`` and
-    ``flow__warnings__type_count`` into that JSON. No job or provider
-    registration declares them, so ``validate_against_registry`` cannot see
-    them and a document that fans two of these onto sibling branches loads
-    cleanly and fails at the join on the first real run.
-    """
-    from librelane.steps.odb.base import OdbpyStep
-    from librelane.steps.openroad.base import OpenROADStep
-
-    spec = _document(name)
-    jobs = resolve_jobs(spec)
-    return {
-        job_id
-        for job_id, job in jobs.items()
-        # job.steps holds step *classes*, not instances, as every other helper
-        # here relies on: issubclass(step, ...), never issubclass(type(step),
-        # ...), which would ask about the metaclass and silently answer False.
-        if any(issubclass(step, (OdbpyStep, OpenROADStep)) for step in job.steps)
-    }
-
-
 @pytest.mark.parametrize("document", ["vhdl_classic.yaml", "chip.yaml"])
-def test_no_join_of_these_documents_disagrees_on_the_framework_metrics(document):
+def test_neither_new_document_runs_openroad_on_a_parallel_branch(document):
     """
-    The rule this pins is not local to one document: every branch of a fan-out
-    must descend from the last OpenROAD-backed job, so that no branch writes a
-    framework metric its siblings do not have.
+    The same guard classic.yaml carries, for the class of defect rather than
+    the instance. See
+    :func:`_assert_framework_metric_writers_are_never_concurrent`.
 
     ``vhdl_classic.yaml`` obeys it by keeping render, write_lef and
     check_antenna_properties on the chain and fanning out below them, because
@@ -810,27 +783,5 @@ def test_no_join_of_these_documents_disagrees_on_the_framework_metrics(document)
     obeys it for free: Chip omits that step, so its last OpenROAD-backed job is
     ir_drop, which is upstream of the single stream-out chain and therefore an
     ancestor of every branch.
-
-    Checked at every join, including the implicit one that forms the final
-    state, because that is where JoinConflictError would be raised.
     """
-    spec = _document(document)
-    edges = spec.edges()
-    writers = _framework_metric_writers(document)
-
-    joins = [(job_id, job.needs) for job_id, job in spec.jobs.items() if job.needs]
-    needed = {need for job in spec.jobs.values() for need in job.needs}
-    joins.append(("<the final state>", [n for n in spec.jobs if n not in needed]))
-
-    for job_id, branches in joins:
-        carried = {
-            branch: ({branch} | ancestors(edges, branch)) & writers
-            for branch in branches
-        }
-        for first, second in itertools.combinations(branches, 2):
-            assert carried[first] == carried[second], (
-                f"'{job_id}' joins '{first}' and '{second}', which have written "
-                f"the framework metrics a different number of times: "
-                f"{sorted(carried[first])} against {sorted(carried[second])}. "
-                f"The join would raise JoinConflictError on a real run."
-            )
+    _assert_framework_metric_writers_are_never_concurrent(document)
