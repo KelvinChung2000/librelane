@@ -103,7 +103,6 @@ def test_multi_provider_job_concatenates_in_listed_order():
 
     assert [step.id for step in resolution.steps] == [
         "KLayout.StreamOut",
-        "KLayout.Render",
         "Magic.StreamOut",
     ]
 
@@ -173,7 +172,6 @@ def test_using_a_list_on_a_multi_provider_job_pins_both():
 
     assert [step.id for step in resolve([pinned], {}).steps] == [
         "KLayout.StreamOut",
-        "KLayout.Render",
         "Magic.StreamOut",
     ]
 

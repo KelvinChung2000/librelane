@@ -327,7 +327,7 @@ _REGISTRATIONS: list[dict] = [
     {
         "job": "streamout",
         "provider": "klayout",
-        "steps": [KLayout.StreamOut, KLayout.Render],
+        "steps": [KLayout.StreamOut],
         "namespaces": ("KLAYOUT_",),
         "provides": [DesignFormat.klayout_gds],
     },

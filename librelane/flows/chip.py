@@ -91,6 +91,12 @@ class Chip(Classic):
         Job.signoff_sta,
         Job.ir_drop,
         Job.streamout,
+        # Not part of the streamout job: its inputs are optional and its
+        # outputs are empty, so it satisfies no part of the job's 'gds'
+        # contract and carries no view across the job boundary. It is also
+        # ungated where KLayout.StreamOut is gated, which a job-level 'if'
+        # cannot express while the two share a registration.
+        KLayout.Render,
         KLayout.XOR,
         Checker.XOR,
         KLayout.Antenna,
