@@ -303,39 +303,41 @@ Temperature,) corner.
 
 ### Viewing Layouts
 
-Instead of relying on an external script similar to OpenLane, LibreLane
-implements flows to allow you to load your designs into a number of the GUI
-tools included with LibreLane.
+Instead of relying on an external script similar to OpenLane, LibreLane has a
+subcommand that loads your design into any of the GUI tools and interactive
+consoles it ships with.
 
 ```!migration_comparison[bash] #### Opening final GDS in KLayout
 python3 ./gui.py --viewer klayout --format gds <path to run folder>
 ---
-librelane [--run-tag <run tag>|--last-run] --flow OpenInKLayout <run folder>/resolved.json
+librelane open klayout [--run-tag <run tag>|--last-run] <run folder>/resolved.json
 ---
-Opening in KLayout is implemented as a one-step flow named, well, {flow}`OpenInKLayout`.
+`librelane open` names the tool first. The run it opens is the one
+`--run-tag` names, or the most recent one under `--last-run`; there is no
+default, because a viewer opened on nothing is a window you have to close
+before finding out you mistyped.
 
-LibreLane allows you to run multiple flows in the same run directory, and thus
-opening the run in KLayout is just another step. When you do so, the last state
-of the design is used as an input, meaning that KLayout will preview the latest
-GDS stream-out in the design.
+The state opened is the last one the run wrote, which is the same file
+`librelane state latest` prints, so KLayout previews the latest GDS
+stream-out in the design.
 ```
 
 ```!migration_comparison[bash] #### Opening earlier DEF view in KLayout
 python3 ./gui.py --viewer klayout --stage routing --format def <path to run folder>
 ---
-librelane --with-initial-state <run folder>/*-openroad-detailedrouting/state_out.json --flow OpenInKLayout <run folder>/resolved.json
+librelane open klayout --with-initial-state <run folder>/*-openroad-detailedrouting/state_out.json <run folder>/resolved.json
 ---
-For steps of the flow where there is no GDS view yet, {flow}`OpenInKLayout` will
-preview the DEF view instead. You can tell LibreLane which state to use
-explicitly, where here we've opted for the output state of the detailed routing
-step.
+Where there is no GDS view yet, KLayout previews the DEF view instead. You can
+say which state to open explicitly, and here we've opted for the output state
+of the detailed routing step.
 ```
 
 ```!migration_comparison[bash] #### Opening in OpenROAD
 python3 ./gui.py --viewer openroad --stage routing --format def <path to run folder>
 ---
-librelane --with-initial-state <run folder>/*-openroad-detailedrouting/state_out.json --flow OpenInOpenROAD <run folder>/resolved.json
+librelane open openroad --with-initial-state <run folder>/*-openroad-detailedrouting/state_out.json <run folder>/resolved.json
 ---
-Similar to KLayout, opening designs in OpenROAD is implemented as a one-step flow
-named {flow}`OpenInOpenROAD`. Like with KLayout, you can give it a run folder.
+Only the tool name changes. `librelane open --help` lists all five:
+`klayout`, `magic` and `openroad` open a GUI, and `openroad-console` and
+`opensta-console` open an interactive console on a machine with no display.
 ```

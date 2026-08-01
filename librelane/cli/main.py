@@ -35,6 +35,7 @@ from librelane.cli.config import cli as config_cli
 from librelane.cli.env_info import show_env_info
 from librelane.cli.help import show_help
 from librelane.cli.metrics import cli as metrics_cli
+from librelane.cli.open_in import open_in
 from librelane.cli.options import BareVersionOption, VersionOption
 from librelane.cli.run import run
 from librelane.cli.state import cli as state_cli
@@ -105,6 +106,7 @@ def root(
 
 
 cli.command("run", no_args_is_help=True)(run)
+cli.command("open", no_args_is_help=True)(open_in)
 cli.command("help")(show_help)
 cli.command("env-info")(show_env_info)
 cli.add_typer(steps_cli, name="steps")

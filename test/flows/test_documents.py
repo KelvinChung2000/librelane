@@ -348,19 +348,18 @@ def _assert_gds_writers_are_ordered(name: str, expected: list[str]) -> None:
         )
 
 
-#: The eight documents that replaced the eight Python flow classes, written out
-#: rather than discovered, so that a document *disappearing* fails here too.
+#: Every shipped document, written out rather than discovered, so that a
+#: document *disappearing* fails here too.
 #: :func:`test_the_document_list_names_every_shipped_document` is what stops the
 #: literal going stale in the other direction.
+#:
+#: The five Open-In documents are not missing from this list: a viewer is not a
+#: flow, and `librelane open` runs those steps now. test/cli/test_open_in.py
+#: covers them.
 _SHIPPED_DOCUMENTS = [
     "classic.yaml",
     "vhdl_classic.yaml",
     "chip.yaml",
-    "open_in_klayout.yaml",
-    "open_in_openroad.yaml",
-    "open_in_openroad_console.yaml",
-    "open_in_opensta_console.yaml",
-    "open_in_magic.yaml",
 ]
 
 
@@ -410,21 +409,6 @@ def test_classic_declares_the_jobs_it_is_known_for():
         "signoff_sta",
     ]:
         assert name in jobs
-
-
-def test_the_console_documents_run_the_console_steps():
-    """
-    Issue 532: the interactive sessions are reachable the same way the GUI ones
-    are, i.e. `librelane --last-run --flow ...`. Read off the resolved
-    documents; until phase 5 this was read off ``OpenInOpenROADConsole.Steps``
-    and ``OpenInOpenSTAConsole.Steps`` in ``test/flows/test_flow.py``.
-    """
-    assert _implementation_ids("open_in_openroad_console.yaml") == [
-        "OpenROAD.OpenConsole"
-    ]
-    assert _implementation_ids("open_in_opensta_console.yaml") == [
-        "OpenROAD.OpenSTAConsole"
-    ]
 
 
 def test_the_classic_document_omits_the_unimplemented_post_route_opt_job():
@@ -542,55 +526,6 @@ def test_classic_s_final_checks_waits_for_every_metric_it_reports():
         "lvs",
         "check_antenna_properties",
     } <= ancestors(edges, "final_checks")
-
-
-@pytest.mark.parametrize(
-    ("document", "registered_name"),
-    [
-        ("open_in_klayout.yaml", "OpenInKLayout"),
-        ("open_in_openroad.yaml", "OpenInOpenROAD"),
-        ("open_in_openroad_console.yaml", "OpenInOpenROADConsole"),
-        ("open_in_opensta_console.yaml", "OpenInOpenSTAConsole"),
-        ("open_in_magic.yaml", "OpenInMagic"),
-    ],
-)
-def test_each_open_in_document_registers_under_the_name_users_type(
-    document, registered_name
-):
-    """
-    The five Open-In flows used to be Python flow classes whose ``name``
-    carried a display string such as "Opening in KLayout", while the
-    registration key -- the string a user types after ``--flow`` -- was the
-    class name. A document's ``name`` is the registration key, so these had to
-    survive the migration character for character; the display string became
-    ``description``.
-    """
-    spec = _document(document)
-
-    assert spec.name == registered_name
-    assert spec.description != ""
-
-
-@pytest.mark.parametrize(
-    ("document", "job_id"),
-    [
-        ("open_in_klayout.yaml", "open_gui"),
-        ("open_in_openroad.yaml", "open_gui"),
-        ("open_in_openroad_console.yaml", "open_console"),
-        ("open_in_opensta_console.yaml", "open_console"),
-        ("open_in_magic.yaml", "open_gui"),
-    ],
-)
-def test_each_open_in_document_names_its_one_job_for_what_it_opens(document, job_id):
-    """
-    A job id becomes a run directory name, so the two console flows say
-    ``open_console`` rather than ``open_gui``: a job id that lies about what it
-    runs is a run directory that lies about it too.
-    """
-    jobs = _document(document).jobs
-
-    assert list(jobs) == [job_id]
-    assert jobs[job_id].needs == []
 
 
 def test_vhdl_classic_pins_the_vhdl_synthesis_provider():
@@ -820,8 +755,7 @@ def test_no_shipped_document_has_a_join_conflict(document):
     Odb.CheckDesignAntennaProperties rewrites the framework counts.
     ``chip.yaml`` chains render, xor and chip_finishing in flow order, so the
     one job that rewrites ``gds`` after the stream-outs is an ancestor of every
-    remaining branch. The ``open_in_*`` documents are single-job and have no
-    concurrency to violate.
+    remaining branch.
     """
     _assert_no_join_conflicts(document)
 
@@ -865,8 +799,7 @@ def test_the_alternate_selection_guard_has_selections_to_run_over():
     assert ("classic.yaml", "magic_streamout", "klayout") in enumerated
     assert ("classic.yaml", "synthesis", "yosys_vhdl") in enumerated
     assert ("classic.yaml", "lvs", "klayout") in enumerated
-    # The five open_in documents have one single-provider job each, so they
-    # contribute nothing and the three configured documents are the whole set.
+    # Every shipped document is configured, so all three appear.
     assert {document for document, _, _ in enumerated} == {
         "chip.yaml",
         "classic.yaml",
@@ -883,25 +816,13 @@ def test_the_shipped_document_guard_covers_every_document():
     because it reads as coverage.
     """
     discovered = set(_shipped_documents())
-    assert "classic.yaml" in discovered
-    assert "vhdl_classic.yaml" in discovered
-    assert "chip.yaml" in discovered
-    assert len(discovered) >= 8
+    assert discovered == {"classic.yaml", "vhdl_classic.yaml", "chip.yaml"}
 
 
 def test_every_document_is_registered_under_its_name():
     from librelane.flows import Flow
 
-    for name in [
-        "Classic",
-        "VHDLClassic",
-        "Chip",
-        "OpenInKLayout",
-        "OpenInOpenROAD",
-        "OpenInOpenROADConsole",
-        "OpenInOpenSTAConsole",
-        "OpenInMagic",
-    ]:
+    for name in ["Classic", "VHDLClassic", "Chip"]:
         registered = Flow.factory.get(name)
         assert isinstance(registered, FlowSpec)
         assert registered.name == name
@@ -1031,7 +952,8 @@ def test_help_documents_the_tools_variable_for_a_document_declaring_none():
     """
     from librelane.flows.engine import Workflow
 
-    spec = _document("open_in_klayout.yaml")
+    spec = FlowSpec.model_validate({"name": "NoVariables", "jobs": {"floorplan": {}}})
+    validate_against_registry(spec)
 
     assert not spec.config
     assert "`TOOLS`" in _variables_section(Workflow.help_md_for_document(spec))
