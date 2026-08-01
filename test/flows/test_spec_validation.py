@@ -239,6 +239,31 @@ def test_a_required_view_no_ancestor_produces_is_rejected():
     assert "gds" in message
 
 
+def test_an_optional_input_no_ancestor_produces_is_accepted():
+    """
+    Both of KLayout.Render's inputs are optional, so it runs on whatever
+    arrives and requires nothing. 'klayout_streamout' produces gds elsewhere in
+    the document, which is what makes this the interesting case: the rejection
+    above fires only for a view some other job produces, so an optional input
+    escapes notice until something else produces it.
+
+    DesignFormat.mkOptional() returns a copy with a flag set, so the flag has
+    to be read off the view itself, before it is reduced to its id.
+    """
+    validate_against_registry(
+        _spec(
+            {
+                "synthesis": {"uses": "synthesis/yosys"},
+                "render": {"needs": ["synthesis"], "steps": ["KLayout.Render"]},
+                "klayout_streamout": {
+                    "needs": ["synthesis"],
+                    "uses": "streamout/klayout",
+                },
+            }
+        )
+    )
+
+
 def test_a_descendant_producing_a_view_is_not_evidence_for_its_ancestor():
     """
     'floorplan' requires nl, and takes it from the initial state. Its three

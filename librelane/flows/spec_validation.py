@@ -238,21 +238,26 @@ def _consumed_views(job_id: str, job: JobSpec) -> set[str]:
 
     Returns
     -------
-    The ids of every view this job requires. Nothing declares a consumed
-    metric, so there is no metric equivalent.
+    The ids of every view this job requires. An optional input is satisfiable
+    by absence, so it is not a requirement and does not appear. Nothing
+    declares a consumed metric, so there is no metric equivalent.
     """
-    views: set[str] = set()
     uses = _resolved_uses(job_id, job)
     if uses is None:
         assert job.steps is not None
+        consumed: list[DesignFormat] = []
         for step_id in job.steps:
             step = Step.factory.get(step_id)
             assert step is not None, "checked by _check_steps"
-            views.update(str(view) for view in step.inputs)
-        return views
-    template = Job.factory.get(uses.split("/")[0])
-    assert template is not None, "checked by _check_uses"
-    return {str(view) for view in template.requires}
+            consumed.extend(step.inputs)
+    else:
+        template = Job.factory.get(uses.split("/")[0])
+        assert template is not None, "checked by _check_uses"
+        consumed = list(template.requires)
+    # The flag lives on the view, and str() reduces a view to its id, which an
+    # optional view shares with its base. So the flag has to be read first, or
+    # it is gone by the time the set is built.
+    return {str(view) for view in consumed if not view.optional}
 
 
 def _union(table: dict[str, set[str]], names: set[str]) -> set[str]:
