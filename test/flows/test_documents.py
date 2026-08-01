@@ -815,3 +815,124 @@ def test_the_shipped_document_guard_covers_every_document():
     assert "vhdl_classic.yaml" in discovered
     assert "chip.yaml" in discovered
     assert len(discovered) >= 8
+
+
+def test_every_document_is_registered_under_its_name():
+    from librelane.flows import Flow
+
+    for name in [
+        "Classic",
+        "VHDLClassic",
+        "Chip",
+        "OpenInKLayout",
+        "OpenInOpenROAD",
+        "OpenInOpenROADConsole",
+        "OpenInOpenSTAConsole",
+        "OpenInMagic",
+    ]:
+        registered = Flow.factory.get_document(name)
+        assert isinstance(registered, FlowSpec)
+        assert registered.name == name
+
+
+def test_the_factory_registers_every_shipped_document():
+    """
+    Derived from :func:`_shipped_documents` rather than from the list above, so
+    that a document added to the package without reaching the registry fails
+    here. The list above pins the names; this pins that none was skipped.
+    """
+    from librelane.flows import Flow
+
+    for document in _shipped_documents():
+        name = _document(document).name
+        assert Flow.factory.get_document(name) is not None, document
+
+
+def test_the_factory_lists_documents_and_classes_together():
+    from librelane.flows import Flow
+
+    listed = Flow.factory.list()
+
+    assert "Classic" in listed
+    assert len(listed) == len(set(listed)), "a name was listed twice"
+
+
+def test_a_document_and_a_class_of_the_same_name_are_looked_up_separately():
+    """
+    Throughout this phase every document shares its name with the flow class it
+    replaces, so the two registries are keyed identically and neither lookup may
+    answer for the other. ``get`` returns the class and only the class;
+    ``get_document`` returns the document and only the document; a name in
+    neither is ``None`` from both rather than a silent hand-off.
+    """
+    from librelane.flows import Flow
+    from librelane.flows.classic import Classic
+
+    assert Flow.factory.get("Classic") is Classic
+    assert isinstance(Flow.factory.get_document("Classic"), FlowSpec)
+
+    assert Flow.factory.get("NoSuchFlow") is None
+    assert Flow.factory.get_document("NoSuchFlow") is None
+
+
+def test_registering_a_document_twice_is_an_error():
+    """
+    Two documents claiming one name would make ``--flow`` ambiguous, and the
+    loser would be whichever the registration loop reached second. The
+    duplicate is refused instead.
+    """
+    from librelane.flows import Flow
+    from librelane.flows.flow import FlowException
+
+    spec = Flow.factory.get_document("Classic")
+
+    with pytest.raises(FlowException, match="already"):
+        Flow.factory.register_document(spec)
+
+
+def test_every_registered_flow_class_has_a_document_standing_in_for_it():
+    """
+    The completeness guard, derived from the registries rather than from a
+    literal list, because a literal list cannot fail for a flow nobody
+    remembered to add to it.
+
+    A class with no document is the one failure this phase and the next are
+    arranged to prevent: this phase would convert every flow but that one, and
+    the next would delete its class with nothing in its place, removing a
+    working flow from the product. The test above pins the names that exist;
+    this one pins that no name is missing.
+
+    Scoped to classes defined inside :mod:`librelane.flows`, because that is the
+    claim: every flow LibreLane *ships* must have a document. The class registry
+    is process-global and ``test_flow.py`` registers a ``DummyFlow`` into it,
+    so an unscoped guard would pass or fail on test ordering.
+    """
+    import librelane.flows.builtins  # noqa: F401  registers every flow class
+
+    from librelane.flows import Flow
+
+    listed = Flow.factory.list()
+    classes = set()
+    for name in listed:
+        registered = Flow.factory.get(name)
+        if registered is not None and registered.__module__.startswith(
+            "librelane.flows."
+        ):
+            classes.add(name)
+    documents = {name for name in listed if Flow.factory.get_document(name) is not None}
+
+    assert classes, "enumeration collapsed; the guard would be vacuous"
+    assert classes - documents == set(), (
+        "these flow classes have no document standing in for them, so phase 5 "
+        "would delete them with nothing in their place"
+    )
+
+
+def test_a_document_is_rejected_at_import_if_it_is_malformed(tmp_path):
+    from librelane.flows.spec import FlowSpecError
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("name: Bad\njobs:\n  a:\n    needs: [nope]\n    uses: lint\n")
+
+    with pytest.raises(FlowSpecError):
+        load_flow_spec(bad)

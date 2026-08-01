@@ -59,6 +59,7 @@ from librelane.config import (
 )
 from librelane.state import State, DesignFormat
 from librelane.steps import Step
+from librelane.flows.spec import FlowSpec
 from librelane.logging import (
     LiveLog,
     additional_sink,
@@ -1247,6 +1248,11 @@ class Flow(ABC):
         """
 
         __registry: ClassVar[dict[str, type[Flow]]] = {}
+        #: Workflow documents, keyed the same way as ``__registry``. A separate
+        #: registry rather than a shared one because a name is a flow class and
+        #: a document at the same time throughout the migration, and neither
+        #: lookup may answer for the other.
+        _documents: ClassVar[dict[str, FlowSpec]] = {}
 
         @classmethod
         def register(
@@ -1286,13 +1292,64 @@ class Flow(ABC):
             return Self.__registry.get(name)
 
         @classmethod
+        def register_document(Self, spec: FlowSpec) -> FlowSpec:
+            """
+            Registers a workflow document under its own ``name``.
+
+            Parameters
+            ----------
+            spec : FlowSpec
+                The loaded document.
+
+            Returns
+            -------
+            FlowSpec
+                The same document, so this reads as a pipeline step.
+
+            Raises
+            ------
+            FlowException
+                If a document with that name is already registered.
+            """
+            if spec.name in Self._documents:
+                raise FlowException(
+                    f"A flow document named '{spec.name}' is already registered."
+                )
+            Self._documents[spec.name] = spec
+            return spec
+
+        @classmethod
+        def get_document(Self, name: str) -> FlowSpec | None:
+            """
+            Retrieves a workflow document from the registry using a lookup
+            string.
+
+            Parameters
+            ----------
+            name : str
+                The document's ``name``. Case-sensitive, as :meth:`get` is.
+
+            Returns
+            -------
+            FlowSpec | None
+                The document registered under this name, or ``None``. A flow
+                class of the same name is *not* offered in its place; ask
+                :meth:`get` for that.
+            """
+            return Self._documents.get(name)
+
+        @classmethod
         def list(Self) -> builtins.list[str]:
             """
             Returns
             -------
             builtins.list[str]
-                A list of strings representing all registered flows.
+                Every runnable flow name, documents and classes together, with
+                a name registered as both appearing once.
+
+                Sorted, because this is what error messages offer the user and
+                two registries have no shared insertion order to preserve.
             """
-            return list(Self.__registry.keys())
+            return sorted(set(Self.__registry) | set(Self._documents))
 
     factory = FlowFactory
