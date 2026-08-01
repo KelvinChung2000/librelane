@@ -128,6 +128,57 @@ Style Notes
 
 ## Steps
 
+* Deleted the `Checker.*` step family, twenty-one steps in all, and gave every
+  limit it enforced to the step that took the measurement it read. A step
+  declares them as `gates`, a tuple of
+  {class}`librelane.steps.MetricGate` or
+  {class}`librelane.steps.CornerMetricGate`, and `Step.start` raises them once
+  `run` has returned.
+  * A checker put the failure in a directory with no evidence for it.
+    `Checker.TrDRC` failed a run on `route__drc_errors`, so the error landed
+    in `…/checker-trdrc`, which holds nothing else, while the report naming
+    the violating shapes sat in `…/openroad-detailedrouting` -- a step the
+    flow had already called successful. The gate raises from the step that has
+    the report.
+  * A gate reads only the metrics its own step just produced, not the
+    inherited state. `MetricChecker.run` warned "the metric was not found. Are
+    you sure the relevant step was run?" and passed, so a flow that lost the
+    measuring step lost the check without failing. A gate has no such state:
+    no measurement means nothing to compare, and the step that skipped the
+    measurement is the one that logged why.
+  * Every `ERROR_ON_*` variable keeps its name, default and deprecated names,
+    and is now declared by the step that owns the gate. So do
+    `WIRE_LENGTH_THRESHOLD` and the five `*_VIOLATION_CORNERS` variables.
+  * `Checker.LintErrors`, `Checker.LintWarnings` and
+    `Checker.LintTimingConstructs` became gates on `Verilator.Lint`;
+    `Checker.YosysUnmappedCells` and `Checker.YosysSynthChecks` on the shared
+    synthesis base of `Yosys.Synthesis`, `Yosys.Resynthesis` and
+    `Yosys.VHDLSynthesis`; `Checker.TrDRC` on `OpenROAD.DetailedRouting`;
+    `Checker.PowerGridViolations` on `OpenROAD.GeneratePDN`;
+    `Checker.DisconnectedPins` on `Odb.ReportDisconnectedPins`;
+    `Checker.WireLength` on `Odb.ReportWireLength`; `Checker.MagicDRC` on
+    `Magic.DRC`; `Checker.IllegalOverlap` on `Magic.SpiceExtraction`;
+    `Checker.KLayoutDRC` on `KLayout.DRC`; `Checker.XOR` on `KLayout.XOR`;
+    `Checker.KLayoutDensity` and `Checker.KLayoutAntenna` on `KLayout.Density`
+    and `KLayout.Antenna`; `Checker.LVS` on both `Netgen.LVS` and
+    `KLayout.LVS`, each carrying its own; and `Checker.SetupViolations`,
+    `Checker.HoldViolations`, `Checker.MaxSlewViolations` and
+    `Checker.MaxCapViolations` on `OpenROAD.STAPostPNR`.
+  * `Checker.NetlistAssignStatements` was never a metric check -- it scanned
+    the netlist for `assign` statements -- so it folded into the synthesis
+    step's `run`, against the netlist that step just wrote.
+    `ERROR_ON_NL_ASSIGN_STATEMENTS` is unchanged, and the per-line
+    `file:line` messages that make the check worth having are unchanged too.
+  * The timing gates belong to `OpenROAD.STAPostPNR` alone. `MultiCornerSTA`
+    measures the same four counts in `STAPrePNR` and in every `STAMidPNR`
+    snapshot, where a violation is expected and the next repair step is the
+    answer to it. Post-PnR is the last STA in the flow, so it is the one whose
+    numbers are the design's.
+  * Run directories no longer contain `checker-*` entries, and the jobs that
+    held nothing else are gone: `classic.yaml`, `chip.yaml` and
+    `vhdl_classic.yaml` lose steps from `post_gpl_checks`, `routing_reports`,
+    `xor` and `final_checks`, and `final_checks` is now
+    `Misc.ReportManufacturability` alone.
 * Migrated all built-in step configuration declarations to nested typed
   `Config` models and static configuration reads to attribute access.
 * Migrated dynamically composed and checker-generated step configuration to
@@ -779,6 +830,17 @@ Style Notes
 
 ## Misc. Enhancements/Bugfixes
 
+* **Fixed:** a job continues past a deferred error with the deferring step's
+  own output. The engine recorded the error and left the running state on the
+  previous step's, which was harmless while only `Checker.*` steps deferred --
+  they produced nothing -- and is not now that the step raising is the step
+  that measured. `OpenROAD.DetailedRouting` reporting DRC violations still
+  routed the design, and every later step would otherwise have received the
+  views from before it ran. A step that defers from inside `run` still has no
+  output and the flow still carries on with the state it had; `Step.start`
+  clears `state_out` before running, so the two cases are told apart by
+  whether the step got far enough to produce one. Neither writes a resume
+  entry, so a resumed run re-runs the step and raises again.
 * Added `InstanceArray`, reachable as the `array` attribute of a macro
   instance, which expands one entry into a grid of instances on a regular
   pitch. The instance name is a template taking `{X}`/`{COL}`, `{Y}`/`{ROW}`
@@ -897,6 +959,13 @@ Style Notes
   * `Flow.factory.register` takes a `FlowSpec` and is no longer a decorator.
     `@Flow.factory.register()` over a class raises `TypeError`. Register a
     document with `Flow.factory.register(load_flow_spec("./my_flow.yaml"))`.
+  * `librelane.steps.checker` is deleted, along with the `Checker` namespace
+    exported from `librelane.steps` and every step in it. Nothing replaces the
+    module: a limit is now a `MetricGate` or `CornerMetricGate` in the
+    `gates` of the step that measured the metric, and `librelane.steps`
+    exports both. A configuration naming a `Checker.*` step is rejected by the
+    step factory; every `ERROR_ON_*` variable those steps declared still
+    resolves, on its new owner.
   * `Flow` itself remains, as machinery rather than as a declaration base. It
     is still an abstract base class whose one abstract method is `run`, and
     `Flow.start_step` and `Flow.start_step_async` keep their signatures. Two
