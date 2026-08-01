@@ -412,8 +412,8 @@ class Workflow(Flow):
         Asserts a completed job produced everything its template promised.
 
         Only a ``uses`` job has a promise to assert, and the asymmetry is
-        deliberate. A job's ``provides`` and ``metrics`` are curated by hand
-        next to the provider that has to honour them, so every entry is a
+        deliberate. A template's ``provides`` and ``metrics`` are curated by
+        hand next to the provider that has to honour them, so every entry is a
         guarantee. An inline ``steps`` job's ``provides`` is derived in
         :func:`librelane.flows.job.resolve_jobs` as the union of its steps'
         ``outputs``, and :class:`librelane.steps.Step` documents ``outputs`` as

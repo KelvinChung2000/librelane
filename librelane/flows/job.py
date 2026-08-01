@@ -61,8 +61,7 @@ def resolve_jobs(spec: FlowSpec) -> dict[str, ResolvedJob]:
 
     Returns
     -------
-    Each job id mapped to its resolved :class:`ResolvedJob`, in document
-    order.
+    Each job id mapped to its :class:`ResolvedJob`, in document order.
     """
     return {name: _resolve(name, job) for name, job in spec.jobs.items()}
 

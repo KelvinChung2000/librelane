@@ -166,9 +166,9 @@ def test_a_view_from_a_shared_ancestor_is_not_a_conflict():
 
 def test_a_metric_fan_in_conflict_is_rejected_naming_both_producers():
     """
-    Two lvs/netgen jobs each declare design__lvs_error__count from the job
-    and magic__illegal_overlap__count from the registration. The join rule is
-    the same one views get.
+    Two lvs/netgen jobs each declare design__lvs_error__count from the
+    template and magic__illegal_overlap__count from the registration. The join
+    rule is the same one views get.
     """
     with pytest.raises(FlowSpecError) as exc_info:
         validate_against_registry(
@@ -337,7 +337,7 @@ def test_a_with_on_the_only_reader_is_accepted():
 
 def test_a_with_set_by_every_reader_of_the_variable_is_accepted():
     """
-    Two jobs of one job with different values, which is the case this key
+    Two jobs of one template with different values, which is the case this key
     exists for. Both run Yosys.Synthesis so both read SYNTH_STRATEGY, and both
     set it, so no reader is left observing a value it did not declare.
     """

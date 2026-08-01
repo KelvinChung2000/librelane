@@ -33,7 +33,7 @@ def _bool_var(name: str, default: bool) -> dict:
 @pytest.fixture(scope="module")
 def contract_job():
     """
-    A job with a hand-curated contract, and five providers for it.
+    A job template with a hand-curated contract, and five providers for it.
 
     Every other job in this module is an inline ``steps`` job, and an inline
     job is deliberately exempt from the output-contract check: its ``provides``
@@ -72,7 +72,7 @@ def contract_job():
 
     class Base(Step):
         inputs = []
-        # Declared by every provider, because JobRegistry checks a job's
+        # Declared by every provider, because JobRegistry checks the template's
         # 'provides' against its provider's *declared* outputs at registration.
         # Whether a provider then actually writes the view is the run-time
         # question these tests are about.
@@ -306,7 +306,7 @@ def test_a_step_writes_into_its_job_s_directory(
 
 
 @mock_variables([flow_module, step_module])
-def test_a_uses_job_honours_its_job_derived_contract(
+def test_a_uses_job_honours_its_template_derived_contract(
     contract_job, minimal_design, mock_pdk
 ):
     from librelane.flows.engine import Workflow
@@ -319,8 +319,8 @@ def test_a_uses_job_honours_its_job_derived_contract(
 
     final = Workflow(spec, minimal_design, **mock_pdk).start(tag="t")
 
-    # Both halves of the contract came from the job, not from the step: the
-    # provider's only declaration is 'outputs', which says nothing about
+    # Both halves of the contract came from the template, not from the step:
+    # the provider's only declaration is 'outputs', which says nothing about
     # metrics at all.
     assert final[DesignFormat.nl] is not None
     assert final.metrics["engine__contract"] == 1
@@ -426,9 +426,9 @@ def test_a_pass_through_job_is_exempt_from_the_output_contract(
 
     flow = Workflow(spec, minimal_design, **mock_pdk)
 
-    # The job's job declares 'nl' and the job produces nothing, but it never
-    # ran, so there is no contract to have broken. Raising here would make
-    # every gated-off job in a document a hard error.
+    # The job's template declares 'nl' and the job produces nothing, but it
+    # never ran, so there is no contract to have broken. Raising here would
+    # make every gated-off job in a document a hard error.
     flow.start(tag="t")
 
 
@@ -448,8 +448,8 @@ def test_a_deferred_error_is_not_replaced_by_a_contract_error(
     with pytest.raises(FlowError) as exc_info:
         flow.start(tag="t")
 
-    # The step deferred, so it never produced the 'nl' its job declares. The
-    # deferred error is the real diagnosis and must be what surfaces.
+    # The step deferred, so it never produced the 'nl' its template declares.
+    # The deferred error is the real diagnosis and must be what surfaces.
     assert "the tool reported 3 violations" in str(exc_info.value)
     assert not isinstance(exc_info.value, JobContractError)
 

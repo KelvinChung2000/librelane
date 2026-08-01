@@ -81,9 +81,9 @@ def parse_condition(text: str) -> tuple[str, ...]:
     ``and``. General expressions are deliberately out of scope; they are
     spec 3.
 
-    Phase 2 calls this to build ``Job.conditions``, so the return is a tuple
-    and this is the only implementation of the grammar. Do not write a second
-    one there.
+    Phase 2 calls this to build ``ResolvedJob.conditions``, so the return is a
+    tuple and this is the only implementation of the grammar. Do not write a
+    second one there.
 
     Parameters
     ----------

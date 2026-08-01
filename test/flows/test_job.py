@@ -45,7 +45,7 @@ def test_a_uses_job_takes_its_steps_from_the_named_provider():
     assert job.steps == tuple(JobRegistry.get("synthesis", "yosys").steps)
 
 
-def test_a_bare_uses_takes_the_job_default_provider():
+def test_a_bare_uses_takes_the_template_default_provider():
     named = resolve_jobs(_spec({"floorplan": {"uses": "floorplan/openroad"}}))
     bare = resolve_jobs(_spec({"floorplan": {"uses": "floorplan"}}))
 
@@ -90,7 +90,7 @@ def test_a_job_that_omits_uses_may_still_be_a_multi_provider_job():
     assert implicit.provider == "magic+klayout"
 
 
-def test_a_uses_job_inherits_the_job_contract():
+def test_a_uses_job_inherits_the_template_contract():
     jobs = resolve_jobs(_spec({"synthesis": {"uses": "synthesis/yosys"}}))
     job = jobs["synthesis"]
     registration = JobRegistry.get("synthesis", "yosys")

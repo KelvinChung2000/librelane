@@ -81,8 +81,8 @@ from librelane.common import (
 import builtins
 
 
-# Defined in ``common.errors`` so that ``stages`` can derive from them without
-# importing the ``flows`` package, which depends on ``stages``. Re-exported here
+# Defined in ``common.errors`` so that ``jobs`` can derive from them without
+# importing the ``flows`` package, which depends on ``jobs``. Re-exported here
 # because this is their documented import site.
 from librelane.common.errors import FlowError, FlowException  # noqa: E402, F401
 

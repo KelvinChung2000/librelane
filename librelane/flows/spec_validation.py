@@ -144,9 +144,9 @@ def _providers_of(uses: str) -> tuple[str, tuple[str, ...]]:
     assert template is not None, "checked by _check_uses"
     if provider:
         return job_id, (provider,)
-    # A bare 'uses' means the job's default provider, which is a tuple for a
-    # multi_provider job. Every one of them, rather than the first, which
-    # would silently drop the rest.
+    # A bare 'uses' means the template's default provider, which is a tuple for
+    # a multi_provider template. Every one of them, rather than the first,
+    # which would silently drop the rest.
     return job_id, tuple(template.default_providers)
 
 
@@ -317,10 +317,10 @@ def _check_requirements_are_reachable(
         # Views produced somewhere this job could actually have inherited from.
         # Two exclusions, both load-bearing.
         #
-        # The job itself, because 14 of the 27 jobs both require and provide
-        # the same views (the PNR_IN_PLACE contract, def/nl/sdc), so counting a
-        # job's own output as evidence would reject every one of them whenever
-        # no ancestor happens to restate the view.
+        # The job itself, because 14 of the 27 registered templates both
+        # require and provide the same views (the PNR_IN_PLACE contract,
+        # def/nl/sdc), so counting a job's own output as evidence would reject
+        # every one of them whenever no ancestor happens to restate the view.
         #
         # And this job's descendants, because state flows forward only. A
         # downstream PNR_IN_PLACE job providing nl says nothing about whether

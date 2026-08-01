@@ -271,8 +271,9 @@ _STRATEGY = {"name": "STRATEGY", "type": "str", "description": "x"}
 
 def test_parse_condition_returns_a_tuple_of_conjuncts():
     """
-    Phase 2's resolve_jobs assigns this straight to Job.conditions, which is a
-    tuple, so the return type is a cross-phase contract rather than a detail.
+    Phase 2's resolve_jobs assigns this straight to ResolvedJob.conditions,
+    which is a tuple, so the return type is a cross-phase contract rather than
+    a detail.
     """
     from librelane.flows.spec import parse_condition
 

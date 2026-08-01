@@ -306,7 +306,7 @@ class SequentialFlow(Flow):
             One entry per step in this flow's resolved step list, in
             execution order, stating whether the step will run under this
             configuration and these flow-control arguments, and if not, which
-            mechanism excluded it, together with the stages that contributed no
+            mechanism excluded it, together with the jobs that contributed no
             steps at all.
 
         Resume is deliberately not reported. A resume verdict depends on

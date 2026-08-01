@@ -15,10 +15,10 @@
 """
 The flow-level exception hierarchy.
 
-These live in ``common`` rather than in ``flows`` because ``stages`` derives
-from them while ``flows`` depends on ``stages``. Defining them in
-``flows.flow`` and importing them from ``stages`` initializes the ``flows``
-package, which imports ``flows.staged``, which imports ``stages`` again while
+These live in ``common`` rather than in ``flows`` because ``jobs`` derives
+from them while ``flows`` depends on ``jobs``. Defining them in
+``flows.flow`` and importing them from ``jobs`` initializes the ``flows``
+package, which imports ``flows.staged``, which imports ``jobs`` again while
 it is still partway through its own module body. ``common`` sits below both, so
 the dependency runs one way only.
 
