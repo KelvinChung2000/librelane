@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import annotations
-
 from loguru import logger
 import os
 import csv
@@ -20,7 +18,6 @@ import glob
 import shutil
 import fnmatch
 import datetime
-import textwrap
 import pathlib
 import threading
 import uuid
@@ -368,14 +365,13 @@ class Flow(ABC):
     Attributes
     ----------
     Steps : list[type[Step]]
-        A list of :class:`Step` **types** used by the Flow (not Step objects.)
+        A list of :class:`Step` **types** the flow will run (not Step objects.)
 
-        Subclasses of :class:`Flow` are expected to override the default value
-        as a class member- but subclasses may allow this value to be further
-        overridden during construction (and only then.)
-
-        :class:`Flow` subclasses without the ``Steps`` class property declared
-        are considered abstract and cannot be initialized.
+        Read by :meth:`get_all_config_variables`, which asks each type which
+        configuration variables it declares.
+        :class:`librelane.flows.engine.Workflow` assigns it from its resolved
+        jobs before this class's initializer runs, so the empty default is only
+        what a flow that never assigned one contributes.
     config_vars : list[Variable]
         A list of **flow-specific** configuration variables. These configuration
         variables are used entirely within the logic of the flow itself and
@@ -493,7 +489,13 @@ class Flow(ABC):
     _StepWarningSink = _StepIssueSink
 
     name: str = NotImplemented
-    Steps: list[type[Step]] = NotImplemented  # Override
+
+    #: The step types this flow will run. Not a declaration a subclass is
+    #: obliged to make -- :class:`librelane.flows.engine.Workflow` assigns it
+    #: from its resolved jobs -- but the list :meth:`get_all_config_variables`
+    #: collects configuration variables from, so it must exist by the time
+    #: :meth:`__init__` runs.
+    Steps: list[type[Step]] = []
     config_vars: list[Variable] = []
 
     #: Values this flow supplies for configuration variables, from the ``with``
@@ -540,10 +542,6 @@ class Flow(ABC):
         design_dir: str | None = None,
         config_override_strings: Sequence[str] | None = None,
     ):
-        if self.__class__.Steps == NotImplemented:
-            raise NotImplementedError(
-                f"Abstract flow {self.__class__.__qualname__} does not implement the .Steps property and cannot be initialized."
-            )
         for step in self.Steps:
             step.assert_concrete("used in a Flow")
 
@@ -585,96 +583,6 @@ class Flow(ABC):
         self.config: Config = config
         self.design_dir = pathlib.Path(self.config["DESIGN_DIR"])
         self.progress_bar = FlowProgressBar(self.name)
-
-    @classmethod
-    def get_help_md(Self, myst_anchors: bool = False) -> str:  # pragma: no cover
-        """
-        Returns
-        -------
-        str
-            rendered Markdown help for this Flow
-        """
-        doc_string = ""
-        if Self.__doc__:
-            doc_string = textwrap.dedent(Self.__doc__)
-
-        flow_anchor = f"(flow-{slugify(Self.__name__, lower=True)})="
-
-        result = (
-            textwrap.dedent(
-                f"""\
-                {flow_anchor * myst_anchors}
-                ### {Self.__name__}
-
-                ```{{eval-rst}}
-                %s
-                ```
-
-                #### Using from the CLI
-
-                ```sh
-                librelane --flow {Self.__name__} [...]
-                ```
-
-                #### Importing
-
-                ```python
-                from librelane.flows import Flow
-
-                {Self.__name__} = Flow.factory.get("{Self.__name__}")
-                ```
-                """
-            )
-            % doc_string
-        )
-        flow_config_vars = Self.config_vars
-
-        if len(flow_config_vars):
-            config_var_anchors = f"({slugify(Self.__name__, lower=True)}-config-vars)="
-            result += textwrap.dedent(
-                f"""
-                {config_var_anchors * myst_anchors}
-                #### Flow-specific Configuration Variables
-                """
-            )
-            result += Variable._render_table_md(
-                flow_config_vars,
-                myst_anchor_owner_id=Self.__name__ if myst_anchors else None,
-            )
-            result += "\n"
-
-        if len(Self.Steps):
-            result += "#### Included Steps\n"
-            for step in Self.Steps:
-                imp_id = step.get_implementation_id()
-                if myst_anchors:
-                    result += f"* [`{step.id}`](./step_config_vars.md#step-{slugify(imp_id, lower=True)})\n"
-                else:
-                    variant_str = ""
-                    if imp_id != step.id:
-                        variant_str = f" (implementation: `{imp_id}`)"
-                    result += f"* `{step.id}`{variant_str}\n"
-
-        return result
-
-    @classmethod
-    def display_help(Self):  # pragma: no cover
-        """
-        Displays Markdown help for a given flow.
-
-        If in an IPython environment, it's rendered using ``IPython.display``.
-        Otherwise, it's rendered using ``rich.markdown``.
-        """
-        try:
-            get_ipython()  # type: ignore
-
-            import IPython.display
-
-            IPython.display.display(IPython.display.Markdown(Self.get_help_md()))
-        except NameError:
-            from rich.markdown import Markdown
-
-            default_console.log(Markdown(Self.get_help_md()))
 
     def get_all_config_variables(self) -> list[Variable]:
         """
@@ -981,23 +889,22 @@ class Flow(ABC):
         pass
 
     @protected
-    def dir_for_step(self, step: Step, position: int | None = None) -> pathlib.Path:
+    def dir_for_step(self, step: Step) -> pathlib.Path:
         """
         May only be called while :attr:`run_dir` is not None, i.e., the flow
         has started. Otherwise, a :class:`FlowException` is raised.
+
+        The directory is prefixed with the progress bar's current ordinal, so
+        it records how many stages had been entered when the step ran.
+        :class:`librelane.flows.engine.Workflow` does not use this: a run
+        directory keyed on a running counter cannot be resumed once steps run
+        concurrently, so it names its own with
+        :meth:`librelane.flows.engine.Workflow.dir_for_job_step`.
 
         Parameters
         ----------
         step : Step
             The step to name a directory for.
-        position : int | None
-            The step's index in :attr:`Steps`, if the flow has a
-            fixed step list. Passing it makes the directory depend on the step's
-            position rather than on how many earlier steps happened to run, which
-            is what lets a resumed run find its own prior output.
-
-            A flow that builds its steps in a data-dependent loop has no fixed
-            position for a step, so it omits this and keeps the running counter.
 
         Returns
         -------
@@ -1008,11 +915,7 @@ class Flow(ABC):
             raise FlowException(
                 "Attempted to call dir_for_step on a flow that has not been started."
             )
-        if position is None:
-            prefix = self.progress_bar.get_ordinal_prefix()
-        else:
-            width = len(str(len(self.Steps)))
-            prefix = f"{position + 1:0{width}d}-"
+        prefix = self.progress_bar.get_ordinal_prefix()
         return self.run_dir / f"{prefix}{slugify(step.id)}"
 
     @protected
@@ -1271,60 +1174,18 @@ class Flow(ABC):
 
     class FlowFactory(object):
         """
-        A factory singleton for Flows, allowing Flow types to be registered and then
-        retrieved by name.
+        A factory singleton for workflow documents, allowing them to be
+        registered and then retrieved by name.
 
         See
         `Factory (object-oriented programming) on Wikipedia <https://en.wikipedia.org/wiki/Factory_(object-oriented_programming)>`_
         for a primer.
         """
 
-        __registry: ClassVar[dict[str, type[Flow]]] = {}
-        #: Workflow documents, keyed the same way as ``__registry``. A separate
-        #: registry rather than a shared one because a name is a flow class and
-        #: a document at the same time throughout the migration, and neither
-        #: lookup may answer for the other.
         _documents: ClassVar[dict[str, FlowSpec]] = {}
 
         @classmethod
-        def register(
-            Self, registered_name: str | None = None
-        ) -> Callable[[type[Flow]], type[Flow]]:
-            """
-            A decorator that adds a flow type to the registry.
-
-            Parameters
-            ----------
-            registered_name : str | None
-                An optional registered name for the flow.
-
-                If not specified, the flow will be referred to by its Python
-                class name.
-            """
-
-            def decorator(cls: type[Flow]) -> type[Flow]:
-                name = cls.__name__
-                if registered_name is not None:
-                    name = registered_name
-                Self.__registry[name] = cls
-                return cls
-
-            return decorator
-
-        @classmethod
-        def get(Self, name: str) -> type[Flow] | None:
-            """
-            Retrieves a Flow type from the registry using a lookup string.
-
-            Parameters
-            ----------
-            name : str
-                The registered name of the Flow. Case-sensitive.
-            """
-            return Self.__registry.get(name)
-
-        @classmethod
-        def register_document(Self, spec: FlowSpec) -> FlowSpec:
+        def register(Self, spec: FlowSpec) -> FlowSpec:
             """
             Registers a workflow document under its own ``name``.
 
@@ -1351,7 +1212,7 @@ class Flow(ABC):
             return spec
 
         @classmethod
-        def get_document(Self, name: str) -> FlowSpec | None:
+        def get(Self, name: str) -> FlowSpec | None:
             """
             Retrieves a workflow document from the registry using a lookup
             string.
@@ -1359,14 +1220,12 @@ class Flow(ABC):
             Parameters
             ----------
             name : str
-                The document's ``name``. Case-sensitive, as :meth:`get` is.
+                The document's ``name``. Case-sensitive.
 
             Returns
             -------
             FlowSpec | None
-                The document registered under this name, or ``None``. A flow
-                class of the same name is *not* offered in its place; ask
-                :meth:`get` for that.
+                The document registered under this name, or ``None``.
             """
             return Self._documents.get(name)
 
@@ -1376,12 +1235,12 @@ class Flow(ABC):
             Returns
             -------
             builtins.list[str]
-                Every runnable flow name, documents and classes together, with
-                a name registered as both appearing once.
+                Every registered document's name.
 
                 Sorted, because this is what error messages offer the user and
-                two registries have no shared insertion order to preserve.
+                the import order documents happen to be registered in is not
+                worth preserving.
             """
-            return sorted(set(Self.__registry) | set(Self._documents))
+            return sorted(Self._documents)
 
     factory = FlowFactory

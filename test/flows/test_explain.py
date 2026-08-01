@@ -518,7 +518,7 @@ def _classic_workflow(mock_conf_dir: MockConfTree):
         scl="dummy_scl",
         pdk_root=mock_conf_dir.pdk_root,
     )
-    spec = Flow.factory.get_document("Classic")
+    spec = Flow.factory.get("Classic")
     # The engine's own variables ahead of the document's, exactly as
     # Workflow.__init__ composes the two: TOOLS is the whole of the engine's
     # half and no document declares it.
@@ -540,7 +540,7 @@ def test_explain_reports_every_job_of_the_classic_document(mock_conf_dir):
     """
     from librelane.flows import Flow
 
-    spec = Flow.factory.get_document("Classic")
+    spec = Flow.factory.get("Classic")
     explanation = _classic_workflow(mock_conf_dir).explain()
 
     # Sorted, not in document order: the rows are topologically ordered, which
@@ -567,7 +567,7 @@ def test_explain_keeps_every_row_when_a_target_narrows_the_classic_document(
     """
     from librelane.flows import Flow
 
-    spec = Flow.factory.get_document("Classic")
+    spec = Flow.factory.get("Classic")
     explanation = _classic_workflow(mock_conf_dir).explain(
         target=["floorplan"], skip=["lint"]
     )

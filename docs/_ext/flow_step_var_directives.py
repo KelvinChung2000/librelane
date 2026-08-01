@@ -46,7 +46,7 @@ def librelane_object_reference_role(
     if role == "step":
         exists = Step.factory.get(target) is not None
     else:
-        exists = Flow.factory.get_document(target) is not None
+        exists = Flow.factory.get(target) is not None
     if not exists:
         msg = inliner.reporter.warning(
             f"Referenced {role} '{target}' not found.",
@@ -91,7 +91,7 @@ def librelane_var_reference_role(
 
     parent, variable = split
 
-    document = Flow.factory.get_document(parent)
+    document = Flow.factory.get(parent)
     ParentStep = Step.factory.get(parent)
     config_var_list = universal_flow_config_variables
     if parent == "":

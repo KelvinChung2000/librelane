@@ -40,4 +40,4 @@ from librelane.flows.spec import load_flow_spec
 # ``validate_against_registry`` runs.
 for _document in sorted(files(__name__).iterdir(), key=lambda entry: entry.name):
     if _document.name.endswith(".yaml"):
-        Flow.factory.register_document(load_flow_spec(str(_document)))
+        Flow.factory.register(load_flow_spec(str(_document)))

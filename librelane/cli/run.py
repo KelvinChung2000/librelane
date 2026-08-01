@@ -170,7 +170,7 @@ def select_flow(request: FlowRequest) -> FlowSpec:
     FlowSpec
         The document to run.
     """
-    target_flow: FlowSpec | None = Flow.factory.get_document("Classic")
+    target_flow: FlowSpec | None = Flow.factory.get("Classic")
 
     for config_file in request.config_files:
         if meta := Config.get_meta(config_file):
@@ -186,7 +186,7 @@ def select_flow(request: FlowRequest) -> FlowSpec:
                         f"declare a flow class and name it here instead."
                     )
                     raise typer.Exit(1)
-                if found := Flow.factory.get_document(meta.flow):
+                if found := Flow.factory.get(meta.flow):
                     target_flow = found
                 else:
                     logger.error(
@@ -197,7 +197,7 @@ def select_flow(request: FlowRequest) -> FlowSpec:
                     raise typer.Exit(1)
 
     if request.flow_name is not None:
-        if found := Flow.factory.get_document(request.flow_name):
+        if found := Flow.factory.get(request.flow_name):
             target_flow = found
         else:
             logger.error(

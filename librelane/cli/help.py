@@ -33,9 +33,11 @@ def show_help(
     """Display detailed help for a registered step or flow."""
     # Steps and flows expose their help as Markdown via get_help_md(); rendering
     # it is this frontend's job, so the terminal presentation lives here rather
-    # than in the library. Step.display_help()/Flow.display_help() remain for
-    # notebook users, who need IPython rendering instead.
-    if target_flow := Flow.factory.get_document(step_or_flow):
+    # than in the library. Step.display_help() remains for notebook users, who
+    # need IPython rendering instead; there is no flow-side counterpart, since a
+    # document's help is rendered from an instance or from the spec, not from a
+    # class.
+    if target_flow := Flow.factory.get(step_or_flow):
         help_md = Workflow.help_md_for_document(target_flow)
     elif target_step := Step.factory.get(step_or_flow):
         help_md = target_step.get_help_md()

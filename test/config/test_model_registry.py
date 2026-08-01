@@ -11,17 +11,19 @@ def _document_config_variables():
     The engine's own variables come first because ``TOOLS`` is declared by the
     engine and by no document, exactly as ``Workflow.__init__`` and
     ``help_md_for_document`` compose the two halves. Until phase 5 this was read
-    off ``Flow.factory.get(flow_id).config_vars``; the flow classes are gone and
-    the documents that replaced them are what declare these variables now.
+    off the ``config_vars`` of the flow class the same name resolved to; the
+    flow classes are gone and the documents that replaced them are what declare
+    these variables now.
     """
     from librelane.flows import Flow
     from librelane.flows.engine import Workflow
 
     yield from Workflow.config_vars
-    for flow_id in Flow.factory.list():
-        document = Flow.factory.get_document(flow_id)
-        if document is None:
-            continue
+    listed = Flow.factory.list()
+    assert listed, "no workflow documents were registered"
+    for flow_id in listed:
+        document = Flow.factory.get(flow_id)
+        assert document is not None, flow_id
         for declared in document.config:
             yield declared.to_variable()
 
@@ -132,10 +134,11 @@ def test_every_step_and_document_config_model_has_a_json_schema():
             Step.factory.get(step_id).Config.model_json_schema()
         except Exception as e:
             failed[step_id] = f"{type(e).__name__}: {str(e).splitlines()[0]}"
-    for flow_id in Flow.factory.list():
-        document = Flow.factory.get_document(flow_id)
-        if document is None:
-            continue
+    listed = Flow.factory.list()
+    assert listed, "no workflow documents were registered"
+    for flow_id in listed:
+        document = Flow.factory.get(flow_id)
+        assert document is not None, flow_id
         variables = [
             *Workflow.config_vars,
             *(declared.to_variable() for declared in document.config),

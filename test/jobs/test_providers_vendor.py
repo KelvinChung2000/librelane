@@ -25,7 +25,7 @@ def test_vendor_registration_is_opt_in_via_subprocess():
         from librelane.flows import Flow
         from librelane.flows.engine import Workflow
 
-        classic = Flow.factory.get_document("Classic")
+        classic = Flow.factory.get("Classic")
 
         before = set(JobRegistry.providers("synthesis"))
         assert before == {"yosys", "yosys_vhdl"}, before

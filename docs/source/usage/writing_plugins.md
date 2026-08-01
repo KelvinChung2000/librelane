@@ -20,8 +20,15 @@ Plugins, much like LibreLane itself, may create and register steps and flows int
 global registries, where the steps and flows can then be accessed
 programmatically via their ID.
 
-You can use the Python decorators `@Flow.factory.register()` and
-`@Step.factory.register()` to register flows and steps respectively.
+A step is a Python class, so you register it with the `@Step.factory.register()`
+decorator. A flow is a YAML document, so you load it and hand the result to
+`Flow.factory.register()`:
+
+```python
+from librelane.flows import Flow, load_flow_spec
+
+Flow.factory.register(load_flow_spec("./my_flow.yaml"))
+```
 
 Registered flows and steps can be accessed in configuration files as shown in
 {doc}`/usage/writing_custom_flows`, but they can also be accessed
@@ -31,6 +38,10 @@ programmatically as follows:
 MyCustomStep = Step.factory.get("ToolName.MyCustomStep")
 MyCustomFlow = Flow.factory.get("MyCustomFlow")
 ```
+
+`Step.factory.get` returns the step class; `Flow.factory.get` returns the
+{class}`librelane.flows.spec.FlowSpec` the document parsed into, which
+{class}`librelane.flows.engine.Workflow` runs.
 
 For information on writing the flows and steps themselves, see
 {doc}`/usage/writing_custom_flows` and {doc}`/usage/writing_custom_steps`.

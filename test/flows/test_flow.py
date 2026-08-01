@@ -141,30 +141,18 @@ def DummyFlow(MockStepTuple):
 
 
 def test_flow_abc_init():
+    """
+    ``Flow`` stays abstract now that it is machinery rather than a declaration
+    base, because :meth:`librelane.flows.Flow.start` -- which is ``@final`` --
+    calls ``self.run``. Dropping ``ABC`` would make ``Flow()`` construct and
+    ``Flow().start()`` raise ``AttributeError`` deep inside a run instead.
+    """
     from librelane.flows import Flow
 
     with pytest.raises(TypeError, match="Can't instantiate abstract class") as e:
         Flow()
 
     assert e is not None, "Flow ABC instantiated successfully"
-
-
-def test_factory(DummyFlow: type[flow.Flow]):
-    from librelane.flows import Flow
-
-    Flow.factory.register()(DummyFlow)
-
-    assert "Dummy" in Flow.factory.list(), "failed to register new dummy flow"
-
-    Flow.factory.register("AnotherName")(DummyFlow)
-
-    assert "AnotherName" in Flow.factory.list(), (
-        "failed to register new dummy flow by another name"
-    )
-
-    assert Flow.factory.get("Dummy") == DummyFlow, (
-        "failed to retrieve registered dummy flow"
-    )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")

@@ -71,19 +71,11 @@ def generate_module_docs(app: Sphinx, conf: Config):
                 template.render(
                     slugify=slugify,
                     Workflow=Workflow,
-                    # The documents, not the classes. Flow.factory.list() names
-                    # both registries, and a name a document does not claim is
-                    # dropped rather than described from its class, so that
-                    # deleting the classes leaves this loop with the same eight
-                    # documents it has today.
-                    flows=[
-                        document
-                        for document in (
-                            flow_factory.get_document(key)
-                            for key in flow_factory.list()
-                        )
-                        if document is not None
-                    ],
+                    # Every name the factory lists is a document, and every one
+                    # of them resolves, so there is nothing to filter out: the
+                    # class registry that used to contribute names of its own
+                    # is gone.
+                    flows=[flow_factory.get(key) for key in flow_factory.list()],
                 )
             )
 

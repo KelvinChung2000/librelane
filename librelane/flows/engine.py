@@ -171,7 +171,7 @@ def _document_help_md(
         from librelane.flows import Flow
         from librelane.flows.engine import Workflow
 
-        {name} = Flow.factory.get_document("{name}")
+        {name} = Flow.factory.get("{name}")
         ```
         """
     ).format(anchor=anchor, name=spec.name, description=spec.description)
@@ -356,8 +356,6 @@ class Workflow(Flow):
         :mod:`librelane.jobs.tools`.
     """
 
-    Steps: list[type[Step]] = []
-
     class Config(Flow.Config):
         TOOLS: Optional[dict[str, Union[str, list[str]]]] = variable(
             None,
@@ -390,9 +388,9 @@ class Workflow(Flow):
         )
         self.Steps = [step for job in self.jobs.values() for step in job.steps]
         # Flow.__init__ builds the Config from get_all_config_variables(), which
-        # reads config_vars; resolves the flow name from the class when the
-        # instance has not set one; and layers 'values' into the loader's
-        # sources. All three assignments must precede it.
+        # reads Steps and config_vars; resolves the flow name from the class
+        # when the instance has not set one; and layers 'values' into the
+        # loader's sources. All four assignments must precede it.
         #
         # The class's own variables come first, because TOOLS is declared by
         # the engine and by no document: assigning only the document's would
@@ -527,12 +525,12 @@ class Workflow(Flow):
             config_override_strings=config_override_strings,
         )
 
-    # An instance method where Flow declares a classmethod, and deliberately
-    # so: a document's step list, its providers and its per-job structure are
-    # facts about the resolved jobs, which a class attribute does not have.
-    # The two cannot be reconciled while both exist, and phase 5 deletes
-    # Flow.get_help_md along with the Flow.Steps it reads.
-    def get_help_md(self, myst_anchors: bool = False) -> str:  # type: ignore[override]
+    # An instance method, because a document's step list, its providers and its
+    # per-job structure are facts about the resolved jobs, which no class
+    # attribute has. Flow used to declare a classmethod of this name, rendering
+    # help from its class docstring and its Steps; phase 5 deleted it, so this
+    # is the only renderer left.
+    def get_help_md(self, myst_anchors: bool = False) -> str:
         """
         Parameters
         ----------

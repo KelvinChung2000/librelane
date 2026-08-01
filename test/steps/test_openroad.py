@@ -265,7 +265,7 @@ def test_rmp_is_off_by_default_in_classic():
     since phase 5 deleted the ``Classic`` class it used to be read off."""
     from librelane.flows import Flow
 
-    classic = Flow.factory.get_document("Classic")
+    classic = Flow.factory.get("Classic")
 
     [run_rmp] = [entry for entry in classic.config if entry.name == "RUN_RMP"]
     assert run_rmp.default is False

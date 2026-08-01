@@ -98,45 +98,6 @@ def _implementation_ids(name: str) -> list[str]:
     return [implementation for _, implementation in _jobs_of_each_step(name)]
 
 
-def _gated_pairs(name: str) -> set[tuple[str, str]]:
-    """
-    Every ``(job id, implementation id)`` the document gates behind an ``if``.
-
-    ``ResolvedJob.conditions`` is a ``tuple[str, ...]``, the ``if`` conjunction
-    already split into variable names, so an ungated job carries the empty
-    tuple rather than ``None``. Test emptiness, not ``is not None``.
-    """
-    spec = _document(name)
-    jobs = resolve_jobs(spec)
-    return {
-        (job_id, step.get_implementation_id())
-        for job_id, job in jobs.items()
-        if job.conditions
-        for step in job.steps
-    }
-
-
-def _gating_variables(name: str) -> list[tuple[str, str, tuple[str, ...]]]:
-    """
-    Returns
-    -------
-    list[tuple[str, str, tuple[str, ...]]]
-        One ``(job id, implementation id, condition variables)`` triple per
-        resolved step, in document order.
-
-    Stronger than :func:`_gated_pairs`, which says only *which* steps are
-    gated: a job gated on the wrong boolean, or on the right two booleans in
-    the wrong order, is indistinguishable there and visible here.
-    """
-    spec = _document(name)
-    jobs = resolve_jobs(spec)
-    return [
-        (job_id, step.get_implementation_id(), jobs[job_id].conditions)
-        for job_id in spec.jobs
-        for step in jobs[job_id].steps
-    ]
-
-
 #: The metrics every OpenROAD invocation writes and nothing declares.
 #:
 #: ``OpenROADStep.get_command`` and ``OdbpyStep.get_command`` both pass an
@@ -935,7 +896,7 @@ def test_every_document_is_registered_under_its_name():
         "OpenInOpenSTAConsole",
         "OpenInMagic",
     ]:
-        registered = Flow.factory.get_document(name)
+        registered = Flow.factory.get(name)
         assert isinstance(registered, FlowSpec)
         assert registered.name == name
 
@@ -950,28 +911,31 @@ def test_the_factory_registers_every_shipped_document():
 
     for document in _shipped_documents():
         name = _document(document).name
-        assert Flow.factory.get_document(name) is not None, document
+        assert Flow.factory.get(name) is not None, document
 
 
-def test_the_factory_lists_documents_and_classes_together():
+def test_the_factory_lists_exactly_the_shipped_documents():
+    """
+    ``list()`` used to union the document registry with the class registry, so
+    a name in it was not necessarily a document. The class registry is gone, so
+    the list is now exactly the shipped documents -- which is what lets every
+    caller that iterates it look each name up without a ``None`` check.
+    """
     from librelane.flows import Flow
 
-    listed = Flow.factory.list()
-
-    assert "Classic" in listed
-    assert len(listed) == len(set(listed)), "a name was listed twice"
+    assert Flow.factory.list() == sorted(
+        _document(document).name for document in _shipped_documents()
+    )
 
 
 def test_a_name_no_document_claims_is_looked_up_as_none():
     """
-    ``get_document`` answers for the document registry and for nothing else. A
-    name it does not hold is ``None`` rather than a silent hand-off to the class
-    registry.
+    ``get`` answers for the document registry and for nothing else.
     """
     from librelane.flows import Flow
 
-    assert isinstance(Flow.factory.get_document("Classic"), FlowSpec)
-    assert Flow.factory.get_document("NoSuchFlow") is None
+    assert isinstance(Flow.factory.get("Classic"), FlowSpec)
+    assert Flow.factory.get("NoSuchFlow") is None
 
 
 def test_registering_a_document_twice_is_an_error():
@@ -983,10 +947,10 @@ def test_registering_a_document_twice_is_an_error():
     from librelane.flows import Flow
     from librelane.flows.flow import FlowException
 
-    spec = Flow.factory.get_document("Classic")
+    spec = Flow.factory.get("Classic")
 
     with pytest.raises(FlowException, match="already"):
-        Flow.factory.register_document(spec)
+        Flow.factory.register(spec)
 
 
 def test_a_document_is_rejected_at_import_if_it_is_malformed(tmp_path):

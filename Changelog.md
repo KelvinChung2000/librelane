@@ -30,7 +30,7 @@ Style Notes
 ## CLI
 
 * Pointed `librelane run` at workflow documents. It now builds a `Workflow`
-  over the document `Flow.factory.get_document` returns, rather than
+  over the document `Flow.factory.get` returns, rather than
   instantiating a flow class, so every flow-control option addresses the
   document's jobs.
 * Removed `--from` and `--to`. A step window is not expressible over a graph.

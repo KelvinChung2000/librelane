@@ -85,7 +85,7 @@ your document that way register it at import time and load your module as a
 ```python
 from librelane.flows import Flow, load_flow_spec
 
-Flow.factory.register_document(load_flow_spec("./my_flow.yaml"))
+Flow.factory.register(load_flow_spec("./my_flow.yaml"))
 ```
 
 ```{important}
