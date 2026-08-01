@@ -81,19 +81,20 @@ stale and LibreLane will not know.
 Two remedies:
 
 ```console
-$ librelane --last-run --from openroad.globalplacement ./config.yaml
+$ librelane --last-run --invalidate global_placement ./config.yaml
 $ librelane --run-tag my_run --overwrite ./config.yaml
 ```
 
-`--from` re-executes the named step and everything after it, ignoring their
-recorded results. The steps before it are taken from their previous results, and
-if one of them has none, LibreLane names it and stops rather than continuing on
-a state it cannot justify.
+`--invalidate` names a *job*, not a step, and re-executes that job and every job
+downstream of it, ignoring their recorded results. It is deliberately forwards
+only: a recorded result is stale because its inputs are not the ones it was
+written from, and that is a statement about the named job and everything fed by
+it. The jobs before it are still reused, which is what keeps `--invalidate` from
+being an expensive way to spell `--overwrite`.
 
-Supplying `--with-initial-state` alongside `--from` skips the earlier steps
-instead of resolving them, because that state is what stands in for them. That
-is how you carry a state a previous run produced into a fresh tag and continue
-from a chosen step.
+`--invalidate` may be given more than once. `librelane --explain ./config.yaml`
+prints every job the configuration declares, with the `NEEDS` column showing
+which job feeds which, if you are unsure what to name.
 
 `--overwrite` discards everything and is the blunt instrument when you would
 rather not reason about it.

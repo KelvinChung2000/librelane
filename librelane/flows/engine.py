@@ -22,8 +22,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Union
 
 from loguru import logger
+from rapidfuzz import fuzz, process, utils
 
-from librelane.common import get_tpe, slugify
+from librelane.common import Filter, get_tpe, slugify
 from librelane.config import AnyConfig, AnyConfigs, Config, variable
 from librelane.jobs import JobContractError, extract_tools
 from librelane.state import State
@@ -37,6 +38,32 @@ from librelane.flows.resume import resume_key, reusable_state, write_entry
 from librelane.flows.spec import FlowSpec
 from librelane.flows.spec_graph import ancestors, descendants, topological_order
 from librelane.flows.spec_validation import validate_against_registry
+
+
+#: How many job ids an error message spells out before it counts the rest.
+#: ``classic.yaml`` declares 48 jobs, and a message that prints all of them
+#: buries the one sentence the reader can act on under a paragraph they cannot.
+_MAX_LISTED_JOBS = 10
+
+
+def _listed(names: Iterable[str]) -> str:
+    """
+    Parameters
+    ----------
+    names : Iterable[str]
+        The job ids to name.
+
+    Returns
+    -------
+    str
+        Every id when there are few enough to read, and otherwise the first
+        :data:`_MAX_LISTED_JOBS` of them followed by a count of what was left
+        out. Sorted, because a set has no order worth showing.
+    """
+    ordered = sorted(names)
+    if len(ordered) <= _MAX_LISTED_JOBS:
+        return str(ordered)
+    return f"{ordered[:_MAX_LISTED_JOBS]} and {len(ordered) - _MAX_LISTED_JOBS} more"
 
 
 class _ReproducibleCreated(Exception):
@@ -633,7 +660,7 @@ class Workflow(Flow):
         names = sorted(outside)
         raise FlowException(
             f"{names} {'lies' if len(names) == 1 else 'lie'} outside the "
-            f"{restricted_by} subgraph {sorted(selected)}, so naming "
+            f"{restricted_by} subgraph {_listed(selected)}, so naming "
             f"{'it' if len(names) == 1 else 'them'} would do nothing."
         )
 
@@ -688,9 +715,13 @@ class Workflow(Flow):
         Parameters
         ----------
         name : str
-            Either ``<step id>`` or ``<job id>/<step id>``. Step ids are
-            matched case-insensitively, as the old ``--reproducible`` matched
-            them.
+            Either ``<step id>`` or ``<job id>/<step id>``. The step half is
+            matched case-insensitively and accepts ``fnmatch`` wildcards,
+            exactly as :meth:`librelane.flows.SequentialFlow._resolve_step_id`
+            matches the same argument. Both are kept because this is the switch
+            people reach for once something has already gone wrong, and losing
+            either of them on the document path would be a regression in the
+            worst place to have one.
 
         Returns
         -------
@@ -701,35 +732,77 @@ class Workflow(Flow):
         Raises
         ------
         FlowException
-            If no job runs that step, or if several do and the argument named
-            no job. Naming one of several would run a step the user did not ask
-            for.
+            If nothing matches, or if the match is not unique. Picking one of
+            several would write a reproducible for a step the user did not
+            name, which is worse than stopping. A near miss above the fuzzy
+            score cutoff is offered as a suggestion and never acted on, for the
+            same reason.
         """
         job_id, separator, step_id = name.rpartition("/")
         if separator:
             self._require_declared([job_id], "--reproducible")
-        wanted = step_id.lower()
 
-        matches = [
-            (candidate, index)
+        # Every step this run could reach, addressed as the argument addresses
+        # it: by step id alone once the job half has already selected the jobs.
+        candidates = {
+            (candidate, index): step.id
             for candidate, job in self.jobs.items()
             if not separator or candidate == job_id
             for index, step in enumerate(job.steps)
-            if step.id.lower() == wanted
+        }
+        pattern = Filter([step_id.lower()])
+        matches = [
+            address
+            for address, step_candidate in candidates.items()
+            if pattern.match(step_candidate.lower())
         ]
         if not matches:
             raise FlowException(
                 f"--reproducible names step '{step_id}', which flow "
                 f"'{self.spec.name}' does not run"
                 + (f" in job '{job_id}'." if separator else ".")
+                + self._near_miss(step_id, candidates.values())
             )
         if len(matches) > 1:
+            matched_ids = sorted({candidates[address] for address in matches})
+            if len(matched_ids) > 1:
+                raise FlowException(
+                    f"--reproducible names '{step_id}', which matches "
+                    f"{matched_ids}. Name exactly one of them."
+                )
             raise FlowException(
-                f"--reproducible names step '{step_id}', which runs in "
+                f"--reproducible names step '{matched_ids[0]}', which runs in "
                 f"{sorted({candidate for candidate, _ in matches})}. Name one "
-                f"of them as '<job>/{step_id}'."
+                f"of them as '<job>/{matched_ids[0]}'."
             )
         return matches[0]
+
+    @staticmethod
+    def _near_miss(step_id: str, candidates: Iterable[str]) -> str:
+        """
+        Parameters
+        ----------
+        step_id : str
+            The step id that matched nothing.
+        candidates : Iterable[str]
+            Every step id this run could have reached.
+
+        Returns
+        -------
+        str
+            A sentence naming the closest step id above the score cutoff, or
+            the empty string when nothing is close enough to be worth offering.
+        """
+        match_tuple = process.extractOne(
+            step_id,
+            sorted(set(candidates)),
+            scorer=fuzz.partial_ratio,
+            score_cutoff=80,
+            processor=utils.default_process,
+        )
+        if match_tuple is None:
+            return ""
+        return f" Did you mean: '{match_tuple[0]}'?"
 
     def _final_state(
         self, net: Net, outputs: dict[str, State], selected: set[str]
@@ -759,11 +832,14 @@ class Workflow(Flow):
         Raises
         ------
         JoinConflictError
-            If two leaves disagree and no ``final`` is declared.
+            If two leaves disagree and no ``final`` reaches this run.
             :func:`librelane.flows.join.join_sink_states` rather than
             :func:`librelane.flows.join.join_states`, because the two remedies
             differ: a job join is settled by that job's ``source``, and a sink
-            join can only be settled by the document's top-level ``final``.
+            join can only be settled by the document's top-level ``final``. A
+            document that declares one and a run that excluded it is told so
+            rather than told to declare it again, which is why the join is
+            handed the excluded name.
         NetError
             If a sink place is unmarked, which
             :meth:`librelane.flows.net.Net.sink_tokens` raises and which means
@@ -775,7 +851,12 @@ class Workflow(Flow):
                 "selected job fired or the stall check above would have raised"
             )
             return outputs[self.spec.final]
-        return join_sink_states(net.sink_tokens(), self.spec.name)
+        # Only reachable when 'final' is undeclared or this run excluded it:
+        # the branch above returns for the one case where it is both declared
+        # and selected. So the document's own key is exactly the excluded name.
+        return join_sink_states(
+            net.sink_tokens(), self.spec.name, excluded_final=self.spec.final
+        )
 
     def _tokens_for(self, net: Net, job: ResolvedJob) -> dict[str, State]:
         arcs = net.inputs_of(job.id)

@@ -29,6 +29,36 @@ Style Notes
 
 ## CLI
 
+* Pointed `librelane run` at workflow documents. It now builds a `Workflow`
+  over the document `Flow.factory.get_document` returns, rather than
+  instantiating a flow class, so every flow-control option addresses the
+  document's jobs.
+* Removed `--from` and `--to`. A step window is not expressible over a graph.
+  * Added `--target`/`-T`, which runs a job and everything it transitively
+    needs and nothing else. The run's final state is the named job's own
+    output, so `--target floorplan` returns exactly what floorplan produced.
+    May be given more than once.
+  * Added `--invalidate`/`-F`, which treats a job and every job downstream of
+    it as having no reusable result. Use it when something a resume key cannot
+    hash has changed, such as a CAD tool binary or an edited script. It is
+    forwards only, so the jobs before it are still reused.
+* `--skip` now names a job ID rather than a step ID. A skipped job passes its
+  input on unchanged instead of running its steps, and every job after it runs
+  as it otherwise would.
+* `--reproducible` now accepts `<step ID>` or `<job>/<step ID>`. Step IDs are
+  still matched case-insensitively and still accept `fnmatch` wildcards, and a
+  near miss is still answered with a suggestion. The `<job>/` form is needed
+  when a step ID runs in more than one job, as `Classic` runs the `streamout`
+  stage under both `magic_streamout` and `klayout_streamout`.
+* `--explain` now prints one row per job the document declares, with a `NEEDS`
+  column showing the graph, and no longer requires a sequential flow.
+* An unknown flow name now lists the registered flows, whether it came from
+  `--flow` or from the configuration file's `meta.flow`.
+* Fixed `librelane <config>` failing for every design with "DESIGN_DIR: Input
+  should be an instance of Path". A path variable lost the schema
+  `common.Path` carries when it crossed the model-to-`Variable` bridge, leaving
+  a bare `pathlib.Path` that rejects the string a command-line path argument
+  arrives as.
 * Migrated the LibreLane, step, configuration, state, help, and metrics command
   interfaces from Cloup decorators to typed Typer applications.
 * Consolidated every command-line frontend into a single `librelane.cli`
@@ -61,14 +91,14 @@ Style Notes
   configuration and input-state pair.
 * Made `--state-in` explicitly required for standalone step runs and ejection,
   matching the underlying step loader contract.
-* Added `--explain`, which prints one row per step of the resolved step list
-  saying whether this configuration would run it and, if not, which of gating,
-  `--skip` or the `--from`/`--to` window excluded it, then exits without
-  running. A step a `TOOLS` selection dropped has no row at all, since it is
-  not in the list; jobs that contributed no steps are named separately below
-  the table. Requires a sequential flow.
-* Removed `--only`. `--from X --to X` is the same thing, one mechanism instead
-  of two.
+* Added `--explain`, which prints one row per job of the document saying
+  whether this configuration would run it and, if not, whether its own `if`,
+  `--skip` or `--target` stopped it, then exits without running. Every job
+  gets a row: a job stopped by its condition or by `--skip` still fires and
+  passes its input state on, so its successors are unaffected, and the table
+  says so rather than omitting it.
+* Removed `--only`. It named a single step of a window that no longer exists;
+  `--target` names a job and its dependencies instead.
 
 ## Steps
 

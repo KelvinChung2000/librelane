@@ -104,8 +104,11 @@ and a consecutive states, i.e.
 So, for a flow of {math}`n` steps, the final state, {math}`State_{n}` will be
 the output of the entire flow.
 
-The default flow of LibreLane when run from the command-line is a SequentialFlow
-named [`Classic`](./flows.md#classic), which is based off of OpenLane.
+The default flow of LibreLane when run from the command-line is the workflow
+document named [`Classic`](./flows.md#classic), which is based off of OpenLane.
+A document declares jobs and the edges between them, and the engine runs it as a
+Petri net, so the equation above describes one job's step sequence rather than
+the whole flow.
 
 ## Configuration
 

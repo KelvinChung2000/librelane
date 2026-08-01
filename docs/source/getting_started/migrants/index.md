@@ -22,8 +22,8 @@ entirely backwards compatible, with some conveniences:
   separation of concerns, you still have access to metrics and reports from all
   previous steps.
   * In OpenLane, they are all extracted at the end.
-* The ability to use command-line flow control options such as `--from`, `--to`,
-  `--skip`, with the ability to resume from a snapshot of your
+* The ability to use command-line flow control options such as `--target`,
+  `--invalidate`, `--skip`, with the ability to resume from a snapshot of your
   design at certain parts of flows, without worrying about surprises related
   to state variables missing.
 

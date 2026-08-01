@@ -50,6 +50,39 @@ def _annotation_of(field: FieldInfo) -> Any:
     return Annotated[tuple([field.annotation, *field.metadata])]
 
 
+def _schema_annotation_of(field: FieldInfo) -> Any:
+    """
+    A field's annotation with only the metadata that shapes its schema.
+
+    :class:`Variable` carries deprecated names and the legacy validator in
+    fields of its own, so reattaching those markers here would restate them and
+    make every annotation an ``Annotated`` alias -- including the plain ``bool``
+    and ``int`` ones, which several callers compare against a bare type with
+    ``==``. What is not restated anywhere is metadata that carries a Pydantic
+    schema, such as the one behind :data:`librelane.common.Path`: dropping that
+    leaves a bare ``pathlib.Path``, which under strict validation rejects the
+    string a command-line argument arrives as.
+
+    Parameters
+    ----------
+    field : FieldInfo
+        The model field to read.
+
+    Returns
+    -------
+    Any
+        The annotation to give :class:`Variable`.
+    """
+    schema_metadata = [
+        item
+        for item in field.metadata
+        if not isinstance(item, (_DeprecatedNames, _LegacyValidator))
+    ]
+    if not schema_metadata:
+        return field.annotation
+    return Annotated[tuple([field.annotation, *schema_metadata])]
+
+
 class BaseConfigModel(BaseModel, Mapping[str, Any]):
     """Immutable typed configuration with a compatibility Mapping facade."""
 
@@ -317,7 +350,7 @@ def model_to_variables(
         result.append(
             Variable(
                 name,
-                field.annotation,
+                _schema_annotation_of(field),
                 field.description or "",
                 default=default,
                 deprecated_names=list(deprecated),

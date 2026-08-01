@@ -34,7 +34,7 @@ import typer
 
 FLOW_OPTIONS = "Flow configuration options"
 RUN_OPTIONS = "Run options"
-SEQUENTIAL_OPTIONS = "Sequential flow controls"
+WORKFLOW_OPTIONS = "Workflow controls"
 PDK_OPTIONS = "PDK options"
 DISPLAY_OPTIONS = "Logging and display options"
 COPY_OPTIONS = "Copy final views"
@@ -150,30 +150,30 @@ JobsOption = Annotated[
         rich_help_panel=RUN_OPTIONS,
     ),
 ]
-FromOption = Annotated[
-    str | None,
+TargetOption = Annotated[
+    list[str] | None,
     typer.Option(
-        "--from",
-        "-F",
-        help="Force re-execution from this step ID onward, ignoring any reusable result for it and the steps after it. Earlier steps are taken from their previous results, and it is an error if one of them has none. Supported by sequential flows.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
+        "--target",
+        "-T",
+        help="Run this job and everything it transitively needs, and nothing else. The run's final state is the named job's own output, so '--target floorplan' returns exactly what floorplan produced. May be specified multiple times.",
+        rich_help_panel=WORKFLOW_OPTIONS,
     ),
 ]
-ToOption = Annotated[
-    str | None,
+InvalidateOption = Annotated[
+    list[str] | None,
     typer.Option(
-        "--to",
-        "-T",
-        help="Stop at this step ID. Supported by sequential flows.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
+        "--invalidate",
+        "-F",
+        help="Treat this job and every job downstream of it as having no reusable result, forcing them to re-run. Use this when something a resume key cannot hash has changed, such as a CAD tool binary or an edited script. May be specified multiple times.",
+        rich_help_panel=WORKFLOW_OPTIONS,
     ),
 ]
 ExplainOption = Annotated[
     bool,
     typer.Option(
         "--explain",
-        help="Print which steps this configuration would run, and why each of the rest would not, then exit without running. Requires a sequential flow.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
+        help="Print which jobs this configuration would run, and why each of the rest would not, then exit without running.",
+        rich_help_panel=WORKFLOW_OPTIONS,
     ),
 ]
 SkipOption = Annotated[
@@ -181,16 +181,16 @@ SkipOption = Annotated[
     typer.Option(
         "--skip",
         "-S",
-        help="Skip this step ID. May be specified multiple times.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
+        help="Skip this job ID: it passes its input on unchanged instead of running its steps, and every job after it runs as it otherwise would. May be specified multiple times.",
+        rich_help_panel=WORKFLOW_OPTIONS,
     ),
 ]
 ReproducibleOption = Annotated[
     str | None,
     typer.Option(
         "--reproducible",
-        help="Create a reproducible for this step ID, then abort the flow.",
-        rich_help_panel=SEQUENTIAL_OPTIONS,
+        help="Create a reproducible for this step, named either '<step ID>' or '<job>/<step ID>', then abort the flow. Step IDs are matched case-insensitively and accept fnmatch wildcards, and must resolve to exactly one step.",
+        rich_help_panel=WORKFLOW_OPTIONS,
     ),
 ]
 LogLevelOption = Annotated[

@@ -151,7 +151,7 @@ must never depend on the native path.** Your registration must still emit
 every neutral view your job promises (`DEF`, netlist, `SDC`) through the
 ordinary `outputs` mechanism, exactly as if the native shortcut did not exist,
 so that a flow which switches providers at the next job boundary, or a
-`--from`/`--to` invocation that starts partway through your sequence, still
+`--target` invocation that stops partway through the graph, still
 has something to consume. The native view is a performance path between your
 own steps, not a second, silent contract with the rest of the flow.
 
@@ -161,7 +161,7 @@ Each step in your `steps` list is a separate subprocess: a fresh interpreter
 start, a licence checkout if your tool needs one, and (unless you carry a
 native view between your own steps) a full read of the technology LEF and
 every standard-cell LEF. Decomposing finely, one step per logical operation,
-is what makes gating, `--from`/`--to`, and native-view boundaries between
+is what makes gating, `--reproducible`, and native-view boundaries between
 different providers all work uniformly; it is also what pays that startup
 cost repeatedly. Weigh the two: a vendor tool with a fast, persistent-session
 mode should still expose that session as one subprocess per job from

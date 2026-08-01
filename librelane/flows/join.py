@@ -99,7 +99,11 @@ def join_states(
     return _join(tokens, _job_resolver(job, source))
 
 
-def join_sink_states(tokens: dict[str, State], flow: str) -> State:
+def join_sink_states(
+    tokens: dict[str, State],
+    flow: str,
+    excluded_final: str | None = None,
+) -> State:
     """
     Merges the states the flow's leaf jobs left on their sink places.
 
@@ -121,6 +125,13 @@ def join_sink_states(tokens: dict[str, State], flow: str) -> State:
         Each leaf job's output state, keyed by that job.
     flow : str
         The flow's name, named in errors.
+    excluded_final : str | None
+        The job the document's ``final`` names, when this run left it out of
+        the graph. Prescribing ``final`` is only a remedy for a document that
+        does not declare one; a run narrowed away from a declared ``final``
+        reaches this join with its remedy already written down and unusable,
+        and telling its author to write it again would send them to a line of
+        YAML that is already correct.
 
     Returns
     -------
@@ -143,7 +154,7 @@ def join_sink_states(tokens: dict[str, State], flow: str) -> State:
         )
     if len(tokens) == 1:
         return next(iter(tokens.values()))
-    return _join(tokens, _sink_resolver(flow))
+    return _join(tokens, _sink_resolver(flow, excluded_final))
 
 
 def _job_resolver(job: str, source: dict[str, str]) -> _Resolve:
@@ -180,21 +191,34 @@ def _job_resolver(job: str, source: dict[str, str]) -> _Resolve:
     return resolve
 
 
-def _sink_resolver(flow: str) -> _Resolve:
+def _sink_resolver(flow: str, excluded_final: str | None) -> _Resolve:
     """
     Returns
     -------
-    A resolver that always raises, naming ``final`` as the remedy.
+    A resolver that always raises, naming ``final`` as the remedy -- or, when
+    the run excluded the ``final`` the document already declares, naming the
+    flow control that excluded it.
     """
 
     def resolve(kind: str, key: str, produced: list[tuple[str, Any]]) -> Any:
         producers = [producer for producer, _ in produced]
-        raise JoinConflictError(
+        opening = (
             f"The final state of flow '{flow}' joins leaf jobs {producers}, "
             f"which produced different values for {kind} '{key}'. No job's "
-            f"'source' can resolve this, because the join is not a job. "
-            f"Declare the top-level 'final' key naming the job whose state the "
-            f"flow returns, for example 'final: {producers[0]}'."
+            f"'source' can resolve this, because the join is not a job."
+        )
+        if excluded_final is None:
+            raise JoinConflictError(
+                f"{opening} Declare the top-level 'final' key naming the job "
+                f"whose state the flow returns, for example "
+                f"'final: {producers[0]}'."
+            )
+        raise JoinConflictError(
+            f"{opening} This flow declares 'final: {excluded_final}', but "
+            f"this run's --target left that job out, so the graph that ran "
+            f"has these leaves instead and the document's rule does not "
+            f"reach them. Add '{excluded_final}' to --target, or narrow "
+            f"--target to one of {producers}."
         )
 
     return resolve

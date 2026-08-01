@@ -25,12 +25,14 @@ This is also what a bare ``librelane <config.json>`` dispatches to, via
 from dataclasses import dataclass, replace
 import glob
 from importlib.resources import files
+from inspect import Parameter, signature
 import os
 from pathlib import Path
 import shutil
 import sys
 import tempfile
 import traceback
+from typing import Any
 
 from loguru import logger
 import typer
@@ -39,7 +41,9 @@ from librelane import common
 from librelane.__version__ import __version__
 from librelane.config import Config, InvalidConfig, PassedDirectoryError
 from librelane.container import run_in_container
-from librelane.flows import Explanation, Flow, FlowError, FlowException, SequentialFlow
+from librelane.flows import Explanation, Flow, FlowError, FlowException
+from librelane.flows.engine import Workflow
+from librelane.flows.spec import FlowSpec
 from librelane.state import DesignFormat, State
 from librelane.cli.options import (
     CondensedOption,
@@ -52,9 +56,9 @@ from librelane.cli.options import (
     EfSaveViewsOption,
     FlowNameOption,
     ForceRunDirOption,
-    FromOption,
     InitialStateElementOption,
     InitialStateFilesOption,
+    InvalidateOption,
     JobsOption,
     LastRunOption,
     LogLevelOption,
@@ -71,7 +75,7 @@ from librelane.cli.options import (
     ExplainOption,
     SkipOption,
     SmokeTestOption,
-    ToOption,
+    TargetOption,
     UseCielOption,
 )
 from librelane.cli.runtime import (
@@ -81,6 +85,18 @@ from librelane.cli.runtime import (
     load_initial_state,
     resolve_pdk_options,
     validate_flow_name,
+)
+
+
+#: Every parameter :meth:`librelane.flows.engine.Workflow.run` declares by
+#: name, which is to say every keyword it can be relied on to read. Read from
+#: the engine rather than restated, so that renaming one there is caught here
+#: rather than turning a command-line option into a silent no-op. See
+#: :func:`bind_workflow_arguments` for why that is possible at all.
+_WORKFLOW_RUN_PARAMETERS = frozenset(
+    name
+    for name, parameter in signature(Workflow.run).parameters.items()
+    if parameter.kind is not Parameter.VAR_KEYWORD
 )
 
 
@@ -99,8 +115,8 @@ class FlowRequest:
     pdk: ResolvedPdkOptions
     tag: str | None
     last_run: bool
-    frm: str | None
-    to: str | None
+    target: tuple[str, ...]
+    invalidate: tuple[str, ...]
     skip: tuple[str, ...]
     explain: bool
     overwrite: bool
@@ -114,9 +130,22 @@ class FlowRequest:
     ef_save_views_to: str | None
 
 
-def select_flow(request: FlowRequest) -> type[Flow]:
-    """Pick the flow class named by --flow, else by the config file's meta object."""
-    target_flow: type[Flow] | None = Flow.factory.get("Classic")
+def select_flow(request: FlowRequest) -> FlowSpec:
+    """
+    Picks the flow document named by ``--flow``, else by the configuration
+    file's ``meta`` object, else Classic.
+
+    Parameters
+    ----------
+    request : FlowRequest
+        The gathered invocation.
+
+    Returns
+    -------
+    FlowSpec
+        The document to run.
+    """
+    target_flow: FlowSpec | None = Flow.factory.get_document("Classic")
 
     for config_file in request.config_files:
         if meta := Config.get_meta(config_file):
@@ -132,20 +161,24 @@ def select_flow(request: FlowRequest) -> type[Flow]:
                         f"declare a flow class and name it here instead."
                     )
                     raise typer.Exit(1)
-                if found := Flow.factory.get(meta.flow):
+                if found := Flow.factory.get_document(meta.flow):
                     target_flow = found
                 else:
                     logger.error(
                         f"Unknown flow '{meta.flow}' specified in the "
-                        "configuration file's 'meta' object."
+                        f"configuration file's 'meta' object. Registered "
+                        f"flows: {', '.join(Flow.factory.list())}."
                     )
                     raise typer.Exit(1)
 
     if request.flow_name is not None:
-        if found := Flow.factory.get(request.flow_name):
+        if found := Flow.factory.get_document(request.flow_name):
             target_flow = found
         else:
-            logger.error(f"Unknown flow '{request.flow_name}'.")
+            logger.error(
+                f"Unknown flow '{request.flow_name}'. Registered flows: "
+                f"{', '.join(Flow.factory.list())}."
+            )
             raise typer.Exit(1)
 
     assert target_flow is not None, (
@@ -206,6 +239,76 @@ def format_explanation(explanation: Explanation) -> str:
     return "\n".join(lines)
 
 
+def format_job_explanation(explanation: Explanation) -> str:
+    """
+    Renders the job half of an :class:`librelane.flows.Explanation` as a
+    fixed-width table.
+
+    Parameters
+    ----------
+    explanation : Explanation
+        What the workflow reported.
+
+    Returns
+    -------
+    str
+        The table, without a trailing newline.
+    """
+    width = max((len(d.job_id) for d in explanation.jobs), default=0)
+    needs_width = max(
+        (len(" ".join(d.needs) or "-") for d in explanation.jobs), default=0
+    )
+    lines = [
+        f"{'JOB'.ljust(width)}  RUN  MECHANISM     {'NEEDS'.ljust(needs_width)}  REASON"
+    ]
+    for disposition in explanation.jobs:
+        mark = "yes" if disposition.will_run else "no "
+        mechanism = (disposition.mechanism or "").ljust(13)
+        needs = (" ".join(disposition.needs) or "-").ljust(needs_width)
+        lines.append(
+            f"{disposition.job_id.ljust(width)}  {mark}  {mechanism} "
+            f"{needs}  {disposition.reason}"
+        )
+    return "\n".join(lines)
+
+
+def bind_workflow_arguments(**arguments: Any) -> dict[str, Any]:
+    """
+    Checks that every flow-control keyword this module hands to
+    :meth:`librelane.flows.Flow.start` is one
+    :meth:`librelane.flows.engine.Workflow.run` declares by name.
+
+    ``Flow.start`` forwards its ``**kwargs`` into ``run`` unchanged, and ``run``
+    must keep a ``**kwargs`` of its own because ``start`` always passes
+    ``initial_state_given=`` and ``starting_ordinal=``. A misspelled keyword is
+    therefore accepted in silence and does nothing at all, and the command line
+    is the only layer that can refuse it.
+
+    Parameters
+    ----------
+    **arguments
+        The keywords to bind.
+
+    Returns
+    -------
+    dict[str, Any]
+        The same keywords, once every one of them is bound.
+
+    Raises
+    ------
+    AssertionError
+        If any keyword would land in ``run``'s ``**kwargs``. This is a defect
+        in LibreLane rather than in an invocation: nothing a user types reaches
+        these names.
+    """
+    unbound = sorted(set(arguments) - _WORKFLOW_RUN_PARAMETERS)
+    assert not unbound, (
+        f"{unbound} would be swallowed by Workflow.run's '**kwargs' rather "
+        f"than bound. Please report this as a bug."
+    )
+    return arguments
+
+
 def start_flow(request: FlowRequest) -> None:
     """Build the requested flow, run it, and save any requested view snapshots."""
     try:
@@ -213,10 +316,10 @@ def start_flow(request: FlowRequest) -> None:
             logger.error("No config file(s) have been provided.")
             raise typer.Exit(1)
 
-        target_flow = select_flow(request)
         initial_state = apply_initial_state_overrides(request)
 
-        flow = target_flow(
+        flow = Workflow(
+            select_flow(request),
             list(request.config_files),
             pdk_root=request.pdk.pdk_root,
             pdk=request.pdk.pdk,
@@ -250,18 +353,11 @@ def start_flow(request: FlowRequest) -> None:
         raise typer.Exit(1) from error
 
     if request.explain:
-        if not isinstance(flow, SequentialFlow):
-            logger.error(
-                f"--explain requires a sequential flow; '{type(flow).__name__}' "
-                f"writes its own run() and has no step list to predict."
-            )
-            raise typer.Exit(1)
         typer.echo(
-            format_explanation(
+            format_job_explanation(
                 flow.explain(
-                    frm=request.frm,
-                    to=request.to,
-                    skip=list(request.skip),
+                    target=list(request.target) or None,
+                    skip=list(request.skip) or None,
                 )
             )
         )
@@ -271,13 +367,20 @@ def start_flow(request: FlowRequest) -> None:
         state_out = flow.start(
             tag=request.tag,
             last_run=request.last_run,
-            frm=request.frm,
-            to=request.to,
-            skip=request.skip,
             with_initial_state=initial_state,
-            reproducible=request.reproducible,
             _force_run_dir=request.force_run_dir,
             overwrite=request.overwrite,
+            # `run` reads `None` as "unrestricted" and an empty collection as
+            # "restricted to nothing": `target=()` selects no job at all,
+            # builds an empty net and dies in the sink join. The request holds
+            # tuples, so this boundary is where an option nobody gave has to
+            # become `None` again.
+            **bind_workflow_arguments(
+                target=list(request.target) or None,
+                invalidate=list(request.invalidate) or None,
+                skip=list(request.skip) or None,
+                reproducible=request.reproducible,
+            ),
         )
     except FlowException as error:
         logger.error(f"The flow encountered an unexpected error:\n{error}")
@@ -320,8 +423,8 @@ def run_included_example(
             pdk=replace(request.pdk, scl=None, pad=None),
             tag=None,
             last_run=False,
-            frm=None,
-            to=None,
+            target=(),
+            invalidate=(),
             reproducible=None,
             skip=(),
             explain=False,
@@ -403,8 +506,8 @@ def run(
     design_dir: DesignDirOption = None,
     tag: RunTagOption = None,
     last_run: LastRunOption = False,
-    frm: FromOption = None,
-    to: ToOption = None,
+    target: TargetOption = None,
+    invalidate: InvalidateOption = None,
     skip: SkipOption = None,
     explain: ExplainOption = False,
     overwrite: OverwriteOption = False,
@@ -466,8 +569,8 @@ def run(
         ),
         tag=tag,
         last_run=last_run,
-        frm=frm,
-        to=to,
+        target=tuple(target or []),
+        invalidate=tuple(invalidate or []),
         skip=tuple(skip or []),
         explain=explain,
         overwrite=overwrite,

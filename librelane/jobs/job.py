@@ -64,9 +64,14 @@ class Job(metaclass=JobMetaclass):
     id : str
         A lowercase alphanumeric/underscore identifier, for example
         ``detailed_routing``. This is what appears in the ``TOOLS``
-        configuration key. It is not accepted by ``--from``/``--to``, which
-        resolve concrete step IDs only; re-entering a flow at a job is not
-        implemented.
+        configuration key, and what ``--target``, ``--invalidate`` and
+        ``--skip`` name on the command line. ``--reproducible`` is the one that
+        addresses a concrete step rather than a job.
+
+        A workflow document gives each job its own id, which is not always the
+        id of the template it uses: ``classic.yaml`` runs the ``streamout``
+        template under ``magic_streamout`` and ``klayout_streamout``, and it is
+        the document's names that all four options take.
     full_name : str
         A human-readable name.
     default_provider : str | tuple[str, ...] | None

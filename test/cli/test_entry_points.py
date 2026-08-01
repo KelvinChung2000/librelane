@@ -41,6 +41,54 @@ runner = CliRunner()
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+
+def make_request(tmp_path: Path, **overrides):
+    """
+    A :class:`librelane.cli.run.FlowRequest` with every field at a neutral
+    value, so a test names only the field it is about.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Somewhere to point the PDK root at.
+    **overrides
+        Fields to replace.
+
+    Returns
+    -------
+    librelane.cli.run.FlowRequest
+        The request.
+    """
+    from dataclasses import replace
+
+    from librelane.cli.run import FlowRequest
+    from librelane.cli.runtime import ResolvedPdkOptions
+
+    neutral = FlowRequest(
+        config_files=(),
+        flow_name=None,
+        pdk=ResolvedPdkOptions(
+            pdk_root=str(tmp_path), pdk="sky130A", scl=None, pad=None
+        ),
+        tag=None,
+        last_run=False,
+        target=(),
+        invalidate=(),
+        skip=(),
+        explain=False,
+        overwrite=False,
+        reproducible=None,
+        initial_state=None,
+        initial_state_overrides=(),
+        config_overrides=(),
+        design_dir=None,
+        force_run_dir=None,
+        save_views_to=None,
+        ef_save_views_to=None,
+    )
+    return replace(neutral, **overrides)
+
+
 # Every module that must stay executable as ``python -m <module>``, with the
 # in-repo consumer that forces us to keep it.
 SUPPORTED_MODULE_INVOCATIONS = {
@@ -329,35 +377,11 @@ class TestMetaFlowSelection:
     """`meta.flow` names a registered flow, and nothing else."""
 
     def _select(self, tmp_path: Path, meta: dict):
-        from librelane.cli.run import FlowRequest, select_flow
-        from librelane.cli.runtime import ResolvedPdkOptions
+        from librelane.cli.run import select_flow
 
         config = tmp_path / "config.json"
         config.write_text(json.dumps({"meta": meta}), encoding="utf8")
-        return select_flow(
-            FlowRequest(
-                config_files=(str(config),),
-                flow_name=None,
-                pdk=ResolvedPdkOptions(
-                    pdk_root=str(tmp_path), pdk="sky130A", scl=None, pad=None
-                ),
-                tag=None,
-                last_run=False,
-                frm=None,
-                to=None,
-                skip=(),
-                explain=False,
-                overwrite=False,
-                reproducible=None,
-                initial_state=None,
-                initial_state_overrides=(),
-                config_overrides=(),
-                design_dir=None,
-                force_run_dir=None,
-                save_views_to=None,
-                ef_save_views_to=None,
-            )
-        )
+        return select_flow(make_request(tmp_path, config_files=(str(config),)))
 
     def test_a_step_list_is_rejected(self, tmp_path: Path):
         """
@@ -376,7 +400,7 @@ class TestMetaFlowSelection:
     def test_a_registered_flow_name_is_accepted(self, tmp_path: Path):
         selected = self._select(tmp_path, {"version": 2, "flow": "Classic"})
 
-        assert selected.__name__ == "Classic"
+        assert selected.name == "Classic"
 
     def test_an_unknown_flow_name_is_still_rejected(self, tmp_path: Path):
         import typer
@@ -385,6 +409,267 @@ class TestMetaFlowSelection:
             self._select(tmp_path, {"version": 2, "flow": "NoSuchFlow"})
 
         assert raised.value.exit_code == 1
+
+    @pytest.mark.parametrize("source", ["meta", "flag"])
+    def test_an_unknown_flow_name_lists_the_registered_flows(
+        self,
+        source: str,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """
+        A name that does not resolve is exactly the moment a user needs to see
+        what does. `--flow` is also screened by `validate_flow_name`, but
+        `meta.flow` is not screened anywhere else, and `select_flow` is called
+        directly by `librelane run`.
+        """
+        import typer
+
+        from librelane.cli.run import select_flow
+
+        config = tmp_path / "config.json"
+        config.write_text("{}", encoding="utf8")
+        request = make_request(
+            tmp_path,
+            config_files=(str(config),),
+            flow_name="NoSuchFlow" if source == "flag" else None,
+        )
+        if source == "meta":
+            config.write_text(
+                json.dumps({"meta": {"version": 2, "flow": "NoSuchFlow"}}),
+                encoding="utf8",
+            )
+
+        with pytest.raises(typer.Exit):
+            select_flow(request)
+
+        assert "Classic" in caplog.text
+        assert "VHDLClassic" in caplog.text
+
+
+class TestFlowControlArguments:
+    """
+    What ``--target``, ``--invalidate``, ``--skip`` and ``--reproducible`` hand
+    to :meth:`librelane.flows.engine.Workflow.run`.
+
+    :class:`librelane.cli.run.FlowRequest` stores them as tuples, and an empty
+    tuple is not what ``run`` reads as "unset": ``target=()`` selects no jobs
+    at all, builds an empty net and dies in the sink join, while
+    ``target=None`` runs the whole graph. The normalisation therefore has to
+    happen at this boundary, and it is what these pin.
+    """
+
+    def _started(self, mocker, tmp_path: Path, **overrides) -> dict:
+        import librelane.cli.run as run_module
+
+        mocker.patch.object(run_module, "select_flow")
+        workflow = mocker.patch.object(run_module, "Workflow")
+        run_module.start_flow(
+            make_request(tmp_path, config_files=("config.json",), **overrides)
+        )
+        return workflow.return_value.start.call_args.kwargs
+
+    def test_an_unspecified_target_is_none_and_not_an_empty_tuple(
+        self, mocker, tmp_path: Path
+    ):
+        started = self._started(mocker, tmp_path)
+
+        assert started["target"] is None
+        assert started["invalidate"] is None
+        assert started["skip"] is None
+
+    def test_a_specified_target_reaches_the_workflow(self, mocker, tmp_path: Path):
+        started = self._started(
+            mocker,
+            tmp_path,
+            target=("floorplan", "cts"),
+            invalidate=("synthesis",),
+            skip=("lint",),
+        )
+
+        assert started["target"] == ["floorplan", "cts"]
+        assert started["invalidate"] == ["synthesis"]
+        assert started["skip"] == ["lint"]
+
+    def test_every_flow_control_keyword_is_a_named_parameter_of_run(self):
+        """
+        `Flow.start` forwards `**kwargs` into `run` unchanged, and
+        `Workflow.run` has to keep a `**kwargs` of its own because `start`
+        always passes `initial_state_given=` and `starting_ordinal=`. A
+        misspelled keyword is therefore accepted and does nothing, and this
+        layer is the only one that can refuse it.
+        """
+        from librelane.cli.run import (
+            _WORKFLOW_RUN_PARAMETERS,
+            bind_workflow_arguments,
+        )
+
+        assert bind_workflow_arguments(target=None, skip=None) == {
+            "target": None,
+            "skip": None,
+        }
+
+        # The claim in the name: every keyword the CLI forwards is a real
+        # named parameter of Workflow.run. Asserted against the set derived
+        # from run's signature, so renaming a parameter on the engine fails
+        # here rather than being swallowed by its '**kwargs'. Without this the
+        # test passed under such a rename -- the two _started tests caught it,
+        # not the one advertising it.
+        assert {
+            "target",
+            "invalidate",
+            "skip",
+            "reproducible",
+        } <= _WORKFLOW_RUN_PARAMETERS
+
+    def test_a_keyword_run_does_not_declare_is_refused(self):
+        from librelane.cli.run import bind_workflow_arguments
+
+        with pytest.raises(AssertionError, match="targt"):
+            bind_workflow_arguments(targt=["floorplan"])
+
+
+class TestJobExplanationTable:
+    def test_explain_prints_a_job_table(self):
+        from librelane.cli.run import format_job_explanation
+        from librelane.flows import Explanation, JobDisposition
+
+        rendered = format_job_explanation(
+            Explanation(
+                steps=(),
+                unselected_jobs=(),
+                jobs=(
+                    JobDisposition("lint", (), True, "will run", None),
+                    JobDisposition("synthesis", ("lint",), True, "will run", None),
+                    JobDisposition(
+                        "klayout_streamout",
+                        ("ir_drop",),
+                        False,
+                        "'RUN_KLAYOUT_STREAMOUT' is false",
+                        "condition",
+                    ),
+                ),
+            )
+        )
+
+        assert "JOB" in rendered
+        assert "NEEDS" in rendered
+        assert "klayout_streamout" in rendered
+        assert "condition" in rendered
+        assert "Jobs contributing no steps" not in rendered
+
+    def test_explain_renders_the_job_half_and_exits(self, mocker, tmp_path: Path):
+        """
+        `--explain` must reach `format_job_explanation`, not the step-table
+        `format_explanation` that phase 5 deletes with the sequential engine.
+        """
+        import typer
+
+        import librelane.cli.run as run_module
+
+        mocker.patch.object(run_module, "select_flow")
+        workflow = mocker.patch.object(run_module, "Workflow")
+        formatter = mocker.patch.object(run_module, "format_job_explanation")
+
+        with pytest.raises(typer.Exit) as raised:
+            run_module.start_flow(
+                make_request(
+                    tmp_path,
+                    config_files=("config.json",),
+                    explain=True,
+                    target=("floorplan",),
+                    skip=("lint",),
+                )
+            )
+
+        assert raised.value.exit_code == 0
+        workflow.return_value.explain.assert_called_once_with(
+            target=["floorplan"], skip=["lint"]
+        )
+        formatter.assert_called_once_with(workflow.return_value.explain.return_value)
+        workflow.return_value.start.assert_not_called()
+
+    def test_an_unconstrained_explain_passes_none_not_an_empty_tuple(
+        self, mocker, tmp_path: Path
+    ):
+        """
+        The same normalisation `start_flow` does for a run, on the explain
+        path. `FlowRequest` stores tuples, and an empty one is not `None`: it
+        would select no jobs at all, so every row would read "not in the
+        --target subgraph" and `--explain` would be useless without failing.
+        """
+        import typer
+
+        import librelane.cli.run as run_module
+
+        mocker.patch.object(run_module, "select_flow")
+        workflow = mocker.patch.object(run_module, "Workflow")
+        mocker.patch.object(run_module, "format_job_explanation")
+
+        with pytest.raises(typer.Exit):
+            run_module.start_flow(
+                make_request(
+                    tmp_path,
+                    config_files=("config.json",),
+                    explain=True,
+                )
+            )
+
+        workflow.return_value.explain.assert_called_once_with(target=None, skip=None)
+
+
+class TestWorkflowOptionsAreParsed:
+    @pytest.mark.parametrize(
+        ("argv", "field", "expected"),
+        [
+            (["--target", "floorplan", "-T", "cts"], "target", ("floorplan", "cts")),
+            (["--invalidate", "synthesis"], "invalidate", ("synthesis",)),
+            (["-F", "synthesis"], "invalidate", ("synthesis",)),
+            ([], "target", ()),
+        ],
+    )
+    def test_option_reaches_the_request(
+        self,
+        argv: list[str],
+        field: str,
+        expected: tuple[str, ...],
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        import librelane.cli.run as run_module
+
+        config = tmp_path / "config.json"
+        config.write_text("{}", encoding="utf8")
+        captured: dict = {}
+        monkeypatch.setattr(
+            run_module, "start_flow", lambda request: captured.update(request=request)
+        )
+
+        result = runner.invoke(
+            cli,
+            [
+                "--manual-pdk",
+                "--pdk-root",
+                str(tmp_path),
+                *argv,
+                str(config),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert getattr(captured["request"], field) == expected
+
+    @pytest.mark.parametrize("removed", ["--from", "--to"])
+    def test_the_sequential_window_options_are_gone(self, removed: str):
+        """
+        A step window is not expressible over a graph, so `--from` and `--to`
+        are replaced rather than reinterpreted. They must fail as unknown
+        options, not be quietly accepted and dropped.
+        """
+        result = runner.invoke(cli, ["run", removed, "whatever"])
+
+        assert result.exit_code != 0
+        assert "No such option" in Text.from_ansi(result.output).plain
 
 
 class TestExplainOption:

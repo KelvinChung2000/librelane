@@ -1310,6 +1310,81 @@ def test_the_out_of_subgraph_error_names_reproducible_when_it_narrowed(
 
 
 @mock_variables([flow_module, step_module])
+def test_the_out_of_subgraph_error_summarises_a_long_selection(
+    counting_steps, minimal_design, mock_pdk
+):
+    """
+    ``classic.yaml`` declares 48 jobs, so spelling the whole selection out
+    buries the one name the reader can act on. What has to survive is the job
+    they named and the option that excluded it.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    chain = {
+        f"job{index}": {
+            "steps": ["Test.EngineFirst"],
+            **({"needs": [f"job{index - 1}"]} if index else {}),
+        }
+        for index in range(30)
+    }
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Long",
+            "jobs": {**chain, "detached": {"steps": ["Test.EngineSecond"]}},
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="long", target=["job29"], skip=["detached"])
+
+    message = str(exc_info.value)
+    assert "detached" in message
+    assert "--target" in message
+    assert "and 20 more" in message
+    assert "job29" not in message
+
+
+@mock_variables([flow_module, step_module])
+def test_a_targeted_run_that_excludes_final_says_so_when_its_leaves_disagree(
+    contract_job, counting_steps, minimal_design, mock_pdk
+):
+    """
+    A document declaring ``final:`` and a ``--target`` narrowed away from it
+    reaches the sink join with its own remedy already declared and unusable.
+    The error must name the flow control that excluded it rather than
+    prescribe the key the document already has.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.join import JoinConflictError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Disagreeing",
+            "jobs": {
+                "root": {"steps": ["Test.EngineFirst"]},
+                "left": {"needs": ["root"], "uses": "engine_contract/honest"},
+                "right": {"needs": ["root"], "uses": "engine_contract/honest"},
+                "signoff": {"needs": ["root"], "steps": ["Test.EngineSecond"]},
+            },
+            "final": "signoff",
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(JoinConflictError) as exc_info:
+        flow.start(tag="excluded-final", target=["left", "right"])
+
+    message = str(exc_info.value)
+    assert "final: signoff" in message
+    assert "--target" in message
+
+
+@mock_variables([flow_module, step_module])
 def test_invalidate_outside_the_target_subgraph_is_an_error(
     counting_steps, minimal_design, mock_pdk
 ):
@@ -1742,6 +1817,90 @@ def test_reproducible_naming_a_step_no_job_runs_is_an_error(
     message = str(exc_info.value)
     assert "Test.EngineSecond" in message
     assert "first" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_accepts_a_wildcard(
+    counting_steps, minimal_design, mock_pdk, mocker
+):
+    """
+    ``--reproducible`` is reached for when something has already gone wrong,
+    and its argument is a step ID nobody remembers exactly. Wildcards and
+    case-insensitivity are what the sequential flow's ``--reproducible``
+    always accepted, and pointing the switch at a document may not quietly
+    take them away.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    _, _, Second = counting_steps
+    created = mocker.patch.object(Second, "create_reproducible")
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="repro-wildcard", reproducible="*enginesecond")
+
+    assert created.call_count == 1
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_refuses_a_wildcard_matching_several_steps(
+    counting_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "first": {"steps": ["Test.EngineFirst"]},
+                "second": {"needs": ["first"], "steps": ["Test.EngineSecond"]},
+            },
+        }
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="repro-ambiguous-wildcard", reproducible="Test.Engine*")
+
+    message = str(exc_info.value)
+    assert "Test.EngineFirst" in message
+    assert "Test.EngineSecond" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_suggests_a_near_miss(counting_steps, minimal_design, mock_pdk):
+    """
+    A typo in a step ID is the ordinary way this argument is got wrong, and
+    the sequential flow answered it with a suggestion rather than a bare
+    refusal. The suggestion is named and never acted on: writing a
+    reproducible for a step the user did not name is worse than stopping.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
+    )
+
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="repro-typo", reproducible="Test.EngineFrist")
+
+    message = str(exc_info.value)
+    assert "Did you mean" in message
+    assert "Test.EngineFirst" in message
 
 
 @mock_variables([flow_module, step_module])

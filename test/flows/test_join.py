@@ -245,6 +245,30 @@ def test_a_sink_conflict_prescribes_final_and_not_source():
     assert "flow 'Classic'" in message
 
 
+def test_a_sink_conflict_under_a_target_says_the_final_was_excluded():
+    """
+    A document that already declares ``final: signoff``, run with ``--target``
+    narrowed away from it, hits this join with its declared remedy in place and
+    unusable. Prescribing a ``final`` the document has and the run excluded
+    would send the reader to a line of YAML that is already correct.
+    """
+    with pytest.raises(JoinConflictError) as exc_info:
+        join_sink_states(
+            {
+                "magic_streamout": _magic_streamout(),
+                "klayout_streamout": _klayout_streamout(),
+            },
+            "Classic",
+            excluded_final="signoff",
+        )
+
+    message = str(exc_info.value)
+    assert "signoff" in message
+    assert "--target" in message
+    # The document's own remedy is not repeated: it is already declared.
+    assert "final: magic_streamout" not in message
+
+
 def test_a_sink_conflict_on_a_metric_reads_the_same_way():
     left = State({}, metrics={"magic__drc_error__count": 100})
     right = State({}, metrics={"magic__drc_error__count": 200})

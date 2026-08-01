@@ -181,6 +181,51 @@ def test_legacy_validator_survives_model_bridge():
     assert warnings == ["VALUE"]
 
 
+def test_a_path_variable_still_accepts_a_string_after_the_model_bridge(tmp_path):
+    """
+    Pydantic splits ``Annotated[T, m]`` into ``annotation=T`` and
+    ``metadata=[m]``, so a bridge that read ``field.annotation`` alone handed
+    `Variable` a bare ``pathlib.Path`` and lost the schema
+    :data:`librelane.common.Path` carries. Rebuilding a model from that
+    `Variable` and validating it strictly -- which is what
+    :func:`librelane.config.validation.validate_mapping` does for a
+    non-permissive configuration -- then rejected the string every
+    command-line path argument arrives as.
+    """
+    from librelane.common import Path
+    from librelane.config import BaseConfigModel, model_to_variables, variable
+    from librelane.config.validation import validate_mapping
+
+    class Example(BaseConfigModel):
+        DIRECTORY: Path = variable(description="Somewhere.")
+
+    variables = model_to_variables(Example)
+    final, _ = validate_mapping(
+        {"DIRECTORY": str(tmp_path)}, variables, permissive=False
+    )
+
+    assert final["DIRECTORY"] == tmp_path
+
+
+def test_the_model_bridge_leaves_a_plain_annotation_plain():
+    """
+    ``variable()`` appends a deprecated-names marker to every field, and
+    `Variable` carries deprecated names in a field of its own. Reattaching all
+    metadata indiscriminately would make even a `bool` an ``Annotated`` alias,
+    which the gating-variable checks in
+    :class:`librelane.flows.SequentialFlow` and
+    :mod:`librelane.flows.spec` compare against a bare type with ``==``.
+    """
+    from librelane.config import BaseConfigModel, model_to_variables, variable
+
+    class Example(BaseConfigModel):
+        FLAG: bool = variable(False, description="A flag.")
+
+    [bridged] = model_to_variables(Example)
+
+    assert bridged.type is bool
+
+
 def test_model_bridge_can_select_only_declared_fields():
     from librelane.config import BaseConfigModel, model_to_variables, variable
 

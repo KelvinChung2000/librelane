@@ -309,12 +309,12 @@ last source for each top-level key as a whole; if `config.json` also sets
   cannot express "use this vendor tool for floorplanning on this process."
 * `TOOLS` cannot come from a Tcl configuration file, for the same reason: Tcl
   evaluation needs process information that is not available this early.
-* A job id is not a `--from`/`--to` target. Those options resolve concrete
-  step IDs, so re-entering a flow at, say, `detailed_routing` is not
-  implemented, and `--from detailed_routing` is rejected with a suggestion
-  naming the step ID of whichever tool is currently selected. Resuming a run
-  therefore still means naming a step, and the step to name changes when
-  `TOOLS` changes.
+* A job id is what `--target`, `--invalidate` and `--skip` name, so those are
+  unaffected by a `TOOLS` change: `--target detailed_routing` means the same
+  thing whichever router is selected. `--reproducible` is the exception,
+  because it addresses one step inside a job rather than the job, so the step
+  ID it names changes when `TOOLS` changes. Write it as
+  `<job>/<step ID>` when a step ID runs in more than one job.
 * A selection can put two writers of one key on two branches that a workflow
   document runs concurrently, and nothing rejects it before the run. Selecting
   `{"lvs": "klayout"}` is the shipped example: that provider opens with
