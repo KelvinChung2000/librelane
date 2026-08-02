@@ -20,6 +20,7 @@ import textwrap
 from collections.abc import Iterable, Mapping, Sequence, Set
 from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Optional, Union
 
 from loguru import logger
@@ -339,6 +340,51 @@ class _InFlight:
     executed: int = 0
 
 
+@dataclass
+class _SweepProgress:
+    """
+    One sweep job's ``N`` concurrent pass executions, tracked from submission
+    until every one of them has resolved.
+
+    Each pass is its own future, submitted with its own :class:`_InFlight`
+    record, so that :meth:`Workflow.run`'s ``wait()`` loop -- which already
+    routes one resolved future to one record -- needs no second code path to
+    learn a pass finished. What it needs instead is somewhere to hold the
+    passes that *have* finished until the last one has, since nothing about
+    the sweep -- winner, contract, deferred errors -- can be decided from
+    fewer than all of them. This is that somewhere, keyed by the sweep job's
+    id in :meth:`Workflow.run`'s local ``sweeps`` mapping.
+
+    Parameters
+    ----------
+    job
+        The sweep job's id.
+    expected
+        How many passes this sweep declared (``len(job.iterations)``).
+    results
+        Each pass index (1-based) that finished without raising, mapped to
+        its output state.
+    errors
+        Each pass index that raised, mapped to what it raised.
+    records
+        Each pass index mapped to its own :class:`_InFlight` record, for
+        merging steps, reuse and execution counts into the run's totals once
+        the sweep settles -- and, for the winning pass only, its deferred
+        errors too.
+    """
+
+    job: str
+    expected: int
+    results: dict[int, State] = field(default_factory=dict)
+    errors: dict[int, BaseException] = field(default_factory=dict)
+    records: dict[int, _InFlight] = field(default_factory=dict)
+
+    @property
+    def complete(self) -> bool:
+        """Whether every pass this sweep declared has resolved, one way or the other."""
+        return len(self.results) + len(self.errors) == self.expected
+
+
 class Workflow(Flow):
     """
     Runs a :class:`librelane.flows.spec.FlowSpec`.
@@ -547,8 +593,8 @@ class Workflow(Flow):
         load_kwargs: Mapping[str, Any],
     ) -> dict[tuple[str, int], _ResolvedConfig]:
         """
-        Resolves one configuration per ring member per pass, for every ring
-        whose gate declares an explicit ``iterations`` schedule.
+        Resolves one configuration per pass, for every ring member of a
+        schedule-gated ring and for every ``mode: sweep`` job.
 
         Parameters
         ----------
@@ -561,25 +607,27 @@ class Workflow(Flow):
 
         Returns
         -------
-        ``(member, k)`` (1-based) mapped to that pass's configuration, for
-        every member of every ring whose gate schedules. A ring gated by
+        ``(job, k)`` (1-based) mapped to that pass's configuration: for every
+        member of every ring whose gate schedules, keyed by the member; for
+        every sweep job, keyed by the job itself, since a sweep is declared
+        on a single job with no ring around it at all. A ring gated by
         ``max`` instead contributes no entries: no pass changes any value, so
         every member of it keeps reading :attr:`job_configs` or
         :attr:`config` on every pass, exactly as a job outside any ring does.
 
-        Keyed by the job that declares ``iterations`` -- the ring's gate,
-        here -- and not by ring membership, because a sweep job's own
-        schedule (a single job, no ring at all) resolves through this exact
-        same shape of dictionary.
+        Keyed by the job that declares ``iterations`` -- the ring's gate, or
+        the sweep job itself -- and not by ring membership, which is what
+        lets both shapes share one dictionary and one resolution loop below.
 
         Raises
         ------
         FlowException
-            If a gate with a non-empty ``iterations`` is constructed over an
-            already-resolved :class:`librelane.config.Config`, for the same
-            reason :meth:`_resolve_job_configs` refuses one for a ``with``
-            block: an iteration entry has to layer into the sources, and a
-            resolved configuration no longer has any.
+            If a gate or a sweep job with a non-empty ``iterations`` is
+            constructed over an already-resolved
+            :class:`librelane.config.Config`, for the same reason
+            :meth:`_resolve_job_configs` refuses one for a ``with`` block: an
+            iteration entry has to layer into the sources, and a resolved
+            configuration no longer has any.
         """
         configs: dict[tuple[str, int], _ResolvedConfig] = {}
         for gate, members in self.rings.items():
@@ -615,6 +663,34 @@ class Workflow(Flow):
                         design_dir=str(self.design_dir),
                     )
                     configs[(member, k)] = resolved
+        for job_id, job_spec in self.spec.jobs.items():
+            if job_spec.mode != "sweep" or not job_spec.iterations:
+                continue
+            if isinstance(config, Config):
+                raise FlowException(
+                    f"Sweep job '{job_id}' of flow '{self.spec.name}' "
+                    f"declares 'iterations', but this flow was constructed "
+                    f"from a configuration that is already resolved, whose "
+                    f"sources are no longer available to layer the schedule "
+                    f"into. Pass the design's configuration file or mapping "
+                    f"instead."
+                )
+            job_values = (job_id, job_spec.values) if job_spec.values else None
+            for k, entry in enumerate(job_spec.iterations, start=1):
+                resolved, _ = Config.load(
+                    config_in=config,
+                    flow_config_vars=self.get_all_config_variables(),
+                    flow_values=self.values,
+                    job_values=job_values,
+                    iteration_values=(job_id, k, entry),
+                    config_override_strings=config_override_strings,
+                    pdk=load_kwargs.get("pdk"),
+                    pdk_root=load_kwargs.get("pdk_root"),
+                    scl=load_kwargs.get("scl"),
+                    pad=load_kwargs.get("pad"),
+                    design_dir=str(self.design_dir),
+                )
+                configs[(job_id, k)] = resolved
         return configs
 
     @staticmethod
@@ -796,6 +872,17 @@ class Workflow(Flow):
         executed_count = 0
         outputs: dict[str, State] = {}
         pending: dict[Future[State], _InFlight] = {}
+        #: Every pending future that is one pass of a sweep, mapped to which
+        #: sweep job and which pass. Sweep passes still live in ``pending``
+        #: too -- one future, one ``_InFlight``, exactly as an ordinary job's
+        #: does -- so ``wait()`` needs no second collection to block on; this
+        #: is only how a resolved future is told apart from an ordinary job's
+        #: once ``wait()`` returns it.
+        sweep_futures: dict[Future[State], tuple[str, int]] = {}
+        #: Every sweep job currently awaiting its remaining passes, keyed by
+        #: job id. An entry is removed the moment its last pass resolves,
+        #: whether the sweep goes on to settle cleanly or to fail.
+        sweeps: dict[str, _SweepProgress] = {}
 
         # The marking is not thread-safe and is not made so: every call into
         # `net` below happens on this thread. A lock would exist only to
@@ -840,6 +927,34 @@ class Workflow(Flow):
                                 outputs[name] = state_in
                                 self.progress_bar.end_stage()
                                 fired_pass_through = True
+                                continue
+                            if job.mode == "sweep":
+                                # Fan-out happens here, on this thread, never
+                                # inside a worker: a worker blocked waiting on
+                                # its own children would deadlock a saturated
+                                # pool the moment every thread is one of those
+                                # workers. The tokens were already consumed
+                                # and joined once, above -- every pass reads
+                                # the identical 'state_in' -- and start_stage
+                                # already ran once, above too, so the N
+                                # futures below are this one stage, not N of
+                                # them; end_stage is deferred to settlement.
+                                n = len(job.iterations)
+                                sweeps[name] = _SweepProgress(name, n)
+                                for k in range(1, n + 1):
+                                    pass_submitted = _InFlight(f"{name} (pass {k})")
+                                    future = get_tpe().submit(
+                                        self._execute_steps,
+                                        job,
+                                        state_in,
+                                        pass_submitted,
+                                        name in plan.forced,
+                                        plan.reproducible_at,
+                                        pass_index=k,
+                                        config=self.iteration_configs[(name, k)],
+                                    )
+                                    pending[future] = pass_submitted
+                                    sweep_futures[future] = (name, k)
                                 continue
                             submitted = _InFlight(name)
                             pending[
@@ -924,6 +1039,52 @@ class Workflow(Flow):
             done, _ = wait(pending, return_when=FIRST_COMPLETED)
             for future in done:
                 finished = pending.pop(future)
+                sweep_key = sweep_futures.pop(future, None)
+                if sweep_key is not None:
+                    job_id, k = sweep_key
+                    progress = sweeps[job_id]
+                    progress.records[k] = finished
+                    try:
+                        progress.results[k] = future.result()
+                    except _ReproducibleCreated as created:  # pragma: no cover
+                        # Structurally unreachable: _resolve_reproducible
+                        # refuses --reproducible on a sweep job before _plan
+                        # ever builds a reproducible_at that could name one,
+                        # so no sweep pass's _execute_steps call is ever
+                        # handed one to raise this over.
+                        raise AssertionError(
+                            f"sweep pass {k} of '{job_id}' wrote a "
+                            f"reproducible, which --reproducible refuses "
+                            f"for a sweep job before this point"
+                        ) from created
+                    except Exception as e:
+                        progress.errors[k] = e
+                    if not progress.complete:
+                        continue
+                    del sweeps[job_id]
+                    # Unconditional, exactly as an ordinary job's own record
+                    # merges into these same totals before its try/except
+                    # below: every pass's steps and reuse/execution counts
+                    # are real regardless of whether the sweep as a whole
+                    # goes on to settle cleanly.
+                    for pass_k in sorted(progress.records):
+                        steps_run.extend(progress.records[pass_k].steps)
+                    reused_count += sum(
+                        record.reused for record in progress.records.values()
+                    )
+                    executed_count += sum(
+                        record.executed for record in progress.records.values()
+                    )
+                    try:
+                        winner_state = self._settle_sweep(job_id, progress, deferred)
+                        net.fire(job_id, winner_state)
+                    except Exception as e:
+                        failures.append(f"Job '{job_id}': {e}")
+                    else:
+                        outputs[job_id] = winner_state
+                    finally:
+                        self.progress_bar.end_stage()
+                    continue
                 steps_run.extend(finished.steps)
                 deferred.extend(finished.deferred)
                 reused_count += finished.reused
@@ -1206,6 +1367,22 @@ class Workflow(Flow):
                         )
                     )
                     continue
+                if job.mode == "sweep":
+                    assert job.select is not None, (
+                        "spec.py requires 'select' on every sweep job"
+                    )
+                    metric, direction = job.select
+                    dispositions.append(
+                        JobDisposition(
+                            job_id,
+                            needs,
+                            True,
+                            f"sweep of {len(job.iterations)} points, keeps "
+                            f"{metric} {direction}",
+                            None,
+                        )
+                    )
+                    continue
                 dispositions.append(
                     JobDisposition(job_id, needs, True, "will run", None)
                 )
@@ -1399,13 +1576,17 @@ class Workflow(Flow):
         """
         Returns
         -------
-        The pass bound for ``job_id``, if it is a member of a ring whose
-        gate declares a non-empty ``iterations`` schedule -- meaning its
-        true per-pass configuration lives in :attr:`iteration_configs`
-        rather than :attr:`job_configs`. ``None`` for an ordinary job and for
-        a member of a ``max``-gated ring, where no pass changes any value
-        and :attr:`job_configs` already answers correctly for every pass.
+        The pass bound for ``job_id``, if it schedules: a sweep job with a
+        non-empty ``iterations`` (every sweep does, load-time-required), or a
+        member of a ring whose gate declares one -- meaning its true per-pass
+        configuration lives in :attr:`iteration_configs` rather than
+        :attr:`job_configs`. ``None`` for an ordinary job and for a member of
+        a ``max``-gated ring, where no pass changes any value and
+        :attr:`job_configs` already answers correctly for every pass.
         """
+        job = self.jobs[job_id]
+        if job.mode == "sweep" and job.iterations:
+            return len(job.iterations)
         gate = self.member_of.get(job_id)
         if gate is None:
             return None
@@ -1759,6 +1940,13 @@ class Workflow(Flow):
                 f"v1. Its pass directory is the escape hatch: inspect "
                 f"'runs/<tag>/{job_id}/<k>/...' directly instead."
             )
+        if self.jobs[job_id].mode == "sweep":
+            raise FlowException(
+                f"--reproducible names a step of job '{job_id}', a sweep "
+                f"job. Which pass it would capture is ambiguous, so this is "
+                f"refused in v1. Its pass directory is the escape hatch: "
+                f"inspect 'runs/<tag>/{job_id}/<k>/...' directly instead."
+            )
         return matches[0]
 
     @staticmethod
@@ -2072,6 +2260,138 @@ class Workflow(Flow):
             "unreachable: the loop above always returns before falling "
             "through, for bound >= 1"
         )
+
+    def _settle_sweep(
+        self,
+        job_id: str,
+        progress: _SweepProgress,
+        deferred: list[str],
+    ) -> State:
+        """
+        Decides a completed sweep's winner, once every pass has resolved.
+
+        Called from :meth:`run`'s main scheduling thread, never from a
+        worker: every pass already ran to completion (or raised) on its own
+        worker thread, and choosing among them is bookkeeping over
+        already-finished results, not more work to run concurrently.
+
+        Every pass's own steps, and how many of them were reused from a
+        previous run versus executed, are merged into the run's totals by
+        the caller, unconditionally, before this method is ever called --
+        the same way an ordinary job's own record merges into those same
+        totals ahead of its own try/except. Only the *deferred*-error half of
+        a pass's bookkeeping depends on which pass wins, so it is decided
+        here instead.
+
+        Parameters
+        ----------
+        job_id : str
+            The sweep job's id.
+        progress : _SweepProgress
+            Its finished passes: every pass's own output or exception, and
+            its own :class:`_InFlight` record.
+        deferred : list[str]
+            The run's own list of deferred-error messages, extended in place
+            with the *winner's* deferred messages only. A loser's deferred
+            errors are logged as warnings instead, inside this method, and
+            never reach this list: the flow does not use that pass's state,
+            and failing the run over a result it discarded would punish the
+            sweep for exploring, exactly as a losing pass's deferral does not
+            fail the sweep either.
+
+        Returns
+        -------
+        The winning pass's output state.
+
+        Raises
+        ------
+        FlowError
+            If any pass raised, naming the failing pass(es); or if any pass's
+            output lacks the ``select`` metric, naming the pass and the
+            metric; or if the ``select`` metric's observed value is not a
+            number, naming the pass and the value.
+        JobContractError
+            If any pass's own output -- winner or loser, any pass that did
+            not itself defer an error -- fails the job's output contract.
+            Every pass is checked, not only the winner's, because a provider
+            that only sometimes honours its contract is precisely what the
+            contract check exists to catch.
+        """
+        # (a) Any pass that raised fails the whole job, naming every failing
+        # pass; the other passes' results, even the ones that finished
+        # cleanly, are discarded -- there is nothing to pick a winner among
+        # once the sweep itself did not run cleanly.
+        if progress.errors:
+            failing = sorted(progress.errors)
+            details = "; ".join(f"pass {k}: {progress.errors[k]}" for k in failing)
+            raise FlowError(f"sweep pass(es) {failing} failed: {details}")
+
+        # (b) Every pass's own output is contract-checked, skipped only for a
+        # pass that itself deferred an error -- the existing rule, applied
+        # per pass rather than once.
+        job = self.jobs[job_id]
+        for k in sorted(progress.results):
+            if progress.records[k].deferred:
+                continue
+            self._check_contract(job, progress.results[k])
+
+        # (c) Any pass whose output lacks the 'select' metric leaves the
+        # sweep with nothing to compare, which is a failure of the same kind
+        # as a raised pass.
+        assert job.select is not None, "spec.py requires 'select' on every sweep job"
+        metric, direction = job.select
+        values: dict[int, Decimal] = {}
+        for k in sorted(progress.results):
+            state = progress.results[k]
+            if metric not in state.metrics:
+                raise FlowError(
+                    f"sweep pass {k} does not carry 'select' metric "
+                    f"'{metric}'. A sweep that cannot compare its results "
+                    f"has no result."
+                )
+            observed = state.metrics[metric]
+            if not isinstance(observed, (int, float, Decimal)):
+                raise FlowError(
+                    f"sweep pass {k}'s 'select' metric '{metric}' is "
+                    f"{observed!r} of type '{type(observed).__name__}', "
+                    f"which is not a number. A sweep's keep rule compares "
+                    f"numbers, the same way a runtime predicate term does."
+                )
+            # Decimal(str(value)), not Decimal(value): the same conversion
+            # predicates.evaluate_metric_term uses, so a float and a Decimal
+            # observation compare exactly rather than through float's binary
+            # rounding.
+            values[k] = Decimal(str(observed))
+
+        # (d) The winner: minimum or maximum by the metric, ties to the
+        # lowest pass index. Comparing with strict '<'/'>' rather than
+        # '<='/'>=' is what gives the tie-break its direction: the first
+        # (lowest-index) pass to reach a given value is never displaced by a
+        # later pass that only equals it.
+        winner_k: int | None = None
+        best: Decimal | None = None
+        for k in sorted(values):
+            value = values[k]
+            if winner_k is None or best is None:
+                winner_k, best = k, value
+                continue
+            if direction == "min" and value < best:
+                winner_k, best = k, value
+            elif direction == "max" and value > best:
+                winner_k, best = k, value
+        assert winner_k is not None, "values is non-empty: progress.results is"
+
+        for k in sorted(progress.records):
+            record = progress.records[k]
+            if k == winner_k:
+                deferred.extend(record.deferred)
+            else:
+                for message in record.deferred:
+                    logger.warning(
+                        f"Sweep pass {k} of '{job_id}' (discarded) deferred: {message}"
+                    )
+
+        return progress.results[winner_k]
 
     def _enabled_jobs(self) -> set[str]:
         """

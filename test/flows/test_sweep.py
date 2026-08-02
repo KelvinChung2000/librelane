@@ -1,0 +1,551 @@
+# Copyright 2026 LibreLane Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Sweep mode: a ``mode: sweep`` job runs its steps at ``N`` settings
+concurrently and keeps the best pass by a ``select`` metric.
+
+Fake steps throughout, no real tools -- the same style ``test_loops.py`` and
+``test_engine.py`` use.
+"""
+
+import pytest
+
+from librelane.flows import flow as flow_module
+from librelane.steps import step as step_module
+
+pytestmark = pytest.mark.all
+
+mock_variables = pytest.mock_variables
+
+
+@pytest.fixture
+def sweep_steps():
+    """
+    The step vocabulary every test below composes a sweep document out of.
+
+    Returns
+    -------
+    A namespace object exposing:
+
+    - ``calls``: every step instance's own ``id`` (not the class id), in the
+      order it ran, so a test can assert a pass ran and which pass it carried
+      in its id.
+    - ``Score``: writes metric ``score`` from configuration
+      ``SWEEP_SCORE``, unless ``SWEEP_WRITE_SCORE`` is false, in which case it
+      writes nothing -- the missing-select-metric case. Also writes metric
+      ``tag`` from ``SWEEP_TAG``, so a winning pass is identifiable by
+      something the metric comparison itself does not touch.
+    - ``MaybeDefer``: a no-op unless configuration ``SWEEP_DEFER`` is true, in
+      which case it defers an error. Ordered after ``Score`` in every job that
+      uses both, so a pass that defers still carries the metric ``Score``
+      already wrote.
+    - ``MaybeFail``: a no-op unless configuration ``SWEEP_FAIL`` is true, in
+      which case it raises, failing the pass (and the whole sweep) outright.
+    """
+    from librelane.config import variable
+    from librelane.steps import DeferredStepError, Step
+    from librelane.steps.step.exceptions import StepError
+
+    class _Namespace:
+        pass
+
+    ns = _Namespace()
+    ns.calls = []
+
+    @Step.factory.register()
+    class Score(Step):
+        id = "Test.SweepScore"
+        inputs = []
+        outputs = []
+
+        class Config(Step.Config):
+            SWEEP_SCORE: int = variable(description="x", default=0)
+            SWEEP_TAG: str = variable(description="tag", default="")
+            SWEEP_WRITE_SCORE: bool = variable(
+                description="whether to write the select metric", default=True
+            )
+
+        def run(self, state_in, **kwargs):
+            ns.calls.append(self.id)
+            metrics = {"tag": self.config["SWEEP_TAG"]}
+            if self.config["SWEEP_WRITE_SCORE"]:
+                metrics["score"] = self.config["SWEEP_SCORE"]
+            return {}, metrics
+
+    @Step.factory.register()
+    class MaybeDefer(Step):
+        id = "Test.SweepMaybeDefer"
+        inputs = []
+        outputs = []
+
+        class Config(Step.Config):
+            SWEEP_DEFER: bool = variable(description="defer", default=False)
+
+        def run(self, state_in, **kwargs):
+            ns.calls.append(self.id)
+            if self.config["SWEEP_DEFER"]:
+                raise DeferredStepError("deferred on purpose")
+            return {}, {}
+
+    @Step.factory.register()
+    class MaybeFail(Step):
+        id = "Test.SweepMaybeFail"
+        inputs = []
+        outputs = []
+
+        class Config(Step.Config):
+            SWEEP_FAIL: bool = variable(description="fail", default=False)
+
+        def run(self, state_in, **kwargs):
+            ns.calls.append(self.id)
+            if self.config["SWEEP_FAIL"]:
+                raise StepError("failed on purpose")
+            return {}, {}
+
+    ns.Score = Score
+    ns.MaybeDefer = MaybeDefer
+    ns.MaybeFail = MaybeFail
+    return ns
+
+
+@pytest.fixture
+def sweep_contract_job():
+    """
+    A ``uses`` job template, with one provider whose promised view
+    (``DesignFormat.nl``) is withheld whenever configuration
+    ``SWEEP_CONTRACT_DROP_VIEW`` is true -- so a document can drop it on
+    exactly one sweep pass and exercise the per-pass contract check.
+
+    Registered fresh (function-scoped, unlike ``test_engine.py``'s module-
+    scoped ``contract_job``) because only one test in this module needs it.
+    """
+    import pathlib
+
+    from librelane.config import variable
+    from librelane.jobs import Job, JobRegistry
+    from librelane.state import DesignFormat
+    from librelane.steps import Step
+
+    Job(
+        id="sweep_contract",
+        full_name="Sweep Contract",
+        default_provider="varies",
+        requires=(),
+        provides=(DesignFormat.nl,),
+        metrics=(),
+    ).register()
+
+    @Step.factory.register()
+    class Varies(Step):
+        id = "Test.SweepContractVaries"
+        inputs = []
+        outputs = [DesignFormat.nl]
+
+        class Config(Step.Config):
+            SWEEP_CONTRACT_SCORE: int = variable(description="x", default=0)
+            SWEEP_CONTRACT_DROP_VIEW: bool = variable(
+                description="drop the promised view", default=False
+            )
+
+        def run(self, state_in, **kwargs):
+            metrics = {"score": self.config["SWEEP_CONTRACT_SCORE"]}
+            if self.config["SWEEP_CONTRACT_DROP_VIEW"]:
+                return {}, metrics
+            out = pathlib.Path(self.step_dir) / "design.nl.v"
+            out.write_text("module top(); endmodule")
+            return {DesignFormat.nl: out}, metrics
+
+    JobRegistry.register(
+        job="sweep_contract",
+        provider="varies",
+        steps=[Varies],
+        namespaces=["SWEEP_CONTRACT_"],
+    )
+    return Varies
+
+
+@pytest.fixture
+def three_workers():
+    """
+    Pins the process-wide pool to three workers for one test: enough to run
+    a 3-point sweep's passes at once, which is exactly what the concurrency
+    test below needs to observe.
+    """
+    from librelane.common import ContextPropagatingThreadPoolExecutor, get_tpe, set_tpe
+
+    previous = get_tpe()
+    pool = ContextPropagatingThreadPoolExecutor(max_workers=3)
+    set_tpe(pool)
+    yield
+    set_tpe(previous)
+    pool.shutdown()
+
+
+def _sweep_spec(iterations, select="score min", steps=None, name="Sweep"):
+    return {
+        "name": name,
+        "jobs": {
+            "sweep": {
+                "steps": steps or ["Test.SweepScore"],
+                "mode": "sweep",
+                "select": select,
+                "iterations": iterations,
+            },
+        },
+    }
+
+
+@mock_variables([flow_module, step_module])
+def test_sweep_keeps_the_pass_with_the_minimum_select_metric(
+    sweep_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [
+                {"SWEEP_SCORE": 30, "SWEEP_TAG": "a"},
+                {"SWEEP_SCORE": 10, "SWEEP_TAG": "b"},
+                {"SWEEP_SCORE": 20, "SWEEP_TAG": "c"},
+            ],
+            select="score min",
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    final = flow.start(tag="t")
+
+    assert final.metrics["score"] == 10
+    assert final.metrics["tag"] == "b"
+
+
+@mock_variables([flow_module, step_module])
+def test_sweep_keeps_the_pass_with_the_maximum_select_metric(
+    sweep_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [
+                {"SWEEP_SCORE": 30, "SWEEP_TAG": "a"},
+                {"SWEEP_SCORE": 10, "SWEEP_TAG": "b"},
+                {"SWEEP_SCORE": 20, "SWEEP_TAG": "c"},
+            ],
+            select="score max",
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    final = flow.start(tag="t")
+
+    assert final.metrics["score"] == 30
+    assert final.metrics["tag"] == "a"
+
+
+@mock_variables([flow_module, step_module])
+def test_sweep_tie_breaks_to_the_lowest_pass_index(
+    sweep_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [
+                {"SWEEP_SCORE": 5, "SWEEP_TAG": "first"},
+                {"SWEEP_SCORE": 5, "SWEEP_TAG": "second"},
+            ],
+            select="score min",
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    final = flow.start(tag="t")
+
+    assert final.metrics["tag"] == "first"
+
+
+@mock_variables([flow_module, step_module])
+def test_a_missing_select_metric_fails_naming_job_pass_and_metric(
+    sweep_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [
+                {"SWEEP_SCORE": 1},
+                {"SWEEP_SCORE": 2, "SWEEP_WRITE_SCORE": False},
+            ],
+            select="score min",
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowError) as exc_info:
+        flow.start(tag="t")
+
+    message = str(exc_info.value)
+    assert "sweep" in message
+    assert "pass 2" in message
+    assert "score" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_a_raised_pass_fails_the_sweep_naming_the_pass(
+    sweep_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [
+                {"SWEEP_SCORE": 1},
+                {"SWEEP_SCORE": 2, "SWEEP_FAIL": True},
+            ],
+            select="score min",
+            steps=["Test.SweepScore", "Test.SweepMaybeFail"],
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowError) as exc_info:
+        flow.start(tag="t")
+
+    message = str(exc_info.value)
+    assert "sweep" in message
+    assert "pass 2" in message
+    assert "failed on purpose" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_a_losing_pass_s_deferral_warns_and_does_not_fail_the_flow(
+    caplog, sweep_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [
+                {"SWEEP_SCORE": 1},
+                {"SWEEP_SCORE": 2, "SWEEP_DEFER": True},
+            ],
+            select="score min",
+            steps=["Test.SweepScore", "Test.SweepMaybeDefer"],
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    final = flow.start(tag="t")
+
+    # Pass 1 wins (score 1 < 2), so pass 2's deferral never reaches the run's
+    # own deferred list and the flow completes.
+    assert final.metrics["score"] == 1
+    assert "Sweep pass 2 of 'sweep' (discarded) deferred" in caplog.text
+    assert "deferred on purpose" in caplog.text
+
+
+@mock_variables([flow_module, step_module])
+def test_the_winning_pass_s_deferral_fails_the_flow(
+    sweep_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [
+                {"SWEEP_SCORE": 1, "SWEEP_DEFER": True},
+                {"SWEEP_SCORE": 2},
+            ],
+            select="score min",
+            steps=["Test.SweepScore", "Test.SweepMaybeDefer"],
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowError) as exc_info:
+        flow.start(tag="t")
+
+    # Pass 1 wins (score 1 < 2) and it is the one that deferred.
+    assert "deferred on purpose" in str(exc_info.value)
+
+
+@mock_variables([flow_module, step_module])
+def test_every_pass_is_contract_checked_even_a_losing_one(
+    sweep_contract_job, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "SweepContract",
+            "jobs": {
+                "sweep": {
+                    "uses": "sweep_contract/varies",
+                    "mode": "sweep",
+                    "select": "score max",
+                    "iterations": [
+                        {"SWEEP_CONTRACT_SCORE": 1},
+                        # The highest score, but drops the promised view --
+                        # would win the sweep, but never gets the chance:
+                        # every pass is contract-checked, not just the
+                        # winner.
+                        {
+                            "SWEEP_CONTRACT_SCORE": 3,
+                            "SWEEP_CONTRACT_DROP_VIEW": True,
+                        },
+                        {"SWEEP_CONTRACT_SCORE": 2},
+                    ],
+                },
+            },
+        }
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowError) as exc_info:
+        flow.start(tag="t")
+
+    message = str(exc_info.value)
+    assert "sweep" in message
+    assert "'nl'" in message
+    assert "Provider: varies" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_sweep_writes_a_pass_directory_per_point(sweep_steps, minimal_design, mock_pdk):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [
+                {"SWEEP_SCORE": 1},
+                {"SWEEP_SCORE": 2},
+                {"SWEEP_SCORE": 3},
+            ],
+            select="score min",
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="t")
+
+    # slugify("Test.SweepScore") is "test-sweepscore".
+    for k in (1, 2, 3):
+        assert (flow.run_dir / "sweep" / str(k) / "1-test-sweepscore").is_dir()
+
+
+@pytest.mark.usefixtures("three_workers")
+@mock_variables([flow_module, step_module])
+def test_sweep_runs_every_pass_concurrently(minimal_design, mock_pdk):
+    import threading
+
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+    from librelane.steps import Step
+
+    # A barrier sized to the sweep's point count, not a sleep: every pass
+    # blocks until all three have arrived, so the run completes if and only
+    # if the three really did run at once. A sweep fanned out sequentially
+    # would have the first pass wait alone until the barrier's timeout broke
+    # it and the run raised.
+    barrier = threading.Barrier(3, timeout=30)
+
+    @Step.factory.register()
+    class Meet(Step):
+        id = "Test.SweepMeet"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            barrier.wait()
+            return {}, {"score": 1}
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [{}, {}, {}],
+            select="score min",
+            steps=["Test.SweepMeet"],
+        )
+    )
+    Workflow(spec, minimal_design, **mock_pdk).start(tag="t")
+
+    assert not barrier.broken
+
+
+@mock_variables([flow_module, step_module])
+def test_skip_on_a_sweep_job_is_a_whole_job_pass_through(
+    sweep_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [{"SWEEP_SCORE": 1}, {"SWEEP_SCORE": 2}],
+            select="score min",
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    flow.start(tag="t", skip=["sweep"])
+
+    # No pass of the sweep ran a single step.
+    assert sweep_steps.calls == []
+
+
+@mock_variables([flow_module, step_module])
+def test_reproducible_naming_a_sweep_job_s_step_is_refused(
+    sweep_steps, minimal_design, mock_pdk
+):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowException
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [{"SWEEP_SCORE": 1}, {"SWEEP_SCORE": 2}],
+            select="score min",
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+
+    with pytest.raises(FlowException) as exc_info:
+        flow.start(tag="t", reproducible="Test.SweepScore")
+
+    message = str(exc_info.value)
+    assert "sweep" in message
+    assert "v1" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_explain_reports_a_sweep_row(sweep_steps, minimal_design, mock_pdk):
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [{"SWEEP_SCORE": 1}, {"SWEEP_SCORE": 2}, {"SWEEP_SCORE": 3}],
+            select="score min",
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    explanation = flow.explain()
+
+    row = next(d for d in explanation.jobs if d.job_id == "sweep")
+    assert row.will_run
+    assert row.mechanism is None
+    assert row.reason == "sweep of 3 points, keeps score min"
