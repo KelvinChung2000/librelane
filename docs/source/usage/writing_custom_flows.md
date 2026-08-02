@@ -185,6 +185,178 @@ See `librelane/flows/classic.yaml` for a complete example: half of its
 forty-eight jobs carry an `if`, and the variables they name are declared in its
 own `config` section.
 
+### Loops
+
+`needs` may close a cycle, provided the cycle is a *simple ring*: every
+member has exactly one predecessor inside it, and exactly one member -- the
+**gate** -- declares `until`. Only the gate may have consumers outside the
+ring; every result the loop hands downstream leaves through the job that
+decided the loop was done.
+
+```yaml
+jobs:
+  synthesis:
+    steps: [Yosys.Synthesis]
+  floorplan:
+    needs: [synthesis]
+    steps: [OpenROAD.Floorplan]
+  resize:
+    needs: [floorplan, sta]
+    steps: [OpenROAD.RepairDesign]
+  sta:
+    needs: [resize]
+    steps: [OpenROAD.STAPrePNR]
+    until: "metric::timing__hold__ws >= 0"
+    max: 5
+```
+
+`resize` needing both `floorplan` and `sta` is the ring's back edge; `sta` is
+the gate. On each pass the engine runs `resize` then `sta`, in ring order
+starting from the gate's successor and ending at the gate, and checks `until`
+against the gate's own output metrics. `metric::timing__hold__ws >= 0` true
+stops the loop and hands `sta`'s output downstream; false runs another pass,
+up to the bound.
+
+The gate declares exactly one bound:
+
+* `max: 5` above -- a plain pass count, and no pass changes any
+  configuration. Each pass differs only because it consumes the previous
+  pass's output state, the shape an incremental-repair loop needs.
+* `iterations`, a list of value mappings, one entry per pass, layered onto
+  every ring member's configuration for that pass:
+
+  ```yaml
+  sta:
+    needs: [resize]
+    steps: [OpenROAD.STAPrePNR]
+    until: "metric::timing__hold__ws >= 0"
+    iterations:
+      - {PL_RESIZER_HOLD_SLACK_MARGIN: 0.1}
+      - {PL_RESIZER_HOLD_SLACK_MARGIN: 0.2}
+      - {PL_RESIZER_HOLD_SLACK_MARGIN: 0.4}
+  ```
+
+  This is the escalation shape: pass 3 tries a wider hold margin because the
+  document says so, reviewable in one place, rather than a value computed
+  somewhere the reader cannot see. The bound is the list's length; an entry
+  may be `{}`, meaning "try again unchanged before escalating."
+
+If the schedule runs out without `until` ever holding, the loop exits with
+the last pass's state and a deferred error naming the gate and the bound --
+the run continues with whatever the loop produced and fails at the end, the
+same way a step's own deferred error does.
+
+Each pass gets its own run directory, `runs/<tag>/<job id>/<k>/...` with `k`
+the 1-based pass, so pass 3 does not overwrite pass 2's.
+
+### Sweeps
+
+`mode: sweep` runs one job's steps at several settings concurrently and keeps
+the best result by a metric, rather than stopping at the first pass that
+satisfies a gate:
+
+```yaml
+jobs:
+  synthesis:
+    steps: [Yosys.Synthesis]
+  floorplan:
+    needs: [synthesis]
+    steps: [OpenROAD.Floorplan]
+  placement:
+    needs: [floorplan]
+    steps: [OpenROAD.GlobalPlacement]
+    mode: sweep
+    select: "route__wirelength__estimated min"
+    iterations:
+      - {PL_TARGET_DENSITY: 0.45}
+      - {PL_TARGET_DENSITY: 0.55}
+      - {PL_TARGET_DENSITY: 0.65}
+```
+
+`iterations` here is the same shape a loop's schedule is, but the rule
+attached to it differs: a sweep runs every entry rather than stopping early,
+so it declares `select` -- a metric name and a direction, `min` or `max` --
+instead of `until`. Once `placement`'s input is ready, the engine runs all
+three settings, each in its own pass directory
+(`runs/<tag>/placement/<k>/...`), and keeps whichever pass's
+`route__wirelength__estimated` is lowest; ties break to the lowest pass
+index, so a rerun picks the same winner. The losing passes' outputs stay on
+disk, reviewable, but nothing downstream of `placement` sees them.
+
+A sweep job may not be a ring member, and `mode: sweep` never declares
+`until` or `max`: `select` is what tells the engine how to end it.
+
+### Runtime conditions
+
+`if`, and inside a loop `until`, may test a metric of the job's own input
+state rather than only a configuration variable, with a `metric::` term:
+
+```yaml
+jobs:
+  synthesis:
+    steps: [Yosys.Synthesis]
+  repair_antennas:
+    needs: [synthesis]
+    steps: [OpenROAD.RepairAntennas]
+    if: "metric::design__antenna__violating__nets > 0"
+```
+
+A term is `metric::<name> <op> <literal>`, where `<op>` is one of `==`,
+`!=`, `<`, `<=`, `>`, `>=` and `<literal>` is a number. `if` may mix
+`metric::` terms with the plain-variable terms it already accepted, joined
+with `and` as any `if` is. A configuration term is still decided when the
+document is loaded; a runtime term is decided once the job's inputs are
+joined, against that state's metrics, immediately before the job would run.
+A false runtime term fires the job as a pass-through, logged with the term
+and the observed value, the same way `--explain` reports it afterwards. A
+term whose metric is missing from the input state is a runtime error --
+absence is not false, it is a measurement that never happened.
+
+`until` accepts only `metric::` terms: a plain configuration variable is
+constant across a loop's passes, so a gate conjoining one would either always
+exit on pass 1 or never exit at all.
+
+### Resource pools
+
+A document may declare named pools at the top level and have a job name the
+ones it needs, to bound how many jobs use a scarce tool -- a licensed DRC
+seat, a memory-heavy step -- at once, without lowering `-j` for the whole
+flow:
+
+```yaml
+resources:
+  drc_seats: 2
+
+jobs:
+  synthesis:
+    steps: [Yosys.Synthesis]
+  drc_a:
+    needs: [synthesis]
+    steps: [Magic.DRC]
+    resources: [drc_seats]
+  drc_b:
+    needs: [synthesis]
+    steps: [Magic.DRC]
+    resources: [drc_seats]
+```
+
+`drc_a` and `drc_b` have no path between them, so the graph alone would run
+them at once; `drc_seats: 2` still permits that here, but lowering it to `1`
+would serialize the two without changing `needs` at all. A pool's capacity is
+a positive integer literal, as above, or the name of a configuration variable
+the document declares with type `int`, resolved once when the flow is
+constructed; a capacity below 1, however it is spelled, is refused before the
+run starts, because a pool nothing can ever enter is a flow that stalls by
+declaration.
+
+Acquisition is all-or-nothing across every pool a job names: a job takes
+every seat it needs at once or none of them, so a job waiting on a pool never
+holds a different one meanwhile, which is what keeps pools from deadlocking
+whatever a document declares. A loop member acquires and releases its own
+pools per pass, not for the whole loop; a sweep's passes acquire
+independently, so a two-seat pool still runs a five-point sweep two passes at
+a time rather than one point or all five.
+
 ## Fully Customized Flows
 
 A document declares a graph and the engine runs it, which is how every flow

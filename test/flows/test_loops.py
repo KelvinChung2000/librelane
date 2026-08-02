@@ -762,3 +762,60 @@ def test_explain_variables_reports_each_pass_of_a_scheduled_variable(
     assert len(design_name_rows) == 1
     assert design_name_rows[0].reach == ("resize", "sta")
     assert design_name_rows[0].value == "WHATEVER"
+
+
+@mock_variables([flow_module, step_module])
+def test_a_ring_member_acquires_and_releases_its_pool_per_pass(
+    loop_steps, minimal_design, mock_pdk, mocker
+):
+    """
+    A ring runs as one worker submission (:meth:`Workflow._run_loop`), so its
+    pool use cannot go through the scheduling thread's try-and-park
+    admission the way an ordinary job's or a sweep pass's does; it blocks on
+    :meth:`ResourcePools.acquire` instead, once per member per pass. Spying
+    on the flow's own ``pools`` object counts exactly that, without needing
+    a second contender to prove serialization against.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        {
+            "name": "LoopPool",
+            "resources": {"seat": 1},
+            "jobs": {
+                "resize": {
+                    "needs": ["sta"],
+                    "steps": ["Test.LoopIncrement"],
+                    "resources": ["seat"],
+                },
+                "sta": {
+                    "needs": ["resize"],
+                    "steps": ["Test.LoopMeasure"],
+                    "until": "metric::x >= 2",
+                    "max": 3,
+                    "resources": ["seat"],
+                },
+            },
+        }
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    acquire_spy = mocker.spy(flow.pools, "acquire")
+    release_spy = mocker.spy(flow.pools, "release")
+    flow.start(tag="t")
+
+    # _two_member_ring's own docstring: 'until' is 'metric::x >= 2', which
+    # this ring (the same two jobs, same steps) converges on at pass 2, so
+    # each of the two members ran exactly twice -- one acquire and one
+    # release per member per pass, four of each, every one for the ring's
+    # one declared pool. 'release' is also called once more, with (),  when
+    # the ring's own future settles on Workflow.run's scheduling thread --
+    # its pool use is internal to _run_loop, so that call is the documented
+    # empty-names no-op and is filtered out here rather than asserted away.
+    assert acquire_spy.call_count == 4
+    for call in acquire_spy.call_args_list:
+        assert call.args[0] == ("seat",)
+    seat_releases = [call for call in release_spy.call_args_list if call.args[0]]
+    assert len(seat_releases) == 4
+    for call in seat_releases:
+        assert call.args[0] == ("seat",)

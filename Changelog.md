@@ -883,6 +883,45 @@ Style Notes
   rule out. `_check_values_are_not_reserved` now walks the document's `with`
   block and every job's, the same structural pattern
   `_check_values_do_not_select_tools` already used for `TOOLS` (#47).
+* Added loops: a document's `needs` may now close a cycle, provided it is a
+  simple ring -- every member has exactly one predecessor inside it -- with
+  exactly one member, the ring's gate, declaring `until`. The gate's `until`
+  is a conjunction of `metric::` terms checked against its own output after
+  each pass; the ring reruns, in ring order starting at the gate's successor,
+  until `until` holds or the gate's bound is exhausted. The bound is either
+  `max`, a plain pass count under which no pass changes any configuration, or
+  `iterations`, a per-pass value schedule layered onto every member's
+  configuration, the escalation shape. Exhaustion is a deferred error naming
+  the gate and the bound rather than a hard failure: the run continues with
+  the last pass's state and fails at the end. Each pass gets its own run
+  directory, `<job id>/<k>/...`. See {doc}`/usage/writing_custom_flows`.
+* Added `metric::` terms to `if`, and to a ring gate's `until`:
+  `metric::<name> <op> <literal>`, evaluated against a job's joined input
+  state immediately before it would run, rather than only against the
+  configuration at load time. A false runtime term fires the job as a
+  pass-through, logged with the observed value, the same value `--explain`
+  reports afterwards; a term whose metric is absent from the input state is a
+  runtime error, since absence is not the same measurement as false. `if` may
+  mix `metric::` terms with the configuration-variable terms it already
+  accepted; `until` accepts only `metric::` terms, since a configuration term
+  is constant across a loop's passes and could never make a gate decide
+  differently pass to pass.
+* Added `mode: sweep`. A sweep job runs its steps at every entry of its own
+  `iterations` concurrently, from one joined input, and keeps the pass whose
+  `select` metric (a name and a direction, `min` or `max`) is best, ties
+  breaking to the lowest pass index. Losing passes' outputs stay on disk
+  under their own pass directory but reach nothing downstream. A sweep job
+  may not be a ring member, and declares `select` instead of `until`.
+* Added `resources`: a document may declare named pools at the top level,
+  each a positive integer capacity or the name of an `int` configuration
+  variable resolved once when the flow is constructed, and a job names the
+  pools it needs in its own `resources` list. Acquisition is all-or-nothing
+  across every pool a job names, so a job never holds one pool while waiting
+  on another, which is what keeps pools from deadlocking whatever a document
+  declares; a capacity below 1 is refused before the run starts. A loop
+  member acquires and releases its own pools per pass rather than for the
+  whole loop; a sweep's passes acquire independently, so a two-seat pool
+  still runs a five-point sweep two passes at a time.
 
 ## Tool Updates
 

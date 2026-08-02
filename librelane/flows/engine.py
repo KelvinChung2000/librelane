@@ -48,6 +48,7 @@ from librelane.flows.job import ResolvedJob, ToolSelection, resolve_jobs
 from librelane.flows import predicates
 from librelane.flows.join import join_sink_states, join_states
 from librelane.flows.net import Net
+from librelane.flows.resources import ResourcePools
 from librelane.flows.resume import resume_key, reusable_state, write_entry
 from librelane.flows.spec import FlowSpec
 from librelane.flows.spec_graph import ancestors, descendants, topological_order
@@ -385,6 +386,82 @@ class _SweepProgress:
         return len(self.results) + len(self.errors) == self.expected
 
 
+@dataclass
+class _ParkedJob:
+    """
+    One ordinary job -- never a ring, see below -- admitted onto the net (its
+    input tokens already consumed and joined, its stage already started) but
+    not yet given a worker, because :meth:`ResourcePools.try_acquire` could
+    not grant its ``resources`` the moment it was checked.
+
+    Retried on every later scheduler wake by :meth:`Workflow._admit_parked`,
+    never by blocking the scheduling thread: a parked job holds its tokens
+    but no pool slot, so it can neither stall the run nor deadlock against
+    anything else waiting, only wait for some running job's completion to
+    free a slot.
+
+    A ring never parks here. Its pool use is per member per pass, acquired
+    with a *blocking* call from inside its own single worker submission
+    (:meth:`Workflow._run_loop`), not admitted from the scheduling thread at
+    all -- see that method's own acquire/release wrapping.
+
+    Parameters
+    ----------
+    job
+        The job to run once admitted.
+    state_in
+        The state its first step consumes.
+    submitted
+        Its record, created once whether or not parking turns out to be
+        needed, so a job's directory-of-record and step list are the same
+        either way.
+    forced
+        As :meth:`Workflow._run_job`.
+    """
+
+    job: ResolvedJob
+    state_in: State
+    submitted: _InFlight
+    forced: bool
+
+
+@dataclass
+class _ParkedSweepPass:
+    """
+    One sweep execution admitted onto the net but not yet given a worker, for
+    the same reason and under the same retry rule as :class:`_ParkedJob`.
+
+    A sweep's ``N`` passes are admitted independently -- one
+    :meth:`ResourcePools.try_acquire` per pass at fan-out, in
+    :meth:`Workflow.run` -- rather than once for the whole sweep, so a
+    two-seat pool runs a five-point sweep two passes at a time rather than
+    admitting it as one all-or-nothing unit.
+
+    Parameters
+    ----------
+    job
+        The sweep job.
+    state_in
+        The state every pass reads from, identical across all ``N`` of them.
+    submitted
+        This pass's own record.
+    forced
+        As :meth:`Workflow._run_job`.
+    pass_index
+        This pass's 1-based index.
+    config
+        This pass's own resolved configuration, i.e.
+        ``iteration_configs[(job.id, pass_index)]``.
+    """
+
+    job: ResolvedJob
+    state_in: State
+    submitted: _InFlight
+    forced: bool
+    pass_index: int
+    config: _ResolvedConfig
+
+
 class Workflow(Flow):
     """
     Runs a :class:`librelane.flows.spec.FlowSpec`.
@@ -509,6 +586,52 @@ class Workflow(Flow):
             config_override_strings,
             kwargs,
         )
+        #: Named resource pools this flow's jobs may contend for. Empty
+        #: (never ``None``) when the document declares no ``resources``, so
+        #: every acquisition site below calls it unconditionally rather than
+        #: checking for its absence first.
+        self.pools = self._resolve_resource_pools()
+
+    def _resolve_resource_pools(self) -> ResourcePools:
+        """
+        Resolves ``self.spec.resources`` into concrete capacities.
+
+        Returns
+        -------
+        ResourcePools
+            One counter per declared pool. A literal capacity is used as
+            given: :meth:`~librelane.flows.spec.FlowSpec._check_resource_pool_literal_capacities`
+            already refused one below 1 when the document was loaded. A
+            capacity naming a configuration variable is read off
+            ``self.config``, which by now holds it as an ``int`` --
+            :func:`librelane.flows.spec_validation._check_resource_variable_capacities_are_declared_ints`
+            already refused a variable not declared with type ``int``.
+
+        Raises
+        ------
+        FlowException
+            If a variable capacity resolves to a value below 1, naming the
+            pool, the variable and the resolved value. A pool nothing can
+            ever enter is a flow that stalls by declaration, and this is the
+            one case only a resolved configuration can know about: a literal
+            capacity below 1 is already a load-time error, ahead of this
+            point.
+        """
+        resolved: dict[str, int] = {}
+        for pool, capacity in self.spec.resources.items():
+            if isinstance(capacity, int):
+                resolved[pool] = capacity
+                continue
+            value = self.config[capacity]
+            if value < 1:
+                raise FlowException(
+                    f"Resource pool '{pool}' declares capacity "
+                    f"'{capacity}', which resolves to {value}. A pool's "
+                    f"capacity must be at least 1; a pool nothing can ever "
+                    f"enter is a flow that stalls by declaration."
+                )
+            resolved[pool] = value
+        return ResourcePools(resolved)
 
     def _resolve_job_configs(
         self,
@@ -883,6 +1006,20 @@ class Workflow(Flow):
         #: job id. An entry is removed the moment its last pass resolves,
         #: whether the sweep goes on to settle cleanly or to fail.
         sweeps: dict[str, _SweepProgress] = {}
+        #: Every future currently in ``pending`` that holds a resource pool
+        #: grant, mapped to the names it holds -- an ordinary job's or a
+        #: sweep pass's own ``resources``. A ring's one future never appears
+        #: here: its pool use is internal to ``_run_loop``, acquired and
+        #: released per member per pass. Popped and released in the
+        #: ``finally`` of whichever branch below settles the future, so a
+        #: slot is returned on every exit path, success or failure.
+        future_resources: dict[Future[State], tuple[str, ...]] = {}
+        #: Ordinary jobs whose tokens are consumed but whose pools were full
+        #: the moment they were checked. Retried by ``_admit_parked`` on
+        #: every scheduler wake, ahead of ``net.enabled()``.
+        parked_jobs: list[_ParkedJob] = []
+        #: Sweep passes parked for the same reason, one entry per pass.
+        parked_sweep_passes: list[_ParkedSweepPass] = []
 
         # The marking is not thread-safe and is not made so: every call into
         # `net` below happens on this thread. A lock would exist only to
@@ -891,6 +1028,19 @@ class Workflow(Flow):
         # fired after its future resolves, and the workers never see it.
         while True:
             fired_pass_through = False
+            # Ahead of 'net.enabled()' and unconditional on 'failures': a
+            # parked job or sweep pass was already selected to run before
+            # anything failed -- its tokens are consumed -- so it is drained
+            # like the rest of 'pending' rather than abandoned, and only the
+            # *enabling* of new work below stops once something has failed.
+            self._admit_parked(
+                parked_jobs,
+                parked_sweep_passes,
+                plan,
+                pending,
+                sweep_futures,
+                future_resources,
+            )
             if not failures:
                 for name in net.enabled():
                     # Everything between taking the tokens and handing the job
@@ -943,22 +1093,45 @@ class Workflow(Flow):
                                 sweeps[name] = _SweepProgress(name, n)
                                 for k in range(1, n + 1):
                                     pass_submitted = _InFlight(f"{name} (pass {k})")
-                                    future = get_tpe().submit(
-                                        self._execute_steps,
-                                        job,
-                                        state_in,
-                                        pass_submitted,
-                                        name in plan.forced,
-                                        plan.reproducible_at,
-                                        pass_index=k,
-                                        config=self.iteration_configs[(name, k)],
-                                    )
-                                    pending[future] = pass_submitted
-                                    sweep_futures[future] = (name, k)
+                                    pass_config = self.iteration_configs[(name, k)]
+                                    # Each pass is admitted on its own, not
+                                    # once for the whole sweep, so a two-seat
+                                    # pool runs a five-point sweep two passes
+                                    # at a time rather than all five or none.
+                                    if self.pools.try_acquire(job.resources):
+                                        future = get_tpe().submit(
+                                            self._execute_steps,
+                                            job,
+                                            state_in,
+                                            pass_submitted,
+                                            name in plan.forced,
+                                            plan.reproducible_at,
+                                            pass_index=k,
+                                            config=pass_config,
+                                        )
+                                        pending[future] = pass_submitted
+                                        sweep_futures[future] = (name, k)
+                                        future_resources[future] = job.resources
+                                    else:
+                                        parked_sweep_passes.append(
+                                            _ParkedSweepPass(
+                                                job,
+                                                state_in,
+                                                pass_submitted,
+                                                name in plan.forced,
+                                                k,
+                                                pass_config,
+                                            )
+                                        )
                                 continue
                             submitted = _InFlight(name)
-                            pending[
-                                get_tpe().submit(
+                            # Pool admission is the last decision on this
+                            # thread, after every pass-through check: a
+                            # pass-through acquires nothing because it runs
+                            # nothing, and this point is reached only for a
+                            # job that is genuinely about to run.
+                            if self.pools.try_acquire(job.resources):
+                                future = get_tpe().submit(
                                     self._run_job,
                                     job,
                                     state_in,
@@ -966,7 +1139,14 @@ class Workflow(Flow):
                                     name in plan.forced,
                                     plan.reproducible_at,
                                 )
-                            ] = submitted
+                                pending[future] = submitted
+                                future_resources[future] = job.resources
+                            else:
+                                parked_jobs.append(
+                                    _ParkedJob(
+                                        job, state_in, submitted, name in plan.forced
+                                    )
+                                )
                         else:
                             # A ring's collapsed node: 'name' is the gate id.
                             # An 'if' on the gate is the one place a ring
@@ -1059,6 +1239,14 @@ class Workflow(Flow):
                         ) from created
                     except Exception as e:
                         progress.errors[k] = e
+                    finally:
+                        # Each pass releases its own grant the moment it
+                        # resolves, independent of whether the sweep as a
+                        # whole has settled: a two-seat pool holds a
+                        # five-point sweep to two *concurrent* passes, not to
+                        # two passes total, so a finished pass's seat is what
+                        # lets a still-parked one start.
+                        self.pools.release(future_resources.pop(future, ()))
                     if not progress.complete:
                         continue
                     del sweeps[job_id]
@@ -1143,6 +1331,12 @@ class Workflow(Flow):
                 else:
                     outputs[finished.name] = state_out
                 finally:
+                    # Popped rather than looked up, and defaulted to (): a
+                    # ring's own future never entered 'future_resources' at
+                    # all (its pool use is internal to '_run_loop'), so this
+                    # is a no-op release for it, exactly as an empty
+                    # 'resources' tuple is for a job that names no pool.
+                    self.pools.release(future_resources.pop(future, ()))
                     self.progress_bar.end_stage()
 
         if failures:
@@ -2223,15 +2417,26 @@ class Workflow(Flow):
                     circulating = input_state
                     continue
                 config = self._member_config(gate_job, member, k)
-                circulating = self._execute_steps(
-                    member_job,
-                    input_state,
-                    submitted,
-                    forced,
-                    None,
-                    pass_index=k,
-                    config=config,
-                )
+                # Blocking, not try-and-park: this already runs on a worker
+                # thread, off the scheduling thread entirely, and a waiter
+                # here holds no slot of its own while it waits, so it cannot
+                # deadlock against a holder that is itself an execution on
+                # another worker. Acquired and released per member per pass,
+                # not once for the whole ring, so a ten-pass loop does not
+                # hold a seat while a member outside this pass runs.
+                self.pools.acquire(member_job.resources)
+                try:
+                    circulating = self._execute_steps(
+                        member_job,
+                        input_state,
+                        submitted,
+                        forced,
+                        None,
+                        pass_index=k,
+                        config=config,
+                    )
+                finally:
+                    self.pools.release(member_job.resources)
             gate_output = circulating
             held = [
                 predicates.evaluate_metric_term(
@@ -2392,6 +2597,89 @@ class Workflow(Flow):
                     )
 
         return progress.results[winner_k]
+
+    def _admit_parked(
+        self,
+        parked_jobs: list[_ParkedJob],
+        parked_sweep_passes: list[_ParkedSweepPass],
+        plan: _RunPlan,
+        pending: dict[Future[State], _InFlight],
+        sweep_futures: dict[Future[State], tuple[str, int]],
+        future_resources: dict[Future[State], tuple[str, ...]],
+    ) -> None:
+        """
+        Retries every job and sweep pass this run has parked for a full
+        resource pool, submitting whichever now fits and leaving the rest
+        parked.
+
+        Called once at the top of :meth:`run`'s scheduling loop, on every
+        wake: after ``wait()`` returns (something completed and may have
+        freed a slot) and after a pass-through sweep loops back around
+        (which frees none, but costs nothing extra to re-check). Non-blocking
+        throughout -- every admission below is :meth:`ResourcePools.try_acquire`,
+        never :meth:`ResourcePools.acquire` -- so this never stalls the
+        scheduling thread the way a parked entry itself never stalls the run.
+
+        Parameters
+        ----------
+        parked_jobs : list[_ParkedJob]
+            Mutated in place: admitted entries are removed, the rest kept in
+            their original relative order.
+        parked_sweep_passes : list[_ParkedSweepPass]
+            As ``parked_jobs``, for sweep passes.
+        plan : _RunPlan
+            This invocation's plan, for ``reproducible_at`` -- the one field
+            an admitted job's or sweep pass's submission needs that neither
+            :class:`_ParkedJob` nor :class:`_ParkedSweepPass` carries itself,
+            since the plan is one constant for the whole run and every
+            parked entry shares it.
+        pending : dict[Future[State], _InFlight]
+            Mutated in place: an admitted entry's future is added, keyed to
+            its record, exactly as an immediate submission would be.
+        sweep_futures : dict[Future[State], tuple[str, int]]
+            Mutated in place: an admitted sweep pass's future is added,
+            keyed to its ``(job id, pass)``.
+        future_resources : dict[Future[State], tuple[str, ...]]
+            Mutated in place: an admitted entry's future is added, keyed to
+            the pool names its grant holds, so :meth:`run` releases them when
+            the future resolves.
+        """
+        still_parked: list[_ParkedJob] = []
+        for parked in parked_jobs:
+            if not self.pools.try_acquire(parked.job.resources):
+                still_parked.append(parked)
+                continue
+            future = get_tpe().submit(
+                self._run_job,
+                parked.job,
+                parked.state_in,
+                parked.submitted,
+                parked.forced,
+                plan.reproducible_at,
+            )
+            pending[future] = parked.submitted
+            future_resources[future] = parked.job.resources
+        parked_jobs[:] = still_parked
+
+        still_parked_passes: list[_ParkedSweepPass] = []
+        for parked_pass in parked_sweep_passes:
+            if not self.pools.try_acquire(parked_pass.job.resources):
+                still_parked_passes.append(parked_pass)
+                continue
+            future = get_tpe().submit(
+                self._execute_steps,
+                parked_pass.job,
+                parked_pass.state_in,
+                parked_pass.submitted,
+                parked_pass.forced,
+                plan.reproducible_at,
+                pass_index=parked_pass.pass_index,
+                config=parked_pass.config,
+            )
+            pending[future] = parked_pass.submitted
+            sweep_futures[future] = (parked_pass.job.id, parked_pass.pass_index)
+            future_resources[future] = parked_pass.job.resources
+        parked_sweep_passes[:] = still_parked_passes
 
     def _enabled_jobs(self) -> set[str]:
         """
