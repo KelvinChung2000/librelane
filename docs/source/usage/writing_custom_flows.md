@@ -288,8 +288,8 @@ A sweep job may not be a ring member, and `mode: sweep` never declares
 
 ### Runtime conditions
 
-`if`, and inside a loop `until`, may test a metric of the job's own input
-state rather than only a configuration variable, with a `metric::` term:
+`if` may test a metric of the job's own input state rather than only a
+configuration variable, with a `metric::` term:
 
 ```yaml
 jobs:
@@ -312,9 +312,11 @@ and the observed value, the same way `--explain` reports it afterwards. A
 term whose metric is missing from the input state is a runtime error --
 absence is not false, it is a measurement that never happened.
 
-`until` accepts only `metric::` terms: a plain configuration variable is
-constant across a loop's passes, so a gate conjoining one would either always
-exit on pass 1 or never exit at all.
+A loop's gate uses the same term grammar for `until`, but against a
+different state: not the gate's *input*, but its *output* after each pass
+finishes -- see Loops, above. `until` accepts only `metric::` terms: a plain
+configuration variable is constant across a loop's passes, so a gate
+conjoining one would either always exit on pass 1 or never exit at all.
 
 ### Resource pools
 
@@ -351,11 +353,13 @@ declaration.
 
 Acquisition is all-or-nothing across every pool a job names: a job takes
 every seat it needs at once or none of them, so a job waiting on a pool never
-holds a different one meanwhile, which is what keeps pools from deadlocking
-whatever a document declares. A loop member acquires and releases its own
-pools per pass, not for the whole loop; a sweep's passes acquire
-independently, so a two-seat pool still runs a five-point sweep two passes at
-a time rather than one point or all five.
+holds a different one meanwhile, and a seat is only ever granted to work
+already running on a worker; work that cannot get a worker waits holding
+nothing. Together these are what keep pools from deadlocking whatever a
+document declares. A loop member acquires and releases its own pools per
+pass, not for the whole loop; a sweep's passes acquire independently, so a
+two-seat pool still runs a five-point sweep two passes at a time rather than
+one point or all five.
 
 ## Fully Customized Flows
 

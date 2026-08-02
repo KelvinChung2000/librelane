@@ -242,7 +242,12 @@ def evaluate_metric_term(
         not one of ``int``, ``float`` or ``Decimal``. A numeric-looking
         string is not parsed and is refused exactly as any other non-numeric
         value is, because a predicate that silently compared a string to a
-        number would be false for a reason no message states.
+        number would be false for a reason no message states. A ``bool`` is
+        refused the same way despite being an ``int`` subclass -- a Boolean
+        is never a quantity, the same rule this branch's capacity resolvers
+        already apply to a pool's capacity -- rather than reaching
+        ``Decimal(str(value))`` below and raising a raw, unnamed
+        ``decimal.InvalidOperation``.
     """
     if term.metric not in metrics:
         raise FlowError(
@@ -253,7 +258,7 @@ def evaluate_metric_term(
             f"{sorted(metrics)}."
         )
     value = metrics[term.metric]
-    if not isinstance(value, (int, float, Decimal)):
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
         raise FlowError(
             f"{owner} evaluates 'metric::{term.metric} {term.op} "
             f"{term.literal}' against observed value {value!r} of type "

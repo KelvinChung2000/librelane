@@ -113,9 +113,29 @@ def sweep_steps():
                 raise StepError("failed on purpose")
             return {}, {}
 
+    @Step.factory.register()
+    class BoolScore(Step):
+        """
+        Writes the select metric 'score' as a literal Python ``bool``, not
+        derived from a configuration variable: an ``int``-typed variable
+        already refuses a ``bool`` value on the way in
+        (:class:`librelane.config.legacy.Variable`), so this is the only way
+        to get one into a state's metrics at all, the way a hand-written
+        ``metrics.json`` containing JSON ``true`` would.
+        """
+
+        id = "Test.SweepBoolScore"
+        inputs = []
+        outputs = []
+
+        def run(self, state_in, **kwargs):
+            ns.calls.append(self.id)
+            return {}, {"score": True}
+
     ns.Score = Score
     ns.MaybeDefer = MaybeDefer
     ns.MaybeFail = MaybeFail
+    ns.BoolScore = BoolScore
     return ns
 
 
@@ -301,6 +321,38 @@ def test_a_missing_select_metric_fails_naming_job_pass_and_metric(
     assert "sweep" in message
     assert "pass 2" in message
     assert "score" in message
+
+
+@mock_variables([flow_module, step_module])
+def test_a_boolean_select_metric_fails_naming_the_pass_and_metric(
+    sweep_steps, minimal_design, mock_pdk
+):
+    """
+    bool is an int subclass, so a boolean 'select' metric would otherwise
+    pass the numeric-type check and reach Decimal(str(True)) below it,
+    raising a raw, unnamed decimal.InvalidOperation instead of the named
+    refusal this pins.
+    """
+    from librelane.flows.engine import Workflow
+    from librelane.flows.flow import FlowError
+    from librelane.flows.spec import FlowSpec
+
+    spec = FlowSpec.model_validate(
+        _sweep_spec(
+            [{}],
+            select="score min",
+            steps=["Test.SweepBoolScore"],
+        )
+    )
+    flow = Workflow(spec, minimal_design, **mock_pdk)
+    with pytest.raises(FlowError) as exc_info:
+        flow.start(tag="t")
+
+    message = str(exc_info.value)
+    assert "sweep" in message
+    assert "pass 1" in message
+    assert "score" in message
+    assert "bool" in message
 
 
 @mock_variables([flow_module, step_module])

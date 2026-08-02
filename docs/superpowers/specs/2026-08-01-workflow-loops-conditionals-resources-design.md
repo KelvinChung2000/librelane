@@ -416,8 +416,10 @@ the unknown-key error stays exhaustive.
 
 `parse_condition` becomes the parser of the shared term grammar, returning
 structured terms rather than bare names, and remains the only implementation of
-it; `until` and `select` reuse its term parsing rather than growing their own.
-`ResolvedJob` carries the parsed forms.
+it; `until` reuses its term parsing rather than growing its own. `select` is
+not a predicate — it is a two-token `<metric> min|max` shape with no operator
+or literal, so it is validated as that shape directly rather than through the
+term grammar. `ResolvedJob` carries the parsed forms.
 
 ## Load-time errors
 

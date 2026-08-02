@@ -2785,7 +2785,16 @@ class Workflow(Flow):
                     f"has no result."
                 )
             observed = state.metrics[metric]
-            if not isinstance(observed, (int, float, Decimal)):
+            # isinstance(observed, bool) checked ahead of the numeric tuple,
+            # not folded into it: bool is an int subclass, so 'True'/'False'
+            # would otherwise pass this check and reach Decimal(str(observed))
+            # below, raising a raw, unnamed decimal.InvalidOperation instead
+            # of the named refusal below -- the same rule
+            # predicates.evaluate_metric_term applies to a runtime term's
+            # observed value.
+            if isinstance(observed, bool) or not isinstance(
+                observed, (int, float, Decimal)
+            ):
                 raise FlowError(
                     f"sweep pass {k}'s 'select' metric '{metric}' is "
                     f"{observed!r} of type '{type(observed).__name__}', "

@@ -194,6 +194,21 @@ def test_evaluate_metric_term_refuses_a_string_observed_value():
     assert "str" in message
 
 
+def test_evaluate_metric_term_refuses_a_boolean_observed_value():
+    # bool is an int subclass, so this has to be checked ahead of the
+    # (int, float, Decimal) tuple rather than falling through to it: a
+    # metrics.json with a JSON 'true'/'false' reaches this path directly,
+    # and Decimal(str(True)) raises a raw, unnamed decimal.InvalidOperation
+    # instead of the named refusal below.
+    term = MetricTerm(metric="x", op="==", literal=0)
+    with pytest.raises(FlowError) as exc_info:
+        evaluate_metric_term(term, {"x": True}, "job 'j'")
+
+    message = str(exc_info.value)
+    assert "x" in message
+    assert "bool" in message
+
+
 def test_evaluate_metric_term_compares_float_and_decimal_exactly():
     term = MetricTerm(metric="x", op="==", literal=Decimal("0.1"))
     assert evaluate_metric_term(term, {"x": 0.1}, "job 'j'") is True
