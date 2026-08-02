@@ -30,7 +30,7 @@ for the design this module implements.
 
 import threading
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 
 class ResourcePools:
@@ -40,9 +40,14 @@ class ResourcePools:
 
     Acquisition is all-or-nothing: a caller either takes every pool it named
     at once or takes none of them, so a waiter never holds one pool while it
-    waits on another. That is what makes the pools deadlock-free whatever a
-    document declares -- hold-and-wait cannot arise if nothing is ever held
-    while waiting, whatever order jobs happen to name their pools in.
+    waits on another -- hold-and-wait cannot arise for *this object's own*
+    contract, whatever order jobs happen to name their pools in. This is a
+    property of :class:`ResourcePools` in isolation; it is not by itself a
+    promise that nothing built on top of it can deadlock. See
+    :meth:`librelane.flows.engine.Workflow.run` for the engine-level
+    invariant -- every grant is held only by work actively running on a
+    worker thread -- that this object's own guarantee is combined with to
+    make the *engine's* admission scheme deadlock-free.
 
     Parameters
     ----------
@@ -56,12 +61,30 @@ class ResourcePools:
         every method below is fastest for: called for every job whether or
         not it names a pool, an empty ``names`` sequence returns without
         acquiring the lock at all.
+    on_release : Callable[[], None] | None
+        Invoked once, outside the lock, at the end of a non-empty
+        :meth:`release` call -- never for an empty-names release, which
+        changed nothing. A mutable attribute (``self.on_release``), not a
+        fixed constructor-only value: the pools object is built once, in
+        ``Workflow.__init__``, before any run exists to be woken, so
+        :meth:`~librelane.flows.engine.Workflow.run` installs its own
+        wakeup callback for the run's duration and clears it afterwards.
+        Exists so the scheduling thread, blocked in ``wait()`` on a set of
+        futures that does not include a ring's *per-pass* completions (only
+        its one multi-pass future), can still be woken promptly when a pass
+        releases a pool a parked job is waiting on, rather than only when
+        some unrelated future in that wait set happens to resolve.
     """
 
-    def __init__(self, capacities: Mapping[str, int]) -> None:
+    def __init__(
+        self,
+        capacities: Mapping[str, int],
+        on_release: Callable[[], None] | None = None,
+    ) -> None:
         self._capacities = dict(capacities)
         self._available = dict(capacities)
         self._condition = threading.Condition()
+        self.on_release = on_release
 
     def try_acquire(self, names: Sequence[str]) -> bool:
         """
@@ -133,6 +156,12 @@ class ResourcePools:
             for name, count in Counter(names).items():
                 self._available[name] += count
             self._condition.notify_all()
+        # Outside the lock: on_release is engine code that may itself touch
+        # unrelated locks (Workflow.run's own sentinel bookkeeping), and
+        # nothing above needs it held to be correct -- the counters are
+        # already updated and every in-object waiter already notified.
+        if self.on_release is not None:
+            self.on_release()
 
     def _fits(self, names: Sequence[str]) -> bool:
         """

@@ -321,16 +321,33 @@ checks at that decision.
 Concretely, the pools are one lock-protected set of counters shared by
 everything that runs work. The scheduler consults it without blocking: an
 enabled job whose pools are full is simply not submitted this round, and is
-reconsidered when any running work completes. Loop passes and sweep executions
-run on worker threads and *block*-acquire through the same object, waiting on
-its condition until their slots free. Both paths take all named pools together
-under the one lock or take nothing.
+reconsidered when any running work completes or any pool slot frees. Loop
+passes run on worker threads and *block*-acquire through the same object,
+waiting on its condition until their slots free; sweep executions are admitted
+like ordinary jobs, each of the N passes non-blockingly on the scheduling
+thread. Both paths take all named pools together under the one lock or take
+nothing.
+
+The scheduler also never submits more work than the executor has workers. This
+is not a throughput choice but the second half of the safety argument: a pool
+slot is granted only to work that starts running immediately, so a granted
+slot is always held by an execution that is making progress toward releasing
+it. Without this, a slot could be granted to a job still queued for a worker
+while every worker is a loop pass blocked on that same slot — a cycle between
+pool grants and worker threads that the pool object alone cannot see. Work
+that cannot get a worker parks, unadmitted, holding nothing.
 
 The rules:
 
-- Acquisition is all-or-nothing. A waiter holds no slots while it waits, so
-  hold-and-wait never arises and pools cannot deadlock, whatever the document
-  declares. A pool can still *serialize*, which is its purpose.
+- Acquisition is all-or-nothing, and a slot is only ever granted to work
+  actively running on a worker. A waiter holds no slots while it waits, so
+  hold-and-wait never arises among pools; and every holder is running, so
+  every wait is on work that finishes and releases. Together these are why
+  pools cannot deadlock, whatever the document declares. A pool can still
+  *serialize*, which is its purpose.
+- A per-pass release inside a loop wakes the scheduler, so a parked job
+  sharing a pool with a ring is admitted between passes, not after the whole
+  ring.
 - Slots are released when the execution finishes, on success and on failure
   alike.
 - A pass-through firing acquires nothing, because it runs nothing.
@@ -343,6 +360,12 @@ The rules:
 declared pools. A duplicate name in one job's list is a load error, as a
 duplicate `needs` entry is. A declared pool no job names is legal and inert; a
 document that grows a pool before its second user is not wrong.
+
+In this grammar a job's demand on each pool it names is exactly one slot —
+`resources` is a list of names, with no per-job weight. Since a capacity below
+1 is already a construction error, a demand can never exceed a capacity, and
+no over-capacity refusal exists because nothing can express the condition it
+would refuse. A future weighted grammar would need that check.
 
 ### Run directories and resume
 

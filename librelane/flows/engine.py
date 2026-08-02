@@ -17,6 +17,7 @@ import os
 import pathlib
 import shutil
 import textwrap
+import threading
 from collections.abc import Iterable, Mapping, Sequence, Set
 from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass, field
@@ -389,21 +390,22 @@ class _SweepProgress:
 @dataclass
 class _ParkedJob:
     """
-    One ordinary job -- never a ring, see below -- admitted onto the net (its
-    input tokens already consumed and joined, its stage already started) but
-    not yet given a worker, because :meth:`ResourcePools.try_acquire` could
-    not grant its ``resources`` the moment it was checked.
+    One ordinary job admitted onto the net (its input tokens already
+    consumed and joined, its stage already started) but not yet given a
+    worker, because either no worker was free or
+    :meth:`ResourcePools.try_acquire` could not grant its ``resources`` the
+    moment it was checked.
 
     Retried on every later scheduler wake by :meth:`Workflow._admit_parked`,
     never by blocking the scheduling thread: a parked job holds its tokens
-    but no pool slot, so it can neither stall the run nor deadlock against
-    anything else waiting, only wait for some running job's completion to
-    free a slot.
-
-    A ring never parks here. Its pool use is per member per pass, acquired
-    with a *blocking* call from inside its own single worker submission
-    (:meth:`Workflow._run_loop`), not admitted from the scheduling thread at
-    all -- see that method's own acquire/release wrapping.
+    but neither an executor slot nor a pool grant, so it can neither stall
+    the run nor be the deadlocking half of a cycle -- see
+    :meth:`Workflow.run`'s own docstring for the invariant this and
+    :class:`_ParkedRing` together restore (task 6 review, finding C1): every
+    pool grant is held only by work that is a worker's *current* task, never
+    by something merely queued behind one, so anything blocked waiting on a
+    pool is always waiting on genuinely running work, which makes progress
+    and eventually releases.
 
     Parameters
     ----------
@@ -429,10 +431,10 @@ class _ParkedJob:
 class _ParkedSweepPass:
     """
     One sweep execution admitted onto the net but not yet given a worker, for
-    the same reason and under the same retry rule as :class:`_ParkedJob`.
+    the same two reasons and under the same retry rule as :class:`_ParkedJob`.
 
-    A sweep's ``N`` passes are admitted independently -- one
-    :meth:`ResourcePools.try_acquire` per pass at fan-out, in
+    A sweep's ``N`` passes are admitted independently -- one worker-slot
+    check and one :meth:`ResourcePools.try_acquire` per pass at fan-out, in
     :meth:`Workflow.run` -- rather than once for the whole sweep, so a
     two-seat pool runs a five-point sweep two passes at a time rather than
     admitting it as one all-or-nothing unit.
@@ -460,6 +462,42 @@ class _ParkedSweepPass:
     forced: bool
     pass_index: int
     config: _ResolvedConfig
+
+
+@dataclass
+class _ParkedRing:
+    """
+    One ring's loop instance, enabled and ready to run, but not yet
+    submitted because no worker was free (task 6 review, finding C1).
+
+    A ring never contends for a *pool* on the scheduling thread -- its own
+    ``resources`` use is per member per pass, acquired with a *blocking*
+    call from inside :meth:`Workflow._run_loop` once it is running on a
+    worker -- so unlike :class:`_ParkedJob` and :class:`_ParkedSweepPass`,
+    :meth:`Workflow._admit_parked` retries this against only the free-worker
+    check, never against :meth:`ResourcePools.try_acquire`.
+
+    Parameters
+    ----------
+    gate
+        The ring's gate id.
+    members
+        The ring's members, in pass order, as :meth:`Workflow._run_loop`
+        expects.
+    tokens
+        Every member's own external tokens, from
+        :meth:`Workflow._tokens_for_ring`.
+    submitted
+        This loop instance's record.
+    forced
+        As :meth:`Workflow._run_loop`.
+    """
+
+    gate: str
+    members: tuple[str, ...]
+    tokens: dict[str, dict[str, State]]
+    submitted: _InFlight
+    forced: bool
 
 
 class Workflow(Flow):
@@ -605,7 +643,13 @@ class Workflow(Flow):
             capacity naming a configuration variable is read off
             ``self.config``, which by now holds it as an ``int`` --
             :func:`librelane.flows.spec_validation._check_resource_variable_capacities_are_declared_ints`
-            already refused a variable not declared with type ``int``.
+            already refused a variable not declared with type ``int``. It is
+            never a ``bool`` either, though ``int`` and ``bool`` coercion is
+            otherwise lax elsewhere in the configuration model: an ``int``-
+            typed variable's value is rejected before it ever reaches
+            ``self.config`` if it is a ``bool``, by
+            :class:`librelane.config.legacy.Variable`'s own coercion, so
+            there is no second bool check to make here.
 
         Raises
         ------
@@ -930,6 +974,38 @@ class Workflow(Flow):
         **kwargs,
     ) -> tuple[State, list[Step]]:
         """
+        Resource pools are deadlock-free (task 6 review, finding C1) because
+        this method maintains one invariant throughout: **every pool grant
+        is held only by work that is a worker's current task, never by
+        something merely queued behind one.** ``ResourcePools`` on its own
+        guarantees a waiter holds nothing while it waits, which rules out
+        hold-and-wait; it says nothing about whether a *holder* is making
+        progress. This method supplies that second half by never handing
+        ``get_tpe().submit`` more work than it has read the executor's own
+        worker count to have room for (``len(pending) < max_workers``,
+        checked immediately before every ``try_acquire`` and short-
+        circuiting it on failure, at every submission site -- an ordinary
+        job, a sweep pass, a ring, and each one's retry in
+        ``_admit_parked``). A job or sweep pass refused a pool grant, or
+        refused a worker, parks (:class:`_ParkedJob`, :class:`_ParkedSweepPass`);
+        a ring refused only a worker parks the same way
+        (:class:`_ParkedRing`). Together this means: anything blocked in
+        :meth:`ResourcePools.acquire` is always waiting on a grant held by
+        genuinely running work, which is therefore making progress and will
+        eventually release it, which is what makes the wait finite.
+
+        A parked entry is reconsidered on every scheduler wake, which by
+        itself is not enough for a ring: only the ring's *own*, one,
+        multi-pass future ever sits in ``pending``, so a plain
+        ``wait(pending)`` cannot notice a pool a ring released *between*
+        two of its passes (task 6 review, finding I1). ``self.pools`` is
+        given a wakeup callback (``wake_scheduler``, installed for the
+        duration of this call and cleared before it returns) that completes
+        a per-iteration sentinel future the moment any non-empty
+        :meth:`ResourcePools.release` happens while something is parked;
+        that sentinel joins ``pending`` in the wait set exactly when there
+        is parked work to wake up for, so a mid-ring release is not missed.
+
         Parameters
         ----------
         initial_state : State
@@ -1014,12 +1090,67 @@ class Workflow(Flow):
         #: ``finally`` of whichever branch below settles the future, so a
         #: slot is returned on every exit path, success or failure.
         future_resources: dict[Future[State], tuple[str, ...]] = {}
-        #: Ordinary jobs whose tokens are consumed but whose pools were full
-        #: the moment they were checked. Retried by ``_admit_parked`` on
-        #: every scheduler wake, ahead of ``net.enabled()``.
+        #: Ordinary jobs whose tokens are consumed but whose pools were full,
+        #: or whose executor slot was, the moment they were checked. Retried
+        #: by ``_admit_parked`` on every scheduler wake, ahead of
+        #: ``net.enabled()``.
         parked_jobs: list[_ParkedJob] = []
         #: Sweep passes parked for the same reason, one entry per pass.
         parked_sweep_passes: list[_ParkedSweepPass] = []
+        #: Rings parked because no executor slot was free -- never for a
+        #: pool, which a ring only ever contends for from inside its own
+        #: worker, once it has one. See ``_ParkedRing``.
+        parked_rings: list[_ParkedRing] = []
+
+        # This engine's own bound on how many jobs it will ever have
+        # in-flight in `get_tpe()`'s executor at once, read once here rather
+        # than at every admission site. `ThreadPoolExecutor` has no public
+        # accessor for its worker count; `_max_workers` is a private
+        # attribute, but a stable one across the CPython versions this
+        # project supports, and the alternative -- tracking a second,
+        # independent counter that has to be kept in lockstep with `-j` by
+        # hand -- is worse than reading the executor's own number once.
+        #
+        # This bound is what restores deadlock-freedom (task 6 review,
+        # finding C1): see this method's own docstring for the invariant.
+        # `Flow.start_step_async` (flow.py) also submits to this same
+        # executor, but that is the legacy per-step `Flow` API, which
+        # `Workflow` never calls into and never runs concurrently with its
+        # own scheduling loop, so it is not a second submitter this bound
+        # has to account for.
+        max_workers = get_tpe()._max_workers
+
+        # Guards `release_sentinel` against two release calls -- each
+        # `ResourcePools.on_release` runs on whatever thread called
+        # `release`, so a ring's per-pass release (a worker thread) and an
+        # ordinary job's or sweep pass's (this, the scheduling thread) can
+        # call it at once -- and against this thread replacing the sentinel
+        # while one of those calls is reading it.
+        sentinel_lock = threading.Lock()
+        #: Completed by `wake_scheduler` the moment any non-empty `release`
+        #: happens while this is the live sentinel, so the scheduling
+        #: thread's `wait()` below returns even though nothing in `pending`
+        #: itself resolved -- the wakeup a ring's *per-pass* release would
+        #: otherwise have no way to deliver, since only the ring's one
+        #: multi-pass future is ever in `pending` (task 6 review, finding
+        #: I1). `None` whenever nothing is parked: installing one is only
+        #: ever useful when there is parked work waiting on exactly this
+        #: kind of wakeup.
+        release_sentinel: Future[None] | None = None
+
+        def wake_scheduler() -> None:
+            """
+            Completes the current `release_sentinel`, if any and not already
+            done. Installed as `self.pools.on_release` for the duration of
+            this run only (cleared before `run` returns), so a release after
+            this run has no listener left to wake.
+            """
+            nonlocal release_sentinel
+            with sentinel_lock:
+                if release_sentinel is not None and not release_sentinel.done():
+                    release_sentinel.set_result(None)
+
+        self.pools.on_release = wake_scheduler
 
         # The marking is not thread-safe and is not made so: every call into
         # `net` below happens on this thread. A lock would exist only to
@@ -1028,18 +1159,36 @@ class Workflow(Flow):
         # fired after its future resolves, and the workers never see it.
         while True:
             fired_pass_through = False
-            # Ahead of 'net.enabled()' and unconditional on 'failures': a
-            # parked job or sweep pass was already selected to run before
-            # anything failed -- its tokens are consumed -- so it is drained
-            # like the rest of 'pending' rather than abandoned, and only the
-            # *enabling* of new work below stops once something has failed.
+            # Step (1) of the wakeup ordering `wake_scheduler` and this loop
+            # depend on (task 6 review, finding I1): for whatever is already
+            # parked from an earlier iteration, a live sentinel is installed
+            # *before* the retry below, so a release that happens during the
+            # retry still completes a sentinel this iteration's `wait()`
+            # goes on to include -- `wait()` then returns it already done, a
+            # harmless extra pass, rather than the wakeup being lost because
+            # nothing was listening yet. The matching check just above
+            # `wait()` below covers the other case, a job, sweep pass or
+            # ring parked for the first time later in *this* iteration, by
+            # `net.enabled()`, after this point has already run.
+            if parked_jobs or parked_sweep_passes or parked_rings:
+                with sentinel_lock:
+                    if release_sentinel is None or release_sentinel.done():
+                        release_sentinel = Future()
+            # Step (2): ahead of 'net.enabled()' and unconditional on
+            # 'failures': a parked job, sweep pass or ring was already
+            # selected to run before anything failed -- its tokens are
+            # consumed -- so it is drained like the rest of 'pending' rather
+            # than abandoned, and only the *enabling* of new work below stops
+            # once something has failed.
             self._admit_parked(
                 parked_jobs,
                 parked_sweep_passes,
+                parked_rings,
                 plan,
                 pending,
                 sweep_futures,
                 future_resources,
+                max_workers,
             )
             if not failures:
                 for name in net.enabled():
@@ -1098,7 +1247,18 @@ class Workflow(Flow):
                                     # once for the whole sweep, so a two-seat
                                     # pool runs a five-point sweep two passes
                                     # at a time rather than all five or none.
-                                    if self.pools.try_acquire(job.resources):
+                                    # The free-worker check comes first and a
+                                    # failed one is never followed by
+                                    # try_acquire (task 6 review, finding
+                                    # C1): granting a pool seat to a pass this
+                                    # engine cannot also hand a worker is
+                                    # exactly the state a blocked ring can
+                                    # never see release.
+                                    if len(
+                                        pending
+                                    ) < max_workers and self.pools.try_acquire(
+                                        job.resources
+                                    ):
                                         future = get_tpe().submit(
                                             self._execute_steps,
                                             job,
@@ -1125,12 +1285,18 @@ class Workflow(Flow):
                                         )
                                 continue
                             submitted = _InFlight(name)
-                            # Pool admission is the last decision on this
-                            # thread, after every pass-through check: a
-                            # pass-through acquires nothing because it runs
-                            # nothing, and this point is reached only for a
-                            # job that is genuinely about to run.
-                            if self.pools.try_acquire(job.resources):
+                            # Admission is the last decision on this thread,
+                            # after every pass-through check: a pass-through
+                            # acquires nothing because it runs nothing, and
+                            # this point is reached only for a job that is
+                            # genuinely about to run. The free-worker check
+                            # comes first, and a failed one short-circuits
+                            # before try_acquire is ever called (task 6
+                            # review, finding C1) -- see this method's own
+                            # docstring for why that order is load-bearing.
+                            if len(pending) < max_workers and self.pools.try_acquire(
+                                job.resources
+                            ):
                                 future = get_tpe().submit(
                                     self._run_job,
                                     job,
@@ -1186,8 +1352,18 @@ class Workflow(Flow):
                                 fired_pass_through = True
                                 continue
                             submitted = _InFlight(gate)
-                            pending[
-                                get_tpe().submit(
+                            # A ring never contends a pool from this thread
+                            # (its members' own resources are acquired
+                            # blocking, from inside _run_loop, once it has a
+                            # worker) but it still needs a free worker to be
+                            # handed to, for the same reason an ordinary job
+                            # does: submitting it into an already-saturated
+                            # executor would queue it behind work that is
+                            # itself waiting on a pool this ring might be
+                            # about to hold, or vice versa (task 6 review,
+                            # finding C1).
+                            if len(pending) < max_workers:
+                                future = get_tpe().submit(
                                     self._run_loop,
                                     gate,
                                     ring_members,
@@ -1195,7 +1371,17 @@ class Workflow(Flow):
                                     submitted,
                                     gate in plan.forced,
                                 )
-                            ] = submitted
+                                pending[future] = submitted
+                            else:
+                                parked_rings.append(
+                                    _ParkedRing(
+                                        gate,
+                                        ring_members,
+                                        member_tokens,
+                                        submitted,
+                                        gate in plan.forced,
+                                    )
+                                )
                     except Exception as e:
                         failures.append(f"Job '{name}': {e}")
                         # Only if it started. The token read and the input
@@ -1216,8 +1402,33 @@ class Workflow(Flow):
                 continue
             if not pending:
                 break
-            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            # Step (3) of the wakeup ordering: the sentinel joins the wait
+            # set only when something is still parked after the retry -- on
+            # a pool-free flow this is always empty and `wait()` behaves
+            # exactly as it did before parking existed. Re-checked here
+            # (not just trusted from the top-of-loop install) because
+            # `net.enabled()`, above, can park a job, sweep pass or ring for
+            # the *first* time this iteration, after that earlier check ran
+            # -- a release from this point on must still be caught by a live
+            # sentinel this iteration installs, not left to the next
+            # iteration's own top-of-loop check, which would only run once
+            # `wait()` below has already returned.
+            wait_targets: list[Future[Any]] = list(pending)
+            if parked_jobs or parked_sweep_passes or parked_rings:
+                with sentinel_lock:
+                    if release_sentinel is None or release_sentinel.done():
+                        release_sentinel = Future()
+                wait_targets.append(release_sentinel)
+            done, _ = wait(wait_targets, return_when=FIRST_COMPLETED)
             for future in done:
+                if future is release_sentinel:
+                    # Step (4): nothing to settle -- this was only ever a
+                    # wakeup. A stale (already-replaced) sentinel can never
+                    # appear here: 'wait_targets' is built fresh from
+                    # whichever sentinel is current at the top of this very
+                    # iteration, and nothing replaces 'release_sentinel'
+                    # again until the next one.
+                    continue
                 finished = pending.pop(future)
                 sweep_key = sweep_futures.pop(future, None)
                 if sweep_key is not None:
@@ -1308,6 +1519,12 @@ class Workflow(Flow):
                     # run stopped: what it knows about the design is worth
                     # writing down either way.
                     self._save_final_snapshot(created.state)
+                    # Both of this branch's own exits (the raise just below
+                    # and the return after it) leave the scheduling loop for
+                    # good, so nothing will call self.pools.release again for
+                    # this run -- clear the callback before either of them,
+                    # matching the reset on the loop's two other exits below.
+                    self.pools.on_release = None
                     if deferred:
                         # The reproducible is written either way, and the
                         # message above says so, but an ancestor that deferred
@@ -1339,6 +1556,13 @@ class Workflow(Flow):
                     self.pools.release(future_resources.pop(future, ()))
                     self.progress_bar.end_stage()
 
+        # The scheduling loop above is this run's only user of the wakeup
+        # callback -- every future in 'pending' has resolved by the time a
+        # 'break' reaches here (the loop's other exit, the reproducible
+        # return/raise above, clears it in place) -- so nothing will call
+        # self.pools.release again for this run and a stale callback would
+        # only ever complete a sentinel nobody is listening to.
+        self.pools.on_release = None
         if failures:
             raise FlowError("\n".join(failures))
         # A failure leaves its descendants unfired, so this must come second:
@@ -2420,10 +2644,16 @@ class Workflow(Flow):
                 # Blocking, not try-and-park: this already runs on a worker
                 # thread, off the scheduling thread entirely, and a waiter
                 # here holds no slot of its own while it waits, so it cannot
-                # deadlock against a holder that is itself an execution on
-                # another worker. Acquired and released per member per pass,
-                # not once for the whole ring, so a ten-pass loop does not
-                # hold a seat while a member outside this pass runs.
+                # itself be the deadlocking half of a cycle. That alone is
+                # not sufficient, though: it also depends on this call never
+                # being reached while it is queued behind other engine work
+                # rather than genuinely running on a worker, which is why
+                # this thread only exists at all because run() checked a
+                # free-worker bound before submitting it (task 6 review,
+                # finding C1) -- see run()'s own docstring for the invariant
+                # that check restores. Acquired and released per member per
+                # pass, not once for the whole ring, so a ten-pass loop does
+                # not hold a seat while a member outside this pass runs.
                 self.pools.acquire(member_job.resources)
                 try:
                     circulating = self._execute_steps(
@@ -2602,23 +2832,36 @@ class Workflow(Flow):
         self,
         parked_jobs: list[_ParkedJob],
         parked_sweep_passes: list[_ParkedSweepPass],
+        parked_rings: list[_ParkedRing],
         plan: _RunPlan,
         pending: dict[Future[State], _InFlight],
         sweep_futures: dict[Future[State], tuple[str, int]],
         future_resources: dict[Future[State], tuple[str, ...]],
+        max_workers: int,
     ) -> None:
         """
-        Retries every job and sweep pass this run has parked for a full
-        resource pool, submitting whichever now fits and leaving the rest
-        parked.
+        Retries every job, sweep pass and ring this run has parked, submitting
+        whichever now fits and leaving the rest parked.
 
         Called once at the top of :meth:`run`'s scheduling loop, on every
         wake: after ``wait()`` returns (something completed and may have
-        freed a slot) and after a pass-through sweep loops back around
-        (which frees none, but costs nothing extra to re-check). Non-blocking
-        throughout -- every admission below is :meth:`ResourcePools.try_acquire`,
-        never :meth:`ResourcePools.acquire` -- so this never stalls the
-        scheduling thread the way a parked entry itself never stalls the run.
+        freed a slot or a pool grant) and after a pass-through sweep loops
+        back around (which frees neither, but costs nothing extra to
+        re-check). Non-blocking throughout -- every admission below is
+        :meth:`ResourcePools.try_acquire`, never :meth:`ResourcePools.acquire`
+        -- so this never stalls the scheduling thread the way a parked entry
+        itself never stalls the run.
+
+        A job's or sweep pass's own free-worker check (``len(pending) <
+        max_workers``) is re-read from the live ``pending`` on every entry,
+        not cached once for the whole call: admitting one parked entry grows
+        ``pending`` by one, and a second entry considered in the same call
+        must see that growth before deciding whether *it* still fits. The
+        check always comes before :meth:`ResourcePools.try_acquire` and
+        short-circuits it on failure (task 6 review, finding C1) -- granting
+        a pool seat to work this call cannot also place on a worker is
+        exactly the state that lets a blocked ring wait on a grant nothing
+        will ever run to release.
 
         Parameters
         ----------
@@ -2627,6 +2870,9 @@ class Workflow(Flow):
             their original relative order.
         parked_sweep_passes : list[_ParkedSweepPass]
             As ``parked_jobs``, for sweep passes.
+        parked_rings : list[_ParkedRing]
+            As ``parked_jobs``, for rings -- checked against the free-worker
+            bound only, since a ring never contends a pool from this thread.
         plan : _RunPlan
             This invocation's plan, for ``reproducible_at`` -- the one field
             an admitted job's or sweep pass's submission needs that neither
@@ -2635,18 +2881,24 @@ class Workflow(Flow):
             parked entry shares it.
         pending : dict[Future[State], _InFlight]
             Mutated in place: an admitted entry's future is added, keyed to
-            its record, exactly as an immediate submission would be.
+            its record, exactly as an immediate submission would be. Also
+            read, live, for the free-worker check described above.
         sweep_futures : dict[Future[State], tuple[str, int]]
             Mutated in place: an admitted sweep pass's future is added,
             keyed to its ``(job id, pass)``.
         future_resources : dict[Future[State], tuple[str, ...]]
             Mutated in place: an admitted entry's future is added, keyed to
             the pool names its grant holds, so :meth:`run` releases them when
-            the future resolves.
+            the future resolves. A ring's future is never added here, exactly
+            as an immediate ring submission never is.
+        max_workers : int
+            :meth:`run`'s own reading of the executor's worker count.
         """
         still_parked: list[_ParkedJob] = []
         for parked in parked_jobs:
-            if not self.pools.try_acquire(parked.job.resources):
+            if len(pending) >= max_workers or not self.pools.try_acquire(
+                parked.job.resources
+            ):
                 still_parked.append(parked)
                 continue
             future = get_tpe().submit(
@@ -2663,7 +2915,9 @@ class Workflow(Flow):
 
         still_parked_passes: list[_ParkedSweepPass] = []
         for parked_pass in parked_sweep_passes:
-            if not self.pools.try_acquire(parked_pass.job.resources):
+            if len(pending) >= max_workers or not self.pools.try_acquire(
+                parked_pass.job.resources
+            ):
                 still_parked_passes.append(parked_pass)
                 continue
             future = get_tpe().submit(
@@ -2680,6 +2934,22 @@ class Workflow(Flow):
             sweep_futures[future] = (parked_pass.job.id, parked_pass.pass_index)
             future_resources[future] = parked_pass.job.resources
         parked_sweep_passes[:] = still_parked_passes
+
+        still_parked_rings: list[_ParkedRing] = []
+        for parked_ring in parked_rings:
+            if len(pending) >= max_workers:
+                still_parked_rings.append(parked_ring)
+                continue
+            future = get_tpe().submit(
+                self._run_loop,
+                parked_ring.gate,
+                parked_ring.members,
+                parked_ring.tokens,
+                parked_ring.submitted,
+                parked_ring.forced,
+            )
+            pending[future] = parked_ring.submitted
+        parked_rings[:] = still_parked_rings
 
     def _enabled_jobs(self) -> set[str]:
         """
