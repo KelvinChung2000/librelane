@@ -11,7 +11,8 @@
     - blink
     - usb
     - usb_cdc_core
-    - cell_inverter
+    - name: cell_inverter
+      args: ["--target", "synthesis"]
     - spm
     - gcd
     - caravel_upw
@@ -25,6 +26,7 @@
       config_file: config.yaml
     - name: non_const_async_reset
       config_file: config.yaml
+      args: ["--target", "synthesis"]
     - name: aes_user_project_wrapper
       test_name: aes_upw_new
       config_file: config.json
@@ -37,9 +39,11 @@
     - name: latch
       test_name: latch_good
       config_file: config_good.json
+      args: ["--target", "synthesis"]
     - name: latch
       test_name: latch_bad
       config_file: config_bad.json
+      args: ["--target", "synthesis"]
     - name: EF_PSRAM_CTRL_V2
     - name: EF_UART
     - name: MS_SPI_XIP_CACHE
@@ -101,13 +105,16 @@
     - blink
     - wbqspiflash
     - inverter
-    - cell_inverter
+    - name: cell_inverter
+      args: ["--target", "synthesis"]
     - name: latch
       test_name: latch_good
       config_file: config_good.json
+      args: ["--target", "synthesis"]
     - name: latch
       test_name: latch_bad
       config_file: config_bad.json
+      args: ["--target", "synthesis"]
     # Hold violations
     - name: hold_violations_1
       script: harden.py
@@ -132,20 +139,24 @@
     - blink
     - usb
     - usb_cdc_core
-    - cell_inverter
+    - name: cell_inverter
+      args: ["--target", "synthesis"]
     - spm
     - name: full_chip
       config_file: config.yaml
     - name: non_const_async_reset
       config_file: config.yaml
+      args: ["--target", "synthesis"]
     - name: xtea
       config_file: config.yaml
     - name: latch
       test_name: latch_good
       config_file: config_good.json
+      args: ["--target", "synthesis"]
     - name: latch
       test_name: latch_bad
       config_file: config_bad.json
+      args: ["--target", "synthesis"]
     - name: EF_PSRAM_CTRL_V2
     - name: EF_GPIO
     # Hold violations

@@ -56,6 +56,7 @@ def main(scls, use_json, test_sets):
             test_name = design_name
             script = empty_runner_script
             config_filename = "config.json"
+            args = ""
             if not isinstance(design, str):
                 design_name = design["name"]
                 test_name = design.get("test_name", design_name)
@@ -65,6 +66,7 @@ def main(scls, use_json, test_sets):
                     script = os.path.join(
                         ol_dir, "test", "designs", design_name, script_filename
                     )
+                args = " ".join(design.get("args", []))
             config_file = os.path.join(
                 ol_dir, "test", "designs", design_name, config_filename
             )
@@ -93,6 +95,7 @@ def main(scls, use_json, test_sets):
                     "script": script,
                     "pdk_family": pdk_family,
                     "test_name": test_name,
+                    "args": args,
                 }
             )
 

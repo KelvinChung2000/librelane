@@ -523,6 +523,7 @@ jobs:
               --scl ${{ matrix.design.scl }}\
               --pdk-root ./.ciel-${{ matrix.design.pdk_family }}\
               --condensed\
+              ${{ matrix.design.args }}\
               ${{ matrix.design.config }}
           else
             nix develop --command\
@@ -768,6 +769,12 @@ jobs:
         if: ${{ env.PUBLISH == '1' }}
         run: |
           make dist
+      - name: Verify Wheel Registers Flows
+        if: ${{ env.PUBLISH == '1' }}
+        run: |
+          uv venv /tmp/wheel-check
+          uv pip install --python /tmp/wheel-check dist/*.whl
+          /tmp/wheel-check/bin/python -c "from librelane.flows import Flow; flows = set(Flow.factory.list()); assert {'Classic', 'Chip', 'VHDLClassic'} <= flows, flows"
       - name: Publish
         if: ${{ env.PUBLISH == '1' }}
         uses: pypa/gh-action-pypi-publish@release/v1
