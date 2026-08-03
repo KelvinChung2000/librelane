@@ -8,7 +8,5 @@ omit =
     test_*.py
     */steps/__main__.py
     */steps/__init__.py
-    */steps/step.py
+    */steps/step/*
     */steps/tclstep.py
-    */steps/checker.py
-    */steps/cvc_rv.py

@@ -15,12 +15,14 @@
 """
 The flow-level exception hierarchy.
 
-These live in ``common`` rather than in ``flows`` because ``jobs`` derives
-from them while ``flows`` depends on ``jobs``. Defining them in
-``flows.flow`` and importing them from ``jobs`` initializes the ``flows``
-package, which imports ``flows.staged``, which imports ``jobs`` again while
-it is still partway through its own module body. ``common`` sits below both, so
-the dependency runs one way only.
+These live in ``common`` rather than in ``flows`` because ``jobs.job``
+derives from them (``JobResolutionError``, ``JobContractError``) while
+``flows.flow`` imports ``librelane.steps``, and several step modules (e.g.
+``steps.innovus``) import ``jobs.job`` directly. Defining them in
+``flows.flow`` instead would make importing ``jobs.job`` initialize the
+``flows`` package, which imports ``steps``, which imports ``jobs.job`` again
+while it is still partway through its own module body. ``common`` sits below
+both, so the dependency runs one way only.
 
 They are re-exported from :mod:`librelane.flows` and
 :mod:`librelane.flows.flow`, which remain their documented import sites.

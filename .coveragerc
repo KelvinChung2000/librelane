@@ -11,8 +11,8 @@ omit =
     container.py
     env_info.py
     # Command-line frontends, formerly the omitted */__main__.py modules.
-    # librelane/cli/flow_opts.py is deliberately absent: it was measured
-    # before the move and is covered by test/cli/test_flow_opts.py.
+    # librelane/cli/options.py is deliberately absent: it was measured
+    # before the move and is covered by test/cli/test_runtime.py.
     */cli/main.py
     */cli/steps.py
     */cli/config.py
@@ -20,11 +20,6 @@ omit =
     */cli/metrics.py
     */cli/help.py
     */cli/env_info.py
-    */flows/builtins.py
-    */flows/classic.py
-    */flows/misc.py
-    */flows/optimizing.py
-    */flows/synth_explore.py
     */steps/magic.py
     */steps/misc.py
     */steps/netgen.py
