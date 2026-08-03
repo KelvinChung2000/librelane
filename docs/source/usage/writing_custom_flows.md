@@ -14,9 +14,10 @@ This defines many of the terms used and enumerates strictures mentioned in this 
 
 A flow is a YAML file. It declares a graph of named **jobs**, each of which
 runs some steps, and the edges between them. Nothing about it is Python, and
-LibreLane's own flows -- `Classic`, `VHDLClassic`, `Chip` and the five
-open-in flows -- are exactly this and nothing else; they live in
-`librelane/flows/*.yaml`.
+LibreLane's own flows -- `Classic`, `VHDLClassic` and `Chip` -- are exactly
+this and nothing else; they live in `librelane/flows/*.yaml`. Opening a run
+in a viewer is not a flow and has no document: that is
+`librelane open <viewer>`.
 
 ### Listing steps
 

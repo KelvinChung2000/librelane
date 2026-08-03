@@ -28,11 +28,14 @@ answering it needs either of those.
 
 from librelane.common.metrics import Metric
 from librelane.config import universal_flow_config_variables
+from librelane.flows.selection_validation import FRAMEWORK_METRICS
 from librelane.flows.spec import FlowSpec, FlowSpecError, JobSpec
 from librelane.flows.spec_graph import ancestors, descendants
 from librelane.jobs import Job, JobRegistry
 from librelane.state import DesignFormat
 from librelane.steps import Step
+from librelane.steps.odb.base import OdbpyStep
+from librelane.steps.openroad.base import OpenROADStep
 
 
 def validate_against_registry(spec: FlowSpec) -> None:
@@ -236,6 +239,39 @@ def _produced_keys(job_id: str, job: JobSpec) -> set[str]:
     return _produced_views(job_id, job) | _produced_metrics(job_id, job)
 
 
+def _writes_framework_metrics(job_id: str, job: JobSpec) -> bool:
+    """
+    Parameters
+    ----------
+    job_id : str
+        The document's key for this job.
+    job : JobSpec
+        The job.
+
+    Returns
+    -------
+    Whether any of this job's steps is OpenROAD- or Odbpy-backed, and so writes
+    :data:`~librelane.flows.selection_validation.FRAMEWORK_METRICS` that no
+    declaration mentions. Only :func:`_check_sources_can_deliver` asks: the
+    other checks over ``_produced_keys`` reason about *declared* contracts, and
+    teaching them about undeclared writes is
+    :func:`~librelane.flows.selection_validation.validate_selection`'s job.
+    """
+    uses = _resolved_uses(job_id, job)
+    if uses is None:
+        assert job.steps is not None
+        steps: tuple[type[Step], ...] = tuple(
+            step for step_id in job.steps if (step := Step.factory.get(step_id))
+        )
+    else:
+        template_id, provider = _provider_of(uses)
+        registration = JobRegistry.get(template_id, provider)
+        if registration is None:
+            return False
+        steps = registration.steps
+    return any(issubclass(step, (OpenROADStep, OdbpyStep)) for step in steps)
+
+
 def _consumed_views(job_id: str, job: JobSpec) -> set[str]:
     """
     Parameters
@@ -283,17 +319,30 @@ def _pairs(items: list[str]):
 
 
 def _check_source_keys_resolve(spec: FlowSpec) -> None:
+    """
+    Refuses a ``source`` key naming neither a registered view nor a metric that
+    can actually reach a join.
+
+    :data:`~librelane.flows.selection_validation.FRAMEWORK_METRICS` count as
+    metrics here even though no registration mentions them. They are what every
+    OpenROAD invocation writes, so two OpenROAD-backed branches meeting at one
+    consumer disagree about them, and
+    :func:`~librelane.flows.selection_validation.validate_selection` refuses
+    that document naming the metric. ``source`` is the remedy for exactly that
+    conflict; rejecting it here would leave the document with a refusal and no
+    way to answer it.
+    """
     for name, job in spec.jobs.items():
         for key in job.source:
             if DesignFormat.factory.get(key) is not None:
                 continue
-            if key in Metric.by_name:
+            if key in Metric.by_name or key in FRAMEWORK_METRICS:
                 continue
             raise FlowSpecError(
                 f"Job '{name}' sources '{key}', which is neither a registered "
                 f"view nor a registered metric. Registered views: "
                 f"{sorted(set(DesignFormat.factory.list()))}. Registered "
-                f"metrics: {sorted(Metric.by_name)}."
+                f"metrics: {sorted(set(Metric.by_name) | set(FRAMEWORK_METRICS))}."
             )
 
 
@@ -309,6 +358,14 @@ def _check_sources_can_deliver(
             # inherited counts, but a key nothing in the branch wrote does not.
             branch = {producer} | ancestors(edges, producer)
             if key in _union(keys, branch):
+                continue
+            # A framework metric is written but never declared, so the branch's
+            # declared keys cannot show it. It arrives if anything on the branch
+            # ran OpenROAD.
+            if key in FRAMEWORK_METRICS and any(
+                _writes_framework_metrics(job_id, spec.jobs[job_id])
+                for job_id in branch
+            ):
                 continue
             raise FlowSpecError(
                 f"Job '{name}' sources '{key}' from '{producer}', but neither "

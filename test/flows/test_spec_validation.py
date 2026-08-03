@@ -685,3 +685,59 @@ def test_a_str_resource_capacity_naming_a_declared_int_variable_is_accepted():
             ],
         )
     )
+
+
+def test_a_source_naming_a_framework_metric_is_accepted():
+    """
+    Every OpenROAD invocation writes the framework metrics and no registration
+    mentions them, so two OpenROAD-backed branches meeting at one consumer
+    disagree about them and
+    :func:`librelane.flows.selection_validation.validate_selection` refuses the
+    document naming the metric. ``source`` is the remedy that check honours, so
+    the two checks here -- the registry check, which sees an unregistered
+    metric, and the delivery check, which sees an undeclared one -- must both
+    let it through, or the refusal has no answer.
+    """
+    validate_against_registry(
+        _spec(
+            {
+                "floorplan": {"uses": "floorplan"},
+                "cts": {"needs": ["floorplan"], "uses": "cts/openroad"},
+                "magic_streamout": {
+                    "needs": ["floorplan"],
+                    "uses": "streamout/magic",
+                },
+                "join": {
+                    "needs": ["cts", "magic_streamout"],
+                    "uses": "drc/magic",
+                    "source": {"flow__errors__count": "cts"},
+                },
+            }
+        )
+    )
+
+
+def test_a_source_naming_a_framework_metric_no_branch_writes_is_rejected():
+    """
+    The exemption is not a blanket one: a branch with no OpenROAD- or
+    Odbpy-backed step never writes the framework metrics, so sourcing one from
+    it still names a value that never arrives.
+    """
+    with pytest.raises(FlowSpecError) as exc_info:
+        validate_against_registry(
+            _spec(
+                {
+                    "synthesis": {"uses": "synthesis/yosys"},
+                    "lint": {"uses": "lint/verilator"},
+                    "join": {
+                        "needs": ["synthesis", "lint"],
+                        "uses": "floorplan",
+                        "source": {"flow__errors__count": "lint"},
+                    },
+                }
+            )
+        )
+
+    message = str(exc_info.value)
+    assert "flow__errors__count" in message
+    assert "lint" in message
