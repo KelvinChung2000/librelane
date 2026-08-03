@@ -234,7 +234,7 @@ elect to apply one or more of these solutions:
 (caravel-openroad-stapostpnr-with-fixes)=
 #### `OpenROAD.STAPostPNR`
 
-Under `xx-openroad-stapostpnr` there should be a file called `summary.rpt`:
+Under `signoff_sta/xx-openroad-stapostpnr` there should be a file called `summary.rpt`:
 
 ```text
 ┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
@@ -257,7 +257,7 @@ Under `xx-openroad-stapostpnr` there should be a file called `summary.rpt`:
 As seen in the report, there are no hold or setup violations. There are only Max
 Cap and Max Slew violations. To see the violations:
 
-1. Open the report `checks` under `xx-openroad-stapostpnr/max_ss_100C_1v60`
+1. Open the report `checks` under `signoff_sta/xx-openroad-stapostpnr/max_ss_100C_1v60`
    since this corner has the highest number of Max Cap and Max Slew violations.
 1. Search for `max slew` and you will find the violations listed as follows:
 
@@ -634,7 +634,7 @@ variables AND environment variables (such as the operating system) as the
 detailed router is highly heuristic.
 ```
 
-Also, the STA report at `xx-openroad-stapostpnr/summary.rpt` should have no
+Also, the STA report at `signoff_sta/xx-openroad-stapostpnr/summary.rpt` should have no
 issues (there may be single-digit max capacitance/slew violations left over.)
 
 ```text
@@ -865,8 +865,8 @@ ______________________________________________________________________
 
 #### `OpenROAD.STAPostPNR`
 
-Looking at `xx-openroad-stapostpnr/summary.rpt` and the `Max Slew` section in
-`xx-openroad-stapostpnr/max_ss_100C_1v60/checks.rpt`, there are max transition
+Looking at `signoff_sta/xx-openroad-stapostpnr/summary.rpt` and the `Max Slew` section in
+`signoff_sta/xx-openroad-stapostpnr/max_ss_100C_1v60/checks.rpt`, there are max transition
 violations. If we look at the nets with violations, we will find that those are
 the long nets we saw in the GDS.
 
@@ -1158,7 +1158,7 @@ Shorter routes in the user_project_wrapper
 
 ### Re-checking the reports
 
-The STA report `xx-openroad-stapostpnr/summary.rpt` now has no issues:
+The STA report `signoff_sta/xx-openroad-stapostpnr/summary.rpt` now has no issues:
 
 ```text
 ┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓

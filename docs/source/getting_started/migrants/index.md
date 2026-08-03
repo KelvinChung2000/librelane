@@ -290,8 +290,8 @@ A more computer-friendly JSON representation of the metrics is also available.
 ./reports/signoff/*-sta-rcx_<interconnect corner name>/summary.rpt
 ./reports/signoff/*-sta-rcx_<interconnect corner name>/multi_corner_sta.{checks,min,max,power,skew,summary}.rpt
 ---
-./*-openroad-stapostpnr/summary.rpt
-./*-openroad-stapostpnr/<IPVT corner name>/{checks,min,max,power,skew}.rpt
+./signoff_sta/*-openroad-stapostpnr/summary.rpt
+./signoff_sta/*-openroad-stapostpnr/<IPVT corner name>/{checks,min,max,power,skew}.rpt
 ---
 One summary table is created for all corners, instead of being grouped by
 interconnect corner.

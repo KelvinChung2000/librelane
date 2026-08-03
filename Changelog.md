@@ -1348,8 +1348,9 @@ Style Notes
 * `librelane.common.Path` is `Annotated[pathlib.Path, ...]` rather than a
   `UserString` subclass. A value of the type is an ordinary `pathlib.Path`
   object: `isinstance(x, Path)` now raises `TypeError` instead of testing
-  membership, and the instance methods `.exists()`, `.validate()` and the
-  `._dummy_path` class attribute are gone. The sentinel is the module-level
+  membership, and the `.validate()` method and `._dummy_path` class
+  attribute are gone (`.exists()` keeps working -- it is `pathlib.Path`'s
+  own). The sentinel is the module-level
   `DUMMY_PATH` string, existence checking is the module-level
   `validate_path` function, and spelling a path relative to a start
   directory is `rel_if_child`, all in `librelane.common.types`. Spell the

@@ -209,7 +209,7 @@ In the event they do appear though, the same strategy as [](./
 
 ### `OpenROAD.STAPostPnR`
 
-Looking at `xx-openroad-stapostpnr/summary.rpt`, there are multiple max Slew/Cap
+Looking at `signoff_sta/xx-openroad-stapostpnr/summary.rpt`, there are multiple max Slew/Cap
 violations and 1 hold violation which is not Reg to Reg.
 
 ```
@@ -233,7 +233,7 @@ violations and 1 hold violation which is not Reg to Reg.
 The max Slew/Cap violations can be fixed the same way as in
 [this section](#caravel-openroad-stapostpnr-with-fixes). For the hold violation,
 it is in the `max_ff_n40C_1v95` corner. To investigate the timing path, open the
-report `xx-openroad-stapostpnr/max_ff_n40C_1v95/min.rpt` and the violation will
+report `signoff_sta/xx-openroad-stapostpnr/max_ff_n40C_1v95/min.rpt` and the violation will
 be in the first timing path.
 
 ```{note}
@@ -604,7 +604,7 @@ ______________________________________________________________________
 ## Re-checking the reports
 
 There should still be no antenna violations, but this time, the STA report at
-`xx-openroad-stapostpnr/summary.rpt` should also show no issues:
+`signoff_sta/xx-openroad-stapostpnr/summary.rpt` should also show no issues:
 
 ```text
 ┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓

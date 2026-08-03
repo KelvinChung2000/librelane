@@ -259,7 +259,7 @@ ______________________________________________________________________
 
 ### `OpenROAD.STAPostPnR`
 
-Looking at `xx-openroad-stapostpnr/summary.rpt`, there are no issues.
+Looking at `signoff_sta/xx-openroad-stapostpnr/summary.rpt`, there are no issues.
 
 ```
 ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
