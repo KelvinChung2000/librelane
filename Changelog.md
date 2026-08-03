@@ -58,8 +58,9 @@ Style Notes
   * Generated from the same models the loader validates against, so a key
     added to a document's job appears in it without a second file being
     edited, and it carries the key combinations no single field can state:
-    that `select` needs `mode: sweep`, that an `until` gate takes exactly one
-    of `iterations` or `max`, and the term grammar behind `if` and `until`.
+    that `select` needs `iterations`, that a job declares `until` or
+    `select` but never both, that an `until` gate takes exactly one of
+    `iterations` or `max`, and the term grammar behind `if` and `until`.
   * The `steps` and `uses` enumerations are the registries of the installation
     that generated it, plugins included, so the schema completes a plugin's
     step ids wherever that plugin is installed.
@@ -929,8 +930,11 @@ Style Notes
   each pass; the ring reruns, in ring order starting at the gate's successor,
   until `until` holds or the gate's bound is exhausted. The bound is either
   `max`, a plain pass count under which no pass changes any configuration, or
-  `iterations`, a per-pass value schedule layered onto every member's
-  configuration, the escalation shape. Exhaustion is a deferred error naming
+  `iterations`, a value matrix -- each configuration variable mapped to the
+  values it takes -- whose points are the passes, layered onto every member's
+  configuration, the escalation shape. Naming two variables sweeps their
+  product, the variable named last varying fastest. Exhaustion is a deferred
+  error naming
   the gate and the bound rather than a hard failure: the run continues with
   the last pass's state and fails at the end. Each pass gets its own run
   directory, `<job id>/<k>/...`. See {doc}`/usage/writing_custom_flows`.
@@ -958,12 +962,17 @@ Style Notes
   name, since a Boolean is never a quantity despite being an `int` subclass,
   rather than silently read as 0 or 1. The same refusal applies to a sweep
   job's `select` metric below.
-* Added `mode: sweep`. A sweep job runs its steps at every entry of its own
-  `iterations` concurrently, from one joined input, and keeps the pass whose
-  `select` metric (a name and a direction, `min` or `max`) is best, ties
-  breaking to the lowest pass index. Losing passes' outputs stay on disk
-  under their own pass directory but reach nothing downstream. A sweep job
-  may not be a ring member, and declares `select` instead of `until`.
+* Added sweeps, declared with `select`. A sweep job runs its steps at every
+  point of its own `iterations` matrix concurrently, from one joined input,
+  and keeps the pass whose `select` metric (a name and a direction, `min` or
+  `max`) is best, ties breaking to the lowest pass index. Losing passes'
+  outputs stay on disk under their own pass directory but reach nothing
+  downstream. A sweep job may not be a ring member.
+  * A loop and a sweep are the same passes over the same matrix under
+    different rules for which pass wins, so there is no key naming the
+    shape: `until` stops at the first pass that satisfies it, `select` runs
+    every pass and keeps the best, and a job declaring both, or a matrix
+    declaring neither, is refused.
 * Added `resources`: a document may declare named pools at the top level,
   each a positive integer capacity or the name of an `int` configuration
   variable resolved once when the flow is constructed, and a job names the

@@ -367,11 +367,7 @@ def test_iteration_values_are_visible_in_each_pass_and_the_provenance_names_the_
                     "needs": ["resize"],
                     "steps": ["Test.LoopMeasure"],
                     "until": "metric::x >= 2",
-                    "iterations": [
-                        {"TEST_LOOP_KNOB": 1},
-                        {"TEST_LOOP_KNOB": 2},
-                        {"TEST_LOOP_KNOB": 3},
-                    ],
+                    "iterations": {"TEST_LOOP_KNOB": [1, 2, 3]},
                 },
             },
         }
@@ -726,11 +722,7 @@ def test_explain_variables_reports_each_pass_of_a_scheduled_variable(
                     "needs": ["resize"],
                     "steps": ["Test.LoopMeasure"],
                     "until": "metric::x >= 2",
-                    "iterations": [
-                        {"TEST_LOOP_KNOB": 1},
-                        {"TEST_LOOP_KNOB": 2},
-                        {"TEST_LOOP_KNOB": 3},
-                    ],
+                    "iterations": {"TEST_LOOP_KNOB": [1, 2, 3]},
                 },
             },
         }

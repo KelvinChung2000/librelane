@@ -119,32 +119,32 @@ _REFUSED: dict[str, dict[str, Any]] = {
     "an unregistered step id": _document(job={"steps": ["Nope.Step"]}),
     "an unregistered uses": _document(job={"steps": None, "uses": "nope/openroad"}),
     "uses and steps together": _document(job={"uses": "floorplan/openroad"}),
-    "a sweep without select": _document(
-        job={"mode": "sweep", "iterations": [{"A": 1}]}
+    "a matrix with no rule for which pass wins": _document(
+        job={"iterations": {"A": [1]}}
     ),
-    "select without a sweep": _document(job={"select": "x min"}),
-    "a sweep with until": _document(
+    "select without a matrix": _document(job={"select": "x min"}),
+    "until and select together": _document(
         job={
-            "mode": "sweep",
-            "iterations": [{"A": 1}],
-            "select": "x min",
             "until": "metric::a > 0",
+            "iterations": {"A": [1]},
+            "select": "x min",
         }
     ),
     "max without until": _document(job={"max": 2}),
     "until with no bound": _document(job={"until": "metric::a > 0"}),
     "until with both bounds": _document(
-        job={"until": "metric::a > 0", "max": 2, "iterations": [{"A": 1}]}
+        job={"until": "metric::a > 0", "max": 2, "iterations": {"A": [1]}}
     ),
-    "an empty schedule": _document(
-        job={"mode": "sweep", "iterations": [], "select": "x min"}
+    "an empty matrix": _document(job={"iterations": {}, "select": "x min"}),
+    "a scheduled variable with no values": _document(
+        job={"iterations": {"A": []}, "select": "x min"}
     ),
     "a pass bound below one": _document(job={"until": "metric::a > 0", "max": 0}),
     "a select with no direction": _document(
-        job={"mode": "sweep", "iterations": [{"A": 1}], "select": "wns"}
+        job={"iterations": {"A": [1]}, "select": "wns"}
     ),
     "a select carrying a metric prefix": _document(
-        job={"mode": "sweep", "iterations": [{"A": 1}], "select": "metric::x min"}
+        job={"iterations": {"A": [1]}, "select": "metric::x min"}
     ),
     "a malformed if": _document(job={"if": "a or b"}),
     "an until over a configuration variable": _document(job={"until": "A", "max": 2}),
@@ -157,7 +157,7 @@ _REFUSED: dict[str, dict[str, Any]] = {
     "a boolean capacity": _document(resources={"p": True}),
     "a reserved key in a with block": _document(**{"with": {"PDK": "sky130A"}}),
     "a tool selection in a schedule": _document(
-        job={"mode": "sweep", "select": "x min", "iterations": [{"TOOLS": "x"}]}
+        job={"select": "x min", "iterations": {"TOOLS": ["x"]}}
     ),
 }
 
@@ -187,7 +187,7 @@ _ACCEPTED: dict[str, dict[str, Any]] = {
             },
         },
     },
-    "a sweep with a pool and a runtime condition": {
+    "a sweep matrix with a pool and a runtime condition": {
         "name": "Tiny",
         "resources": {"seats": 2},
         "jobs": {
@@ -195,9 +195,8 @@ _ACCEPTED: dict[str, dict[str, Any]] = {
             "placement": {
                 "needs": ["synthesis"],
                 "steps": ["OpenROAD.GlobalPlacement"],
-                "mode": "sweep",
                 "select": "route__wirelength__max min",
-                "iterations": [{"PL_TARGET_DENSITY_PCT": 45}],
+                "iterations": {"PL_TARGET_DENSITY_PCT": [45, 55]},
                 "resources": ["seats"],
             },
             "antennas": {

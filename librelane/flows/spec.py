@@ -21,10 +21,11 @@ a library, not a redefinition of one.
 """
 
 import graphlib
+import itertools
 import os
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import (
     BaseModel,
@@ -80,7 +81,6 @@ _JOB_KEYS = (
     "until",
     "iterations",
     "max",
-    "mode",
     "select",
     "resources",
 )
@@ -166,18 +166,19 @@ class JobSpec(BaseModel):
     #: evaluated against the gate's output after each pass. ``None`` on every
     #: job outside a ring.
     until: str | None = None
-    #: The explicit value schedule for an escalation loop's gate or a sweep.
-    #: Pass ``k`` (1-based) layers entry ``k`` onto every ring member's (or
-    #: the sweep job's) configuration for that pass.
-    iterations: list[dict[str, Any]] | None = None
+    #: The value matrix for an escalation loop's gate or a sweep: each
+    #: configuration variable mapped to every value it takes. The passes are
+    #: the combinations, one per point of the matrix, expanded by
+    #: :meth:`schedule`. Pass ``k`` (1-based) layers combination ``k`` onto
+    #: every ring member's (or the sweep job's) configuration for that pass.
+    iterations: dict[str, list[Any]] | None = None
     #: The pass bound for an incremental-repair loop: no schedule, just a
     #: count. Aliased to ``max``, which shadows the builtin.
     max_passes: int | None = Field(default=None, alias="max")
-    #: ``escalate`` stops at the first pass ``until`` accepts; ``sweep`` runs
-    #: every ``iterations`` entry and keeps the best by ``select``.
-    mode: Literal["escalate", "sweep"] = "escalate"
     #: A sweep's keep rule: a bare metric name and a direction, ``min`` or
-    #: ``max``. ``None`` off ``mode: sweep``.
+    #: ``max``. Declaring it is what makes a job's passes a sweep -- every
+    #: point of the matrix runs and the best one wins -- as declaring
+    #: ``until`` is what makes them an escalation loop's. ``None`` on both.
     select: str | None = None
     #: The named resource pools this job must hold a seat in for the
     #: duration of its execution (or, inside a ring, each pass).
@@ -210,6 +211,25 @@ class JobSpec(BaseModel):
                 "IDs inline, but not both."
             )
         return self
+
+    def schedule(self) -> tuple[dict[str, Any], ...]:
+        """
+        Expands :attr:`iterations` into the passes it declares.
+
+        Returns
+        -------
+        One mapping per point of the matrix: every combination of the values
+        the named variables take, in the order the passes run. The variable
+        named last varies fastest, so a document reads down its own last
+        list first. Empty when the job declares no ``iterations``.
+        """
+        if self.iterations is None:
+            return ()
+        names = list(self.iterations)
+        return tuple(
+            dict(zip(names, combination))
+            for combination in itertools.product(*self.iterations.values())
+        )
 
 
 class FlowSpec(BaseModel):
@@ -322,7 +342,7 @@ class FlowSpec(BaseModel):
         self._check_until_terms_are_metrics()
         self._check_until_requires_one_bound()
         self._check_schedule_combinations()
-        self._check_iterations_entries()
+        self._check_iterations_matrix()
         self._check_max_passes_positive()
         self._check_select_shape()
         self._check_job_resources_have_no_duplicates()
@@ -395,12 +415,15 @@ class FlowSpec(BaseModel):
                 )
             gate = gates[0]
             for member in scc:
-                if self.jobs[member].mode == "sweep":
+                # The gate is excluded: a gate declaring both keys is a job
+                # naming two winners, which _check_schedule_combinations says
+                # in those terms rather than as a restriction on sweeps.
+                if member != gate and self.jobs[member].select is not None:
                     raise FlowSpecError(
                         f"Job '{member}' is a member of ring {scc} and "
-                        f"declares 'mode: sweep'. A sweep is "
-                        f"v1-restricted to a single job that is not a "
-                        f"ring member."
+                        f"declares 'select', which makes its passes a "
+                        f"sweep. A sweep is v1-restricted to a single job "
+                        f"that is not a ring member."
                     )
             for member in scc:
                 if member == gate:
@@ -587,82 +610,78 @@ class FlowSpec(BaseModel):
                 )
 
     def _check_schedule_combinations(self) -> None:
+        # 'iterations' says what the passes are; 'until' and 'select' are the
+        # two rules for which pass wins, and declaring one is what makes a
+        # job an escalation loop's gate or a sweep. There is no third key
+        # naming the shape: a job's keys already say it.
         for name, job in self.jobs.items():
-            is_sweep = job.mode == "sweep"
-            if job.iterations is not None and job.until is None and not is_sweep:
+            if job.until is not None and job.select is not None:
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'until' and 'select'. A job's "
+                    f"passes end one way: 'until' stops at the first pass "
+                    f"that satisfies it, 'select' runs every pass and keeps "
+                    f"the best. A job declaring both names two winners."
+                )
+            if job.iterations is not None and job.until is None and job.select is None:
                 raise FlowSpecError(
                     f"Job '{name}' declares 'iterations' without 'until' or "
-                    f"'mode: sweep'. 'iterations' is a value schedule: either "
-                    f"an escalation loop's, gated by 'until', or a sweep's, "
-                    f"declared with 'mode: sweep'."
+                    f"'select'. 'iterations' is the value matrix its passes "
+                    f"run over, and needs a rule for which pass wins: "
+                    f"'until' to stop at the first pass that satisfies it, "
+                    f"or 'select' to keep the best of all of them."
                 )
-            if job.max_passes is not None:
-                if is_sweep:
-                    raise FlowSpecError(
-                        f"Job '{name}' declares 'max' with 'mode: sweep'. A "
-                        f"sweep runs every 'iterations' entry and keeps the "
-                        f"best rather than stopping at a pass count; 'max' "
-                        f"is meaningless with 'mode: sweep'."
-                    )
-                if job.until is None:
-                    raise FlowSpecError(
-                        f"Job '{name}' declares 'max' without 'until'. "
-                        f"'max' bounds an 'until' gate's passes and is "
-                        f"meaningless without one."
-                    )
-            if job.select is not None and not is_sweep:
+            if job.max_passes is not None and job.until is None:
                 raise FlowSpecError(
-                    f"Job '{name}' declares 'select' without 'mode: sweep'. "
-                    f"'select' names a sweep's keep rule and is meaningless "
-                    f"without 'mode: sweep'."
+                    f"Job '{name}' declares 'max' without 'until'. "
+                    f"'max' bounds an 'until' gate's passes and is "
+                    f"meaningless without one."
                 )
-            if is_sweep:
-                if job.iterations is None or job.select is None:
-                    raise FlowSpecError(
-                        f"Job '{name}' declares 'mode: sweep' without both "
-                        f"'iterations' and 'select'. A sweep needs its "
-                        f"points ('iterations') and its keep rule "
-                        f"('select')."
-                    )
-                if job.until is not None:
-                    raise FlowSpecError(
-                        f"Job '{name}' declares 'mode: sweep' with 'until'. "
-                        f"A sweep does not stop early: it runs every point "
-                        f"and keeps the best, so 'until' is meaningless with "
-                        f"'mode: sweep'."
-                    )
+            if job.select is not None and job.iterations is None:
+                raise FlowSpecError(
+                    f"Job '{name}' declares 'select' without 'iterations'. "
+                    f"'select' keeps the best of the passes a value matrix "
+                    f"declares, and a job with no matrix runs one pass, "
+                    f"which is already the best of itself."
+                )
 
-    def _check_iterations_entries(self) -> None:
+    def _check_iterations_matrix(self) -> None:
         for name, job in self.jobs.items():
             if job.iterations is None:
                 continue
             if len(job.iterations) == 0:
                 raise FlowSpecError(
-                    f"Job '{name}' declares an empty 'iterations' list. A "
-                    f"schedule needs at least one entry."
+                    f"Job '{name}' declares an empty 'iterations' matrix. A "
+                    f"matrix names at least one configuration variable, "
+                    f"mapped to the values it takes."
                 )
-            for index, entry in enumerate(job.iterations, start=1):
-                for key in entry:
-                    if key in _RESERVED_VALUE_KEYS:
-                        raise FlowSpecError(
-                            f"Job '{name}' iteration {index} sets '{key}'. "
-                            f"{list(_RESERVED_VALUE_KEYS)} select the "
-                            f"process before any other value is resolved, "
-                            f"so a document setting one would override the "
-                            f"command line rather than layer under it. Set "
-                            f"it on the design or on the command line."
-                        )
-                    if key == _PRE_PASS_VALUE_KEY:
-                        raise FlowSpecError(
-                            f"Job '{name}' iteration {index} sets "
-                            f"'{_PRE_PASS_VALUE_KEY}'. It selects the "
-                            f"provider implementing each job, and is read "
-                            f"before any configuration is resolved, so a "
-                            f"value set here would be read too late to "
-                            f"change which steps run while still appearing "
-                            f"in the resolved configuration. Set it on the "
-                            f"design."
-                        )
+            for key, values in job.iterations.items():
+                if key in _RESERVED_VALUE_KEYS:
+                    raise FlowSpecError(
+                        f"Job '{name}' schedules '{key}' in its "
+                        f"'iterations'. {list(_RESERVED_VALUE_KEYS)} select "
+                        f"the process before any other value is resolved, "
+                        f"so a document setting one would override the "
+                        f"command line rather than layer under it. Set "
+                        f"it on the design or on the command line."
+                    )
+                if key == _PRE_PASS_VALUE_KEY:
+                    raise FlowSpecError(
+                        f"Job '{name}' schedules '{_PRE_PASS_VALUE_KEY}' in "
+                        f"its 'iterations'. It selects the "
+                        f"provider implementing each job, and is read "
+                        f"before any configuration is resolved, so a "
+                        f"value set here would be read too late to "
+                        f"change which steps run while still appearing "
+                        f"in the resolved configuration. Set it on the "
+                        f"design."
+                    )
+                if len(values) == 0:
+                    raise FlowSpecError(
+                        f"Job '{name}' schedules '{key}' over an empty value "
+                        f"list. Every combination of the matrix's values is "
+                        f"a pass, so a variable with no values leaves no "
+                        f"passes to run at all."
+                    )
 
     def _check_max_passes_positive(self) -> None:
         for name, job in self.jobs.items():

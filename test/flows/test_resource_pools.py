@@ -384,6 +384,7 @@ def test_a_two_seat_pool_runs_a_five_point_sweep_two_at_a_time(
     import threading
     import time
 
+    from librelane.config import variable
     from librelane.flows.engine import Workflow
     from librelane.flows.spec import FlowSpec
     from librelane.steps import Step
@@ -397,6 +398,9 @@ def test_a_two_seat_pool_runs_a_five_point_sweep_two_at_a_time(
         id = "Test.PoolSweepMeet"
         inputs = []
         outputs = []
+
+        class Config(Step.Config):
+            POOL_SWEEP_POINT: int = variable(description="point", default=0)
 
         def run(self, state_in, **kwargs):
             nonlocal current, max_concurrent
@@ -415,10 +419,9 @@ def test_a_two_seat_pool_runs_a_five_point_sweep_two_at_a_time(
             "jobs": {
                 "sweep": {
                     "steps": ["Test.PoolSweepMeet"],
-                    "mode": "sweep",
                     "select": "score min",
                     "resources": ["seats"],
-                    "iterations": [{}, {}, {}, {}, {}],
+                    "iterations": {"POOL_SWEEP_POINT": [1, 2, 3, 4, 5]},
                 },
             },
         }

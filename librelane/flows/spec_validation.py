@@ -530,11 +530,10 @@ def _check_schedule_values_are_covering(spec: FlowSpec) -> None:
             allowed = set(rings[name])
             scope = f"the ring gated by '{name}' ({sorted(allowed)})"
         else:
-            assert job.mode == "sweep", "checked by _check_schedule_combinations"
+            assert job.select is not None, "checked by _check_schedule_combinations"
             allowed = {name}
             scope = f"sweep job '{name}'"
-        variables = {key for entry in job.iterations for key in entry}
-        for variable_name in sorted(variables):
+        for variable_name in sorted(job.iterations):
             outside = reach.get(variable_name, set()) - allowed
             if not outside:
                 continue

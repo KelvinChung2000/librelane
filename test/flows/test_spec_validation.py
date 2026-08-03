@@ -553,7 +553,7 @@ def test_a_schedule_variable_read_outside_the_ring_is_rejected():
                 "needs": ["floorplan"],
                 "uses": "floorplan",
                 "until": "metric::x >= 0",
-                "iterations": [{"FP_CORE_UTIL": 40}, {"FP_CORE_UTIL": 50}],
+                "iterations": {"FP_CORE_UTIL": [40, 50]},
             },
             "global_placement": {
                 "needs": ["floorplan"],
@@ -585,7 +585,7 @@ def test_a_universal_variable_in_a_ring_schedule_is_rejected():
                 "needs": ["floorplan"],
                 "uses": "floorplan",
                 "until": "metric::x >= 0",
-                "iterations": [{"DIE_AREA": "0 0 100 100"}],
+                "iterations": {"DIE_AREA": ["0 0 100 100"]},
             },
             "global_placement": {
                 "needs": ["floorplan"],
@@ -616,11 +616,7 @@ def test_a_sweep_schedule_variable_read_outside_the_sweep_job_is_rejected():
                     "global_placement": {
                         "needs": ["floorplan"],
                         "uses": "global_placement",
-                        "mode": "sweep",
-                        "iterations": [
-                            {"FP_CORE_UTIL": 40},
-                            {"FP_CORE_UTIL": 50},
-                        ],
+                        "iterations": {"FP_CORE_UTIL": [40, 50]},
                         "select": "route__wirelength min",
                     },
                 }

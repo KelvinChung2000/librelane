@@ -338,7 +338,7 @@ def test_until_on_a_job_with_no_back_edge_is_rejected():
     assert "not part of a cycle" in message
 
 
-def test_mode_sweep_on_a_ring_member_is_rejected():
+def test_select_on_a_ring_member_is_rejected():
     with pytest.raises(FlowSpecError) as exc_info:
         FlowSpec.model_validate(
             {
@@ -347,8 +347,7 @@ def test_mode_sweep_on_a_ring_member_is_rejected():
                     "resize": {
                         "needs": ["sta"],
                         "uses": "floorplan",
-                        "mode": "sweep",
-                        "iterations": [{}],
+                        "iterations": {"FP_CORE_UTIL": [40, 50]},
                         "select": "route__wirelength min",
                     },
                     "sta": {
@@ -667,7 +666,7 @@ def test_an_unknown_job_key_message_lists_the_new_keys():
         JobSpec.model_validate({"uses": "drc/magic", "runs-on": "ubuntu-latest"})
 
     message = str(exc_info.value)
-    for key in ("until", "iterations", "max", "mode", "select", "resources"):
+    for key in ("until", "iterations", "max", "select", "resources"):
         assert key in message
 
 
@@ -686,11 +685,7 @@ def test_a_job_using_every_new_key_legally_validates():
                 },
                 "place": {
                     "uses": "placement",
-                    "mode": "sweep",
-                    "iterations": [
-                        {"PL_TARGET_DENSITY": 0.45},
-                        {"PL_TARGET_DENSITY": 0.55},
-                    ],
+                    "iterations": {"PL_TARGET_DENSITY": [0.45, 0.55]},
                     "select": "route__wirelength min",
                 },
             },
@@ -700,8 +695,11 @@ def test_a_job_using_every_new_key_legally_validates():
     assert spec.jobs["sta"].until == "metric::timing__setup__ws >= 0"
     assert spec.jobs["sta"].max_passes == 3
     assert spec.jobs["sta"].resources == ["drc_seats"]
-    assert spec.jobs["place"].mode == "sweep"
     assert spec.jobs["place"].select == "route__wirelength min"
+    assert spec.jobs["place"].schedule() == (
+        {"PL_TARGET_DENSITY": 0.45},
+        {"PL_TARGET_DENSITY": 0.55},
+    )
     assert spec.resources == {"drc_seats": 2}
     assert spec.rings() == {"sta": ("sta",)}
 
@@ -761,7 +759,7 @@ def test_an_until_with_both_iterations_and_max_is_rejected():
                         "needs": ["sta"],
                         "until": "metric::x >= 0",
                         "max": 3,
-                        "iterations": [{}],
+                        "iterations": {"X": [1]},
                     }
                 },
             }
@@ -772,19 +770,24 @@ def test_an_until_with_both_iterations_and_max_is_rejected():
     assert "both" in message.lower()
 
 
-def test_iterations_without_until_or_sweep_is_rejected():
+def test_iterations_without_until_or_select_is_rejected():
     with pytest.raises(FlowSpecError) as exc_info:
         FlowSpec.model_validate(
             {
                 "name": "Tiny",
-                "jobs": {"place": {"uses": "placement", "iterations": [{}]}},
+                "jobs": {
+                    "place": {
+                        "uses": "placement",
+                        "iterations": {"PL_TARGET_DENSITY": [0.45]},
+                    }
+                },
             }
         )
 
     message = str(exc_info.value)
     assert "place" in message
     assert "until" in message
-    assert "sweep" in message
+    assert "select" in message
 
 
 def test_max_without_until_is_rejected():
@@ -798,7 +801,7 @@ def test_max_without_until_is_rejected():
     assert "until" in message
 
 
-def test_max_with_mode_sweep_is_rejected():
+def test_max_with_a_sweep_is_rejected():
     with pytest.raises(FlowSpecError) as exc_info:
         FlowSpec.model_validate(
             {
@@ -806,8 +809,7 @@ def test_max_with_mode_sweep_is_rejected():
                 "jobs": {
                     "place": {
                         "uses": "placement",
-                        "mode": "sweep",
-                        "iterations": [{}],
+                        "iterations": {"PL_TARGET_DENSITY": [0.45]},
                         "select": "route__wirelength min",
                         "max": 3,
                     }
@@ -817,10 +819,11 @@ def test_max_with_mode_sweep_is_rejected():
 
     message = str(exc_info.value)
     assert "place" in message
-    assert "sweep" in message
+    assert "max" in message
+    assert "until" in message
 
 
-def test_select_without_mode_sweep_is_rejected():
+def test_select_without_iterations_is_rejected():
     with pytest.raises(FlowSpecError) as exc_info:
         FlowSpec.model_validate(
             {
@@ -831,52 +834,21 @@ def test_select_without_mode_sweep_is_rejected():
                         "select": "route__wirelength min",
                     }
                 },
-            }
-        )
-
-    message = str(exc_info.value)
-    assert "place" in message
-    assert "sweep" in message
-
-
-def test_mode_sweep_without_iterations_or_select_is_rejected():
-    with pytest.raises(FlowSpecError) as exc_info:
-        FlowSpec.model_validate(
-            {
-                "name": "Tiny",
-                "jobs": {"place": {"uses": "placement", "mode": "sweep"}},
             }
         )
 
     message = str(exc_info.value)
     assert "place" in message
     assert "iterations" in message
-    assert "select" in message
 
 
-def test_mode_sweep_with_until_is_rejected():
-    with pytest.raises(FlowSpecError) as exc_info:
-        FlowSpec.model_validate(
-            {
-                "name": "Tiny",
-                "jobs": {
-                    "place": {
-                        "uses": "placement",
-                        "mode": "sweep",
-                        "iterations": [{}],
-                        "select": "route__wirelength min",
-                        "until": "metric::x >= 0",
-                    }
-                },
-            }
-        )
-
-    message = str(exc_info.value)
-    assert "place" in message
-    assert "until" in message
-
-
-def test_an_empty_iterations_list_is_rejected():
+def test_a_gate_declaring_until_and_select_is_rejected():
+    """
+    The two keys are the two rules for which pass wins, so a job declaring
+    both names two winners. Reachable only on a ring's gate: 'until' off a
+    ring is refused by the cycle check, and 'select' on a non-gate member by
+    the sweep restriction.
+    """
     with pytest.raises(FlowSpecError) as exc_info:
         FlowSpec.model_validate(
             {
@@ -886,7 +858,30 @@ def test_an_empty_iterations_list_is_rejected():
                         "uses": "sta",
                         "needs": ["sta"],
                         "until": "metric::x >= 0",
-                        "iterations": [],
+                        "iterations": {"X": [1, 2]},
+                        "select": "route__wirelength min",
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "until" in message
+    assert "select" in message
+
+
+def test_an_empty_iterations_matrix_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "sta": {
+                        "uses": "sta",
+                        "needs": ["sta"],
+                        "until": "metric::x >= 0",
+                        "iterations": {},
                     }
                 },
             }
@@ -895,6 +890,51 @@ def test_an_empty_iterations_list_is_rejected():
     message = str(exc_info.value)
     assert "sta" in message
     assert "empty" in message.lower()
+
+
+def test_a_scheduled_variable_with_no_values_is_rejected():
+    with pytest.raises(FlowSpecError) as exc_info:
+        FlowSpec.model_validate(
+            {
+                "name": "Tiny",
+                "jobs": {
+                    "sta": {
+                        "uses": "sta",
+                        "needs": ["sta"],
+                        "until": "metric::x >= 0",
+                        "iterations": {"X": []},
+                    }
+                },
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "sta" in message
+    assert "X" in message
+
+
+def test_iterations_expand_to_every_combination_last_variable_fastest():
+    spec = FlowSpec.model_validate(
+        {
+            "name": "Tiny",
+            "jobs": {
+                "place": {
+                    "uses": "placement",
+                    "iterations": {"A": [1, 2], "B": ["x", "y", "z"]},
+                    "select": "route__wirelength min",
+                }
+            },
+        }
+    )
+
+    assert spec.jobs["place"].schedule() == (
+        {"A": 1, "B": "x"},
+        {"A": 1, "B": "y"},
+        {"A": 1, "B": "z"},
+        {"A": 2, "B": "x"},
+        {"A": 2, "B": "y"},
+        {"A": 2, "B": "z"},
+    )
 
 
 @pytest.mark.parametrize("key", ["PDK", "SCL", "PAD", "meta"])
@@ -908,7 +948,7 @@ def test_an_iterations_entry_naming_a_process_selection_key_is_rejected(key):
                         "uses": "sta",
                         "needs": ["sta"],
                         "until": "metric::x >= 0",
-                        "iterations": [{key: "whatever"}],
+                        "iterations": {key: ["whatever"]},
                     }
                 },
             }
@@ -917,7 +957,6 @@ def test_an_iterations_entry_naming_a_process_selection_key_is_rejected(key):
     message = str(exc_info.value)
     assert "sta" in message
     assert key in message
-    assert "1" in message
 
 
 def test_an_iterations_entry_naming_tools_is_rejected():
@@ -930,7 +969,7 @@ def test_an_iterations_entry_naming_tools_is_rejected():
                         "uses": "sta",
                         "needs": ["sta"],
                         "until": "metric::x >= 0",
-                        "iterations": [{}, {"TOOLS": {"sta": "opensta"}}],
+                        "iterations": {"TOOLS": [{"sta": "opensta"}]},
                     }
                 },
             }
@@ -939,7 +978,6 @@ def test_an_iterations_entry_naming_tools_is_rejected():
     message = str(exc_info.value)
     assert "sta" in message
     assert "TOOLS" in message
-    assert "2" in message
 
 
 def test_a_max_below_one_is_rejected():
@@ -971,8 +1009,7 @@ def test_a_select_that_is_not_two_tokens_is_rejected():
                 "jobs": {
                     "place": {
                         "uses": "placement",
-                        "mode": "sweep",
-                        "iterations": [{}],
+                        "iterations": {"PL_TARGET_DENSITY": [0.45]},
                         "select": "route__wirelength",
                     }
                 },
@@ -993,8 +1030,7 @@ def test_a_select_with_the_metric_prefix_is_rejected():
                 "jobs": {
                     "place": {
                         "uses": "placement",
-                        "mode": "sweep",
-                        "iterations": [{}],
+                        "iterations": {"PL_TARGET_DENSITY": [0.45]},
                         "select": "metric::route__wirelength min",
                     }
                 },

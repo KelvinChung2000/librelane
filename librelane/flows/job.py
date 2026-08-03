@@ -54,14 +54,14 @@ class ResolvedJob:
     evaluated against a job's input state on the scheduling thread, once every
     configuration term has already passed. The job runs when every term holds.
 
-    ``until_terms``, ``iterations``, ``max_passes``, ``mode``, ``select`` and
+    ``until_terms``, ``iterations``, ``max_passes``, ``select`` and
     ``resources`` are the loop, sweep and resource-pool declarations, copied
     and parsed once off the document's ``JobSpec`` rather than left for a
     later reader to re-derive: ``until_terms`` is ``until``'s parsed
-    ``MetricTerm``s (empty off a ring gate), ``iterations`` is the value
-    schedule as given, ``select`` is ``(metric, direction)`` rather than the
-    document's single string, and ``resources`` is the pools this job's
-    execution must hold a seat in.
+    ``MetricTerm``s (empty off a ring gate), ``iterations`` is the document's
+    value matrix already expanded into one mapping per pass, ``select`` is
+    ``(metric, direction)`` rather than the document's single string, and
+    ``resources`` is the pools this job's execution must hold a seat in.
 
     ``native_views`` is the selected registration's, copied here rather than
     left to be looked up again: it is a fact about the provider that won, and
@@ -83,7 +83,6 @@ class ResolvedJob:
     until_terms: tuple[MetricTerm, ...]
     iterations: tuple[Mapping[str, Any], ...]
     max_passes: int | None
-    mode: str
     select: tuple[str, str] | None
     resources: tuple[str, ...]
 
@@ -180,7 +179,7 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
     until_terms = (
         () if spec.until is None else metric_terms(parse_predicate(spec.until))
     )
-    iterations = tuple(spec.iterations) if spec.iterations is not None else ()
+    iterations = spec.schedule()
     select: tuple[str, str] | None = None
     if spec.select is not None:
         metric_name, direction = spec.select.split()
@@ -214,7 +213,6 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
             until_terms=until_terms,
             iterations=iterations,
             max_passes=spec.max_passes,
-            mode=spec.mode,
             select=select,
             resources=resources,
         )
@@ -275,7 +273,6 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
         until_terms=until_terms,
         iterations=iterations,
         max_passes=spec.max_passes,
-        mode=spec.mode,
         select=select,
         resources=resources,
     )

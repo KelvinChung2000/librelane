@@ -179,22 +179,6 @@ def _present(key: str) -> dict[str, Any]:
     return {"required": [key], "properties": {key: {"not": {"type": "null"}}}}
 
 
-def _sweep(is_sweep: bool) -> dict[str, Any]:
-    """
-    Parameters
-    ----------
-    is_sweep : bool
-        Whether the subschema should match a sweep or everything else.
-
-    Returns
-    -------
-    A subschema matching a job by its ``mode``. ``mode`` defaults to
-    ``escalate``, so an absent one is not a sweep.
-    """
-    const = {"properties": {"mode": {"const": "sweep"}}, "required": ["mode"]}
-    return const if is_sweep else {"not": const}
-
-
 def _unreserved_keys() -> dict[str, Any]:
     """
     Returns
@@ -389,32 +373,29 @@ def _annotate_job(job: dict[str, Any]) -> None:
             ),
         }
     )
-    iterations = _branch(_node(job, "iterations"), "array")
-    iterations["minItems"] = 1
-    iterations["items"] = {
-        "type": "object",
-        "propertyNames": _unreserved_keys(),
-        "additionalProperties": True,
-    }
+    iterations = _branch(_node(job, "iterations"), "object")
+    iterations["minProperties"] = 1
+    iterations["propertyNames"] = _unreserved_keys()
+    iterations["additionalProperties"] = {"type": "array", "minItems": 1}
     iterations["description"] = (
-        "A value schedule, one entry per pass, layered onto the configuration "
-        "for that pass: an escalation loop's, gated by 'until', or a sweep's."
+        "A value matrix: each configuration variable mapped to the values it "
+        "takes. The passes are every combination of them, each layered onto "
+        "the configuration for that pass -- an escalation loop's schedule, "
+        "gated by 'until', or a sweep's points."
     )
     _branch(_node(job, "max"), "integer")["minimum"] = 1
     _node(job, "max")["description"] = (
         "The pass bound for an 'until' loop that escalates nothing, and so "
         "declares no schedule."
     )
-    _node(job, "mode")["description"] = (
-        "'escalate' stops at the first pass 'until' accepts. 'sweep' runs "
-        "every 'iterations' entry and keeps the best by 'select'."
-    )
     _branch(_node(job, "select"), "string").update(
         {
             "pattern": _SELECT_PATTERN,
             "description": (
                 "A sweep's keep rule: a bare metric name and a direction, "
-                "'min' or 'max'."
+                "'min' or 'max'. Declaring it runs every combination of "
+                "'iterations' and keeps the best, where 'until' instead "
+                "stops at the first pass that satisfies it."
             ),
         }
     )
@@ -466,6 +447,8 @@ def _job_key_combinations() -> list[dict[str, Any]]:
     return [
         # A job runs a registered template or a list of steps, not both.
         {"not": {"allOf": [_present("uses"), _present("steps")]}},
+        # One rule for which pass wins, not two.
+        {"not": {"allOf": [_present("until"), _present("select")]}},
         # 'until' takes exactly one bound.
         {
             "if": _present("until"),
@@ -473,23 +456,11 @@ def _job_key_combinations() -> list[dict[str, Any]]:
         },
         # 'max' bounds an 'until' gate's passes and means nothing without one.
         {"if": _present("max"), "then": _present("until")},
-        # 'iterations' is a value schedule: a loop's or a sweep's.
+        # A value matrix needs a rule for which of its passes wins.
         {
             "if": _present("iterations"),
-            "then": {"anyOf": [_present("until"), _sweep(True)]},
+            "then": {"anyOf": [_present("until"), _present("select")]},
         },
-        # 'select' names a sweep's keep rule.
-        {"if": _present("select"), "then": _sweep(True)},
-        # A sweep needs its points and its keep rule, and does not stop early.
-        {
-            "if": _sweep(True),
-            "then": {
-                "allOf": [
-                    _present("iterations"),
-                    _present("select"),
-                    {"not": _present("until")},
-                    {"not": _present("max")},
-                ]
-            },
-        },
+        # 'select' keeps the best of the passes a matrix declares.
+        {"if": _present("select"), "then": _present("iterations")},
     ]

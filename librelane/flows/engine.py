@@ -761,7 +761,7 @@ class Workflow(Flow):
     ) -> dict[tuple[str, int], _ResolvedConfig]:
         """
         Resolves one configuration per pass, for every ring member of a
-        schedule-gated ring and for every ``mode: sweep`` job.
+        schedule-gated ring and for every sweep job.
 
         Parameters
         ----------
@@ -799,7 +799,8 @@ class Workflow(Flow):
         configs: dict[tuple[str, int], _ResolvedConfig] = {}
         for gate, members in self.rings.items():
             gate_spec = self.spec.jobs[gate]
-            if not gate_spec.iterations:
+            gate_schedule = gate_spec.schedule()
+            if not gate_schedule:
                 continue
             if isinstance(config, Config):
                 raise FlowException(
@@ -815,7 +816,7 @@ class Workflow(Flow):
                 job_values = (
                     (member, member_spec.values) if member_spec.values else None
                 )
-                for k, entry in enumerate(gate_spec.iterations, start=1):
+                for k, entry in enumerate(gate_schedule, start=1):
                     resolved, _ = Config.load(
                         config_in=config,
                         flow_config_vars=self.get_all_config_variables(),
@@ -831,7 +832,8 @@ class Workflow(Flow):
                     )
                     configs[(member, k)] = resolved
         for job_id, job_spec in self.spec.jobs.items():
-            if job_spec.mode != "sweep" or not job_spec.iterations:
+            job_schedule = job_spec.schedule()
+            if job_spec.select is None or not job_schedule:
                 continue
             if isinstance(config, Config):
                 raise FlowException(
@@ -843,7 +845,7 @@ class Workflow(Flow):
                     f"instead."
                 )
             job_values = (job_id, job_spec.values) if job_spec.values else None
-            for k, entry in enumerate(job_spec.iterations, start=1):
+            for k, entry in enumerate(job_schedule, start=1):
                 resolved, _ = Config.load(
                     config_in=config,
                     flow_config_vars=self.get_all_config_variables(),
@@ -1227,7 +1229,7 @@ class Workflow(Flow):
                                 self.progress_bar.end_stage()
                                 fired_pass_through = True
                                 continue
-                            if job.mode == "sweep":
+                            if job.select is not None:
                                 # Fan-out happens here, on this thread, never
                                 # inside a worker: a worker blocked waiting on
                                 # its own children would deadlock a saturated
@@ -1785,7 +1787,7 @@ class Workflow(Flow):
                         )
                     )
                     continue
-                if job.mode == "sweep":
+                if job.select is not None:
                     assert job.select is not None, (
                         "spec.py requires 'select' on every sweep job"
                     )
@@ -2003,7 +2005,7 @@ class Workflow(Flow):
         :attr:`job_configs` already answers correctly for every pass.
         """
         job = self.jobs[job_id]
-        if job.mode == "sweep" and job.iterations:
+        if job.select is not None and job.iterations:
             return len(job.iterations)
         gate = self.member_of.get(job_id)
         if gate is None:
@@ -2358,7 +2360,7 @@ class Workflow(Flow):
                 f"v1. Its pass directory is the escape hatch: inspect "
                 f"'runs/<tag>/{job_id}/<k>/...' directly instead."
             )
-        if self.jobs[job_id].mode == "sweep":
+        if self.jobs[job_id].select is not None:
             raise FlowException(
                 f"--reproducible names a step of job '{job_id}', a sweep "
                 f"job. Which pass it would capture is ambiguous, so this is "

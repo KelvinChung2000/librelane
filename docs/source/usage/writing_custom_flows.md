@@ -223,8 +223,9 @@ The gate declares exactly one bound:
 * `max: 5` above -- a plain pass count, and no pass changes any
   configuration. Each pass differs only because it consumes the previous
   pass's output state, the shape an incremental-repair loop needs.
-* `iterations`, a list of value mappings, one entry per pass, layered onto
-  every ring member's configuration for that pass:
+* `iterations`, a value matrix: each configuration variable mapped to the
+  values it takes, layered onto every ring member's configuration for that
+  pass.
 
   ```yaml
   sta:
@@ -232,15 +233,22 @@ The gate declares exactly one bound:
     steps: [OpenROAD.STAPrePNR]
     until: "metric::timing__hold__ws >= 0"
     iterations:
-      - {PL_RESIZER_HOLD_SLACK_MARGIN: 0.1}
-      - {PL_RESIZER_HOLD_SLACK_MARGIN: 0.2}
-      - {PL_RESIZER_HOLD_SLACK_MARGIN: 0.4}
+      PL_RESIZER_HOLD_SLACK_MARGIN: [0.1, 0.2, 0.4]
   ```
 
   This is the escalation shape: pass 3 tries a wider hold margin because the
   document says so, reviewable in one place, rather than a value computed
-  somewhere the reader cannot see. The bound is the list's length; an entry
-  may be `{}`, meaning "try again unchanged before escalating."
+  somewhere the reader cannot see. The bound is the number of points, and
+  naming a second variable multiplies them, every combination being a pass:
+
+  ```yaml
+  iterations:
+    PL_RESIZER_HOLD_SLACK_MARGIN: [0.1, 0.2, 0.4]
+    GRT_ADJUSTMENT: [0.3, 0.5]
+  ```
+
+  is six passes, the variable named last varying fastest: `(0.1, 0.3)`,
+  `(0.1, 0.5)`, `(0.2, 0.3)`, and so on.
 
 If the schedule runs out without `until` ever holding, the loop exits with
 the last pass's state and a deferred error naming the gate and the bound --
@@ -252,8 +260,8 @@ the 1-based pass, so pass 3 does not overwrite pass 2's.
 
 ### Sweeps
 
-`mode: sweep` runs one job's steps at several settings concurrently and keeps
-the best result by a metric, rather than stopping at the first pass that
+`select` runs one job's steps at every point of its matrix, concurrently, and
+keeps the best result by a metric, rather than stopping at the first pass that
 satisfies a gate:
 
 ```yaml
@@ -266,26 +274,35 @@ jobs:
   placement:
     needs: [floorplan]
     steps: [OpenROAD.GlobalPlacement]
-    mode: sweep
     select: "route__wirelength__estimated min"
     iterations:
-      - {PL_TARGET_DENSITY: 0.45}
-      - {PL_TARGET_DENSITY: 0.55}
-      - {PL_TARGET_DENSITY: 0.65}
+      PL_TARGET_DENSITY: [0.45, 0.55, 0.65]
 ```
 
-`iterations` here is the same shape a loop's schedule is, but the rule
-attached to it differs: a sweep runs every entry rather than stopping early,
-so it declares `select` -- a metric name and a direction, `min` or `max` --
-instead of `until`. Once `placement`'s input is ready, the engine runs all
-three settings, each in its own pass directory
-(`runs/<tag>/placement/<k>/...`), and keeps whichever pass's
-`route__wirelength__estimated` is lowest; ties break to the lowest pass
+`iterations` is the same matrix a loop's schedule is; the rule attached to it
+is what differs. A sweep runs every point rather than stopping early, so it
+declares `select` -- a metric name and a direction, `min` or `max` -- where a
+loop declares `until`. There is no third key naming the shape: a job's keys
+already say which it is.
+
+Once `placement`'s input is ready, the engine runs all three settings, each in
+its own pass directory (`runs/<tag>/placement/<k>/...`), and keeps whichever
+pass's `route__wirelength__estimated` is lowest; ties break to the lowest pass
 index, so a rerun picks the same winner. The losing passes' outputs stay on
 disk, reviewable, but nothing downstream of `placement` sees them.
 
-A sweep job may not be a ring member, and `mode: sweep` never declares
-`until` or `max`: `select` is what tells the engine how to end it.
+A sweep job may not be a ring member, and never declares `until` or `max`:
+`select` is what tells the engine how to end it. Sweeping two variables at
+once sweeps their product, so
+
+```yaml
+    select: "route__wirelength__estimated min"
+    iterations:
+      PL_TARGET_DENSITY: [0.45, 0.55, 0.65]
+      GRT_ADJUSTMENT: [0.3, 0.5]
+```
+
+is a six-point sweep, and the best of those six wins.
 
 ### Runtime conditions
 
@@ -392,8 +409,9 @@ and the names it enumerates are the ones *this installation* has registered:
 installed alongside LibreLane. Regenerate it after installing one.
 
 It also carries the rules a single key cannot state on its own -- that `select`
-means nothing without `mode: sweep`, that an `until` gate takes exactly one of
-`iterations` or `max` -- and the term grammar `if` and `until` are written in.
+means nothing without `iterations`, that a job declares `until` or `select` but
+never both, that an `until` gate takes exactly one of `iterations` or `max` --
+and the term grammar `if` and `until` are written in.
 
 What it cannot carry is anything that needs the whole graph: that a `needs`
 names a declared job, that a cycle is a simple ring with one gate, that some
