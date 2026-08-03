@@ -68,8 +68,13 @@ Style Notes
   near miss is still answered with a suggestion. The `<job>/` form is needed
   when a step ID runs in more than one job, as `Classic` runs the `streamout`
   stage under both `magic_streamout` and `klayout_streamout`.
-* `--explain` now prints one row per job the document declares, with a `NEEDS`
-  column showing the graph, and no longer requires a sequential flow.
+* Added `--explain`, which prints one row per job the document declares, with
+  a `NEEDS` column showing the graph, saying whether this configuration would
+  run it and, if not, whether its own `if`, `--skip` or `--target` stopped
+  it, then exits without running. Every job gets a row: a job stopped by its
+  condition or by `--skip` still fires and passes its input state on, so its
+  successors are unaffected, and the table says so rather than omitting it.
+  It no longer requires a sequential flow.
 * Added `--explain-variables`, which prints one row per configuration variable
   with its value, the layer that supplied it and the jobs that can read it,
   then exits without running. Reach is reported as "universal" for a variable
@@ -117,12 +122,6 @@ Style Notes
   configuration and input-state pair.
 * Made `--state-in` explicitly required for standalone step runs and ejection,
   matching the underlying step loader contract.
-* Added `--explain`, which prints one row per job of the document saying
-  whether this configuration would run it and, if not, whether its own `if`,
-  `--skip` or `--target` stopped it, then exits without running. Every job
-  gets a row: a job stopped by its condition or by `--skip` still fires and
-  passes its input state on, so its successors are unaffected, and the table
-  says so rather than omitting it.
 * Removed `--only`. It named a single step of a window that no longer exists;
   `--target` names a job and its dependencies instead.
 
@@ -241,6 +240,9 @@ Style Notes
 * Removed the unused `_EXTRA_CORNER_TCL_FILE` environment variable. The
   `STA_EXTRA_CORNER_TCL_FILE` feature reaches Tcl under its own name and is
   unaffected.
+* Deleted `OpenROAD.WriteViews`. It had no registration and was reachable
+  from no flow, along with the `OPENROAD_LEF_BLOAT_OCCUPIED_LAYERS` variable
+  it declared.
 
 * `KLayout.Render`
 
@@ -391,6 +393,16 @@ Style Notes
     parasitics for one corner, then hands an interactive OpenSTA console over to
     the user, so timing paths can be reported by hand (#532).
 
+* Created `OpenROAD.SaveImage`, which renders a PNG of the current layout
+  with OpenROAD's `save_image`. Unlike `KLayout.Render`, which needs a DEF or
+  a GDS and so only runs once the layout has been streamed out, this reads
+  the ODB and can be placed anywhere in the flow -- after floorplanning,
+  after CTS, after routing -- and inserted as many times as there are moments
+  worth a picture. It writes `<step_dir>/<design>.png` and does not update
+  the state, so several instances do not fight over one view. Added
+  `SAVE_IMAGE_WIDTH`, `SAVE_IMAGE_RESOLUTION`, `SAVE_IMAGE_AREA` and
+  `SAVE_IMAGE_DISPLAY_OPTIONS` (#611).
+
 * `OpenROAD.STAMidPNR`
 
   * Reports every corner in `STA_CORNERS` instead of one. The resizer steps
@@ -423,6 +435,12 @@ Style Notes
     shape on, supplied per PDK. `81/53` for sky130 and `23/5` for gf180mcu,
     which is what those PDKs' Magic tech files give the CIF layer `SUBCUT` that
     `isosub` maps to. Magic needs no such variable; it knows the layer by name.
+
+* `KLayout.XOR`
+
+  * Added `KLAYOUT_XOR_WRITE_GDS`, which also writes the XOR differences to
+    `xor.gds` in the step directory, so they can be opened as a layout rather
+    than only as a marker database. Defaults to off (#692).
 
 * `Magic.DRC`
 
@@ -573,8 +591,8 @@ Style Notes
   shipped documents that selection is refused at load — see the selection
   validation entry below — because `OpenROAD.WriteCDL` writes the framework
   metrics onto a branch whose siblings inherit them. Its sequence is
-  `OpenROAD.WriteCDL`, `KLayout.LVS`, `Checker.LVS`. `KLayout.LVS` was
-  previously reachable from no built-in flow at all (#696).
+  `OpenROAD.WriteCDL`, `KLayout.LVS`. `KLayout.LVS` was previously reachable
+  from no built-in flow at all (#696).
   * It is an *alternative* to the `netgen` provider, not an addition beside it.
     `lvs` is single-provider, so exactly one of the two runs. No default
     changes: `Classic` and `VHDLClassic` still run Magic plus Netgen unless
@@ -583,16 +601,18 @@ Style Notes
     selected, and the two do not write the same quantity. Netgen reports its
     count of mismatching cells and nets. The KLayout scripts report only
     whether the netlists matched, so that provider writes `0` for a match and
-    `1` for a mismatch. `Checker.LVS` thresholds at zero and behaves
-    identically either way; a dashboard or a regression comparison reading the
-    number itself does not. The producing tool is the `lvs` entry of the run's
-    resolved `TOOLS`.
+    `1` for a mismatch. Both providers gate `design__lvs_error__count` at
+    zero through their own `ERROR_ON_LVS_ERROR` -- `Netgen.LVS` and
+    `KLayout.LVS` each declare it -- and behave identically either way; a
+    dashboard or a regression comparison reading the number itself does not.
+    The producing tool is the `lvs` entry of the run's resolved `TOOLS`.
   * The two checks are also not equally deep. Netgen compares a Magic-extracted
     netlist against the powered Verilog netlist; KLayout compares the GDSII
     against a CDL and is the less complete of the two on hierarchical designs.
   * `KLayout.LVS` supports `ihp-sg13g2` and `ihp-sg13cmos5l` only. On any other
-    PDK it warns and emits no metric, and `Checker.LVS` then reports the metric
-    as absent.
+    PDK it warns and emits no metric, and the `lvs` job's contract -- which
+    requires `design__lvs_error__count` -- fails the run rather than letting
+    an unmeasured design pass.
   * `OpenROAD.WriteCDL` sits inside the provider sequence rather than in the
     flows, for the same reason `Magic.SpiceExtraction` sits inside the `netgen`
     sequence: `KLayout.LVS` hard-requires the `cdl` view, no job promises
@@ -676,9 +696,10 @@ Style Notes
     * `RUN_DRT` also skips `Odb.RemoveRoutingObstructions` and the second
       `OpenROAD.CheckAntennas`. Obstructions exist to shape detailed routing,
       and an antenna check on an unrouted design reports nothing meaningful.
-    * `RUN_LVS` also skips `Magic.SpiceExtraction` and `Checker.IllegalOverlap`.
-      The extraction exists to feed LVS, and disabling LVS used to still pay
-      for it and still fail the run on a check nobody asked for.
+    * `RUN_LVS` also skips `Magic.SpiceExtraction`, which carries the
+      illegal-overlap gate. The extraction exists to feed LVS, and disabling
+      LVS used to still pay for it and still fail the run on a check nobody
+      asked for.
 * Added `TOOLS`, a mapping from job id to the provider implementing it, so a
   phase's tool can be chosen from configuration instead of by editing the
   flow. `{"synthesis": "yosys"}` on `VHDLClassic` runs the Verilog sequence
@@ -720,7 +741,8 @@ Style Notes
   completes, every view in the job's `provides` must be in the state and every
   metric in its `metrics` must have been emitted, or the run fails. There is no
   warn-and-continue: a backend that does not report `route__drc_errors` must not
-  be able to let `Checker.TrDRC` pass on an unexamined design. Metrics are
+  be able to let `OpenROAD.DetailedRouting`'s `ERROR_ON_TR_DRC` gate pass on
+  an unexamined design. Metrics are
   compared by exact name. A provider that measures per corner or per net
   satisfies the contract by aggregating its variants into the base-named
   metric, which is what `aggregate_metrics` does with the METRICS2.1
@@ -797,24 +819,25 @@ Style Notes
   tool's provider registration, so deselecting the tool removes the step with
   it. A step whose inclusion is the flow's choice, independent of the tool, is
   a step a document lists directly with `steps`.
-  * **Fixed:** `Checker.MagicDRC` and `Checker.KLayoutDRC` now belong to the
-    `drc` job's `magic` and `klayout` providers. As plain steps of `Classic`,
-    `{"drc": "klayout"}` removed `Magic.DRC` but left `Checker.MagicDRC` running
-    under a default-true `RUN_MAGIC_DRC`, failing the run on
-    `magic__drc_error__count` that Magic never emitted. **This reorders the DRC
-    steps** from `Magic.DRC, KLayout.DRC, Checker.MagicDRC, Checker.KLayoutDRC`
-    to `Magic.DRC, Checker.MagicDRC, KLayout.DRC, Checker.KLayoutDRC`, changing
-    run directory names and step ordinals in that region. Gating is unchanged.
-  * `KLayout.XOR` and `Checker.XOR` compare the two streamout tools' output
-    against each other, so they belong to neither registration and stay plain
-    steps. The view preflight is what guarantees both GDSII views were produced.
+  * **Fixed:** `Magic.DRC` and `KLayout.DRC` each carry the gate for their own
+    metric -- `ERROR_ON_MAGIC_DRC` on `magic__drc_error__count`,
+    `ERROR_ON_KLAYOUT_DRC` on `klayout__drc_error__count` -- so each lives
+    inside the `drc` job's own provider registration, `magic` or `klayout`,
+    and deselecting a provider removes its gate along with it.
+    `{"drc": "klayout"}` therefore removes `Magic.DRC` and its gate together;
+    no gate is left running on a metric the deselected tool never emitted.
+  * `KLayout.XOR` compares the two streamout tools' output against each
+    other and gates on its own `ERROR_ON_XOR_ERROR`, so it belongs to neither
+    registration and stays a plain step. The view preflight is what
+    guarantees both GDSII views were produced.
   * `Magic.WriteLEF` stays a plain step: it consumes the neutral `gds` and `def`
     views rather than Magic's own, so it is Magic-implemented but not
     Magic-dependent, and whether a flow wants a LEF abstract at all is a
     flow-level choice. `Chip` deliberately does not.
-  * A checker for a metric its *job* contracts, such as `Checker.TrDRC`, stays
-    inside its registration for a different reason: membership is what gives it
-    the job's gating variable.
+  * A step whose own metric the job contracts, such as
+    `OpenROAD.DetailedRouting`'s `route__drc_errors`, carries the job's
+    gating variable directly rather than through a separate checker:
+    membership in the registration is what gives it `ERROR_ON_TR_DRC`.
   * Fourteen plain steps of `Classic` consume OpenROAD's `odb`, so they depend
     on OpenROAD implementing the surrounding jobs. They cannot move into a
     registration, because they sit between jobs: `OpenROAD.STAMidPNR` appears
@@ -870,10 +893,11 @@ Style Notes
 * `--reproducible` naming a step this configuration would never execute,
   because it is gated off or named by `--skip`, now raises rather than
   silently producing nothing.
-* Created `OpenInOpenROADConsole` and `OpenInOpenSTAConsole`, the mono-step
-  flows behind `OpenROAD.OpenConsole` and `OpenROAD.OpenSTAConsole`. They are
-  used the same way the GUI ones are, i.e.
-  `librelane --last-run --flow OpenInOpenSTAConsole` (#532).
+* `OpenROAD.OpenConsole` and `OpenROAD.OpenSTAConsole`, previously reachable
+  from no built-in flow at all, are opened the same way the GUI viewers are:
+  `librelane open openroad-console` and
+  `librelane open opensta-console --last-run <run folder>/resolved.json`
+  (#532).
 * **Fixed:** the `PDK`/`SCL`/`PAD`/`meta` reserved-key refusal only walked a
   document's own `with` block, so a job's `with` block could still set `PDK`.
   After the `TOOLS` pre-pass became PDK-aware, that job value would be layered
@@ -895,6 +919,13 @@ Style Notes
   the gate and the bound rather than a hard failure: the run continues with
   the last pass's state and fails at the end. Each pass gets its own run
   directory, `<job id>/<k>/...`. See {doc}`/usage/writing_custom_flows`.
+  * A ring member other than the gate is gated fresh each pass by its own
+    `if`, exactly as a non-ring job's is. The gate's own `if`, if it
+    declares one, is evaluated once, at loop entry, against the tokens the
+    ring's predecessors outside it supply, and gates the whole loop instance
+    rather than any one pass; it is not asked again pass to pass, so a
+    runtime term in it changing truth value as the ring's circulating state
+    evolves does not silently drop the gate's own steps mid-loop.
 * Added `metric::` terms to `if`, and to a ring gate's `until`:
   `metric::<name> <op> <literal>`, rather than only a configuration variable
   decided at load time. `if`'s runtime terms are evaluated against a job's
@@ -907,7 +938,11 @@ Style Notes
   the same measurement as false. `if` may mix `metric::` terms with the
   configuration-variable terms it already accepted; `until` accepts only
   `metric::` terms, since a configuration term is constant across a loop's
-  passes and could never make a gate decide differently pass to pass.
+  passes and could never make a gate decide differently pass to pass. A
+  term's observed value must be a plain number: a Boolean is refused by
+  name, since a Boolean is never a quantity despite being an `int` subclass,
+  rather than silently read as 0 or 1. The same refusal applies to a sweep
+  job's `select` metric below.
 * Added `mode: sweep`. A sweep job runs its steps at every entry of its own
   `iterations` concurrently, from one joined input, and keeps the pass whose
   `select` metric (a name and a direction, `min` or `max`) is best, ties
@@ -929,7 +964,7 @@ Style Notes
 
 ## Tool Updates
 
-* Relaxed version requirement for `rich` to allow rich 16.
+* Relaxed version requirement for `rich` to allow rich 15.
 * Updated nix-eda to 7.0.0, which moves the Nix environment to NixOS 26.05
   (#854, ported from upstream #977). Magic becomes `8.3.674`, Netgen
   `1.5.320`, Yosys and its eqy/sby plugins `0.66`, Verilator `5.046`, KLayout
@@ -1063,7 +1098,7 @@ Style Notes
   language.
 * Registered seven metrics that steps emit but `library.py` never declared, so
   they were dropped from both aggregation and CI metric comparison. Four of
-  them gate the flow through a `Checker` step (#567).
+  them gate the flow through a step's own `gates` (#567).
 * Fixed reproducibles created from composite steps failing to run: the
   constituent steps re-read the PDK configuration, which a reproducible's
   copied file tree does not contain (#621).
@@ -1130,12 +1165,14 @@ Style Notes
 * Flows are YAML documents rather than Python classes. `SequentialFlow` and
   `StagedFlow` are deleted, along with `Classic`, `VHDLClassic`, `Chip`,
   `OpenInKLayout`, `OpenInMagic`, `OpenInOpenROAD`, `OpenInOpenROADConsole`
-  and `OpenInOpenSTAConsole` as importable classes. The eight flows now ship
-  as `librelane/flows/*.yaml`, namely `chip.yaml`, `classic.yaml`,
-  `open_in_klayout.yaml`, `open_in_magic.yaml`, `open_in_openroad.yaml`,
-  `open_in_openroad_console.yaml`, `open_in_opensta_console.yaml` and
-  `vhdl_classic.yaml`. Each registers under the name its class carried, so
-  `--flow`, `meta.flow` and the `{flow}` documentation role are unaffected.
+  and `OpenInOpenSTAConsole` as importable classes. Three of them ship as
+  documents, `librelane/flows/chip.yaml`, `classic.yaml` and
+  `vhdl_classic.yaml`, each registering under the name its class carried, so
+  `--flow`, `meta.flow` and the `{flow}` documentation role are unaffected for
+  those three. The five `OpenIn*` flows are not reborn as documents: opening
+  a run in a viewer was never a flow, since it runs one step, advances
+  nothing and waits for a human, so `librelane open <viewer>` replaces them
+  instead -- see the CLI entry above.
   * `Flow.factory.get(name)` returns the
     {class}`librelane.flows.spec.FlowSpec` the document parsed into, rather
     than a `Flow` subclass, and {class}`librelane.flows.engine.Workflow` is
@@ -1308,6 +1345,15 @@ Style Notes
   real implementations and are unchanged.
 * Removed `DesignFormat.value`, `DesignFormat.name` and `DesignFormat.by_id`.
   Use the `DesignFormat` itself, `.id`, and `DesignFormat.factory.get`.
+* `librelane.common.Path` is `Annotated[pathlib.Path, ...]` rather than a
+  `UserString` subclass. A value of the type is an ordinary `pathlib.Path`
+  object: `isinstance(x, Path)` now raises `TypeError` instead of testing
+  membership, and the instance methods `.exists()`, `.validate()` and the
+  `._dummy_path` class attribute are gone. The sentinel is the module-level
+  `DUMMY_PATH` string, existence checking is the module-level
+  `validate_path` function, and spelling a path relative to a start
+  directory is `rel_if_child`, all in `librelane.common.types`. Spell the
+  type itself as `pathlib.Path` for both.
 
 ## Documentation
 

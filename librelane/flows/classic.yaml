@@ -155,8 +155,8 @@ config:
     type: bool
     default: true
     description: >-
-      Enables the lint job, i.e. the Verilator.Lint step and associated checker
-      steps. Has no effect in VHDLClassic, which does not run that job.
+      Enables the lint job, i.e. the Verilator.Lint step. Has no effect in
+      VHDLClassic, which does not run that job.
     deprecated_names: [RUN_VERILATOR]
 
 # No job carries a 'source' key, and that is a property of the graph rather
