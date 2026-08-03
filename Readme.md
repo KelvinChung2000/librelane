@@ -51,10 +51,10 @@ started. You can discuss LibreLane in the
 
 ```python
 from librelane.flows import Flow
+from librelane.flows.engine import Workflow
 
-Classic = Flow.factory.get("Classic")
-
-flow = Classic(
+flow = Workflow(
+    Flow.factory.get("Classic"),
     {
         "PDK": "sky130A",
         "DESIGN_NAME": "spm",

@@ -206,29 +206,32 @@ runs/<run_tag>
 ├── final
 ├── tmp
 ├── error.log
-├── info.log
+├── flow.log
 ├── resolved.json
 ├── warning.log
-├── 01-verilator-lint
-├── 02-yosys-jsonheader
-├── 03-yosys-synthesis
-├── 04-openroad-checksdcfiles
-├── 05-openroad-staprepnr
-├── 06-openroad-floorplan
-├── 07-odb-setpowerconnections
-├── 08-odb-manualmacroplacement
-├── 09-openroad-cutrows
-├── 10-openroad-tapendcapinsertion
-├── 11-openroad-globalplacementskipio
+├── lint
+│   └── 1-verilator-lint
+├── synthesis
+│   ├── 1-yosys-jsonheader
+│   └── 2-yosys-synthesis
+├── pre_pnr_sta
+│   ├── 1-openroad-checksdcfiles
+│   ├── 2-openroad-checkmacroinstances
+│   └── 3-openroad-staprepnr
+├── floorplan
+│   ├── 1-openroad-floorplan
+│   ├── 2-openroad-dumprcvalues
+│   └── 3-odb-checkmacroantennaproperties
 ⋮
 ---
 For one thing, run folders have been redone entirely: instead of a haphazardly
-and and ill-defined set of meta-step folders, each step now has its own folder.
+and and ill-defined set of meta-step folders, each step now has its own folder,
+grouped under the folder of the job that ran it.
 
 By inspecting a step's folder, you'll find its outputs, including design views,
 logs and reports. Each step is only allowed to write within its own step folder,
-so to find the LVS report, for example, you'll have to look for the folder
-`*-netgen-lvs`.
+so to find the LVS report, for example, you'll have to look inside the `lvs`
+job's folder for `2-netgen-lvs`.
 ```
 
 ```!migration_comparison[] #### Final Views
@@ -321,7 +324,7 @@ stream-out in the design.
 ```!migration_comparison[bash] #### Opening earlier DEF view in KLayout
 python3 ./gui.py --viewer klayout --stage routing --format def <path to run folder>
 ---
-librelane open klayout --with-initial-state <run folder>/*-openroad-detailedrouting/state_out.json <run folder>/resolved.json
+librelane open klayout --with-initial-state <run folder>/detailed_routing/*-openroad-detailedrouting/state_out.json <run folder>/resolved.json
 ---
 Where there is no GDS view yet, KLayout previews the DEF view instead. You can
 say which state to open explicitly, and here we've opted for the output state
@@ -331,7 +334,7 @@ of the detailed routing step.
 ```!migration_comparison[bash] #### Opening in OpenROAD
 python3 ./gui.py --viewer openroad --stage routing --format def <path to run folder>
 ---
-librelane open openroad --with-initial-state <run folder>/*-openroad-detailedrouting/state_out.json <run folder>/resolved.json
+librelane open openroad --with-initial-state <run folder>/detailed_routing/*-openroad-detailedrouting/state_out.json <run folder>/resolved.json
 ---
 Only the tool name changes. `librelane open --help` lists all five:
 `klayout`, `magic` and `openroad` open a GUI, and `openroad-console` and

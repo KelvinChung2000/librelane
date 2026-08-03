@@ -137,7 +137,7 @@ ______________________________________________________________________
 To open the final {term}`GDSII` layout run this command:
 
 ```console
-[nix-shell:~/librelane]$ librelane --last-run --flow openinklayout ~/caravel_aes_accelerator/openlane/aes_wb_wrapper/config.json
+[nix-shell:~/librelane]$ librelane open klayout --last-run ~/caravel_aes_accelerator/openlane/aes_wb_wrapper/config.json
 ```
 
 This opens {term}`KLayout` and you should be able to see the following:
@@ -814,7 +814,7 @@ ______________________________________________________________________
 To open the final {term}`GDSII` layout run this command:
 
 ```console
-[nix-shell:~/librelane]$ librelane --last-run --flow openinklayout ~/caravel_aes_accelerator/openlane/user_project_wrapper/config.json
+[nix-shell:~/librelane]$ librelane open klayout --last-run ~/caravel_aes_accelerator/openlane/user_project_wrapper/config.json
 ```
 
 This opens {term}`KLayout` and you should be able to see the following:
@@ -1135,7 +1135,7 @@ ______________________________________________________________________
 To open the final {term}`GDSII` layout run this command:
 
 ```console
-[nix-shell:~/librelane]$ librelane --last-run --flow openinklayout ~/caravel_aes_accelerator/openlane/user_project_wrapper/config.json
+[nix-shell:~/librelane]$ librelane open klayout --last-run ~/caravel_aes_accelerator/openlane/user_project_wrapper/config.json
 ```
 
 Now our macro is placed at the bottom left corner close to the wishbone pins.

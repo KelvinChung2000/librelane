@@ -234,7 +234,7 @@ ______________________________________________________________________
 To open the final {term}`GDSII` layout run this command:
 
 ```console
-[nix-shell:~/librelane]$ librelane --last-run --flow openinklayout ~/my_designs/pm32/config.json
+[nix-shell:~/librelane]$ librelane open klayout --last-run ~/my_designs/pm32/config.json
 ```
 
 This opens {term}`KLayout` and you should be able to see the following:
@@ -249,7 +249,7 @@ If you wish to view the layout in the {term}`OpenROAD` GUI, try this command
 instead:
 
 ```console
-[nix-shell:~/librelane]$ librelane --last-run --flow openinopenroad ~/my_designs/pm32/config.json
+[nix-shell:~/librelane]$ librelane open openroad --last-run ~/my_designs/pm32/config.json
 ```
 
 ______________________________________________________________________
@@ -259,20 +259,22 @@ ______________________________________________________________________
 You'll find that a **run directory** (named something like
 `runs/RUN_2023-12-27_16-59-15`) was created when you ran LibreLane.
 
-By default, LibreLane runs a {py:class}`Flow <librelane.flows.Flow>` composed of a
-sequence of {py:class}`Step <librelane.steps.Step>`(s). Each step has its
-separate directory within the run directory.
+By default, LibreLane runs the {flow}`Classic` flow, composed of a graph of
+**jobs**, each of which runs one or more {py:class}`Step <librelane.steps.Step>`(s).
+A run directory holds one directory per job, and inside it, one directory per
+step, numbered by that step's position within its own job.
 
-For example, the {step}`OpenROAD.TapEndCapInsertion` Step creates the following
-directory `18-openroad-tapendcapinsertion`.
+For example, the {step}`OpenROAD.TapEndCapInsertion` Step, which runs inside
+the `tapcell_insertion` job, creates the following directory
+`tapcell_insertion/1-openroad-tapendcapinsertion`.
 
 A step directory has log files, report files, {term}`metrics` and output
 artifacts created by the step.
 
-For example, these are the contents of `18-openroad-tapendcapinsertion`:
+For example, these are the contents of `tapcell_insertion/1-openroad-tapendcapinsertion`:
 
 ```text
-18-openroad-tapendcapinsertion/
+1-openroad-tapendcapinsertion/
 ├── COMMANDS
 ├── config.json
 ├── _env.tcl
@@ -314,30 +316,37 @@ Here is a small description of each of those files:
 Using `state_out.json`, you can view the layout at intermediate steps as well!
 
 ```console
-[nix-shell:~/librelane]$ librelane --last-run --flow openinklayout ~/my_designs/pm32/config.json --with-initial-state ~/my_designs/pm32/runs/RUN_2023-12-27_16-59-15/18-openroad-tapendcapinsertion/state_out.json"
+[nix-shell:~/librelane]$ librelane open klayout --last-run --with-initial-state ~/my_designs/pm32/runs/RUN_2023-12-27_16-59-15/tapcell_insertion/1-openroad-tapendcapinsertion/state_out.json ~/my_designs/pm32/config.json
 ```
 ````
 
 `````
 
-The run directory is composed of many of these step directories:
+The run directory is composed of many of these job directories, each holding
+its own step directories:
 
 ```text
 RUN_2023-12-27_16-59-15
-├── 01-verilator-lint
-├── 02-yosys-jsonheader
-├── 03-yosys-synthesis
-├── 04-openroad-checksdcfiles
-├── 05-openroad-checkmacroinstances
-├── 06-openroad-staprepnr
-├── 07-openroad-floorplan
-├── 08-odb-checkmacroantennaproperties
-├── 09-odb-setpowerconnections
+├── lint
+│   └── 1-verilator-lint
+├── synthesis
+│   ├── 1-yosys-jsonheader
+│   └── 2-yosys-synthesis
+├── pre_pnr_sta
+│   ├── 1-openroad-checksdcfiles
+│   ├── 2-openroad-checkmacroinstances
+│   └── 3-openroad-staprepnr
+├── floorplan
+│   ├── 1-openroad-floorplan
+│   ├── 2-openroad-dumprcvalues
+│   └── 3-odb-checkmacroantennaproperties
+├── set_power_connections
+│   └── 1-odb-setpowerconnections
 ⋮
 ├── final/
 ├── tmp
 ├── error.log
-├── info.log
+├── flow.log
 ├── resolved.json
 └── warning.log
 ```
@@ -415,7 +424,7 @@ count of violations found by each Step.
 To view DRC errors graphically, you may open the layout as follows:
 
 ```console
-[nix-shell:~/librelane]$ librelane --last-run --flow openinklayout ~/my_designs/pm32/config.json
+[nix-shell:~/librelane]$ librelane open klayout --last-run ~/my_designs/pm32/config.json
 ```
 
 Then in the menu bar select Tools ► Marker Browser. A new window should open.
@@ -427,12 +436,14 @@ Tools ► Marker Browser
 ```
 
 Click File ► Open and then select the DRC report file, of which you'll find two:
-One under `52-magic-drc/reports/drc.klayout.xml` and the other under
-`63-klayout-drc/report/drc.klayout.xml`.
+one under `magic_drc/1-magic-drc/reports/drc.klayout.xml` and the other under
+`klayout_drc/1-klayout-drc/report/drc.klayout.xml`.
 
 ```{tip}
-The initial number in `63-klayout-drc` (`63`) may vary according to the
-flow's configuration.
+Step numbers restart at 1 within each job, so `1-magic-drc` and `1-klayout-drc`
+name each step's position in its own job (`magic_drc` and `klayout_drc`
+respectively), not a position in the whole run. See
+{doc}`/usage/resuming_runs` for why numbering is scoped to jobs.
 ```
 
 ```{figure} ./klayout-markerbrowser-2.webp
@@ -556,7 +567,7 @@ There is also a directory per corner inside the Step directory which contains
 all the log files and reports generated for each `IPVT corner`.
 
 ```text
-54-openroad-stapostpnr/
+signoff_sta/1-openroad-stapostpnr/
 └── nom_tt_025C_1v80/
     ├── checks.rpt
     ├── filter_unannotated.log
@@ -741,7 +752,7 @@ about configuring pin placements.
 5. Check the final layout again using this command:
 
 ```console
-[nix-shell:~/librelane]$ librelane --last-run --flow openinklayout ~/my_designs/pm32/config.json
+[nix-shell:~/librelane]$ librelane open klayout --last-run ~/my_designs/pm32/config.json
 ```
 
 Since the configuration file `pin_order.cfg` has `#E` then `clk`, `rst`,

@@ -230,7 +230,7 @@ ______________________________________________________________________
 To open the final {term}`GDSII` layout run this command:
 
 ```console
-[nix-shell:~/librelane]$ librelane --last-run --flow openinklayout ~/caravel_aes_accelerator/openlane/user_project_wrapper/config.json
+[nix-shell:~/librelane]$ librelane open klayout --last-run ~/caravel_aes_accelerator/openlane/user_project_wrapper/config.json
 ```
 
 Now, we can see that there are STD cells all over the `user_project_wrapper` and
