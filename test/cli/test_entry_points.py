@@ -33,6 +33,7 @@ from rich.text import Text
 from typer.testing import CliRunner
 
 from librelane.cli.main import cli
+from librelane.flows.spec_schema import JSON_SCHEMA_DIALECT, workflow_document_schema
 
 
 pytestmark = pytest.mark.all
@@ -172,9 +173,11 @@ class TestSubcommands:
             (["config", "--help"], "create"),
             (["state", "--help"], "latest"),
             (["metrics", "--help"], "compare-multiple"),
+            (["flow", "--help"], "schema"),
             (["help", "--help"], "step_or_flow"),
             (["steps", "create-reproducible", "--help"], "--include-pdk"),
             (["config", "create", "--help"], "--clock-period"),
+            (["flow", "schema", "--help"], "--output"),
         ],
     )
     def test_subcommand_help_exits_zero(self, argv: list[str], expected: str):
@@ -189,7 +192,15 @@ class TestSubcommands:
         result = runner.invoke(cli, ["--help"])
 
         assert result.exit_code == 0, result.output
-        for subcommand in ("run", "steps", "config", "state", "metrics", "help"):
+        for subcommand in (
+            "run",
+            "steps",
+            "config",
+            "state",
+            "metrics",
+            "flow",
+            "help",
+        ):
             assert subcommand in result.stdout
 
     def test_version(self):
@@ -246,6 +257,23 @@ class TestSubcommands:
         result = runner.invoke(cli, ["metrics", "compare", str(a), str(b)])
 
         assert result.exit_code == 0, result.output
+
+    def test_flow_schema_prints_a_schema(self):
+        result = runner.invoke(cli, ["flow", "schema"])
+
+        assert result.exit_code == 0, result.output
+        schema = json.loads(result.stdout)
+        assert schema["$schema"] == JSON_SCHEMA_DIALECT
+        assert "jobs" in schema["properties"]
+
+    def test_flow_schema_writes_the_file_it_names(self, tmp_path: Path):
+        out = tmp_path / "workflow.schema.json"
+
+        result = runner.invoke(cli, ["flow", "schema", "--output", str(out)])
+
+        assert result.exit_code == 0, result.output
+        assert str(out) in result.stdout
+        assert json.loads(out.read_text(encoding="utf8")) == workflow_document_schema()
 
     def test_env_info(self, capsys: pytest.CaptureFixture[str]):
         _resolve(_console_scripts()["librelane.env_info"])()

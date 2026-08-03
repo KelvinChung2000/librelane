@@ -51,7 +51,11 @@ test = [
     "pytest-cov",
     "pytest-mock",
     "pyfakefs",
-    "pillow"
+    "pillow",
+    # Not a runtime dependency: `librelane flow schema` generates the schema and
+    # nothing in LibreLane consumes one. The suite validates documents against
+    # the generated schema to prove it refuses what the loader refuses.
+    "jsonschema>=4,<5"
 ]
 docs = [
     "furo>=2024.8.6",

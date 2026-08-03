@@ -14,7 +14,7 @@
 """
 The pieces every LibreLane frontend is built from.
 
-This module holds no commands. It exists so the six command groups share one
+This module holds no commands. It exists so the seven command groups share one
 Typer configuration instead of six copies of the same constructor call, and so
 the root app's "bare config file means run" dispatch lives in exactly one place.
 """

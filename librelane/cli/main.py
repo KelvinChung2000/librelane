@@ -33,6 +33,7 @@ from librelane.plugins import discovered_plugins
 from librelane.cli._app import DefaultToRunGroup, make_app
 from librelane.cli.config import cli as config_cli
 from librelane.cli.env_info import show_env_info
+from librelane.cli.flow import cli as flow_cli
 from librelane.cli.help import show_help
 from librelane.cli.metrics import cli as metrics_cli
 from librelane.cli.open_in import open_in
@@ -113,6 +114,7 @@ cli.add_typer(steps_cli, name="steps")
 cli.add_typer(config_cli, name="config")
 cli.add_typer(state_cli, name="state")
 cli.add_typer(metrics_cli, name="metrics")
+cli.add_typer(flow_cli, name="flow")
 
 
 if __name__ == "__main__":

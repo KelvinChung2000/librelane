@@ -51,6 +51,21 @@ Style Notes
   * Only the viewer step's own configuration variables are resolved, plus the
     universal ones. Nothing else is going to run, so a design whose unrelated
     variable is malformed still opens.
+* Added `librelane flow schema`, which writes a JSON Schema for the workflow
+  document surface, for editors to complete and validate a document against
+  while it is being written. `-o`/`--output` names a file; the standard output
+  is the default.
+  * Generated from the same models the loader validates against, so a key
+    added to a document's job appears in it without a second file being
+    edited, and it carries the key combinations no single field can state:
+    that `select` needs `mode: sweep`, that an `until` gate takes exactly one
+    of `iterations` or `max`, and the term grammar behind `if` and `until`.
+  * The `steps` and `uses` enumerations are the registries of the installation
+    that generated it, plugins included, so the schema completes a plugin's
+    step ids wherever that plugin is installed.
+  * LibreLane itself never validates against it. Whether the graph holds
+    together -- that a `needs` names a declared job, that a cycle is a ring
+    with one gate -- is still the loader's answer to give.
 * Removed `--from` and `--to`. A step window is not expressible over a graph.
   * Added `--target`/`-T`, which runs a job and everything it transitively
     needs and nothing else. The run's final state is the named job's own
@@ -1396,6 +1411,10 @@ Style Notes
   {doc}`/usage/writing_tool_backends`, covering the sixteen unimplemented
   vendor step scaffolds and the opt-in `librelane.jobs.providers_vendor`
   import that registers them as job providers.
+* Added an "Editor support" section to {doc}`/usage/writing_custom_flows`,
+  covering `librelane flow schema`, the YAML language server comment that
+  points an editor at the written file, and the graph-wide checks a schema
+  cannot make.
 * Removed {doc}`/usage/using_ecos` and the `hold_eco_demo` example, which
   documented step substitution.
 * Rewrote the "Which flows participate" section of {doc}`/usage/resuming_runs`:

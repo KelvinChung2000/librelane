@@ -362,6 +362,45 @@ pass, not for the whole loop; a sweep's passes acquire independently, so a
 two-seat pool still runs a five-point sweep two passes at a time rather than
 one point or all five.
 
+### Editor support
+
+`librelane flow schema` writes a JSON Schema for everything above, so an
+editor can complete step ids and flag mistakes while a document is being
+written rather than when it is run:
+
+```console
+$ librelane flow schema -o workflow.schema.json
+Wrote the workflow document schema to 'workflow.schema.json'.
+```
+
+Point the YAML language server at it with a comment on the document's first
+line:
+
+```yaml
+# yaml-language-server: $schema=./workflow.schema.json
+name: MyFlow
+
+jobs:
+  synthesis:
+    steps: [Yosys.Synthesis]
+```
+
+The schema is generated from the same models the loader validates against,
+and the names it enumerates are the ones *this installation* has registered:
+`steps` completes with every registered step id, `uses` with every
+`job/provider` pair, and both include any [plugin](./writing_plugins.md)
+installed alongside LibreLane. Regenerate it after installing one.
+
+It also carries the rules a single key cannot state on its own -- that `select`
+means nothing without `mode: sweep`, that an `until` gate takes exactly one of
+`iterations` or `max` -- and the term grammar `if` and `until` are written in.
+
+What it cannot carry is anything that needs the whole graph: that a `needs`
+names a declared job, that a cycle is a simple ring with one gate, that some
+job's required view is produced upstream of it. A document the editor calls
+clean can still be refused at load time, with a better message than a
+validator would give.
+
 ## Fully Customized Flows
 
 A document declares a graph and the engine runs it, which is how every flow
