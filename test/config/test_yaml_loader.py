@@ -22,7 +22,7 @@ pytestmark = pytest.mark.all
 
 def test_yaml_decimals():
     import yaml
-    from librelane.config.config import _OpenLaneYAMLLoader
+    from librelane.config.config import LibreLaneYAMLLoader
 
     sio = StringIO()
     sio.write(
@@ -36,7 +36,7 @@ def test_yaml_decimals():
     )
     sio.seek(0)
 
-    result = yaml.load(sio, Loader=_OpenLaneYAMLLoader)
+    result = yaml.load(sio, Loader=LibreLaneYAMLLoader)
     nan_found = False
     inf_found = False
     for i, number in enumerate(result.values()):

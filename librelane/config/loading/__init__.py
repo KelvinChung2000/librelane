@@ -4,7 +4,7 @@ from librelane.config.loading.layering import LayeredMapping, layer_mappings
 from librelane.config.loading.sources import (
     CoercionSyntax,
     ConfigSource,
-    OpenLaneYAMLLoader,
+    LibreLaneYAMLLoader,
     read_source,
 )
 
@@ -12,7 +12,7 @@ __all__ = [
     "CoercionSyntax",
     "ConfigSource",
     "LayeredMapping",
-    "OpenLaneYAMLLoader",
+    "LibreLaneYAMLLoader",
     "layer_mappings",
     "read_source",
 ]

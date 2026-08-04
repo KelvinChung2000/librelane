@@ -1342,6 +1342,23 @@ Style Notes
   under `libs.tech/librelane` -- so Tcl evaluation, permissive typing and the
   PDK variables' deprecated spellings are all exactly where they were.
 
+* Removed the remaining `OPENLANE_`-prefixed names.
+  * Removed the `OPENLANE_CONTAINER_ENGINE` fallback.
+    `LIBRELANE_CONTAINER_ENGINE` is the only override; without it, `docker`
+    then `podman` are looked for in `PATH` as before.
+  * Renamed `OPENLANE_SDC_IDEAL_CLOCKS` to `LIBRELANE_SDC_IDEAL_CLOCKS`. A
+    hand-written SDC file that tests for the old name will no longer see it
+    set; `base.sdc` and `io.tcl` were updated.
+  * Renamed the internal `_OPENLANE_MAX_CORES` to `_LIBRELANE_MAX_CORES`.
+
+* Renamed `OpenLaneYAMLLoader` to `LibreLaneYAMLLoader`, exported from
+  `librelane.config.loading` under the new name.
+
+* Removed the `Misc.LoadBaseSDC` step, which existed for OpenLane
+  compatibility, was documented as not for use in new flows, and appeared in
+  no shipped flow. The `FALLBACK_SDC` variable stays: every OpenROAD step
+  still reads it when `PNR_SDC_FILE` is unset.
+
 * Renamed `librelane.config.legacy` to `librelane.config.variable` and
   `librelane.config.preprocessor.legacy` to
   `librelane.config.preprocessor.expr`. Neither held anything legacy: the

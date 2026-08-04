@@ -559,7 +559,7 @@ class STAPrePNR(MultiCornerSTA):
     If timing information is not available for a Macro, the macro in question
     will be black-boxed.
 
-    During this step, the special variable `OPENLANE_SDC_IDEAL_CLOCKS` is
+    During this step, the special variable `LIBRELANE_SDC_IDEAL_CLOCKS` is
     exposed to SDC files with a value of `1`. We encourage PNR SDC files to use
     ideal clocks at this stage based on this variable's existence and value.
     """
@@ -570,7 +570,7 @@ class STAPrePNR(MultiCornerSTA):
 
     def prepare_env(self, env: dict, state: State) -> dict:
         env = super().prepare_env(env, state)
-        env["OPENLANE_SDC_IDEAL_CLOCKS"] = "1"
+        env["LIBRELANE_SDC_IDEAL_CLOCKS"] = "1"
         return env
 
     def run_corner(
@@ -609,7 +609,7 @@ class STAPostPNR(STAPrePNR):
     using OpenSTA on the post-PnR Verilog netlist, with extracted parasitics for
     both the top-level module and any associated macros.
 
-    During this step, the special variable `OPENLANE_SDC_IDEAL_CLOCKS` is
+    During this step, the special variable `LIBRELANE_SDC_IDEAL_CLOCKS` is
     exposed to SDC files with a value of `0`. We encourage PNR SDC files to use
     propagated clocks at this stage based on this variable's existence and value.
     """
@@ -693,7 +693,7 @@ class STAPostPNR(STAPrePNR):
         env = super().prepare_env(env, state)
         if signoff_sdc_file := self.config.SIGNOFF_SDC_FILE:
             env["_SDC_IN"] = signoff_sdc_file
-        env["OPENLANE_SDC_IDEAL_CLOCKS"] = "0"
+        env["LIBRELANE_SDC_IDEAL_CLOCKS"] = "0"
         return env
 
     def filter_unannotated_report(

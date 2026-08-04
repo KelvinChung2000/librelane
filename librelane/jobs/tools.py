@@ -44,7 +44,7 @@ from librelane.config import Config
 from librelane.config.loading import (
     ConfigSource,
     LayeredMapping,
-    OpenLaneYAMLLoader,
+    LibreLaneYAMLLoader,
     layer_mappings,
     read_source,
 )
@@ -258,7 +258,7 @@ def extract_tools(
     pdk_root: str | None = None,
     scl: str | None = None,
     pad: str | None = None,
-    yaml_loader=OpenLaneYAMLLoader,
+    yaml_loader=LibreLaneYAMLLoader,
 ) -> dict[str, str | list[str]]:
     """
     Reads only the ``TOOLS`` key out of a set of layered configuration sources,

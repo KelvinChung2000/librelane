@@ -74,7 +74,7 @@ puts "\[INFO] Setting timing derate to: $::env(TIME_DERATING_CONSTRAINT)%"
 set_timing_derate -early [expr 1-[expr $::env(TIME_DERATING_CONSTRAINT) / 100]]
 set_timing_derate -late [expr 1+[expr $::env(TIME_DERATING_CONSTRAINT) / 100]]
 
-if { [info exists ::env(OPENLANE_SDC_IDEAL_CLOCKS)] && $::env(OPENLANE_SDC_IDEAL_CLOCKS) } {
+if { [info exists ::env(LIBRELANE_SDC_IDEAL_CLOCKS)] && $::env(LIBRELANE_SDC_IDEAL_CLOCKS) } {
     unset_propagated_clock [all_clocks]
 } else {
     set_propagated_clock [all_clocks]

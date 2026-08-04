@@ -76,7 +76,6 @@
   "Magic.SpiceExtraction",
   "Magic.StreamOut",
   "Magic.WriteLEF",
-  "Misc.LoadBaseSDC",
   "Misc.ReportManufacturability",
   "Netgen.LVS",
   "Odb.AddPDNObstructions",

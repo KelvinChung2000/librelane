@@ -64,14 +64,11 @@ class ContainerInfo(StringRepresentable):
         cinfo = ContainerInfo()
         # Here are the rules:
         # 1. If LIBRELANE_CONTAINER_ENGINE exists, use that uncritically.
-        # 2. Else, if OPENLANE_CONTAINER_ENGINE exists, use that uncritically.
-        # 3. Else, if "docker" is in PATH, always use it.
-        # 4. Else, see if "podman" is in PATH, and use THAT.
-        # 5. If none exist, halt and return early.
+        # 2. Else, if "docker" is in PATH, always use it.
+        # 3. Else, see if "podman" is in PATH, and use THAT.
+        # 4. If none exist, halt and return early.
 
-        container_engine = os.getenv(
-            "LIBRELANE_CONTAINER_ENGINE", os.getenv("OPENLANE_CONTAINER_ENGINE")
-        )
+        container_engine = os.getenv("LIBRELANE_CONTAINER_ENGINE")
         if container_engine is None or container_engine == "":
             container_engine = shutil.which("docker")
             if container_engine is None:

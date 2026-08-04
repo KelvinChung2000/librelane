@@ -456,7 +456,7 @@ def process_list_file(from_file: AnyPath) -> list[str]:
 
 
 def _get_process_limit() -> int:
-    return int(os.getenv("_OPENLANE_MAX_CORES", os.cpu_count() or 1))
+    return int(os.getenv("_LIBRELANE_MAX_CORES", os.cpu_count() or 1))
 
 
 def gzopen(filename: AnyPath, mode="rt") -> IO[Any]:

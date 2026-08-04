@@ -35,7 +35,7 @@ from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
 from librelane.config.loading import (
     ConfigSource,
     LayeredMapping,
-    OpenLaneYAMLLoader,
+    LibreLaneYAMLLoader,
     layer_mappings,
     read_source,
 )
@@ -69,12 +69,6 @@ AnyConfigs = AnyConfig | Sequence[AnyConfig]
 #: What ``_follow_renames`` carries across a rename: an origin, or the syntax
 #: a value was written in.
 _DescriptionT = TypeVar("_DescriptionT")
-
-
-# Moved to config.loading.sources, which is where read_source needs it and
-# which this module already imports. Aliased because it is referenced by name
-# throughout this file.
-_OpenLaneYAMLLoader = OpenLaneYAMLLoader
 
 
 class UnknownExtensionError(ValueError):
@@ -558,7 +552,7 @@ class Config(GenericImmutableDict[str, Any]):
             elif validated_type == "yaml":
                 config_in = yaml.load(
                     open(config_in, encoding="utf8"),
-                    Loader=_OpenLaneYAMLLoader,
+                    Loader=LibreLaneYAMLLoader,
                 )
 
         assert not isinstance(config_in, str)
@@ -828,7 +822,7 @@ class Config(GenericImmutableDict[str, Any]):
                 source_kind = validated_type
                 source = read_source(
                     config_validated,
-                    yaml_loader=_OpenLaneYAMLLoader,
+                    yaml_loader=LibreLaneYAMLLoader,
                 )
                 mapping = source.mapping
 

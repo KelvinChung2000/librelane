@@ -14,42 +14,11 @@
 from loguru import logger
 
 import os
-import pathlib
 
 from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step
-from librelane.state import State, DesignFormat
+from librelane.state import State
 from librelane.steps import Netgen, Magic, KLayout, OpenROAD
 from librelane.logging import options
-
-
-@Step.factory.register()
-class LoadBaseSDC(Step):
-    """
-    Loads an SDC file specified as a configuration variable into the state
-    object unaltered.
-
-    This Step exists for legacy compatibility and should not be used
-    in new flows.
-    """
-
-    id = "Misc.LoadBaseSDC"
-    name = "Load Base SDC"
-    long_name = "Load Base Design Constraints File"
-
-    inputs = []
-    outputs = [DesignFormat.SDC]
-
-    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
-        path = self.config.FALLBACK_SDC
-
-        target = os.path.join(self.step_dir, f"{self.config.DESIGN_NAME}.sdc")
-
-        # Otherwise, you'll end up with weird permissions and may have to chmod
-        with open(target, "w", encoding="utf8") as out:
-            for line in open(path, "r", encoding="utf8"):
-                out.write(line)
-
-        return {DesignFormat.SDC: pathlib.Path(target)}, {}
 
 
 @Step.factory.register()
