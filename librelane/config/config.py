@@ -26,22 +26,20 @@ from typing import (
     ClassVar,
     Literal,
     TypeVar,
-    Union,
-    Optional,
 )
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 
-from librelane.config.legacy import Variable, MissingRequiredVariable
+from librelane.config.legacy import Variable
 from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
 from librelane.config.loading import (
-    CoercionSyntax,
     ConfigSource,
     LayeredMapping,
     OpenLaneYAMLLoader,
     layer_mappings,
     read_source,
 )
+from librelane.config.ambient import build_scope, set_current_config
 from librelane.config.removals import removed_variables
 from librelane.config.flow import (
     pdk_variables,
@@ -65,8 +63,8 @@ from librelane.common import (
     is_string_like,
 )
 
-AnyConfig = Union[AnyPath, Mapping[str, Any]]
-AnyConfigs = Union[AnyConfig, Sequence[AnyConfig]]
+AnyConfig = AnyPath | Mapping[str, Any]
+AnyConfigs = AnyConfig | Sequence[AnyConfig]
 
 #: What ``_follow_renames`` carries across a rename: an origin, or the syntax
 #: a value was written in.
@@ -82,7 +80,7 @@ _OpenLaneYAMLLoader = OpenLaneYAMLLoader
 class UnknownExtensionError(ValueError):
     """
     When a passed configuration file has an unrecognized extension, i.e.,
-    not .json, .yml/.yaml or .tcl.
+    not .json or .yml/.yaml.
     """
 
     def __init__(self, config: AnyPath) -> None:
@@ -105,11 +103,9 @@ class PassedDirectoryError(ValueError):
         )
 
 
-def _validate_config_file(config: AnyPath) -> Literal["json", "tcl", "yaml"]:
+def _validate_config_file(config: AnyPath) -> Literal["json", "yaml"]:
     config = str(config)
-    if config.endswith(".tcl"):
-        return "tcl"
-    elif config.endswith(".json"):
+    if config.endswith(".json"):
         return "json"
     elif config.endswith(".yml") or config.endswith(".yaml"):
         return "yaml"
@@ -230,18 +226,14 @@ class Meta:
     Constitutes metadata for a configuration object.
     """
 
-    version: int = 1
+    version: int = 2
     flow: None | str = None
     step: None | str = None
     librelane_version: None | str = __version__
 
     @classmethod
     def from_dict(Self, meta_dict: dict):
-        meta_dict_copy = meta_dict.copy()
-        if "openlane_version" in meta_dict_copy:
-            meta_dict_copy["librelane_version"] = meta_dict_copy["openlane_version"]
-            del meta_dict_copy["openlane_version"]
-        return Self(**meta_dict_copy)
+        return Self(**meta_dict.copy())
 
     def copy(self) -> "Meta":
         return dataclasses.replace(self)
@@ -316,7 +308,7 @@ class Config(GenericImmutableDict[str, Any]):
         Final configurations may not be adjusted or incremented.
     """
 
-    current_interactive: ClassVar[Optional["Config"]] = None
+    current_interactive: ClassVar["Config | None"] = None
     meta: Meta
 
     def __init__(
@@ -420,7 +412,6 @@ class Config(GenericImmutableDict[str, Any]):
     def copy_filtered(
         self,
         config_vars: Sequence[Variable],
-        include_flow_variables: bool = True,
     ) -> "Config":
         """
         Creates a new copy of the configuration object, but only with the
@@ -431,12 +422,13 @@ class Config(GenericImmutableDict[str, Any]):
         config_vars : Sequence[Variable]
             A list of configuration variables to include in
             the filtered copy.
-        include_flow_variables : bool
-            Whether to include the common flow
-            variables in the copy or not.
 
-            This parameter is deprecated as of LibreLane 2.0.0b5 and should be
-            set to ``False`` by callers.
+            Exactly these and no others. The ``include_flow_variables``
+            parameter that used to fold in the universal flow variables was
+            deprecated in LibreLane 2.0.0b5 and is gone: a caller that wants
+            them says so by including them, which is what
+            :meth:`librelane.steps.Step.get_all_config_variables` already
+            returns.
 
         Returns
         -------
@@ -444,10 +436,6 @@ class Config(GenericImmutableDict[str, Any]):
             The new copy
         """
         variables: set[str] = set([variable.name for variable in config_vars])
-        if include_flow_variables:
-            variables = variables.union(
-                set([variable.name for variable in flow_common_variables])
-            )
 
         return Config(
             {variable: self[variable] for variable in variables},
@@ -562,16 +550,10 @@ class Config(GenericImmutableDict[str, Any]):
         Meta
             Either a Meta object, or if the file is invalid, None.
         """
-        default_meta_version = 2
-
         if is_string_like(config_in):
             config_in = str(config_in)
             validated_type = _validate_config_file(config_in)
-            if validated_type == "tcl":
-                default_meta_version = 1
-                return Meta(version=default_meta_version)
-            elif validated_type == "json":
-                default_meta_version = 1
+            if validated_type == "json":
                 config_in = json.load(open(config_in, encoding="utf8"))
             elif validated_type == "yaml":
                 config_in = yaml.load(
@@ -582,7 +564,7 @@ class Config(GenericImmutableDict[str, Any]):
         assert not isinstance(config_in, str)
         assert not isinstance(config_in, os.PathLike)
 
-        meta = Meta(version=default_meta_version)
+        meta = Meta()
         if meta_raw := config_in.get("meta"):
             meta = Meta.from_dict(meta_raw)
 
@@ -680,6 +662,20 @@ class Config(GenericImmutableDict[str, Any]):
             processed,
             provenance=provenance,
         )
+        # Published as the process-wide configuration, which is what lets a
+        # notebook cell write `Yosys.Synthesis(state_in=...)` with no
+        # configuration argument. 'current_interactive' stays a separate
+        # marker: it answers "is this session interactive", which decides
+        # whether a step may invent a step directory and a toolbox, and an
+        # ordinary flow publishes a configuration here without any of that
+        # being true.
+        set_current_config(
+            build_scope(
+                Config.current_interactive,
+                lambda: flow_common_variables,
+                name="InteractiveConfig",
+            )
+        )
 
         return Config.current_interactive
 
@@ -689,9 +685,8 @@ class Config(GenericImmutableDict[str, Any]):
         config_in: AnyConfigs,
         flow_config_vars: Sequence[Variable],
         *,
-        flow_values: Mapping[str, Any] | None = None,
-        job_values: tuple[str, Mapping[str, Any]] | None = None,
-        iteration_values: tuple[str, int, Mapping[str, Any]] | None = None,
+        under: Sequence[ConfigSource] = (),
+        over: Sequence[ConfigSource] = (),
         config_override_strings: Sequence[str] | None = None,
         pdk: str | None = None,
         pdk_root: str | None = None,
@@ -715,44 +710,36 @@ class Config(GenericImmutableDict[str, Any]):
 
             Tcl files are also supported, but are deprecated and will be removed
             in the future.
-        flow_values : Mapping[str, Any] | None
-            Values a flow supplies for configuration variables, from the
-            top-level ``with`` block of a workflow document. They layer *under*
-            the design configuration and *over* the PDK and the SCL, so a
-            design always wins and a document always beats a PDK default.
-        job_values : tuple[str, Mapping[str, Any]] | None
-            A job id and the values that job's own ``with`` block supplies.
-            Layered over ``flow_values``, so a job overrides the document and
-            anything the job is silent about still comes from the document.
+        under : Sequence[ConfigSource]
+            Sources layered *beneath* the design configuration and *above* the
+            PDK and the SCL, in order, so that a design always wins and any of
+            them beats a PDK default. The workflow document's top-level
+            ``with`` block and a job's own go here, the job's second so that it
+            overrides the document.
 
-            The two are separate sources rather than one merged mapping
-            because each key is attributed to whichever of them wrote it: a
-            document-level value that reached this job unchanged must not be
-            reported, in diagnostics or by ``--explain``, as something the job
-            asked for. The id and the values are one argument because the
-            attribution *is* the id, and two arguments could name a different
-            job than they carried.
-        iteration_values : tuple[str, int, Mapping[str, Any]] | None
-            ``(gate id, pass k, entry)``: the ``k``-th entry of a loop gate's
-            or a sweep job's ``iterations`` schedule. Layered *after* the
-            design configuration and *before* ``config_override_strings`` --
-            the one deliberate break of the design-always-wins rule every
-            other layer here honours.
+            A :class:`librelane.config.loading.ConfigSource` rather than a bare
+            mapping because a layer is three things and not one: the values,
+            the name every key it wrote is attributed to, and the syntax its
+            strings are written in. Two ``with`` blocks are two sources rather
+            than one merged mapping for the same reason -- a document-level
+            value that reached a job unchanged must not be reported, in
+            diagnostics or by ``--explain``, as something the job asked for.
+        over : Sequence[ConfigSource]
+            Sources layered *above* the design configuration and beneath
+            ``config_override_strings`` -- the one deliberate break of the
+            design-always-wins rule every other layer here honours. A pass of
+            a loop gate's or a sweep job's ``iterations`` schedule goes here.
 
             The break is the feature, not an oversight. A schedule is the
             loop's or the sweep's algorithm, declared once in the flow
             document, not a default a design happens to leave unset: if the
-            design's value won the way ``flow_values`` and ``job_values`` do,
-            a design that pinned the scheduled variable would silently reduce
-            every escalation loop to running its bound at one fixed setting,
-            with no error anywhere to say so. Layering above the design is
-            what keeps the schedule the schedule. The command-line override
-            still wins over it, because it is the operator's explicit last
-            word and outranks every value a file supplies, scheduled or not.
-
-            Provenance is recorded as ``<flow document: <gate id>, iteration
-            <k>>``, so ``--explain-variables`` attributes a scheduled value to
-            the pass that set it rather than to the document generically.
+            design's value won the way ``under`` does, a design that pinned the
+            scheduled variable would silently reduce every escalation loop to
+            running its bound at one fixed setting, with no error anywhere to
+            say so. Layering above the design is what keeps the schedule the
+            schedule. The command-line override still wins over it, because it
+            is the operator's explicit last word and outranks every value a
+            file supplies, scheduled or not.
         config_override_strings : Sequence[str] | None
             A list of "overrides" in the form of
             NAME=VALUE strings. These are primarily for running LibreLane from
@@ -818,20 +805,11 @@ class Config(GenericImmutableDict[str, Any]):
                 "The design_dir argument is required when configuration dictionaries are used."
             )
 
-        sources: list[ConfigSource] = []
-        if flow_values is not None:
-            # First, so that every design source layered after it wins. Not
-            # folded into configs_validated: that loop also computes 'meta' and
-            # 'file_design_dir', and a document is neither a design directory
-            # nor a source of meta.
-            sources.append(
-                ConfigSource(dict(flow_values), "<flow document>", "mapping")
-            )
-        if job_values is not None:
-            job_id, values = job_values
-            sources.append(
-                ConfigSource(dict(values), f"<flow document: {job_id}>", "mapping")
-            )
+        # First, so that every design source layered after them wins. Not
+        # folded into configs_validated: that loop also computes 'meta' and
+        # 'file_design_dir', and a layer supplied here is neither a design
+        # directory nor a source of meta.
+        sources: list[ConfigSource] = list(under)
         meta = Meta()
         for config_validated in configs_validated:
             try:
@@ -851,21 +829,11 @@ class Config(GenericImmutableDict[str, Any]):
                 validated_type = _validate_config_file(config_validated)
                 source_name = config_validated
                 source_kind = validated_type
-                if validated_type == "tcl":
-                    mapping = Self.__mapping_from_tcl(
-                        config_validated,
-                        design_dir,
-                        pdk_root=pdk_root,
-                        pdk=pdk,
-                        scl=scl,
-                        pad=pad,
-                    )
-                else:
-                    source = read_source(
-                        config_validated,
-                        yaml_loader=_OpenLaneYAMLLoader,
-                    )
-                    mapping = source.mapping
+                source = read_source(
+                    config_validated,
+                    yaml_loader=_OpenLaneYAMLLoader,
+                )
+                mapping = source.mapping
 
             assert mapping is not None, "Invalid validated config"
             sources.append(
@@ -876,18 +844,10 @@ class Config(GenericImmutableDict[str, Any]):
                 )
             )
 
-        if iteration_values is not None:
-            # After every design source and before the command-line override:
-            # the one layer that does not follow design-always-wins, and the
-            # parameter docstring above carries the reason.
-            gate_id, k, entry = iteration_values
-            sources.append(
-                ConfigSource(
-                    dict(entry),
-                    f"<flow document: {gate_id}, iteration {k}>",
-                    "mapping",
-                )
-            )
+        # After every design source and before the command-line override: the
+        # one group of layers that does not follow design-always-wins, and the
+        # parameter docstring above carries the reason.
+        sources.extend(over)
 
         config_override_strings = config_override_strings or []
         overrides: dict[str, Any] = {}
@@ -909,7 +869,6 @@ class Config(GenericImmutableDict[str, Any]):
             scl=scl,
             pad=pad,
             meta=meta,
-            permissive_typing=meta.version < 2,
             _load_pdk_configs=_load_pdk_configs,
         )
 
@@ -1104,7 +1063,6 @@ class Config(GenericImmutableDict[str, Any]):
         scl: str | None = None,
         pad: str | None = None,
         full_pdk_warnings: bool = False,
-        permissive_typing: bool = False,
         _load_pdk_configs: bool = True,
     ) -> "Config":
         flow_pdk_vars = []
@@ -1132,20 +1090,7 @@ class Config(GenericImmutableDict[str, Any]):
         # layers the design over the PDK and the attribution has to follow the
         # value. A key only the PDK wrote keeps '<pdk>'.
         provenance = {**expanded.provenance, **layered.provenance}
-        # 'meta.version' 1 declares the whole document openlane-era, whose
-        # values are Tcl text whichever container carried them -- that is what
-        # permissive typing has always meant, and a '.json' design file without
-        # a 'meta' key is exactly such a document. The command line is not part
-        # of the document, so the version it declares says nothing about how a
-        # value typed at a shell is written.
-        syntaxes = {
-            key: (
-                CoercionSyntax.TCL
-                if permissive_typing and syntax is CoercionSyntax.TYPED
-                else syntax
-            )
-            for key, syntax in layered.syntax.items()
-        }
+        syntaxes = dict(layered.syntax)
 
         design_values, deprecations, design_renames = translate_deprecated_names(
             preprocess_dict(
@@ -1170,9 +1115,8 @@ class Config(GenericImmutableDict[str, Any]):
         processed, diagnostics, merged_renames = validate_mapping(
             mutable,
             list(flow_config_vars),
-            permissive=permissive_typing,
             syntaxes=syntaxes,
-            on_unknown_key="warn" if permissive_typing else "error",
+            on_unknown_key="error",
             provenance=provenance,
             removed=removed_variables,
         )
@@ -1201,66 +1145,6 @@ class Config(GenericImmutableDict[str, Any]):
         return Config(
             processed, meta=meta, diagnostics=diagnostics, provenance=provenance
         )
-
-    @classmethod
-    def __mapping_from_tcl(
-        Self,
-        config: AnyPath,
-        design_dir: str,
-        *,
-        pdk_root: str | None = None,
-        pdk: str | None = None,
-        scl: str | None = None,
-        pad: str | None = None,
-    ) -> Mapping[str, Any]:
-        config_str = open(config, encoding="utf8").read()
-
-        logger.warning(
-            "Support for .tcl configuration files is deprecated. Please migrate to a .json file at your earliest convenience."
-        )
-
-        pdk_root = Self.__resolve_pdk_root(pdk_root)
-
-        tcl_vars_in = GenericDict(
-            {
-                SpecialKeys.pdk_root: pdk_root,
-                SpecialKeys.pdk: pdk,
-            }
-        )
-        tcl_vars_in[SpecialKeys.scl] = ""
-        tcl_vars_in[SpecialKeys.pad] = ""
-        tcl_vars_in[SpecialKeys.design_dir] = design_dir
-        tcl_config = GenericDict(TclUtils._eval_env(tcl_vars_in, config_str))
-
-        process_info = preprocess_dict(
-            tcl_config,
-            only_extract_process_info=True,
-            design_dir=design_dir,
-        )
-
-        pdk = process_info.get(SpecialKeys.pdk) or pdk
-
-        if pdk is None:
-            raise ValueError(
-                "The pdk argument is required as the configuration object lacks a 'PDK' key."
-            )
-
-        _, _, scl, pad, _ = Self.__get_pdk_config(
-            pdk=pdk,
-            scl=scl,
-            pad=pad,
-            pdk_root=pdk_root,
-            full_pdk_warnings=False,
-        )
-
-        tcl_vars_in[SpecialKeys.pdk] = pdk
-        tcl_vars_in[SpecialKeys.scl] = scl
-        tcl_vars_in[SpecialKeys.pad] = pad
-        tcl_vars_in[SpecialKeys.design_dir] = design_dir
-
-        tcl_mapping = GenericDict(TclUtils._eval_env(tcl_vars_in, config_str))
-
-        return tcl_mapping
 
     @classmethod
     def __resolve_pdk_root(
@@ -1528,28 +1412,50 @@ class Config(GenericImmutableDict[str, Any]):
             {key: attributed[key] for key in processed if key in attributed},
         )
 
+    @staticmethod
     def __process_variable_list(
-        mutable: GenericDict[str, Any],
+        mutable: Mapping[str, Any],
         variables: Sequence["Variable"],
         removed: Mapping[str, str] | None = None,
         *,
         on_unknown_key: Literal["error", "warn"] | None = "warn",
         permissive_typing: bool = False,
-        missing_ok: bool = False,
     ) -> tuple[GenericDict[str, Any], list[str], list[str], dict[str, str]]:
         """
         Verifies a configuration object against a list of variables, returning
         an object with the variables normalized according to their types.
 
+        One layer, validated the way every other layer is: this forwards to
+        :func:`librelane.config.validation.validate_mapping`, which is what
+        :meth:`load` runs on the merged design sources. It used to be a second
+        implementation, built on :meth:`Variable.compile`, and the two did not
+        agree -- a boolean written ``"yes"`` was accepted by one and rejected
+        by the other, so whether a value was legal depended on whether it
+        reached LibreLane through a design file, a PDK's ``config.tcl`` or a
+        step's keyword argument. It survives as a function because three
+        callers want the answer as lists of rendered strings rather than as a
+        :class:`librelane.config.DiagnosticSet`.
+
         Parameters
         ----------
-        config
-            The input, raw configuration object.
+        mutable : Mapping[str, Any]
+            The input, raw configuration object. Read, not modified: the
+            earlier implementation consumed keys out of it as it recognised
+            them.
         variables : Sequence["Variable"]
             A sequence or some other iterable of variables.
         removed : Mapping[str, str] | None
             A dictionary of variables that may have existed at a point in
-            time, but then have gotten removed. Useful to give feedback to the user.
+            time, but then have gotten removed. Useful to give feedback to the
+            user.
+        on_unknown_key : Literal["error", "warn"] | None
+            What to do about a key no variable in the list claims. ``None``
+            says nothing about any of them, which is what a caller validating
+            against a deliberately partial list -- one step's variables, or a
+            PDK's -- wants.
+        permissive_typing : bool
+            Read every string the way an openlane-era ``.tcl`` file writes
+            one, and validate leniently. What the PDK layer is compiled with.
 
         Returns
         -------
@@ -1563,96 +1469,27 @@ class Config(GenericImmutableDict[str, Any]):
 
             If the third element is non-empty, the first object is invalid.
 
-            The fourth element is reported for the same reason
-            :func:`librelane.config.validation.translate_deprecated_names`
-            reports its own: this is a rename, and a caller tracking where each
-            value came from has to move the origin with the value.
-            :meth:`Variable.compile` is the only place that knows both names --
-            it prefers a deprecated name over the current one and emits under
-            the current one, so no diff of the mapping across this call can
-            recover the pairing.
+            The fourth element is reported because a rename moves a value, and
+            a caller tracking where each value came from has to move the origin
+            with it. No diff of the mapping across this call can recover the
+            pairing, because the value arrives under the new name either way.
         """
-        if removed is None:
-            removed = {}
-        warnings: list[str] = []
-        errors = []
-        final: GenericDict[str, Any] = GenericDict()
-        translated_from: dict[str, str] = {}
-
-        # Special Deprecation Behaviors
-        if (
-            mutable.get("DIODE_INSERTION_STRATEGY") is not None
-        ):  # Can't use := because 0 is a valid value
-            dis = mutable["DIODE_INSERTION_STRATEGY"]
-            del mutable["DIODE_INSERTION_STRATEGY"]
-            try:
-                dis = int(dis)
-            except ValueError:
-                pass
-            if not isinstance(dis, int) or dis in [1, 2, 5] or dis > 6:
-                errors.append(
-                    f"DIODE_INSERTION_STRATEGY '{dis}' is not available in LibreLane 2.0 or higher. See 'Migrating DIODE_INSERTION_STRATEGY' in the docs for more info."
-                )
-            else:
-                warnings.append(
-                    "The DIODE_INSERTION_STRATEGY variable has been deprecated. See 'Migrating DIODE_INSERTION_STRATEGY' in the docs for more info."
-                )
-
-                mutable["GRT_REPAIR_ANTENNAS"] = False
-                mutable["RUN_HEURISTIC_DIODE_INSERTION"] = False
-                mutable["DIODE_ON_PORTS"] = "none"
-                if dis in [3, 6]:
-                    mutable["GRT_REPAIR_ANTENNAS"] = True
-                if dis in [4, 6]:
-                    mutable["RUN_HEURISTIC_DIODE_INSERTION"] = True
-                    mutable["DIODE_ON_PORTS"] = "in"
-
-        for variable in variables:
-            try:
-                key, value_processed = variable.compile(
-                    mutable_config=mutable,
-                    warning_list_ref=warnings,
-                    values_so_far=final,
-                    permissive_typing=permissive_typing,
-                )
-                if key is not None:
-                    del mutable[key]
-                    if key != variable.name:
-                        translated_from[variable.name] = key
-                final[variable.name] = value_processed
-            except MissingRequiredVariable as e:
-                if not missing_ok:
-                    errors.append(str(e))
-            except ValueError as e:
-                errors.append(str(e))
-            if variable.name in mutable:
-                del mutable[variable.name]
-
-        for key in sorted(mutable.keys()):
-            assert isinstance(key, str)
-
-            if key in vars(SpecialKeys).values():
-                continue
-            if key in removed:
-                warnings.append(f"'{key}' has been removed: {removed[key]}")
-            elif (
-                "_OPT" not in key
-                and not key.startswith("//")
-                and not key.startswith("#")
-            ):
-                if on_unknown_key == "error":
-                    if key in Variable.known_variable_names:
-                        warnings.append(
-                            f"Key '{key}' provided is unused by the current flow."
-                        )
-                    else:
-                        errors.append(f"Unknown key '{key}' provided.")
-                elif on_unknown_key == "warn":
-                    if key in Variable.known_variable_names:
-                        warnings.append(
-                            f"Key '{key}' provided is unused by the current flow."
-                        )
-                    else:
-                        warnings.append(f"An unknown key '{key}' was provided.")
-
-        return (final, warnings, errors, translated_from)
+        processed, diagnostics, translated_from = validate_mapping(
+            mutable,
+            list(variables),
+            permissive=permissive_typing,
+            on_unknown_key=on_unknown_key,
+            removed=removed,
+            # None of this function's callers hands it a mapping whose layers
+            # have been ranked -- the PDK environment is merged by evaluation
+            # order, and a step's keyword arguments sit on top of a resolved
+            # configuration -- so a deprecated name that is present is the
+            # later word. See 'validate_mapping'.
+            deprecated_outranks=True,
+        )
+        return (
+            GenericDict(processed),
+            diagnostics.rendered_warnings(),
+            diagnostics.rendered_errors(),
+            translated_from,
+        )

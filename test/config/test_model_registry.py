@@ -6,7 +6,7 @@ import pathlib
 def _document_config_variables():
     """
     Every configuration variable a shipped workflow document accepts, in the
-    order :meth:`librelane.flows.engine.Workflow.__init__` composes them.
+    order :meth:`librelane.engine.engine.Workflow.__init__` composes them.
 
     The engine's own variables come first because ``TOOLS`` is declared by the
     engine and by no document, exactly as ``Workflow.__init__`` and
@@ -15,8 +15,8 @@ def _document_config_variables():
     flow classes are gone and the documents that replaced them are what declare
     these variables now.
     """
-    from librelane.flows import Flow
-    from librelane.flows.engine import Workflow
+    from librelane.engine import Flow
+    from librelane.engine.engine import Workflow
 
     yield from Workflow.config_vars
     listed = Flow.factory.list()
@@ -124,8 +124,8 @@ def test_every_step_and_document_config_model_has_a_json_schema():
     """
     import librelane.steps  # noqa: F401
     from librelane.config import variables_to_model
-    from librelane.flows import Flow
-    from librelane.flows.engine import Workflow
+    from librelane.engine import Flow
+    from librelane.engine.engine import Workflow
     from librelane.steps import Step
 
     failed = {}
@@ -206,10 +206,10 @@ def test_registered_variable_defaults_match_legacy_compiler():
 
 def test_builtin_steps_use_typed_declarations():
     """
-    Swept ``librelane/flows/classic.py`` too until phase 5 deleted it. The
+    Swept ``librelane/engine/classic.py`` too until phase 5 deleted it. The
     shipped flows are YAML documents now, which have no Python declaration to
     sweep: ``FlowSpec`` parses their ``config`` block into typed declarations at
-    load, and ``test/flows/test_documents.py`` is what exercises that.
+    load, and ``test/engine/test_documents.py`` is what exercises that.
     """
     import librelane
 

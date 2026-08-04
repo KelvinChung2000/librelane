@@ -17,7 +17,7 @@ from collections.abc import Callable
 
 import pytest
 
-from librelane.flows import flow
+from librelane.engine import flow
 from librelane.config import Variable, variable as config_variable
 from librelane.steps import step
 
@@ -110,7 +110,7 @@ def MockStepTuple(variable: Variable):
 
 @pytest.fixture
 def DummyFlow(MockStepTuple):
-    from librelane.flows import Flow
+    from librelane.engine import Flow
 
     StepA, StepB, _ = MockStepTuple
 
@@ -143,11 +143,11 @@ def DummyFlow(MockStepTuple):
 def test_flow_abc_init():
     """
     ``Flow`` stays abstract now that it is machinery rather than a declaration
-    base, because :meth:`librelane.flows.Flow.start` -- which is ``@final`` --
+    base, because :meth:`librelane.engine.Flow.start` -- which is ``@final`` --
     calls ``self.run``. Dropping ``ABC`` would make ``Flow()`` construct and
     ``Flow().start()`` raise ``AttributeError`` deep inside a run instead.
     """
-    from librelane.flows import Flow
+    from librelane.engine import Flow
 
     with pytest.raises(TypeError, match="Can't instantiate abstract class") as e:
         Flow()
@@ -178,7 +178,7 @@ def test_init_and_config_vars(DummyFlow: type[flow.Flow], variable: Variable):
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow])
 def test_clashing_variables(DummyFlow: type[flow.Flow], MockStepTuple):
-    from librelane.flows import FlowException
+    from librelane.engine import FlowException
 
     StepA, StepB, StepC = MockStepTuple
 
@@ -262,9 +262,9 @@ def test_run_tags(
 ):
     import importlib
 
-    from librelane.flows import FlowException
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine import FlowException
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     StepA, StepB, _ = MockStepTuple
@@ -294,7 +294,7 @@ def test_run_tags(
         pdk_root=mock_conf_dir.pdk_root,
     )
 
-    flow_module = importlib.import_module("librelane.flows.flow")
+    flow_module = importlib.import_module("librelane.engine.flow")
     with monkeypatch.context() as patch:
         patch.setattr(
             flow_module,
@@ -349,8 +349,8 @@ def test_run_tags(
 def test_flow_log_artifacts(mock_conf_dir):
     from loguru import logger
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     @Step.factory.register()
@@ -371,13 +371,12 @@ def test_flow_log_artifacts(mock_conf_dir):
             {"name": "Logging", "jobs": {"logging": {"steps": ["Test.LoggingStep"]}}}
         ),
         {
-            # Version 1 puts the loader in permissive mode, which downgrades
-            # the unknown key below from an error to the warning this test
-            # reads out of the logs.
-            "meta": {"version": 1},
             "DESIGN_NAME": "WHATEVER",
             "VERILOG_FILES": [os.path.join(mock_conf_dir.cwd, "src", "a.v")],
-            "UNKNOWN_DIAGNOSTIC_KEY": "marker",
+            # A removed variable is the config diagnostic that is a warning
+            # rather than an error, so the load still reaches the flow and the
+            # warning it raises is one this test can read out of the logs.
+            "REMOVED_VARIABLE": "marker",
         },
         design_dir=mock_conf_dir.cwd,
         pdk="dummy",
@@ -398,5 +397,5 @@ def test_flow_log_artifacts(mock_conf_dir):
     assert "info artifact marker" not in warning_log
     assert "error artifact marker" in error_log
     assert "warning artifact marker" not in error_log
-    assert "unknown key 'UNKNOWN_DIAGNOSTIC_KEY'" in flow_log
-    assert "unknown key 'UNKNOWN_DIAGNOSTIC_KEY'" in warning_log
+    assert "REMOVED_VARIABLE" in flow_log
+    assert "REMOVED_VARIABLE" in warning_log

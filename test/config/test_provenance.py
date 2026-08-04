@@ -24,7 +24,6 @@ than a missing one.
 
 import textwrap
 from collections.abc import Mapping
-from typing import Optional
 
 import pytest
 
@@ -46,11 +45,11 @@ _VARIABLES = [
     Variable("TEST_FROM_PDK", str, description="x", pdk=True),
     Variable("TEST_FROM_SCL", str, description="x", pdk=True),
     Variable("TEST_LAYERED", str, description="x", pdk=True),
-    Variable("TEST_UNSET", Optional[str], description="x"),
+    Variable("TEST_UNSET", str | None, description="x"),
     # A variable a design writes inside a 'pdk::'/'scl::' block. The block is a
     # section of the file that carried it and not a layer of its own, so the
     # file is what an origin has to name.
-    Variable("TEST_SCOPED", Optional[str], description="x"),
+    Variable("TEST_SCOPED", str | None, description="x"),
     # The three shapes ``migrate_old_config`` produces: a key it renames from
     # one the PDK wrote, one it renames from a key the SCL wrote, and one it
     # synthesises from the PDK tree. None of the three exists under the name
@@ -58,7 +57,7 @@ _VARIABLES = [
     # describes nothing that survives into the configuration.
     Variable("TECH_LEFS", dict[str, Path], description="x", pdk=True),
     Variable("SYNTH_TIEHI_CELL", str, description="x", pdk=True),
-    Variable("CELL_VERILOG_MODELS", Optional[list[Path]], description="x", pdk=True),
+    Variable("CELL_VERILOG_MODELS", list[Path] | None, description="x", pdk=True),
     # The design layer's own renames. 'flow_common_variables' carries twenty-odd
     # deprecated aliases and an openlane-era design configuration is exactly the
     # one that still uses them, so this is the layer a user edits.
@@ -75,13 +74,13 @@ _VARIABLES = [
     ),
     Variable(
         "TEST_RENAMED_UNSET",
-        Optional[str],
+        str | None,
         description="x",
         deprecated_names=["TEST_RENAMED_UNSET_LEGACY"],
     ),
     Variable(
         "TEST_TRANSLATED",
-        Optional[int],
+        int | None,
         description="x",
         deprecated_names=[("TEST_TRANSLATED_LEGACY", lambda value: int(value) * 2)],
     ),
@@ -201,6 +200,29 @@ def _provenance(tiny_pdk, design, tmp_path, **load) -> Mapping[str, str]:
     return _resolve(tiny_pdk, design, tmp_path, **load).provenance
 
 
+def _layer(values: Mapping[str, str], name: str):
+    """
+    One of the layers a workflow document supplies, as
+    :meth:`librelane.config.Config.load` takes them.
+
+    Parameters
+    ----------
+    values : Mapping[str, str]
+        What the layer sets.
+    name : str
+        What every key it writes is attributed to.
+
+    Returns
+    -------
+    librelane.config.ConfigSource
+        The layer. ``mapping`` because a document's values are Python objects
+        and not text in anybody's grammar.
+    """
+    from librelane.config import ConfigSource
+
+    return ConfigSource(dict(values), name, "mapping")
+
+
 def _resolve(tiny_pdk, design, tmp_path, **load):
     """
     The same call as :func:`_provenance`, returning the whole configuration
@@ -272,8 +294,10 @@ def test_the_layers_of_a_document_are_attributed_separately(tiny_pdk, tmp_path):
         tiny_pdk,
         {"DESIGN_NAME": "x"},
         tmp_path,
-        flow_values={"TEST_FROM_PDK": "from the document"},
-        job_values=("left", {"TEST_FROM_SCL": "from the job"}),
+        under=[
+            _layer({"TEST_FROM_PDK": "from the document"}, "<flow document>"),
+            _layer({"TEST_FROM_SCL": "from the job"}, "<flow document: left>"),
+        ],
     )
 
     assert provenance["TEST_FROM_PDK"] == "<flow document>"
@@ -302,7 +326,12 @@ def test_an_iteration_value_outranks_the_design(tiny_pdk, tmp_path):
         tiny_pdk,
         {"DESIGN_NAME": "x", "TEST_FROM_PDK": "from the design"},
         tmp_path,
-        iteration_values=("sta", 2, {"TEST_FROM_PDK": "from iteration 2"}),
+        over=[
+            _layer(
+                {"TEST_FROM_PDK": "from iteration 2"},
+                "<flow document: sta, iteration 2>",
+            )
+        ],
     )
 
     assert resolved["TEST_FROM_PDK"] == "from iteration 2"
@@ -314,7 +343,12 @@ def test_a_command_line_override_outranks_an_iteration_value(tiny_pdk, tmp_path)
         tiny_pdk,
         {"DESIGN_NAME": "x"},
         tmp_path,
-        iteration_values=("sta", 2, {"TEST_FROM_PDK": "from iteration 2"}),
+        over=[
+            _layer(
+                {"TEST_FROM_PDK": "from iteration 2"},
+                "<flow document: sta, iteration 2>",
+            )
+        ],
         config_override_strings=["TEST_FROM_PDK=from the command line"],
     )
 

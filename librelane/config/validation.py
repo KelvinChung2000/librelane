@@ -8,14 +8,35 @@ from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
 from librelane.config.legacy import Variable
 from librelane.config.loading.sources import CoercionSyntax
 from librelane.config.model import variables_to_model
+from librelane.config.preprocessor import SPECIAL_KEYS
 
 
 def _prepare_deprecated_names(
     raw: dict[str, Any],
     variables: Sequence[Variable],
     diagnostics: DiagnosticSet,
+    outranks: bool = False,
 ) -> dict[str, str]:
     """
+    Parameters
+    ----------
+    outranks : bool
+        Whether a value written under a deprecated name beats one already
+        present under the current name.
+
+        ``False`` for a mapping whose layers have already been ranked: there,
+        the current name holds whatever won, and letting a deprecated spelling
+        override it would let a PDK's old name beat a design's new one.
+
+        ``True`` for a mapping where they have not been -- the environment a
+        PDK, its standard cell library and its pad library are evaluated into,
+        which is merged by evaluation order and keeps no record of which file
+        wrote what. There the deprecated name is the *later* layer's more often
+        than not, because renaming a variable is exactly what the newer file
+        has not done yet; sky130A's standard cell library writes
+        ``SYNTH_TIEHI_PORT`` over a PDK that writes ``SYNTH_TIEHI_CELL``. It is
+        also what a caller means by passing one as a keyword argument.
+
     Returns
     -------
     dict[str, str]
@@ -26,7 +47,7 @@ def _prepare_deprecated_names(
     """
     translated_from: dict[str, str] = {}
     for variable in variables:
-        if variable.name in raw:
+        if variable.name in raw and not outranks:
             continue
         for deprecated in variable.deprecated_names:
             name = deprecated
@@ -133,16 +154,21 @@ def validate_mapping(
     mapping: Mapping[str, Any],
     variables: Sequence[Variable],
     *,
-    permissive: bool,
+    permissive: bool = False,
     syntaxes: Mapping[str, CoercionSyntax] | None = None,
     on_unknown_key: Literal["error", "warn"] | None = "warn",
     provenance: Mapping[str, str] | None = None,
     removed: Mapping[str, str] | None = None,
+    deprecated_outranks: bool = False,
 ) -> tuple[dict[str, Any], DiagnosticSet, dict[str, str]]:
     """Validate one flat mapping through a Pydantic union model.
 
     Parameters
     ----------
+    deprecated_outranks : bool
+        Whether a value written under a variable's deprecated name beats one
+        already present under its current name. See
+        :func:`_prepare_deprecated_names`.
     syntaxes : Mapping[str, CoercionSyntax] | None
         Each key mapped to the syntax the source that last wrote it writes its
         strings in, which is what decides how a string reaching a list- or
@@ -163,9 +189,15 @@ def validate_mapping(
     """
     raw = dict(mapping)
     removed = removed or {}
+    #: Which source last wrote each key, for the ``source`` every diagnostic
+    #: below locates itself by. Defaulted once here rather than at each of the
+    #: three reads, which each re-evaluated ``provenance or {}``.
+    origins = provenance or {}
     diagnostics = DiagnosticSet()
     translated_from = _migrate_diode_strategy(raw, diagnostics)
-    translated_from.update(_prepare_deprecated_names(raw, variables, diagnostics))
+    translated_from.update(
+        _prepare_deprecated_names(raw, variables, diagnostics, deprecated_outranks)
+    )
     model_type = variables_to_model("FlowConfig", list(variables))
 
     try:
@@ -178,6 +210,7 @@ def validate_mapping(
             strict=not permissive,
         )
     except ValidationError as error:
+        declared_by_name = {variable.name: variable for variable in variables}
         for detail in error.errors(include_url=False):
             location = ".".join(str(part) for part in detail["loc"])
             category = (
@@ -194,17 +227,32 @@ def validate_mapping(
                     f"Refusing to automatically convert value for "
                     f"'{top_level}' under strict typing."
                 )
+            elif detail["type"] == "missing" and top_level:
+                # Pydantic says "Field required", which names neither the
+                # variable nor -- for a PDK variable, where it is the whole
+                # answer -- who was supposed to have supplied it. This is the
+                # wording the legacy compiler raised, kept because it is the
+                # better one and because a PDK missing a variable a step needs
+                # is the most common way for a flow to be told "no".
+                declared = declared_by_name.get(top_level)
+                if declared is not None and declared.pdk:
+                    message = (
+                        f"Required PDK variable '{top_level}' did not get a "
+                        f"specified value. This PDK may be incompatible with "
+                        f"your flow."
+                    )
+                else:
+                    message = (
+                        f"Required variable '{top_level}' did not get a "
+                        f"specified value."
+                    )
             diagnostics.add(
                 Diagnostic(
                     Severity.ERROR,
                     category,
                     message,
                     variable=top_level,
-                    source=(
-                        (provenance or {}).get(top_level)
-                        if top_level is not None
-                        else None
-                    ),
+                    source=origins.get(top_level) if top_level else None,
                     key_path=location or None,
                 )
             )
@@ -222,49 +270,50 @@ def validate_mapping(
         for item in variable.deprecated_names
     }
     for key in sorted(extras):
-        if key in deprecated_names or key in {
-            "PDKPATH",
-            "DESIGN_DIR",
-            "PDK_ROOT",
-            "PDK",
-            "STD_CELL_LIBRARY",
-            "PAD_CELL_LIBRARY",
-        }:
+        if key in deprecated_names or key in SPECIAL_KEYS:
             continue
+        # Each branch decides only what it disagrees about -- how bad it is,
+        # what to call it, and what to say -- and the one report below is built
+        # from that. The three fields locating the key were spelled out per
+        # branch before, which is two chances to attribute a diagnostic to the
+        # wrong key and no reason to take either.
         if key in removed:
-            diagnostics.add(
-                Diagnostic(
-                    Severity.DEPRECATION,
-                    "removed-variable",
-                    f"'{key}' has been removed: {removed[key]}",
-                    variable=key,
-                    source=(provenance or {}).get(key),
-                    key_path=key,
-                )
-            )
-        elif "_OPT" not in key and not key.startswith(("//", "#")):
+            severity = Severity.DEPRECATION
+            category = "removed-variable"
+            message = f"'{key}' has been removed: {removed[key]}"
+        elif "_OPT" in key or key.startswith(("//", "#")):
+            continue
+        elif on_unknown_key is None:
+            # Nothing at all, not even for a key that is a variable somewhere
+            # else. A caller passing 'None' is validating one layer against a
+            # deliberately partial variable list -- a step's own, a PDK's --
+            # where every key belonging to some other reader is present and
+            # expected, and reporting each of them says nothing.
+            continue
+        else:
             known = key in Variable.known_variable_names or key in declared_names
+            category = "unused-key" if known else "unknown-key"
             if known:
+                severity = Severity.WARNING
                 message = f"Key '{key}' provided is unused by the current flow."
-                severity = Severity.WARNING
             elif on_unknown_key == "error":
-                message = f"Unknown key '{key}' provided."
                 severity = Severity.ERROR
+                message = f"Unknown key '{key}' provided."
             elif on_unknown_key == "warn":
-                message = f"An unknown key '{key}' was provided."
                 severity = Severity.WARNING
+                message = f"An unknown key '{key}' was provided."
             else:
                 continue
-            diagnostics.add(
-                Diagnostic(
-                    severity,
-                    "unused-key" if known else "unknown-key",
-                    message,
-                    variable=key,
-                    source=(provenance or {}).get(key),
-                    key_path=key,
-                )
+        diagnostics.add(
+            Diagnostic(
+                severity,
+                category,
+                message,
+                variable=key,
+                source=origins.get(key),
+                key_path=key,
             )
+        )
 
     # Legacy post-validation hooks remain supported during the P4 migration.
     for variable in variables:

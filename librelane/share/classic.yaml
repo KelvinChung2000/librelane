@@ -1,0 +1,167 @@
+# Copyright 2026 LibreLane Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# The Classic flow, written as a graph of jobs.
+#
+# It replaces a Python class that held a flat list of steps beside a separate
+# table mapping step id to gating variable. Each job below carries its own
+# steps and its own 'if', so what were two declarations are one.
+#
+# Place and route is a chain and is written as one: each of those jobs really
+# does read the view the job before it wrote. The signoff tail is not. Six
+# branches leave the last stream-out together and meet again at final_checks,
+# which is the flow's single sink, and the order the Python flow listed them in
+# was an artefact of a list having no way to say "independent".
+#
+# What is not written out here is what chip.yaml and vhdl_classic.yaml declare
+# identically: the configuration variables, and three runs of jobs from
+# synthesis through to the render. Both come out of the common library, which
+# is one declaration none of the three owns rather than two of them deriving
+# from this one. This document still declares the jobs that make it Classic,
+# and every 'needs' below that names a job it does not declare names one of
+# those.
+name: Classic
+description: >-
+  The flow most similar to the original OpenLane flow, running the Verilog RTL
+  through Yosys, OpenROAD, KLayout and Magic to produce a valid GDSII for
+  simpler designs. This is the default when using LibreLane via the
+  command-line.
+
+include:
+  - common::classic_config.yaml
+  - common::classic_jobs.yaml
+
+# No job carries a 'source' key, and that is a property of the graph rather
+# than an omission: no join in this document has two branches that write the
+# same view or metric, so there is nothing to tie-break. The one place a
+# conflict would arise is the pair of stream-outs, and the comment on
+# klayout_streamout says why they are not parallel.
+jobs:
+  lint:
+    uses: lint
+    if: RUN_LINTER
+  # No provider is pinned, so this job takes the synthesis template's default,
+  # yosys. Only vhdl_classic.yaml pins one, because only it needs the other.
+  #
+  # It is not what makes the job selectable. TOOLS re-points a job whether or
+  # not its 'uses' names a provider -- a pin is this document's default, not a
+  # lock -- so 'TOOLS: {synthesis: yosys_vhdl}' works here and would work just
+  # the same had this said 'synthesis/yosys'. See docs/source/usage/
+  # swapping_tools.md for what that particular selection then breaks.
+  synthesis:
+    needs: [lint]
+    uses: synthesis
+  rmp:
+    needs: [floorplan]
+    steps: [OpenROAD.RMP]
+    if: RUN_RMP
+  # A plain step rather than part of the floorplan job, because it
+  # hard-requires the Verilog header only Verilog synthesis emits. A flow whose
+  # synthesis frontend cannot produce one omits this job.
+  set_power_connections:
+    needs: [rmp]
+    steps: [Odb.SetPowerConnections]
+  macro_placement:
+    needs: [set_power_connections]
+    uses: macro_placement
+  io_placement:
+    needs: [power_grid]
+    uses: io_placement
+  # Before global placement, deliberately: the port buffers exist by the time
+  # placement runs, so the logic is placed around them (#917).
+  #
+  # A job of its own rather than a member of global_placement's provider,
+  # unlike the odb-editing steps folded into their neighbours: chip.yaml runs
+  # global placement and deliberately does not run this, because a chip's
+  # ports are the pad ring's bumps and the pad cells have buffered them
+  # already. So this one really is the flow's choice.
+  add_buffer:
+    needs: [io_placement]
+    steps: [OpenROAD.AddBuffer]
+  global_placement:
+    needs: [add_buffer]
+    uses: global_placement
+  # What the flow does once the cells have a global position: hand the netlist
+  # to whatever reads a Verilog header later, and take a timing snapshot. Two
+  # steps, one job, because neither is gated and no tool selection reaches
+  # either.
+  post_gpl_checks:
+    needs: [global_placement]
+    steps:
+      - Odb.WriteVerilogHeader
+      - OpenROAD.STAMidPNR
+  # write_lef and check_antenna_properties stay on the chain in flow order, and
+  # the fan-out is below them rather than beside them. Both are cheap, and
+  # check_antenna_properties runs Odb.CheckDesignAntennaProperties, which
+  # rewrites the three framework metrics every OpenROAD invocation writes.
+  # Fanned out, it would be one branch carrying fresh counts while its siblings
+  # carried the render's, and the join at final_checks would raise
+  # JoinConflictError on the first real run. common::classic_jobs.yaml states
+  # the rule at the point the shared run ends.
+  write_lef:
+    needs: [render]
+    steps: [Magic.WriteLEF]
+    if: RUN_MAGIC_WRITE_LEF
+  # Also a real data edge: Odb.CheckDesignAntennaProperties consumes 'lef', and
+  # Magic.WriteLEF is the only step in Classic that produces one.
+  check_antenna_properties:
+    needs: [write_lef]
+    steps: [Odb.CheckDesignAntennaProperties]
+  # The fan-out point: the last OpenROAD-backed job in the flow, and the four
+  # jobs below it are the heavy ones. render and write_lef are cheap, so
+  # keeping them on the chain costs almost nothing.
+  #
+  # A three-variable conjunction, because KLayout.XOR genuinely consumes
+  # mag_gds from one stream-out and klayout_gds from the other and cannot run
+  # unless both fired.
+  xor:
+    needs: [check_antenna_properties]
+    steps: [KLayout.XOR]
+    if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
+  magic_drc:
+    needs: [check_antenna_properties]
+    uses: drc/magic
+    if: RUN_MAGIC_DRC
+  klayout_drc:
+    needs: [check_antenna_properties]
+    uses: drc/klayout
+    if: RUN_KLAYOUT_DRC
+  lvs:
+    needs: [check_antenna_properties]
+    uses: lvs
+    if: RUN_LVS
+  # An ordering edge, not a data edge, and deliberately not moved to
+  # 'synthesis'. Yosys.EQY consumes 'nl', and the last writer of 'nl' before it
+  # is OpenROAD.FillInsertion: it compares the RTL against the
+  # post-place-and-route netlist, not the synthesised one.
+  formal_equivalence:
+    needs: [lvs]
+    uses: formal_equivalence
+    if: RUN_EQY
+  # Every leaf, so that the flow has one sink. Misc.ReportManufacturability
+  # reads the LVS, DRC and antenna metrics out of state_in.metrics and warns
+  # for each one it cannot find, so a narrower 'needs' would turn the
+  # manufacturability report into five warnings. render and
+  # check_antenna_properties are not named here because they are no longer
+  # leaves: both are ancestors of all four jobs below, so their metrics arrive
+  # anyway. Making this the only sink also means the flow's final state is the
+  # state the linear flow ended with, which is what runs/<tag>/final snapshots,
+  # and it costs nothing: final_checks ran last anyway.
+  final_checks:
+    needs:
+      - xor
+      - magic_drc
+      - klayout_drc
+      - formal_equivalence
+    steps: [Misc.ReportManufacturability]

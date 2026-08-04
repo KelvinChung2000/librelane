@@ -183,62 +183,6 @@ def test_yaml_config():
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables()
-def test_tcl_config():
-    from librelane.config import Meta, Config
-
-    with open("/cwd/config.tcl", "w") as f:
-        f.write(
-            """
-            set ::env(DESIGN_NAME) "whatever"
-            set ::env(VERILOG_FILES) "\\
-                /cwd/src/a.v\\
-                /cwd/src/b.v\\
-            "
-                    
-            set ::env(RANDOM_ARRAY) ""
-            
-            # cant test glob because of the mock filesystem
-            """
-        )
-
-    cfg, _ = Config.load(
-        "/cwd/config.tcl",
-        config.flow_common_variables,
-        pdk="dummy",
-        scl="dummy_scl",
-        pdk_root="/pdk",
-    )
-
-    assert cfg == Config(
-        {
-            "DESIGN_DIR": pathlib.Path("/cwd"),
-            "DESIGN_NAME": "whatever",
-            "PDK_ROOT": "/pdk",
-            "PDK": "dummy",
-            "STD_CELL_LIBRARY": "dummy_scl",
-            "VERILOG_FILES": [
-                pathlib.Path("/cwd/src/a.v"),
-                pathlib.Path("/cwd/src/b.v"),
-            ],
-            "EXAMPLE_PDK_VAR": Decimal("10"),
-            "GRT_REPAIR_ANTENNAS": True,
-            "RUN_HEURISTIC_DIODE_INSERTION": False,
-            "DIODE_ON_PORTS": "none",
-            "MACROS": None,
-            "TECH_LEFS": {
-                "nom_*": pathlib.Path(
-                    "/pdk/dummy/libs.ref/techlef/dummy_scl/dummy_tech_lef.tlef"
-                )
-            },
-            "DEFAULT_CORNER": "nom_tt_025C_1v80",
-            "RANDOM_ARRAY": [],
-        },
-        meta=Meta(version=1, flow=None),
-    ), "Generated configuration does not match expected value"
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables()
 def test_multiconf():
     from librelane.config import Config, Meta
 
@@ -380,17 +324,17 @@ def test_mixed_configs():
             """
         )
 
-    with open("/cwd/config2.tcl", "w") as f:
+    with open("/cwd/config2.yaml", "w") as f:
         f.write(
             """
-            set ::env(EXAMPLE_PDK_VAR) "30"
+            EXAMPLE_PDK_VAR: 30
             """
         )
 
     cfg, _ = Config.load(
         [
             {"DESIGN_NAME": "whatever", "VERILOG_FILES": "dir::src/*.v"},
-            "/cwd/config2.tcl",
+            "/cwd/config2.yaml",
             "/cwd/config.json",
         ],
         config.flow_common_variables,
@@ -461,7 +405,7 @@ def test_copy_filtered():
         pdk_root="/pdk",
     )
 
-    step1_cfg = cfg.copy_filtered(step1_variables, include_flow_variables=False)
+    step1_cfg = cfg.copy_filtered(step1_variables)
 
     assert step1_cfg == {
         "STEP1_VAR": 3,
@@ -503,7 +447,7 @@ def test_with_increment():
         pdk_root="/pdk",
     )
 
-    step1_cfg = cfg.copy_filtered(step1_variables)
+    step1_cfg = cfg.copy_filtered(config.flow_common_variables + step1_variables)
     step1_cfg_incr = cfg.with_increment(
         config.flow_common_variables + step1_variables, {}, True
     )
@@ -515,57 +459,45 @@ def test_with_increment():
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables()
-def test_automatic_conversion():
+def test_no_automatic_conversion():
+    """
+    A space-separated string reaching a list variable is an error, whether or
+    not the document declares a ``meta`` block. Reading one as a Tcl list was
+    what OpenLane-era ``meta.version`` 1 documents did, and that reading is
+    gone: a design file now means what it says.
+    """
     from librelane.config import Config
 
-    with open("/cwd/config.json", "w") as f:
-        f.write(
-            """
-            {
-                "DESIGN_NAME": "whatever",
-                "VERILOG_FILES": "/cwd/src/a.v /cwd/src/b.v"
-            }
-            """
-        )
-
-    cfg, _ = Config.load(
-        "/cwd/config.json",
-        config.flow_common_variables,
-        pdk="dummy",
-        scl="dummy_scl",
-        pdk_root="/pdk",
-    )
-
-    assert [str(path) for path in cfg["VERILOG_FILES"]] == [
-        "/cwd/src/a.v",
-        "/cwd/src/b.v",
-    ], "automatic conversion of tcl-style list failed for json file"
-
-    with open("/cwd/config.json", "w") as f:
-        f.write(
-            """
-            {
+    for meta_block in (
+        "",
+        """
                 "meta": {
                     "version": 2,
                     "flow": "Whatever"
                 },
-                "DESIGN_NAME": "whatever",
-                "VERILOG_FILES": "/cwd/src/a.v /cwd/src/b.v"
-            }
-            """
-        )
+        """,
+    ):
+        with open("/cwd/config.json", "w") as f:
+            f.write(
+                f"""
+                {{
+                    {meta_block}
+                    "DESIGN_NAME": "whatever",
+                    "VERILOG_FILES": "/cwd/src/a.v /cwd/src/b.v"
+                }}
+                """
+            )
 
-    with pytest.raises(
-        config.InvalidConfig, match="Refusing to automatically convert"
-    ) as e:
-        cfg, _ = Config.load(
-            "/cwd/config.json",
-            config.flow_common_variables,
-            pdk="dummy",
-            scl="dummy_scl",
-            pdk_root="/pdk",
-        )
-    assert e is not None, "invalid config accepted: automatic conversion for meta >= 2"
+        with pytest.raises(
+            config.InvalidConfig, match="Refusing to automatically convert"
+        ):
+            Config.load(
+                "/cwd/config.json",
+                config.flow_common_variables,
+                pdk="dummy",
+                scl="dummy_scl",
+                pdk_root="/pdk",
+            )
 
 
 @pytest.mark.usefixtures("_mock_conf_fs")
@@ -670,26 +602,17 @@ def test_invalid_keys(caplog: pytest.LogCaptureFixture):
             """
         )
 
-    try:
-        cfg, _ = Config.load(
+    # A '.json' file is read by the same rules as every other source: an
+    # unknown key is an error, not the warning an OpenLane-era version 1
+    # document used to get.
+    with pytest.raises(InvalidConfig, match="Unknown key"):
+        Config.load(
             "/cwd/config.json",
             config.flow_common_variables,
             pdk="dummy",
             scl="dummy_scl",
             pdk_root="/pdk",
         )
-    except InvalidConfig as e:
-        assert (  # noqa: PT017
-            e is None
-        ), (
-            "unknown variable triggered an error when loading from a meta.version: 1 JSON file"
-        )
-
-    assert any(
-        diagnostic.category == "unknown-key" for diagnostic in cfg.diagnostics
-    ), (
-        "unknown variable did not trigger a warning when loading from a meta.version: 1 JSON file"
-    )
     caplog.clear()
 
     with pytest.raises(InvalidConfig, match="Unknown key") as e:
@@ -726,9 +649,7 @@ def test_invalid_keys(caplog: pytest.LogCaptureFixture):
     assert any(
         diagnostic.category == "removed-variable"
         for diagnostic in removed_cfg.diagnostics
-    ), (
-        "removed variable did not trigger a warning when loading from a meta.version: 1 JSON file"
-    )
+    ), "removed variable did not trigger a warning"
     caplog.clear()
 
 
@@ -926,3 +847,30 @@ def test_macro_array_config():
             },
         )
     }
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables()
+def test_json_and_yaml_without_meta_read_the_same_way():
+    """
+    '.json' used to default to ``meta.version`` 1 and '.yaml' to 2, and the two
+    were not read the same way: renaming a file changed what it meant. Both
+    default to 2 now, so the same keys resolve to the same configuration and
+    neither is read as Tcl.
+    """
+    from librelane.config import Config
+
+    loaded = {}
+    for name in "implicit.json", "implicit.yaml":
+        with open(f"/cwd/{name}", "w") as f:
+            f.write('{"DESIGN_NAME": "whatever", "VERILOG_FILES": "dir::src/*.v"}')
+        loaded[name], _ = Config.load(
+            f"/cwd/{name}",
+            config.flow_common_variables,
+            pdk="dummy",
+            scl="dummy_scl",
+            pdk_root="/pdk",
+        )
+
+    assert loaded["implicit.json"] == loaded["implicit.yaml"]
+    assert loaded["implicit.json"].meta.version == 2

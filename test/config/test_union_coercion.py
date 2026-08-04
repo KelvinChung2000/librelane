@@ -273,7 +273,7 @@ def test_a_union_nested_in_a_dictionary_value_is_coerced_too():
     """``TOOLS`` is ``dict[str, str | list[str]]``: the choice is per entry."""
     shaped = _shape(
         '{"lvs": "netgen", "synthesis": ["yosys", "yosys_vhdl"]}',
-        Optional[dict[str, Union[str, list[str]]]],
+        Optional[dict[str, str | list[str]]],
         CoercionSyntax.JSON,
     )
 
@@ -287,7 +287,7 @@ def test_a_string_inside_a_json_document_is_not_parsed_as_a_nested_document():
     """
     shaped = _shape(
         '{"lvs": "[\\"a\\"]"}',
-        Optional[dict[str, Union[str, list[str]]]],
+        Optional[dict[str, str | list[str]]],
         CoercionSyntax.JSON,
     )
 
@@ -297,7 +297,7 @@ def test_a_string_inside_a_json_document_is_not_parsed_as_a_nested_document():
 def test_a_union_nested_in_a_tcl_dictionary_value_keeps_its_string_member():
     shaped = _shape(
         "lvs netgen",
-        Optional[dict[str, Union[str, list[str]]]],
+        Optional[dict[str, str | list[str]]],
         CoercionSyntax.TCL,
     )
 
@@ -326,6 +326,9 @@ def _variables():
         Variable("DESIGN_NAME", str, description="x"),
         Variable("STD_CELL_LIBRARY", str, description="x", pdk=True),
         Variable("TEST_UNION", WITH_STR, description="x", default=None),
+        # A PDK's 'config.tcl' is the only Tcl source left, and the PDK layer
+        # keeps only the variables that declare themselves its own.
+        Variable("TEST_PDK_UNION", WITH_STR, description="x", default=None, pdk=True),
         Variable(
             "TEST_RENAMED_UNION",
             WITH_STR,
@@ -424,20 +427,28 @@ def test_a_renamed_union_carries_the_command_line_syntax(tiny_pdk, design_dir):
     assert resolved["TEST_RENAMED_UNION"] == ["p", "q"]
 
 
-def test_a_union_from_a_tcl_source_stays_a_string(tiny_pdk, design_dir):
-    path = design_dir / "config.tcl"
-    path.write_text(
+def test_a_union_from_a_pdk_stays_a_string(tmp_path, design_dir):
+    """
+    A PDK ships Tcl, where every value is a word list, so the reading has to be
+    decided by the annotation rather than by the text: a union with a ``str``
+    member keeps the string.
+    """
+    root = tmp_path / "pdk_union"
+    librelane_dir = root / "tiny" / "libs.tech" / "librelane"
+    (librelane_dir / "tiny_scl").mkdir(parents=True)
+    (librelane_dir / "config.tcl").write_text(
         textwrap.dedent(
             """\
-            set ::env(DESIGN_NAME) "x"
-            set ::env(TEST_UNION) "a b"
+            set ::env(STD_CELL_LIBRARY) "tiny_scl"
+            set ::env(TEST_PDK_UNION) "a b"
             """
         )
     )
+    (librelane_dir / "tiny_scl" / "config.tcl").write_text("")
 
-    resolved = _resolve(tiny_pdk, [str(path)], design_dir)
+    resolved = _resolve(str(root), [{"DESIGN_NAME": "x"}], design_dir)
 
-    assert resolved["TEST_UNION"] == "a b"
+    assert resolved["TEST_PDK_UNION"] == "a b"
 
 
 def test_a_union_from_a_yaml_source_carries_a_list_as_a_list(tiny_pdk, design_dir):

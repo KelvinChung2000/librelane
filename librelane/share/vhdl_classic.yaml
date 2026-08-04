@@ -1,0 +1,132 @@
+# Copyright 2026 LibreLane Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# The VHDLClassic flow, written as a graph of jobs.
+#
+# Not derived from classic.yaml, deliberately, and for the reason the
+# VHDLClassic class it replaces gave. A flow is a self-contained declaration of
+# what it runs, and a filter expression over another flow's list is a
+# substitution map wearing a different hat. That is still why the document
+# schema has no 'extends' key: nothing subtracts, and this document names no
+# other document.
+#
+# What it does do is include the common library, whose two files declare what all three
+# Classic-family documents declare identically. That is the opposite direction:
+# a declaration none of them owns, merged into each, rather than one of them
+# reading as an edit of another. The jobs that make this flow VHDLClassic --
+# the pinned synthesis provider, and the ones its omissions re-point around --
+# are still written out here.
+#
+# The differences from Classic are the pinned synthesis provider and four
+# omitted entries: the lint stage, Odb.SetPowerConnections,
+# Odb.WriteVerilogHeader and the formal equivalence stage. None of them can run
+# without Verilog sources.
+name: VHDLClassic
+description: >-
+  A variant of Classic that accepts VHDL files for synthesis instead of Verilog
+  files, and drops the Verilog linting, equivalence-checking and power-header
+  steps, none of which can run without Verilog sources.
+
+include:
+  - common::classic_config.yaml
+  - common::classic_jobs.yaml
+
+# No job carries a 'source' key, for the reason classic.yaml gives: no join
+# here has two branches that write the same view or metric. The one place a
+# conflict would arise is the pair of stream-outs, and the comment on
+# klayout_streamout says why they are not parallel.
+jobs:
+  # The one provider this flow pins. classic.yaml leaves synthesis bare and
+  # takes the template's default, yosys; a VHDL front end is the whole reason
+  # this document exists, so it names yosys_vhdl rather than relying on TOOLS.
+  synthesis:
+    uses: synthesis/yosys_vhdl
+  rmp:
+    needs: [floorplan]
+    steps: [OpenROAD.RMP]
+    if: RUN_RMP
+  # Straight off rmp, because Odb.SetPowerConnections sat between the two in
+  # Classic and this flow omits it: it hard-requires the Verilog header only
+  # Verilog synthesis emits.
+  macro_placement:
+    needs: [rmp]
+    uses: macro_placement
+  io_placement:
+    needs: [power_grid]
+    uses: io_placement
+  # Before global placement, deliberately: the port buffers exist by the time
+  # placement runs, so the logic is placed around them (#917).
+  add_buffer:
+    needs: [io_placement]
+    steps: [OpenROAD.AddBuffer]
+  global_placement:
+    needs: [add_buffer]
+    uses: global_placement
+  # classic.yaml's post_gpl_checks job, minus the step this flow cannot run.
+  # Odb.WriteVerilogHeader needs the Verilog header only Verilog synthesis
+  # emits; the timing snapshot is unaffected, so the job keeps its name and its
+  # place.
+  post_gpl_checks:
+    needs: [global_placement]
+    steps: [OpenROAD.STAMidPNR]
+  # On the chain rather than in the fan-out, for the reason classic.yaml gives
+  # above its own copy of these two jobs: check_antenna_properties rewrites the
+  # framework metrics every OpenROAD invocation writes, and a branch that has
+  # them where its siblings do not is a join conflict.
+  write_lef:
+    needs: [render]
+    steps: [Magic.WriteLEF]
+    if: RUN_MAGIC_WRITE_LEF
+  # Also a real data edge: Odb.CheckDesignAntennaProperties consumes 'lef', and
+  # Magic.WriteLEF is the only step here that produces one.
+  check_antenna_properties:
+    needs: [write_lef]
+    steps: [Odb.CheckDesignAntennaProperties]
+  # The fan-out point: the last OpenROAD-backed job in the flow, and the four
+  # jobs below it are the heavy ones. render and write_lef are cheap, so
+  # keeping them on the chain costs almost nothing.
+  #
+  # A three-variable conjunction, because KLayout.XOR genuinely consumes
+  # mag_gds from one stream-out and klayout_gds from the other and cannot run
+  # unless both fired.
+  xor:
+    needs: [check_antenna_properties]
+    steps: [KLayout.XOR]
+    if: RUN_KLAYOUT_XOR and RUN_MAGIC_STREAMOUT and RUN_KLAYOUT_STREAMOUT
+  magic_drc:
+    needs: [check_antenna_properties]
+    uses: drc/magic
+    if: RUN_MAGIC_DRC
+  klayout_drc:
+    needs: [check_antenna_properties]
+    uses: drc/klayout
+    if: RUN_KLAYOUT_DRC
+  lvs:
+    needs: [check_antenna_properties]
+    uses: lvs
+    if: RUN_LVS
+  # Every leaf, so that the flow has one sink, exactly as classic.yaml explains.
+  # 'lvs' is named directly here where classic.yaml reaches it through
+  # formal_equivalence, which this flow does not run: without that edge lvs
+  # would be a second sink and its metrics would never reach
+  # Misc.ReportManufacturability. render and check_antenna_properties are not
+  # named because they are no longer leaves: both are ancestors of all four
+  # jobs below, so their metrics arrive anyway.
+  final_checks:
+    needs:
+      - xor
+      - magic_drc
+      - klayout_drc
+      - lvs
+    steps: [Misc.ReportManufacturability]

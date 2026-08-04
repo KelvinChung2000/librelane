@@ -258,45 +258,6 @@ The preprocessor reads each F-list, appends its contents to
 
 Only (System)Verilog F-lists are supported. VHDL is not.
 
-## Tcl
-
-These configuration files are simple Tcl scripts with environment variables that
-are sourced by the LibreLane flow. Again, Tcl config files are not recommended
-for newer designs, but is still maintained and supported at the moment.
-
-Each design using the Tcl format has a global config.tcl and other config files
-one for each PDK:
-
-```
-designs/<design_name>
-├── config.tcl
-├── sky130A_sky130_fd_sc_hs_config.tcl
-├── sky130A_sky130_fd_sc_hd_config.tcl
-├── src
-│   ├── design.v
-```
-
-You can see `designs/xtea` for an example of a design that still uses the Tcl
-format.
-
-To support the technology-specific config files, the global `config.tcl` files
-should end with these lines:
-
-```tcl
-set filename $::env(DESIGN_DIR)/$::env(PDK)_$::env(STD_CELL_LIBRARY)_config.tcl
-if { [file exists $filename] == 1} {
-	source $filename
-}
-```
-
-This implies that if the `{PDK}_{STD_CELL_LIBRARY}_config.tcl` doesn't exist for
-a specific technology combination the flow would resume normally with only the
-global config.tcl.
-
-This structure allows for storing the best configurations for a given design on
-all different PDKs and their STD_CELL_LIBRARYs. The best configuration for a
-given design differ from one PDK and STD_CELL_LIBRARY to another.
-
 ## Command-line overrides
 
 `--config-override KEY=VALUE` (`-c`) sets one variable for one run. It is
@@ -362,7 +323,7 @@ the value has to end up as; the source says how it was written.
 
 | Source | A string for a list or dictionary variable |
 | --- | --- |
-| `.tcl` file | A Tcl word list: `a 1 b 2` is a two-entry dictionary, `p q r` a three-element list. |
+| PDK `config.tcl` | A Tcl word list: `a 1 b 2` is a two-entry dictionary, `p q r` a three-element list. |
 | `--config-override` | A JSON document, as above. |
 | `.json` or `.yaml` file, or an API mapping | An error. These grammars carry a list as a list, so a string was meant as a string. |
 
@@ -371,16 +332,16 @@ the string reading is always available and so nothing can be rejected:
 
 | Source | A string for a `str`-or-list variable |
 | --- | --- |
-| `.tcl` file | A string. Every Tcl value is a word list, so `clk_a clk_b` cannot be told from a one-word list, and the declared string wins -- as it has since these variables existed. A `.tcl` file cannot set the list reading. |
+| PDK `config.tcl` | A string. Every Tcl value is a word list, so `clk_a clk_b` cannot be told from a one-word list, and the declared string wins. Tcl cannot set the list reading. |
 | `--config-override` | A JSON array when the text starts with `[`, and the string otherwise. A `{` also begins a document, so `CLOCK_PORT={"a": 1}` is an error and not a clock port with a curly brace in its name: no member of the union takes a JSON object. |
 | `.json` or `.yaml` file, or an API mapping | Whichever was written: a string is a string and an array is a list. |
 
-The last source to write a key decides, so a `--config-override` on a key a Tcl
-file also set is read as JSON, and a JSON file that overrides a key a Tcl file
-set is held to the JSON file's rules.
+The last source to write a key decides, so a `--config-override` on a key the
+PDK also set is read as JSON, and a design file that overrides a PDK key is
+held to its own grammar.
 
-One exception covers openlane-era designs: a document declaring
-`meta.version` 1 -- which is the default for a `.tcl` file, and for a `.json`
-file with no `meta` key -- was written when every value was Tcl text, so its
-strings are read as Tcl whichever grammar the file itself is in. The command
-line is not part of the document and is JSON regardless.
+A PDK's `config.tcl` is the only Tcl source. Design configurations used to be
+readable as Tcl too -- either as a `.tcl` file, or as any document declaring
+`meta.version` 1, which was the default for a `.json` file with no `meta` key.
+Both are gone: a design file means what it says, and `.json` and `.yaml` are
+read by identical rules.
