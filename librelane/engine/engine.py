@@ -765,7 +765,7 @@ class Workflow(Flow):
             otherwise lax elsewhere in the configuration model: an ``int``-
             typed variable's value is rejected before it ever reaches
             ``self.config`` if it is a ``bool``, by
-            :class:`librelane.config.legacy.Variable`'s own coercion, so
+            :class:`librelane.config.variable.Variable`'s own coercion, so
             there is no second bool check to make here.
 
         Raises

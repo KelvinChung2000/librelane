@@ -150,7 +150,7 @@ def test_paths_inside_a_dataclass_are_fingerprinted():
     MACROS is dict[str, Macro] and Macro is a dataclass of Path lists. A walk
     that skips dataclasses would let a macro's GDS change go unnoticed.
     """
-    from librelane.config.legacy import Macro
+    from librelane.config.variable import Macro
     from librelane.engine.resume import _substitute_paths
 
     pathlib.Path("/cwd/src/m.gds").write_text("gds-one")

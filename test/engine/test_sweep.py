@@ -119,7 +119,7 @@ def sweep_steps():
         Writes the select metric 'score' as a literal Python ``bool``, not
         derived from a configuration variable: an ``int``-typed variable
         already refuses a ``bool`` value on the way in
-        (:class:`librelane.config.legacy.Variable`), so this is the only way
+        (:class:`librelane.config.variable.Variable`), so this is the only way
         to get one into a state's metrics at all, the way a hand-written
         ``metrics.json`` containing JSON ``true`` would.
         """

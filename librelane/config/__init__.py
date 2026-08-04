@@ -26,7 +26,7 @@ from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
 # document's values under a design's names the layer and states the syntax it
 # is written in, which is what a source is.
 from librelane.config.loading import ConfigSource
-from librelane.config.legacy import Variable
+from librelane.config.variable import Variable
 from librelane.config.model import (
     BaseConfigModel,
     extend_model,

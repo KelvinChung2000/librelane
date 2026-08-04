@@ -22,7 +22,7 @@ from decimal import Decimal
 from typing import Literal
 from collections.abc import Sequence
 
-from librelane.config.legacy import Macro
+from librelane.config.variable import Macro
 from librelane.config.model import BaseConfigModel, model_to_variables, variable
 from librelane.common import Path
 

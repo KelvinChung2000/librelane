@@ -159,7 +159,7 @@ def test_registered_variable_defaults_match_legacy_compiler():
 
     from librelane.common import GenericDict
     from librelane.config import variables_to_model
-    from librelane.config.legacy import MissingRequiredVariable
+    from librelane.config.variable import MissingRequiredVariable
     from librelane.steps import Step
 
     variables = []

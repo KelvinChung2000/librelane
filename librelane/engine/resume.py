@@ -56,7 +56,7 @@ def _substitute_paths(value, fingerprinter: Fingerprinter):
     ``UserString``-based path type would have done under a ``Sequence`` branch.
 
     Dataclasses are walked because ``MACROS`` is ``dict[str, Macro]`` and
-    :class:`librelane.config.legacy.Macro` holds its GDS, LEF and LIB views in
+    :class:`librelane.config.variable.Macro` holds its GDS, LEF and LIB views in
     ``list[Path]`` and ``dict[str, list[Path]]`` fields. Skipping them would let
     an edited macro view go unnoticed.
 

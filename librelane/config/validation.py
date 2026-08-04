@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from pydantic import ValidationError
 
 from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
-from librelane.config.legacy import Variable
+from librelane.config.variable import Variable
 from librelane.config.loading.sources import CoercionSyntax
 from librelane.config.model import variables_to_model
 from librelane.config.preprocessor import SPECIAL_KEYS

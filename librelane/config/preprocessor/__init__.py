@@ -5,18 +5,18 @@ from collections.abc import Mapping
 from librelane.config.preprocessor.flist import FLIST_KEY, expand_flists
 
 
-# ``Keys`` and ``PROCESS_INFO_ALLOWLIST`` are defined in ``legacy`` and imported
+# ``Keys`` and ``PROCESS_INFO_ALLOWLIST`` are defined in ``expr`` and imported
 # here rather than the other way round, and not because they belong there:
-# ``legacy.process_string`` reads ``Keys`` and this module already imports that
+# ``expr.process_string`` reads ``Keys`` and this module already imports that
 # module, so a definition here would have to be duplicated there to avoid an
 # import cycle -- which is what it used to be, two identical copies that nothing
 # kept in step.
 #
 # ``process_string`` is re-exported rather than wrapped. The wrapper this
 # replaces did nothing but forward, behind a function-local import guarding
-# against a cycle that does not exist: ``legacy`` imports nothing from this
+# against a cycle that does not exist: ``expr`` imports nothing from this
 # package.
-from librelane.config.preprocessor.legacy import (
+from librelane.config.preprocessor.expr import (
     PROCESS_INFO_ALLOWLIST,
     SPECIAL_KEYS,
     Expr,

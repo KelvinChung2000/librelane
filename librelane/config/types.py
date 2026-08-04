@@ -11,7 +11,7 @@ from pydantic import TypeAdapter
 from pydantic_core import core_schema
 
 from librelane.common import Path, TclUtils, is_path_annotation, unwrap_annotated
-from librelane.config.legacy import Instance, InstanceArray, Macro, Orientation
+from librelane.config.variable import Instance, InstanceArray, Macro, Orientation
 from librelane.config.loading.sources import CoercionSyntax
 from librelane.config.preprocessor import GlobMatch
 

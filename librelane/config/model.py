@@ -342,7 +342,7 @@ def model_to_variables(
     *,
     include_inherited: bool = True,
 ) -> list[Any]:
-    from librelane.config.legacy import Variable
+    from librelane.config.variable import Variable
 
     result = []
     for name, field in model.model_fields.items():

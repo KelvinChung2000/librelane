@@ -296,7 +296,7 @@ def scope_model(
 
     Parameters
     ----------
-    variables : Sequence[librelane.config.legacy.Variable]
+    variables : Sequence[librelane.config.variable.Variable]
         Every variable the scope's readers may declare.
     name : str
         A name for the generated model, which shows up in validation errors.
@@ -340,7 +340,7 @@ def build_scope(
     ----------
     config : Config
         A resolved configuration.
-    variables : Sequence[librelane.config.legacy.Variable] | Callable | None
+    variables : Sequence[librelane.config.variable.Variable] | Callable | None
         Every variable the scope's readers may declare, or a callable
         returning them -- which is how a caller keeps the union itself from
         being computed for a flow that never runs. For a flow this is the union

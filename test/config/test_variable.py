@@ -195,7 +195,7 @@ def test_macro_from_state():
 
 
 def test_is_optional():
-    from librelane.config.legacy import is_optional
+    from librelane.config.variable import is_optional
 
     assert is_optional(int) is False, "is_optional false positive"
     assert is_optional(Optional[int]) is True, "is_optional false negative"
@@ -210,7 +210,7 @@ def test_is_optional():
 
 
 def test_some_of():
-    from librelane.config.legacy import some_of
+    from librelane.config.variable import some_of
 
     assert some_of(int) is int, "some_of changed the type of a non-option type"
     assert some_of(list[str]) == list[str], (

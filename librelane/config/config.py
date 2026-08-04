@@ -30,7 +30,7 @@ from typing import (
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 
-from librelane.config.legacy import Variable
+from librelane.config.variable import Variable
 from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
 from librelane.config.loading import (
     ConfigSource,

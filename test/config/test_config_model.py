@@ -135,7 +135,7 @@ def test_sequences_are_shaped_into_tuples():
 def test_dataclass_mappings_are_shaped_into_instances(tmp_path):
     """Dumping a config flattens Macros to dicts; re-validating must rebuild them."""
     from librelane.config import BaseConfigModel, variable
-    from librelane.config.legacy import Macro
+    from librelane.config.variable import Macro
 
     gds = tmp_path / "a.gds"
     lef = tmp_path / "a.lef"
@@ -243,7 +243,7 @@ def test_model_bridge_can_select_only_declared_fields():
 
 def test_validating_a_mapping_keeps_dataclass_values(tmp_path):
     """Steps read config values directly, so validation must not flatten them."""
-    from librelane.config.legacy import Macro, Variable
+    from librelane.config.variable import Macro, Variable
     from librelane.config.validation import validate_mapping
 
     gds = tmp_path / "a.gds"
@@ -275,7 +275,7 @@ def test_instance_placement_fields_are_optional():
     """'Leave empty for automatic placement' -- so an empty instance is valid."""
     from pydantic import TypeAdapter
 
-    from librelane.config.legacy import Instance
+    from librelane.config.variable import Instance
 
     instance = TypeAdapter(Instance).validate_python({})
     assert instance.location is None
