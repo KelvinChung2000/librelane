@@ -112,6 +112,14 @@ def _migrate_diode_strategy(
         ``DIODE_INSERTION_STRATEGY``. One key becoming three is still a
         rename as far as attribution goes: all three owe their values to
         whichever layer set the one.
+
+    ``DIODE_INSERTION_STRATEGY`` is an OpenLane-era variable and this reads
+    like the design-facing compatibility that has otherwise been removed, but
+    it is not: every gf180mcu standard cell library writes
+    ``DIODE_INSERTION_STRATEGY 4`` in its ``config.tcl``, in all four of
+    gf180mcuA through gf180mcuD. A PDK is a fixed artifact, so dropping this
+    would not retire a spelling -- it would make every gf180mcu load fail on a
+    key the PDK itself set.
     """
     if raw.get("DIODE_INSERTION_STRATEGY") is None:
         return {}

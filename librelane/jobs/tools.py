@@ -39,7 +39,6 @@ import os
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from loguru import logger
 
 from librelane.config import Config
 from librelane.config.loading import (
@@ -200,7 +199,6 @@ def _first_scoped_source(sources: Sequence[ConfigSource]) -> tuple[str, str] | N
 
 def _layer_for_selection(
     sources: Sequence[ConfigSource],
-    tcl_sources: Sequence[str],
     *,
     design_dir: str | None,
     pdk: str | None,
@@ -216,17 +214,12 @@ def _layer_for_selection(
     ----------
     sources : Sequence[ConfigSource]
         Every source, including the command line's, unexpanded.
-    tcl_sources : Sequence[str]
-        The names of the Tcl sources among them, which are not evaluated here.
     design_dir : str | None
         The design directory, or ``None`` if neither an argument nor a file
         path supplied one.
 
     Raises
     ------
-    JobResolutionError
-        If a source scopes ``TOOLS`` and a Tcl source may decide which process
-        that section is matched against.
     ValueError
         If a section has to be resolved and no PDK is named, or no design
         directory is known. Both messages are
@@ -242,19 +235,6 @@ def _layer_for_selection(
         # actually needs it.
         return layer_mappings(sources)
 
-    source_name, section = scoped
-    if tcl_sources:
-        raise JobResolutionError(
-            f"'{source_name}' scopes TOOLS under the section '{section}', "
-            f"which applies only under a particular process, and "
-            f"'{tcl_sources[0]}' is a Tcl configuration file, which may itself "
-            f"declare the PDK and cannot be evaluated before tool selection. "
-            f"Which process the section is matched against is therefore "
-            f"unknown here, and matching it against a guess could select a "
-            f"different tool than the run resolves. Migrate the Tcl "
-            f"configuration to JSON or YAML, or write TOOLS outside the "
-            f"section."
-        )
     if design_dir is None:
         raise ValueError(
             "The design_dir argument is required when configuration dictionaries are used."
@@ -295,15 +275,6 @@ def extract_tools(
     resolved and none has to exist, because no expansion of those sources could
     move the only key read here.
 
-    Tcl configuration files are not evaluated here, because evaluating one
-    requires process information that is not yet resolved. A ``.tcl`` source
-    therefore contributes no ``TOOLS`` entries, and this is reported so it is
-    never mistaken for the file having been read and found empty. A Tcl source
-    can also declare or change the ``PDK``, so where one appears alongside a
-    source that scopes ``TOOLS``, the section cannot be resolved and this
-    raises rather than matching it against a process that may not be the one
-    the run uses.
-
     Parameters
     ----------
     config_in : Sequence[Mapping[str, Any] | str | os.PathLike]
@@ -327,25 +298,16 @@ def extract_tools(
     Raises
     ------
     JobResolutionError
-        If ``TOOLS`` is present but malformed, or if a scoped section cannot be
-        resolved because a Tcl source may decide the process.
+        If ``TOOLS`` is present but malformed.
     ValueError
         If a scoped section has to be resolved and no source and no argument
         names a PDK. Raised by the loader's own resolution, so the message is
         the one running the flow would produce.
     """
     sources: list[ConfigSource] = []
-    tcl_sources: list[str] = []
     file_design_dir: str | None = None
     for entry in config_in:
         source = read_source(entry, yaml_loader=yaml_loader)
-        if source.kind == "tcl":
-            logger.info(
-                f"TOOLS is not read from Tcl configuration files; "
-                f"'{source.name}' was not consulted for tool selection and "
-                f"job defaults apply."
-            )
-            tcl_sources.append(source.name)
         if not isinstance(entry, Mapping):
             file_design_dir = os.path.dirname(source.name)
         sources.append(source)
@@ -362,7 +324,6 @@ def extract_tools(
 
     layered = _layer_for_selection(
         sources,
-        tcl_sources,
         design_dir=design_dir or file_design_dir,
         pdk=pdk,
         pdk_root=pdk_root,

@@ -236,9 +236,7 @@ def test_a_pdk_still_reads_lists_and_dictionaries_as_tcl(pdk_writing, design_dir
     assert resolved["TEST_PDK_LIST"] == ["p", "q", "r"]
 
 
-def test_an_uneven_tcl_dictionary_names_the_syntax_and_the_key(
-    pdk_writing, design_dir
-):
+def test_an_uneven_tcl_dictionary_names_the_syntax_and_the_key(pdk_writing, design_dir):
     pdk_root = pdk_writing('set ::env(TEST_PDK_DICT) "a 1 b"\n')
 
     [error] = _errors(pdk_root, [{"DESIGN_NAME": "x"}], design_dir)

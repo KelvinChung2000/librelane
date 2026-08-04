@@ -158,9 +158,7 @@ _MAPPING_KEYS = ("with", "jobs", "resources")
 _SCALAR_KEYS = ("final",)
 
 #: The extensions :func:`~librelane.config.loading.sources.read_source` reads
-#: as a mapping. ``.tcl`` is deliberately absent: it reads as an empty mapping
-#: pending an evaluation this never performs, so including one would silently
-#: contribute nothing.
+#: as a mapping, and every extension it reads at all.
 _INCLUDE_EXTENSIONS = (".yaml", ".yml", ".json")
 
 

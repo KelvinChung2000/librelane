@@ -131,13 +131,6 @@ The process is resolved only where a section could actually move `TOOLS`.
 Scoping an ordinary variable such as `FP_CORE_UTIL` per PDK, which is the
 common use, costs tool selection nothing and needs no PDK installed.
 
-The resolution has one boundary, and it is Tcl's. A `.tcl` configuration file
-may itself declare the `PDK`, and it cannot be evaluated this early, so which
-process a section applies under would be a guess. Passing a Tcl configuration
-alongside a source that scopes `TOOLS` is refused by name rather than resolved
-against that guess. Migrate the Tcl file to JSON or YAML, or write `TOOLS`
-outside the section.
-
 An unknown job id or an unknown provider name is rejected by name, with a
 suggested correction for a near miss.
 

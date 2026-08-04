@@ -51,7 +51,7 @@ class CoercionSyntax(Enum):
     written.
 
     This is a property of the source the value came from and not of the
-    variable it was written for: a ``.tcl`` file's values are Tcl text, a
+    variable it was written for: a PDK's ``config.tcl`` holds Tcl text, a
     ``--config-override`` is text typed at a shell, and a YAML, JSON or Python
     mapping carries a list as a list. A variable's declared type says what the
     value has to end up as, never how it was written.
@@ -69,8 +69,12 @@ class CoercionSyntax(Enum):
 
 
 #: Every source kind, mapped to the syntax its strings are written in.
+#:
+#: No kind maps to :attr:`CoercionSyntax.TCL`. A PDK's ``config.tcl`` is the
+#: only Tcl there is, and it is not layered as a source: it is evaluated into an
+#: environment and compiled in permissive mode, which is where its strings get
+#: read as Tcl.
 _SYNTAX_BY_KIND: Mapping[str, CoercionSyntax] = {
-    "tcl": CoercionSyntax.TCL,
     "commandline": CoercionSyntax.JSON,
     "mapping": CoercionSyntax.TYPED,
     "json": CoercionSyntax.TYPED,
@@ -82,7 +86,7 @@ _SYNTAX_BY_KIND: Mapping[str, CoercionSyntax] = {
 class ConfigSource:
     mapping: Mapping[str, Any]
     name: str
-    kind: Literal["mapping", "json", "yaml", "tcl", "commandline"]
+    kind: Literal["mapping", "json", "yaml", "commandline"]
 
     @property
     def syntax(self) -> CoercionSyntax:
@@ -109,8 +113,4 @@ def read_source(
     if path.endswith((".yaml", ".yml")):
         with open(path, encoding="utf8") as stream:
             return ConfigSource(yaml.load(stream, Loader=yaml_loader), path, "yaml")
-    if path.endswith(".tcl"):
-        # Tcl needs process information and is evaluated by Config's two-pass
-        # compatibility reader.
-        return ConfigSource({}, path, "tcl")
     raise ValueError(f"Unsupported configuration source '{path}'")

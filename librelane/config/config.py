@@ -696,7 +696,7 @@ class Config(GenericImmutableDict[str, Any]):
         _load_pdk_configs: bool = True,
     ) -> tuple["Config", str]:
         """
-        Creates a new Config object based on a Tcl file, a JSON file, or a
+        Creates a new Config object based on a JSON file, a YAML file, or a
         dictionary.
 
         The returned config object is locked and cannot be modified.
@@ -704,12 +704,9 @@ class Config(GenericImmutableDict[str, Any]):
         Parameters
         ----------
         config_in : AnyConfigs
-            Either a file path to a JSON file or a Python
+            Either a file path to a JSON or YAML file, or a Python
             Mapping object (such as ``dict``) representing an unprocessed
             LibreLane configuration object.
-
-            Tcl files are also supported, but are deprecated and will be removed
-            in the future.
         under : Sequence[ConfigSource]
             Sources layered *beneath* the design configuration and *above* the
             PDK and the SCL, in order, so that a design always wins and any of

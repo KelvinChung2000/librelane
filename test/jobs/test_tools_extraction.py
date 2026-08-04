@@ -127,17 +127,6 @@ def test_yaml_source_is_read(tmp_path):
     assert _extract(path) == {"synthesis": "genus"}
 
 
-def test_tcl_source_contributes_nothing(tmp_path):
-    """
-    Evaluating Tcl needs process information that is not resolved this early,
-    so a .tcl source is reported as unconsulted rather than read and empty.
-    """
-    path = tmp_path / "config.tcl"
-    path.write_text("set ::env(TOOLS) whatever\n", encoding="utf8")
-
-    assert _extract(path) == {}
-
-
 def test_a_scoped_tools_under_the_matching_pdk_is_read(two_pdks, tmp_path):
     """
     The defect this file's ``pdk::`` cases exist for: the pre-pass used to read
@@ -233,50 +222,6 @@ def test_a_command_line_tools_override_beats_a_scoped_section(two_pdks, tmp_path
     ) == {"synthesis": "yosys"}
 
 
-def test_a_section_alongside_a_tcl_source_is_refused(two_pdks, tmp_path):
-    """
-    A Tcl file may itself declare the ``PDK``, and it cannot be evaluated this
-    early. Which process the section applies under is therefore unknown, so the
-    section is refused by name rather than matched against a guess -- silently
-    ignoring it is what made this defect invisible in the first place.
-    """
-    from librelane.jobs import JobResolutionError
-
-    path = tmp_path / "config.tcl"
-    path.write_text('set ::env(PDK) "beta"\n', encoding="utf8")
-
-    with pytest.raises(JobResolutionError) as refused:
-        _extract(
-            {"pdk::alpha": {"TOOLS": {"synthesis": "genus"}}},
-            path,
-            pdk="alpha",
-            pdk_root=two_pdks,
-            design_dir=str(tmp_path),
-        )
-
-    message = str(refused.value)
-    assert "pdk::alpha" in message
-    assert "config.tcl" in message
-
-
-def test_a_tcl_source_without_a_section_is_still_only_skipped(two_pdks, tmp_path):
-    """
-    The refusal above is about sections, not about Tcl. Where nothing is
-    scoped, a Tcl source remains what it has always been: unconsulted, and
-    reported as such.
-    """
-    path = tmp_path / "config.tcl"
-    path.write_text('set ::env(PDK) "beta"\n', encoding="utf8")
-
-    assert _extract(
-        {"TOOLS": {"synthesis": "yosys"}},
-        path,
-        pdk="alpha",
-        pdk_root=two_pdks,
-        design_dir=str(tmp_path),
-    ) == {"synthesis": "yosys"}
-
-
 def test_a_section_that_cannot_reach_tools_is_not_resolved(tmp_path):
     """
     Scoping an ordinary variable per PDK is the common idiom, and ``TOOLS`` is
@@ -285,8 +230,8 @@ def test_a_section_that_cannot_reach_tools_is_not_resolved(tmp_path):
     ``TOOLS`` at all until a PDK is installed would be a new demand made by the
     pass that needs it least.
     """
-    path = tmp_path / "config.tcl"
-    path.write_text('set ::env(PDK) "beta"\n', encoding="utf8")
+    path = tmp_path / "other.yaml"
+    path.write_text("PDK: beta\n", encoding="utf8")
 
     assert _extract(
         {
@@ -396,3 +341,15 @@ def test_the_selection_and_the_loader_agree_on_a_scoped_tools(two_pdks, tmp_path
 
     assert selected == {"synthesis": "genus"}
     assert resolved["TOOLS"] == selected
+
+
+def test_a_tcl_source_is_not_a_configuration(tmp_path):
+    """
+    Design '.tcl' configurations are gone, so one reaching the pre-pass is an
+    unreadable source rather than a source read as empty.
+    """
+    path = tmp_path / "config.tcl"
+    path.write_text("set ::env(TOOLS) whatever\n", encoding="utf8")
+
+    with pytest.raises(ValueError, match="Unsupported configuration source"):
+        _extract(path)

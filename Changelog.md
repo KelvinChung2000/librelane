@@ -1309,6 +1309,45 @@ Style Notes
 
 ## API Breaks
 
+* Removed the OpenLane-era design configuration formats. A design
+  configuration is a JSON file, a YAML file or a Python mapping, and all three
+  are read by one set of rules.
+  * Removed `.tcl` design configuration files. `Config.load` rejects one by
+    extension, as it does any other unsupported extension.
+  * Removed `meta.version` 1, and with it the permissive reading that made
+    every string in a design document Tcl text. `.json` defaulted to version 1
+    and `.yaml` to 2, so renaming a file changed what it meant; both are 2 now.
+    Declaring version 1 explicitly does not restore the old reading.
+    * An unknown key in a `.json` file is an error rather than a warning, and
+      a space-separated string reaching a list variable is an error rather
+      than a three-element list.
+  * Removed the `openlane_version` key in a `meta` block, and the
+    `openlane_plugin_` module prefix in plugin discovery.
+
+* Removed the OpenLane spellings of 76 design configuration variables:
+  `QUIT_ON_*`, the `GLB_RESIZER_*` family, the design's own `FP_PDN_*` and
+  `FP_IO_*` keys, `SYNTH_DEFINES`, `DRT_THREADS`, `LINTER_VLT`, `SDC_FILE` and
+  the rest. Each is now spelled only as its current name.
+  * The 58 PDK variables keep theirs. A PDK is a fixed artifact that writes
+    what it writes, and between them those cover the 45 old spellings sky130A,
+    gf180mcu and ihp-sg13g2 emit today -- `CELLS_LEF`, `GDS_FILES`,
+    `STD_CELL_POWER_PINS`, `TRACKS_INFO_FILE` and the others.
+  * `DIODE_INSERTION_STRATEGY` is still migrated for the same reason: every
+    gf180mcu standard cell library sets it in its own `config.tcl`.
+  * A removed variable still reports why it was removed, rather than reading
+    as an unknown key.
+
+* A PDK's `config.tcl` is untouched. It is the only configuration format any
+  PDK ships -- sky130A and gf180mcu under `libs.tech/openlane`, ihp-sg13g2
+  under `libs.tech/librelane` -- so Tcl evaluation, permissive typing and the
+  PDK variables' deprecated spellings are all exactly where they were.
+
+* Renamed `librelane.config.legacy` to `librelane.config.variable` and
+  `librelane.config.preprocessor.legacy` to
+  `librelane.config.preprocessor.expr`. Neither held anything legacy: the
+  first is the `Variable`, `Macro` and `Instance` declarations every
+  configuration is resolved against, and the second is the `expr::` evaluator.
+
 * Replaced `Config.load`'s `flow_values`, `job_values` and `iteration_values`
   parameters with `under` and `over`, each a sequence of `ConfigSource`.
   Callers build the layer and name it -- `ConfigSource(values, "<flow
