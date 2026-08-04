@@ -15,7 +15,7 @@
 ``librelane open``, which replaced the five one-job ``OpenIn*`` documents.
 
 What is pinned here is the half that used to be pinned in
-``test/flows/test_documents.py``: that every viewer a user could reach is still
+``test/engine/test_documents.py``: that every viewer a user could reach is still
 reachable, and that it still runs the step it says it does.
 """
 

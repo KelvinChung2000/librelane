@@ -19,9 +19,6 @@ from loguru import logger
 
 from importlib.resources import files
 from decimal import Decimal
-from typing import (
-    Optional,
-)
 
 
 from librelane.common import (
@@ -46,13 +43,10 @@ from librelane.steps.openroad.floorplan import PPLMode, _validate_io_ppl_mode
 
 class _GlobalPlacement(OpenROADStep):
     class Config(RszConfig, RoutingLayerConfig, OpenROADStep.Config):
-        PL_TARGET_DENSITY_PCT: Optional[Decimal] = variable(
+        PL_TARGET_DENSITY_PCT: Decimal | None = variable(
             None,
             description="The desired placement density of cells. If not specified, the value will be equal to (`FP_CORE_UTIL` + 5 * `GPL_CELL_PADDING` + 10).",
             units="%",
-            deprecated_names=[
-                ("PL_TARGET_DENSITY", lambda d: Decimal(d) * Decimal("100"))
-            ],
         )
 
         PL_SKIP_INITIAL_PLACEMENT: bool = variable(
@@ -64,15 +58,14 @@ class _GlobalPlacement(OpenROADStep):
             0.25,
             description="Global placement initial wirelength coefficient."
             + " Decreasing the variable will modify the initial placement of the standard cells to reduce the wirelengths",
-            deprecated_names=["PL_WIRELENGTH_COEF"],
         )
 
-        PL_MIN_PHI_COEFFICIENT: Optional[Decimal] = variable(
+        PL_MIN_PHI_COEFFICIENT: Decimal | None = variable(
             None,
             description="Sets a lower bound on the µ_k variable in the GPL algorithm. Useful if global placement diverges. See https://openroad.readthedocs.io/en/latest/main/src/gpl/README.html",
         )
 
-        PL_MAX_PHI_COEFFICIENT: Optional[Decimal] = variable(
+        PL_MAX_PHI_COEFFICIENT: Decimal | None = variable(
             None,
             description="Sets a upper bound on the µ_k variable in the GPL algorithm. Useful if global placement diverges.See https://openroad.readthedocs.io/en/latest/main/src/gpl/README.html",
         )
@@ -89,7 +82,7 @@ class _GlobalPlacement(OpenROADStep):
             pdk=True,
         )
 
-        PL_KEEP_RESIZE_BELOW_OVERFLOW: Optional[Decimal] = variable(
+        PL_KEEP_RESIZE_BELOW_OVERFLOW: Decimal | None = variable(
             None,
             description="Only applicable when PL_TIMING_DRIVEN is enabled. When the overflow is below the set value, timing-driven iterations will retain the resizer changes instead of reverting them. Allowed values are 0 to 1. If not set, a nonzero default value from OpenROAD will be used",
         )
@@ -151,7 +144,6 @@ class GlobalPlacement(_GlobalPlacement):
         PL_TIMING_DRIVEN: bool = variable(
             False,
             description="Specifies whether the placer should use timing-driven placement.",
-            deprecated_names=["PL_TIME_DRIVEN"],
         )
 
         PL_ROUTABILITY_DRIVEN: bool = variable(
@@ -159,7 +151,7 @@ class GlobalPlacement(_GlobalPlacement):
             description="Specifies whether the placer should use routability driven placement.",
         )
 
-        PL_ROUTABILITY_OVERFLOW_THRESHOLD: Optional[Decimal] = variable(
+        PL_ROUTABILITY_OVERFLOW_THRESHOLD: Decimal | None = variable(
             None,
             description="Sets overflow threshold for routability mode.",
         )
@@ -185,17 +177,15 @@ class GlobalPlacementSkipIO(_GlobalPlacement):
         IO_PIN_PLACEMENT_MODE: PPLMode = variable(
             "matching",
             description="Decides the mode of the random IO placement option.",
-            deprecated_names=["FP_PPL_MODE"],
             validator=_validate_io_ppl_mode,
         )
 
-        IO_PIN_ORDER_CFG: Optional[Path] = variable(
+        IO_PIN_ORDER_CFG: Path | None = variable(
             None,
             description="Path to a custom pin configuration file.",
-            deprecated_names=["FP_PIN_ORDER_CFG"],
         )
 
-        FP_DEF_TEMPLATE: Optional[Path] = variable(
+        FP_DEF_TEMPLATE: Path | None = variable(
             None,
             description="Points to the DEF file to be used as a template.",
         )

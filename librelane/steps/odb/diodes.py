@@ -18,7 +18,7 @@ from loguru import logger
 
 from importlib.resources import files
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Literal
 
 from librelane.config import variable
 from librelane.state import State
@@ -163,7 +163,7 @@ class FuzzyDiodePlacement(OdbpyStep):
     name = "Fuzzy Diode Placement"
 
     class Config(Step.Config):
-        HEURISTIC_ANTENNA_THRESHOLD: Optional[Decimal] = variable(
+        HEURISTIC_ANTENNA_THRESHOLD: Decimal | None = variable(
             None,
             description="A Manhattan distance above which a diode is recommended to be inserted by the heuristic inserter. If not specified, the heuristic algorithm.",
             units="µm",

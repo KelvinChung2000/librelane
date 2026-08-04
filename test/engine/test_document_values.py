@@ -21,7 +21,7 @@ migration, and the migration's own no-regression pin would stop being a pin.
 
 import pytest
 
-from librelane.flows import flow as flow_module
+from librelane.engine import flow as flow_module
 from librelane.steps import step as step_module
 
 pytestmark = pytest.mark.all
@@ -45,7 +45,7 @@ def valued_steps():
     dict[str, str]
         What each step class saw in ``TEST_WITH_VALUE`` when it last ran,
         keyed by the class's id. The class's, not the instance's:
-        :class:`librelane.flows.engine.Workflow` names the job in each
+        :class:`librelane.engine.engine.Workflow` names the job in each
         instance's id, and which step read which value is the question.
     """
     from librelane.config import variable
@@ -151,8 +151,8 @@ def _two_job_document(left: str, right: str, **document) -> dict:
 def test_a_document_value_is_used_when_the_design_is_silent(
     valued_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _one_job_document(**{"with": {"TEST_WITH_VALUE": "from the document"}})
@@ -165,8 +165,8 @@ def test_a_document_value_is_used_when_the_design_is_silent(
 
 @mock_variables([flow_module, step_module])
 def test_the_design_overrides_a_document_value(valued_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _one_job_document(**{"with": {"TEST_WITH_VALUE": "from the document"}})
@@ -185,8 +185,8 @@ def test_the_design_overrides_a_document_value(valued_steps, minimal_design, moc
 def test_a_command_line_override_beats_a_document_value(
     valued_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _one_job_document(**{"with": {"TEST_WITH_VALUE": "from the document"}})
@@ -207,8 +207,8 @@ def test_a_document_value_naming_an_undeclared_variable_is_rejected(
     valued_steps, minimal_design, mock_pdk
 ):
     from librelane.config import InvalidConfig
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_one_job_document(**{"with": {"NOT_A_VARIABLE": 1}}))
 
@@ -223,8 +223,8 @@ def test_a_document_value_naming_an_undeclared_variable_is_rejected(
 def test_each_job_reads_the_value_its_own_with_block_sets(
     valued_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_two_job_document("for left", "for right"))
 
@@ -240,8 +240,8 @@ def test_each_job_reads_the_value_its_own_with_block_sets(
 def test_a_job_value_stays_out_of_the_flow_configuration(
     valued_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _two_job_document(
@@ -260,8 +260,8 @@ def test_a_job_value_stays_out_of_the_flow_configuration(
 
 @mock_variables([flow_module, step_module])
 def test_a_job_value_overrides_a_document_value(valued_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _two_job_document(
@@ -281,8 +281,8 @@ def test_a_job_value_overrides_a_document_value(valued_steps, minimal_design, mo
 
 @mock_variables([flow_module, step_module])
 def test_the_design_overrides_a_job_value(valued_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_two_job_document("for left", "for right"))
 
@@ -302,8 +302,8 @@ def test_the_design_overrides_a_job_value(valued_steps, minimal_design, mock_pdk
 def test_a_command_line_override_beats_a_job_value(
     valued_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_two_job_document("for left", "for right"))
 
@@ -322,8 +322,8 @@ def test_a_command_line_override_beats_a_job_value(
 
 @mock_variables([flow_module, step_module])
 def test_a_job_cannot_switch_its_own_gate_on(valued_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -357,9 +357,9 @@ def test_a_job_cannot_switch_its_own_gate_on(valued_steps, minimal_design, mock_
 def test_a_document_value_is_refused_over_a_resolved_configuration(
     valued_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     resolved = Workflow(
         FlowSpec.model_validate(_one_job_document()),
@@ -381,9 +381,9 @@ def test_a_document_value_is_refused_over_a_resolved_configuration(
 def test_a_job_value_is_refused_over_a_resolved_configuration(
     valued_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     resolved = Workflow(
         FlowSpec.model_validate(_one_job_document()),
@@ -421,7 +421,7 @@ def test_a_job_value_is_refused_over_a_resolved_configuration(
     ],
 )
 def test_a_with_block_may_not_select_a_tool(document):
-    from librelane.flows.spec import FlowSpec, FlowSpecError
+    from librelane.engine.spec import FlowSpec, FlowSpecError
 
     # The provider selection fixes the step set, and is therefore read out of
     # the raw sources before a configuration exists to read it from. A 'with'

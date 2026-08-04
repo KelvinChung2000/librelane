@@ -20,7 +20,7 @@ from typing import Annotated
 import typer
 
 from librelane.cli._app import make_group
-from librelane.flows.spec_schema import workflow_document_schema
+from librelane.engine.spec_schema import workflow_document_schema
 
 
 cli = make_group(help="Author LibreLane workflow documents.")

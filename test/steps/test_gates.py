@@ -22,7 +22,6 @@ metrics is read, and what is on disk by the time it raises.
 """
 
 from decimal import Decimal
-from typing import Optional
 
 import pytest
 
@@ -55,7 +54,7 @@ def _potato_step(gates, **produced):
                 True,
                 description="Whether burnt potatoes end the meal.",
             )
-            BURNT_POTATO_THRESHOLD: Optional[Decimal] = variable(
+            BURNT_POTATO_THRESHOLD: Decimal | None = variable(
                 None,
                 description="How many burnt potatoes are tolerable.",
             )
@@ -332,7 +331,7 @@ def _timing_step(gates, **produced):
                 ["*"],
                 description="Corners every violation type is checked at.",
             )
-            BURN_VIOLATION_CORNERS: Optional[list[str]] = variable(
+            BURN_VIOLATION_CORNERS: list[str] | None = variable(
                 None,
                 description="Corners burn violations are checked at.",
             )

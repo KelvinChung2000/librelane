@@ -100,7 +100,7 @@ class CompositeStep(Step):
             step = StepClass(
                 self.config,
                 state,
-                _no_revalidate_conf=True,
+                _config_mode="trusted",
                 # The logging layer keys a running step on its id: the loguru
                 # filter behind step.log, LiveLog's registry, the progress
                 # row. A child carries its own class id, so two jobs running

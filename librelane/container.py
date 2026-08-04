@@ -22,7 +22,7 @@ import shlex
 import pathlib
 import subprocess
 from importlib.resources import files
-from typing import NoReturn, Optional, Union
+from typing import NoReturn
 from collections.abc import Sequence
 
 import httpx
@@ -135,7 +135,7 @@ def ensure_image(ce_path: str, image: str) -> bool:
 dos_path_sep = re.compile(r"\\")
 
 
-def sanitize_path(path: Union[str, os.PathLike]) -> tuple[str, str]:
+def sanitize_path(path: str | os.PathLike) -> tuple[str, str]:
     """
     Returns
     -------
@@ -156,7 +156,7 @@ def sanitize_path(path: Union[str, os.PathLike]) -> tuple[str, str]:
     return (abspath, mountable_path)
 
 
-def container_version_error(input: str, against: str) -> Optional[str]:
+def container_version_error(input: str, against: str) -> str | None:
     if input == "UNKNOWN":
         return (
             "Could not determine version for %s. You may encounter unexpected issues."
@@ -175,10 +175,10 @@ def ubuntu_version_at_least(current: str, minimum: str) -> bool:
 def run_in_container(
     image: str,
     args: Sequence[str],
-    pdk_root: Optional[str] = None,
-    pdk: Optional[str] = None,
-    scl: Optional[str] = None,
-    other_mounts: Optional[Sequence[str]] = None,
+    pdk_root: str | None = None,
+    pdk: str | None = None,
+    scl: str | None = None,
+    other_mounts: Sequence[str] | None = None,
     tty: bool = False,
 ) -> NoReturn:
     # If imported at the top level, would interfere with Conda where Volare

@@ -29,7 +29,6 @@ from math import inf
 from typing import (
     ClassVar,
     Literal,
-    Optional,
     Protocol,
     runtime_checkable,
 )
@@ -241,15 +240,6 @@ def old_to_new_tracks(old_tracks: str) -> str:
     return final_str
 
 
-def pdn_macro_migrator(x):
-    if not isinstance(x, str):
-        return x
-    if "," in x:
-        return [el.strip() for el in x.split(",")]
-    else:
-        return [x.strip()]
-
-
 DesignFormat(
     "odb",
     "odb",
@@ -281,12 +271,12 @@ class CheckSDCFiles(Step):
     outputs = []
 
     class Config(Step.Config):
-        PNR_SDC_FILE: Optional[Path] = variable(
+        PNR_SDC_FILE: Path | None = variable(
             None,
             description="Specifies the SDC file used during all implementation (PnR) steps",
         )
 
-        SIGNOFF_SDC_FILE: Optional[Path] = variable(
+        SIGNOFF_SDC_FILE: Path | None = variable(
             None,
             description="Specifies the SDC file for STA during signoff",
         )
@@ -332,7 +322,7 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
     )
 
     class Config(Step.Config):
-        PNR_CORNERS: Optional[list[str]] = variable(
+        PNR_CORNERS: list[str] | None = variable(
             None,
             description="A list of fully-qualified IPVT corners to use during PnR. If unspecified, the value for `STA_CORNERS` from the PDK will be used.",
             pdk=True,
@@ -343,7 +333,7 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
             description="If set to true, set_rc commands are echoed. Quite noisy, but may be useful for debugging.",
         )
 
-        LAYERS_RC: Optional[dict[str, dict[str, dict[str, Decimal]]]] = variable(
+        LAYERS_RC: dict[str, dict[str, dict[str, Decimal]]] | None = variable(
             None,
             description="Used during PNR steps, Specific custom resistance and capacitance values for metal layers."
             + " For each IPVT corner, a mapping for each metal layer is provided."
@@ -354,7 +344,7 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
             pdk=True,
         )
 
-        VIAS_R: Optional[dict[str, dict[str, dict[str, Decimal]]]] = variable(
+        VIAS_R: dict[str, dict[str, dict[str, Decimal]]] | None = variable(
             None,
             description="Used during PNR steps, Specific custom resistance values for via layers."
             + " For each IPVT corner, a mapping for each via layer is provided."
@@ -365,7 +355,7 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
             pdk=True,
         )
 
-        SIGNAL_WIRE_RC_LAYERS: Optional[list[str]] = variable(
+        SIGNAL_WIRE_RC_LAYERS: list[str] | None = variable(
             None,
             description="Sets estimated signal wire RC values to the average of these layers'. If you provide more than two, the averages are grouped by preferred routing direction and you must provide at least one layer for each routing direction.",
             pdk=True,
@@ -375,7 +365,7 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
             ],
         )
 
-        CLOCK_WIRE_RC_LAYERS: Optional[list[str]] = variable(
+        CLOCK_WIRE_RC_LAYERS: list[str] | None = variable(
             None,
             description="Sets estimated clock wire RC values to the average of these layers'. If you provide more than two, the averages are grouped by preferred routing direction and you must provide at least one layer for each routing direction.",
             pdk=True,
@@ -385,27 +375,24 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
         PDN_CONNECT_MACROS_TO_GRID: bool = variable(
             True,
             description="Enables the connection of macros to the top level power grid.",
-            deprecated_names=["FP_PDN_ENABLE_MACROS_GRID"],
         )
 
-        PDN_MACRO_CONNECTIONS: Optional[list[str]] = variable(
+        PDN_MACRO_CONNECTIONS: list[str] | None = variable(
             None,
             description="Specifies explicit power connections of internal macros to the top level power grid, in the format: regex matching macro instance names, power domain vdd and ground net names, and macro vdd and ground pin names `<instance_name_rx> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>`.",
-            deprecated_names=[("FP_PDN_MACRO_HOOKS", pdn_macro_migrator)],
         )
 
         PDN_ENABLE_GLOBAL_CONNECTIONS: bool = variable(
             True,
             description="Enables the creation of global connections in PDN generation.",
-            deprecated_names=["FP_PDN_ENABLE_GLOBAL_CONNECTIONS"],
         )
 
-        PNR_SDC_FILE: Optional[Path] = variable(
+        PNR_SDC_FILE: Path | None = variable(
             None,
             description="Specifies the SDC file used during all implementation (PnR) steps",
         )
 
-        STA_EXTRA_CORNER_TCL_FILE: Optional[Path] = variable(
+        STA_EXTRA_CORNER_TCL_FILE: Path | None = variable(
             None,
             description="Experimental: specifies a additional configuration .tcl file to be called during (PnR) steps.",
         )
@@ -415,10 +402,9 @@ class OpenROADStep(OpenROADAlertMixin, TclStep):
             description="Cull duplicate IPVT corners during PNR, i.e. corners that share the same set of lib files and values for LAYERS_RC and VIAS_R as another corner are not considered outside of STA.",
         )
 
-        OPENROAD_THREADS: Optional[int] = variable(
+        OPENROAD_THREADS: int | None = variable(
             None,
             description="The number of threads OpenROAD may use. If unset, this will be equal to the machine's thread count by default.",
-            deprecated_names=["DRT_THREADS", "ROUTING_CORES"],
         )
 
     config: Config

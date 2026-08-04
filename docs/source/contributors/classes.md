@@ -39,8 +39,8 @@ a maximum of **one** public modifier adhering to these properties:
   * An **internal** part that is freely subclassable, however, it cannot be
     called from outside the public part.
 
-For {py:class}`librelane.flows.Flow`, for example, the public and internal parts
-are {py:meth}`librelane.flows.Flow.start` and {py:meth}`librelane.flows.Flow.run`
+For {py:class}`librelane.engine.Flow`, for example, the public and internal parts
+are {py:meth}`librelane.engine.Flow.start` and {py:meth}`librelane.engine.Flow.run`
 respectively.
 
 ## Access Control

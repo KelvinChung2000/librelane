@@ -24,8 +24,15 @@ derives from them (``JobResolutionError``, ``JobContractError``) while
 while it is still partway through its own module body. ``common`` sits below
 both, so the dependency runs one way only.
 
-They are re-exported from :mod:`librelane.flows` and
-:mod:`librelane.flows.flow`, which remain their documented import sites.
+They are re-exported from :mod:`librelane.engine` and
+:mod:`librelane.engine.flow`, which remain their documented import sites.
+
+:class:`FlowSpecError` is here for the same reason one level down:
+:mod:`librelane.engine.spec_include` resolves a document's ``include`` list
+*before* a :class:`librelane.engine.spec.FlowSpec` exists to be validated, so
+``spec`` imports it rather than the other way round, and neither can own the
+error both raise. It is re-exported from :mod:`librelane.engine.spec`, which
+remains its documented import site.
 """
 
 
@@ -47,6 +54,16 @@ class FlowException(FlowError):
     * Invalid inputs
     * Mis-use of class interfaces of the :class:`Flow`
     * Other unexpected failures
+    """
+
+    pass
+
+
+class FlowSpecError(FlowError):
+    """
+    Raised when a workflow document is malformed. Every instance names the
+    offending job or key and the legal alternatives, and is raised before a run
+    directory is created.
     """
 
     pass

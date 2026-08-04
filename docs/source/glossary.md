@@ -3,6 +3,15 @@
 ```{glossary}
 :sorted:
 
+[ABC](https://github.com/berkeley-abc/abc)
+
+    A system for sequential logic synthesis and formal verification from the
+    University of California, Berkeley.
+
+    {term}`Yosys` calls ABC to do fine-grained logic optimization and to map
+    the result onto the standard cells of the target {term}`PDK`. LibreLane's
+    synthesis strategies are the scripts handed to it.
+
 IPVT
 
     Short for Interconnect, Process, Voltage, and Temperature, the four

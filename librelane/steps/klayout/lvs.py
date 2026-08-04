@@ -20,7 +20,6 @@ import os
 import pathlib
 from os.path import abspath
 from tempfile import NamedTemporaryFile
-from typing import Optional
 
 from librelane.steps.step import ViewsUpdate, MetricsUpdate, MetricGate, Step
 
@@ -74,16 +73,15 @@ class LVS(KLayoutStep):
         ERROR_ON_LVS_ERROR: bool = variable(
             True,
             description="Checks for LVS errors after the selected LVS tool is executed. If any exist, it raises an error at the end of the flow.",
-            deprecated_names=["QUIT_ON_LVS_ERROR"],
         )
 
-        KLAYOUT_LVS_SCRIPT: Optional[Path] = variable(
+        KLAYOUT_LVS_SCRIPT: Path | None = variable(
             None,
             description="A path to KLayout LVS script.",
             pdk=True,
         )
 
-        KLAYOUT_LVS_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
+        KLAYOUT_LVS_OPTIONS: dict[str, int | bool | str] | None = variable(
             None,
             description="Options passed directly to the KLayout LVS script. They vary from one PDK to another.",
             pdk=True,

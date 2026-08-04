@@ -18,7 +18,7 @@ from math import isfinite
 from decimal import Decimal
 from weakref import finalize
 from collections import UserString
-from typing import Annotated, Any, Union
+from typing import Annotated, Any
 
 
 def is_string(obj: Any) -> bool:
@@ -41,7 +41,7 @@ def is_string_like(obj: Any) -> bool:
     return is_string(obj) or isinstance(obj, os.PathLike)
 
 
-AnyPath = Union[str, os.PathLike]
+AnyPath = str | os.PathLike
 
 #: A path that passes :func:`validate_path` but will fail to open.
 #:
@@ -113,7 +113,7 @@ def rel_if_child(
     return str(my_abspath)
 
 
-Number = Union[int, float, Decimal]
+Number = int | float | Decimal
 
 
 def is_number(obj: Any) -> bool:

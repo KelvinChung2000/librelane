@@ -64,15 +64,6 @@ def test_openroad_thread_count_is_configurable(mock_config):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([step])
-def test_drt_threads_still_selects_the_thread_count(mock_config):
-    """DRT_THREADS is deprecated in favour of the global variable."""
-    argv = _threaded_step(mock_config, DRT_THREADS=6)
-
-    assert argv[argv.index("-threads") + 1] == "6"
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
 def test_threads_precede_the_script(mock_config):
     """-threads is an OpenROAD option, so it must come before the script path."""
     argv = _threaded_step(mock_config)
@@ -263,7 +254,7 @@ def test_rmp_is_off_by_default_in_classic():
     """RMP is experimental and rewrites the netlist every later step works on,
     so the Classic document has to ship it gated off. Read off the document
     since phase 5 deleted the ``Classic`` class it used to be read off."""
-    from librelane.flows import Flow
+    from librelane.engine import Flow
 
     classic = Flow.factory.get("Classic")
 

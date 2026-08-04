@@ -10,7 +10,7 @@ a test session that keeps going.
 ``test/cli/test_entry_points.py`` invokes the CLI with ``--log-level ERROR
 --condensed``, so without a restoring fixture every later test in the session saw
 ``show_progress_bar=False``. That silently disabled the Rich bar and made
-``test/flows/test_progress_bar.py`` assert against an empty console.
+``test/engine/test_progress_bar.py`` assert against an empty console.
 
 Both tests below are deliberately identical: each asserts the state is pristine
 and then dirties all four. Whichever pytest happens to run second fails if the

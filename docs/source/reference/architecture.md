@@ -17,7 +17,7 @@ command-line API.
 
 The module consists of four submodules:
 
-* {mod}`librelane.flows`
+* {mod}`librelane.engine`
 * {mod}`librelane.steps`
 * {mod}`librelane.config`
 * {mod}`librelane.state`
@@ -87,7 +87,7 @@ LibreLane architecture.
 Flows are scripts that incorporate multiple `Step`s to achieve a certain
 function.
 
-The {class}`librelane.flows.Flow` class is an
+The {class}`librelane.engine.Flow` class is an
 [abstract base class](https://docs.python.org/3/glossary.html#term-abstract-base-class)
 from which all other flows inherit.
 
@@ -95,7 +95,7 @@ from which all other flows inherit.
 
 The flow LibreLane ships is not written in Python at all. It is a **workflow
 document**: a YAML file declaring a graph of named **jobs** and the edges
-between them. {class}`librelane.flows.engine.Workflow` is the one concrete
+between them. {class}`librelane.engine.engine.Workflow` is the one concrete
 `Flow` in the codebase, and running a document means handing it to that class.
 
 Within a job, steps run in sequence, sharing one configuration object and

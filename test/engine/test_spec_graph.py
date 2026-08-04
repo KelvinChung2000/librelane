@@ -15,7 +15,7 @@ import graphlib
 
 import pytest
 
-from librelane.flows.spec_graph import (
+from librelane.engine.spec_graph import (
     ancestors,
     collapse,
     descendants,

@@ -9,7 +9,6 @@ from librelane.steps.openroad.base import (
     OpenROADStep,
     SupportsOpenROADAlerts,
     old_to_new_tracks,
-    pdn_macro_migrator,
 )
 from librelane.steps.openroad.sta import (
     STAMidPNR,

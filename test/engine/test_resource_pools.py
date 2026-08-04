@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Named resource pools: :class:`librelane.flows.resources.ResourcePools` itself,
+Named resource pools: :class:`librelane.engine.resources.ResourcePools` itself,
 all-or-nothing and blocking, and the engine's three admission points --
 ordinary jobs and sweep passes admitted with a non-blocking check on the
 scheduling thread, loop members admitted with a blocking one on a worker
@@ -31,7 +31,7 @@ Fake steps throughout, no real tools -- the same style ``test_engine.py``,
 
 import pytest
 
-from librelane.flows import flow as flow_module
+from librelane.engine import flow as flow_module
 from librelane.steps import step as step_module
 
 pytestmark = pytest.mark.all
@@ -49,7 +49,7 @@ def _int_var(name: str, default: int) -> dict:
 
 
 def test_try_acquire_is_all_or_nothing_across_two_pools():
-    from librelane.flows.resources import ResourcePools
+    from librelane.engine.resources import ResourcePools
 
     pools = ResourcePools({"a": 1, "b": 1})
     assert pools.try_acquire(["a"]) is True
@@ -61,7 +61,7 @@ def test_try_acquire_is_all_or_nothing_across_two_pools():
 
 
 def test_try_acquire_refuses_without_blocking_when_full():
-    from librelane.flows.resources import ResourcePools
+    from librelane.engine.resources import ResourcePools
 
     pools = ResourcePools({"a": 1})
     assert pools.try_acquire(["a"]) is True
@@ -72,7 +72,7 @@ def test_try_acquire_refuses_without_blocking_when_full():
 def test_acquire_blocks_until_release():
     import threading
 
-    from librelane.flows.resources import ResourcePools
+    from librelane.engine.resources import ResourcePools
 
     pools = ResourcePools({"a": 1})
     assert pools.try_acquire(["a"]) is True  # the main thread holds the slot
@@ -99,7 +99,7 @@ def test_acquire_blocks_until_release():
 def test_release_wakes_a_blocked_waiter():
     import threading
 
-    from librelane.flows.resources import ResourcePools
+    from librelane.engine.resources import ResourcePools
 
     pools = ResourcePools({"a": 1})
     assert pools.try_acquire(["a"]) is True
@@ -137,7 +137,7 @@ def test_release_wakes_a_blocked_waiter():
 def test_empty_names_never_touches_the_lock():
     import threading
 
-    from librelane.flows.resources import ResourcePools
+    from librelane.engine.resources import ResourcePools
 
     pools = ResourcePools({"a": 1})
     holder_ready = threading.Event()
@@ -202,8 +202,8 @@ def test_a_one_seat_pool_serializes_two_enabled_jobs(minimal_design, mock_pdk):
     import threading
     import time
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     lock = threading.Lock()
@@ -247,8 +247,8 @@ def test_capacity_from_a_configuration_variable_is_resolved(minimal_design, mock
     import threading
     import time
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     lock = threading.Lock()
@@ -291,9 +291,9 @@ def test_capacity_from_a_configuration_variable_is_resolved(minimal_design, mock
 def test_a_variable_capacity_below_one_names_the_pool_variable_and_value(
     minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     @Step.factory.register()
@@ -327,9 +327,9 @@ def test_a_variable_capacity_below_one_names_the_pool_variable_and_value(
 
 @mock_variables([flow_module, step_module])
 def test_a_failing_job_releases_its_slot_for_the_next(minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
     from librelane.steps.step.exceptions import StepError
 
@@ -385,8 +385,8 @@ def test_a_two_seat_pool_runs_a_five_point_sweep_two_at_a_time(
     import time
 
     from librelane.config import variable
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     lock = threading.Lock()
@@ -481,9 +481,9 @@ def test_c1_a_ring_and_a_job_sharing_a_pool_on_a_one_worker_executor_does_not_de
     import time
 
     from librelane.common import ContextPropagatingThreadPoolExecutor, get_tpe, set_tpe
-    from librelane.flows.engine import Workflow
-    from librelane.flows.net import Net
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.net import Net
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     @Step.factory.register()
@@ -612,8 +612,8 @@ def test_the_engine_never_submits_more_jobs_than_it_has_workers_for(
     import time
 
     from librelane.common import get_tpe
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     @Step.factory.register()
@@ -685,8 +685,8 @@ def test_i1_a_parked_job_is_admitted_before_a_multi_pass_ring_s_future_resolves(
     import threading
     import time
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     calls: list[str] = []

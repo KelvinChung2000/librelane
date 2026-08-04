@@ -16,7 +16,7 @@ The job taxonomy.
 
 Job boundaries were derived from the 23 distinct ``RUN_*`` variables the
 ``Classic`` flow class used to gate its steps with. (The class is gone;
-``librelane/flows/classic.yaml`` is what ships those variables now, one for
+``librelane/share/classic.yaml`` is what ships those variables now, one for
 one.) Each is a place where users already demanded the ability to turn one
 phase off independently, which makes it a place where they would plausibly want
 to change tools or re-enter the flow.

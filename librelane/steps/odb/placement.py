@@ -20,7 +20,7 @@ from importlib.resources import files
 import os
 import shutil
 import pathlib
-from typing import Literal, Optional
+from typing import Literal
 
 from librelane.common import Path
 from librelane.config import Instance, Macro, variable
@@ -53,7 +53,7 @@ class ManualMacroPlacement(OdbpyStep):
     name = "Manual Macro Placement"
 
     class Config(Step.Config):
-        MACRO_PLACEMENT_CFG: Optional[Path] = variable(
+        MACRO_PLACEMENT_CFG: Path | None = variable(
             None,
             description="Path to an optional override for instance placement instead of the `MACROS` object for compatibility with LibreLane 1. If both are `None`, this step is skipped.",
         )
@@ -125,10 +125,9 @@ class CustomIOPlacement(OdbpyStep):
     long_name = "Custom I/O Pin Placement Script"
 
     class Config(IoLayerConfig, OdbpyStep.Config):
-        IO_PIN_ORDER_CFG: Optional[Path] = variable(
+        IO_PIN_ORDER_CFG: Path | None = variable(
             None,
             description="Path to a custom pin configuration file.",
-            deprecated_names=["FP_PIN_ORDER_CFG"],
         )
 
         ERRORS_ON_UNMATCHED_IO: Literal[
@@ -136,7 +135,6 @@ class CustomIOPlacement(OdbpyStep):
         ] = variable(
             "unmatched_design",
             description="Controls whether to emit an error in: no situation, when pins exist in the design that do not exist in the config file, when pins exist in the config file that do not exist in the design, and both respectively. `both` is recommended, as the default is only for backwards compatibility with LibreLane 1.",
-            deprecated_names=[("QUIT_ON_UNMATCHED_IO", _migrate_unmatched_io)],
         )
 
     config: Config
@@ -200,7 +198,7 @@ class ManualGlobalPlacement(OdbpyStep):
     name = "Manual Global Placement"
 
     class Config(OdbpyStep.Config):
-        MANUAL_GLOBAL_PLACEMENTS: Optional[dict[str, Instance]] = variable(
+        MANUAL_GLOBAL_PLACEMENTS: dict[str, Instance] | None = variable(
             None,
             description="A dictionary of instances to their global (non-legalized and unfixed) placement location.",
         )

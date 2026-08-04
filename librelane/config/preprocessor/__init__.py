@@ -1,38 +1,36 @@
 # Copyright 2026 LibreLane Contributors
-from types import SimpleNamespace
 from typing import Any
 from collections.abc import Mapping
 
 from librelane.config.preprocessor.flist import FLIST_KEY, expand_flists
-from librelane.config.preprocessor.graph import SymbolCycleError, resolve_symbols
-from librelane.config.preprocessor.legacy import Expr
+
+
+# ``Keys`` and ``PROCESS_INFO_ALLOWLIST`` are defined in ``legacy`` and imported
+# here rather than the other way round, and not because they belong there:
+# ``legacy.process_string`` reads ``Keys`` and this module already imports that
+# module, so a definition here would have to be duplicated there to avoid an
+# import cycle -- which is what it used to be, two identical copies that nothing
+# kept in step.
+#
+# ``process_string`` is re-exported rather than wrapped. The wrapper this
+# replaces did nothing but forward, behind a function-local import guarding
+# against a cycle that does not exist: ``legacy`` imports nothing from this
+# package.
+from librelane.config.preprocessor.legacy import (
+    PROCESS_INFO_ALLOWLIST,
+    SPECIAL_KEYS,
+    Expr,
+    Keys,
+    process_string,
+)
 from librelane.config.preprocessor.overlay import apply_overlays
 from librelane.config.preprocessor.resolve import (
     GlobMatch,
+    SymbolCycleError,
     parse_directive,
     resolve_directive,
+    resolve_symbols,
 )
-
-
-Keys = SimpleNamespace(
-    pdk_root="PDK_ROOT",
-    pdk="PDK",
-    pdkpath="PDKPATH",
-    scl="STD_CELL_LIBRARY",
-    pad="PAD_CELL_LIBRARY",
-    design_dir="DESIGN_DIR",
-)
-PROCESS_INFO_ALLOWLIST = [Keys.pdk, Keys.scl, Keys.pad, f"{Keys.scl}_OPT"]
-
-
-def process_string(value: str, symbols: Mapping[str, Any]) -> Any:
-    # Keep the directly-callable compatibility facade's historical exception
-    # wording and zero-glob fallback. The staged loader uses the AST resolver.
-    from librelane.config.preprocessor.legacy import (
-        process_string as legacy_process_string,
-    )
-
-    return legacy_process_string(value, symbols)
 
 
 def process_config_dict(
@@ -97,6 +95,7 @@ __all__ = [
     "FLIST_KEY",
     "GlobMatch",
     "Keys",
+    "SPECIAL_KEYS",
     "SymbolCycleError",
     "apply_overlays",
     "expand_flists",
@@ -104,5 +103,9 @@ __all__ = [
     "preprocess_dict",
     "process_config_dict",
     "process_string",
+    # With 'GlobMatch' and 'parse_directive' above it: librelane.state.state
+    # imports all three together, from this package, to resolve a directive in
+    # a state file.
+    "resolve_directive",
     "resolve_symbols",
 ]

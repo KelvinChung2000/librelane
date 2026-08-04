@@ -26,7 +26,6 @@ from enum import Enum
 from glob import glob
 from typing import (
     Literal,
-    Optional,
     TypeAlias,
 )
 
@@ -53,7 +52,6 @@ from librelane.steps.step import (
 from librelane.steps.openroad.base import (
     OpenROADStep,
     old_to_new_tracks,
-    pdn_macro_migrator,
 )
 
 
@@ -70,7 +68,7 @@ class Floorplan(OpenROADStep):
     inputs = [DesignFormat.NETLIST]
 
     class Config(OpenROADStep.Config):
-        FP_FLIP_SITES: Optional[list[str]] = variable(
+        FP_FLIP_SITES: list[str] | None = variable(
             None,
             description="Flip these sites vertically. Useful in niche alignment scenarios where single-height cells have ground at the south side and double-height cells have power at the south side, causing a short. In that situation, flipping the sites for single-height cells resolves the issue.",
             pdk=True,
@@ -98,7 +96,7 @@ class Floorplan(OpenROADStep):
             units="%",
         )
 
-        FP_OBSTRUCTIONS: Optional[list[tuple[Decimal, Decimal, Decimal, Decimal]]] = (
+        FP_OBSTRUCTIONS: list[tuple[Decimal, Decimal, Decimal, Decimal]] | None = (
             variable(
                 None,
                 description="Obstructions applied at floorplanning stage. Placement sites are never generated at these locations, which guarantees that it will remain empty throughout the entire flow.",
@@ -106,15 +104,15 @@ class Floorplan(OpenROADStep):
             )
         )
 
-        PL_SOFT_OBSTRUCTIONS: Optional[
-            list[tuple[Decimal, Decimal, Decimal, Decimal]]
-        ] = variable(
-            None,
-            description="Soft placement blockages applied at the floorplanning stage. Areas that are soft-blocked will not be used by the initial placer, however, later phases such as buffer insertion or clock tree synthesis are still allowed to place cells in this area.",
-            units="µm",
+        PL_SOFT_OBSTRUCTIONS: list[tuple[Decimal, Decimal, Decimal, Decimal]] | None = (
+            variable(
+                None,
+                description="Soft placement blockages applied at the floorplanning stage. Areas that are soft-blocked will not be used by the initial placer, however, later phases such as buffer insertion or clock tree synthesis are still allowed to place cells in this area.",
+                units="µm",
+            )
         )
 
-        CORE_AREA: Optional[tuple[Decimal, Decimal, Decimal, Decimal]] = variable(
+        CORE_AREA: tuple[Decimal, Decimal, Decimal, Decimal] | None = variable(
             None,
             description="Specifies a core area (i.e. die area minus margins) to be used in floorplanning."
             + " It must be paired with `DIE_AREA`.",
@@ -145,7 +143,7 @@ class Floorplan(OpenROADStep):
             + " If `DIE_AREA` are `CORE_AREA` are set, this variable has no effect.",
         )
 
-        EXTRA_SITES: Optional[list[str]] = variable(
+        EXTRA_SITES: list[str] | None = variable(
             None,
             description="Explicitly specify sites other than `PLACE_SITE` to create rows for. If the alternate-site standard cells properly declare the `SITE` property, you do not need to provide this explicitly.",
             pdk=True,
@@ -201,47 +199,44 @@ class PadRing(OpenROADStep):
         PDN_CONNECT_MACROS_TO_GRID: bool = variable(
             True,
             description="Enables the connection of macros to the top level power grid.",
-            deprecated_names=["FP_PDN_ENABLE_MACROS_GRID"],
         )
 
-        PDN_MACRO_CONNECTIONS: Optional[list[str]] = variable(
+        PDN_MACRO_CONNECTIONS: list[str] | None = variable(
             None,
             description="Specifies explicit power connections of internal macros to the top level power grid, in the format: regex matching macro instance names, power domain vdd and ground net names, and macro vdd and ground pin names `<instance_name_rx> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>`.",
-            deprecated_names=[("FP_PDN_MACRO_HOOKS", pdn_macro_migrator)],
         )
 
         PDN_ENABLE_GLOBAL_CONNECTIONS: bool = variable(
             True,
             description="Enables the creation of global connections in PDN generation.",
-            deprecated_names=["FP_PDN_ENABLE_GLOBAL_CONNECTIONS"],
         )
 
-        PAD_CFG: Optional[Path] = variable(
+        PAD_CFG: Path | None = variable(
             None,
             description="A custom pad configuration file. If not provided, the default pad config will be used.",
         )
 
-        PAD_SOUTH: Optional[list[str]] = variable(
+        PAD_SOUTH: list[str] | None = variable(
             None,
             description="The pad instance names for the south pad row.",
         )
 
-        PAD_EAST: Optional[list[str]] = variable(
+        PAD_EAST: list[str] | None = variable(
             None,
             description="The pad instance names for the east pad row.",
         )
 
-        PAD_NORTH: Optional[list[str]] = variable(
+        PAD_NORTH: list[str] | None = variable(
             None,
             description="The pad instance names for the north pad row.",
         )
 
-        PAD_WEST: Optional[list[str]] = variable(
+        PAD_WEST: list[str] | None = variable(
             None,
             description="The pad instance names for the west pad row.",
         )
 
-        PAD_SPACING_MULTIPLE: Optional[Decimal] = variable(
+        PAD_SPACING_MULTIPLE: Decimal | None = variable(
             None,
             description="The gap between two pad cells is rounded down to a multiple of this value. If unset, the pad site width is used, which is the narrowest filler cell that can occupy the gap. The space left at the ends of each side must be divisible by the pad site width either way.",
             units="µm",
@@ -283,7 +278,7 @@ class IOPlacement(OpenROADStep):
     name = "I/O Placement"
 
     class Config(IoLayerConfig, OpenROADStep.Config):
-        IO_PIN_CORNER_AVOIDANCE: Optional[Decimal] = variable(
+        IO_PIN_CORNER_AVOIDANCE: Decimal | None = variable(
             None,
             description="The distance from each corner within which pin placement should be avoided.",
             units="µm",
@@ -292,11 +287,10 @@ class IOPlacement(OpenROADStep):
         IO_PIN_PLACEMENT_MODE: PPLMode = variable(
             "matching",
             description="Decides the mode of the random IO placement option.",
-            deprecated_names=["FP_PPL_MODE"],
             validator=_validate_io_ppl_mode,
         )
 
-        IO_PIN_MIN_DISTANCE: Optional[Decimal] = variable(
+        IO_PIN_MIN_DISTANCE: Decimal | None = variable(
             None,
             description="The minimum distance between two pins. The unit is microns or routing tracks, depending on whether IO_PIN_MIN_DISTANCE_IN_TRACKS is set. If unspecified by a PDK, OpenROAD will use the length of two routing tracks.",
             units="µm or routing tracks",
@@ -304,25 +298,24 @@ class IOPlacement(OpenROADStep):
             deprecated_names=["FP_IO_MIN_DISTANCE"],
         )
 
-        IO_PIN_MIN_DISTANCE_IN_TRACKS: Optional[bool] = variable(
+        IO_PIN_MIN_DISTANCE_IN_TRACKS: bool | None = variable(
             None,
             description="Setting this variable to true allows IO_PIN_MIN_DISTANCE to be set in number of tracks instead of microns.",
             pdk=True,
         )
 
-        IO_PIN_ORDER_CFG: Optional[Path] = variable(
+        IO_PIN_ORDER_CFG: Path | None = variable(
             None,
             description="Path to a custom pin configuration file.",
-            deprecated_names=["FP_PIN_ORDER_CFG"],
         )
 
-        IO_EXCLUDE_PIN_REGION: Optional[list[str]] = variable(
+        IO_EXCLUDE_PIN_REGION: list[str] | None = variable(
             None,
             description="List of regions where pins cannot be placed. The regions are strings in the format `{edge}:{interval}` where edge is `top|bottom|left|right` and the interval is either `*` to exclude the entire edge or `{begin}-{end}` to exclude a part of the edge, where `begin` and `end` are either absolute distance values or themselves `*` to denote the very start or end of an edge.",
             units="µm",
         )
 
-        FP_DEF_TEMPLATE: Optional[Path] = variable(
+        FP_DEF_TEMPLATE: Path | None = variable(
             None,
             description="Points to the DEF file to be used as a template.",
         )
@@ -356,7 +349,7 @@ class TapEndcapInsertion(OpenROADStep):
     name = "Tap/Decap Insertion"
 
     class Config(OpenROADStep.Config):
-        FP_TAPCELL_DIST: Optional[Decimal] = variable(
+        FP_TAPCELL_DIST: Decimal | None = variable(
             None,
             description="The distance between tap cell columns. Must be specified if WELLTAP_CELL is specified.",
             units="µm",
@@ -367,14 +360,12 @@ class TapEndcapInsertion(OpenROADStep):
             10,
             description="Specify the horizontal halo size around macros, within which standard cell rows are cut away.",
             units="µm",
-            deprecated_names=["FP_TAP_HORIZONTAL_HALO"],
         )
 
         FP_MACRO_VERTICAL_HALO: Decimal = variable(
             10,
             description="Specify the vertical halo size around macros, within which standard cell rows are cut away.",
             units="µm",
-            deprecated_names=["FP_TAP_VERTICAL_HALO"],
         )
 
     config: Config
@@ -448,10 +439,9 @@ class GeneratePDN(OpenROADStep):
         ERROR_ON_PDN_VIOLATIONS: bool = variable(
             True,
             description="Checks for unconnected nodes in the power grid. If any exists, an error is raised at the end of the flow.",
-            deprecated_names=["QUIT_ON_PDN_VIOLATIONS", "FP_PDN_CHECK_NODES"],
         )
 
-        PDN_CFG: Optional[Path] = variable(
+        PDN_CFG: Path | None = variable(
             None,
             description="A custom PDN configuration file. If not provided, the default PDN config will be used. May be supplied by the PDK, for PDKs whose power grid is better expressed as a script than as the `PDN_*` variables.",
             deprecated_names=["FP_PDN_CFG"],
@@ -464,14 +454,12 @@ class GeneratePDN(OpenROADStep):
             10,
             description="Specify the horizontal halo size around macros, within which standard cell rows are cut away.",
             units="µm",
-            deprecated_names=["FP_TAP_HORIZONTAL_HALO"],
         )
 
         FP_MACRO_VERTICAL_HALO: Decimal = variable(
             10,
             description="Specify the vertical halo size around macros, within which standard cell rows are cut away.",
             units="µm",
-            deprecated_names=["FP_TAP_VERTICAL_HALO"],
         )
 
     config: Config

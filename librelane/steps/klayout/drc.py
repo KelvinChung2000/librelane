@@ -21,7 +21,6 @@ import os
 import sys
 import pathlib
 from os.path import abspath
-from typing import Optional
 
 from librelane.steps.step import (
     MetricGate,
@@ -69,23 +68,22 @@ class DRC(KLayoutStep):
         ERROR_ON_KLAYOUT_DRC: bool = variable(
             True,
             description="Checks for DRC violations after KLayout DRC is executed and exits the flow if any was found.",
-            deprecated_names=["QUIT_ON_KLAYOUT_DRC"],
         )
 
-        KLAYOUT_DRC_RUNSET: Optional[Path] = variable(
+        KLAYOUT_DRC_RUNSET: Path | None = variable(
             None,
             description="A path to KLayout DRC runset.",
             pdk=True,
             deprecated_names=["KLAYOUT_DRC_TECH_SCRIPT"],
         )
 
-        KLAYOUT_DRC_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
+        KLAYOUT_DRC_OPTIONS: dict[str, int | bool | str] | None = variable(
             None,
             description="Options passed directly to the KLayout DRC runset. They vary from one PDK to another.",
             pdk=True,
         )
 
-        KLAYOUT_DRC_THREADS: Optional[int] = variable(
+        KLAYOUT_DRC_THREADS: int | None = variable(
             None,
             description="Specifies the number of threads to be used in KLayout DRC."
             + "If unset, this will be equal to your machine's thread count.",

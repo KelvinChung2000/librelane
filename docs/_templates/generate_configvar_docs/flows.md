@@ -18,7 +18,7 @@ common_pdk_vars
 
 
 If you're looking for documentation for the `Flow` Python classes themselves,
-check the API reference [here](./api/flows/index).
+check the API reference [here](./api/engine/index).
 
 ${"##"} Flows
 

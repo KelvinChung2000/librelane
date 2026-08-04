@@ -187,9 +187,17 @@ def generate_module_docs(app: Sphinx, conf: Config):
 
         templates = {k: env.get_template(f"{k}.md") for k in ["module"]}
         for module_name, build_path in generate_module_autodocs_conf:
-            rimraf(build_path)
-
             build_path_resolved = os.path.join(doc_root_dir, build_path)
+            # The *resolved* path. This used to clear the relative one, which
+            # sphinx-build (cwd 'docs/') resolved to 'docs/reference/api'
+            # rather than to 'docs/source/reference/api' -- a directory that
+            # does not exist, so rimraf swallowed FileNotFoundError and the
+            # tree was never cleared. Pages for deleted modules therefore
+            # survived every later build, and each one warned twice: autodoc
+            # failed to import the module that is gone, and the orphan page
+            # is in no toctree. Removing a module is rare enough that the
+            # stale page outlived whoever removed it.
+            rimraf(build_path_resolved)
             top_level_module = importlib.import_module(module_name)
 
             try:

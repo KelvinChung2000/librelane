@@ -13,7 +13,7 @@
 # limitations under the License.
 import pytest
 
-from librelane.flows.net import Arc, Net, NetError
+from librelane.engine.net import Arc, Net, NetError
 
 pytestmark = pytest.mark.all
 

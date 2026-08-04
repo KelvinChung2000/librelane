@@ -150,6 +150,30 @@ bibtex_default_style = "unsrt"
 generate_module_autodocs = [("librelane", "reference/api")]
 autodoc_typehints = "both"
 autodoc_member_order = "bysource"
+
+# The generated pages carry ``:imported-members:`` so that a module documents
+# what it re-exports -- ``librelane.engine.spec`` is ``FlowSpecError``'s
+# documented import site, and that is how it appears there. The same switch
+# picks up the names the model modules import *from pydantic* and documents
+# them as though they were LibreLane's, which is what these exclusions undo.
+#
+# They are pydantic's API and are documented by pydantic. Reproducing them here
+# says they are ours, and it does not even reproduce them correctly: their
+# docstrings link relatively into pydantic's own documentation tree
+# ("../concepts/fields.md" and five others), which resolves there and nowhere
+# in this build, and ``BaseModel`` additionally exposes
+# ``__pydantic_serializer__``/``__pydantic_validator__``, mocks until a model
+# is built. ``ConfigDict`` and ``ValidationError`` link nowhere and so warn
+# about nothing, but they are listed for the same reason as the rest.
+#
+# Only the *imported* names go. Every LibreLane class deriving from
+# ``BaseModel``, and every field it declares with ``Field``, is documented as
+# before -- no LibreLane symbol shares any of these names.
+autodoc_default_options = {
+    "exclude-members": (
+        "BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, model_validator"
+    ),
+}
 autosectionlabel_prefix_document = True
 
 # MyST

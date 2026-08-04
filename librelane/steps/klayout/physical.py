@@ -20,7 +20,6 @@ import os
 import sys
 import pathlib
 from os.path import abspath
-from typing import Optional
 
 from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step, StepException
 
@@ -44,7 +43,7 @@ class SealRing(KLayoutStep):
     outputs = [DesignFormat.GDS]
 
     class Config(KLayoutStep.Config):
-        KLAYOUT_SEALRING_SCRIPT: Optional[Path] = variable(
+        KLAYOUT_SEALRING_SCRIPT: Path | None = variable(
             None,
             description="A path to KLayout seal ring script.",
             pdk=True,
@@ -178,13 +177,13 @@ class Filler(KLayoutStep):
     outputs = [DesignFormat.GDS]
 
     class Config(KLayoutStep.Config):
-        KLAYOUT_FILLER_SCRIPT: Optional[Path] = variable(
+        KLAYOUT_FILLER_SCRIPT: Path | None = variable(
             None,
             description="A path to KLayout filler script.",
             pdk=True,
         )
 
-        KLAYOUT_FILLER_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
+        KLAYOUT_FILLER_OPTIONS: dict[str, int | bool | str] | None = variable(
             None,
             description="Options passed directly to the KLayout filler script. They vary from one PDK to another.",
             pdk=True,

@@ -30,10 +30,10 @@ import pytest
 
 import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
-from librelane.flows import flow as flow_module
-from librelane.flows.job import resolve_jobs
-from librelane.flows.predicates import config_terms
-from librelane.flows.selection_validation import (
+from librelane.engine import flow as flow_module
+from librelane.engine.job import resolve_jobs
+from librelane.engine.predicates import config_terms
+from librelane.engine.selection_validation import (
     SINK_JOIN,
     join_conflicts,
     lost_views,
@@ -45,7 +45,7 @@ from librelane.flows.selection_validation import (
 from librelane.jobs import JobResolutionError
 from librelane.steps import step as step_module
 
-from test.flows.test_documents import (
+from test.engine.test_documents import (
     _alternate_providers,
     _document,
     _shipped_documents,
@@ -370,13 +370,13 @@ def test_a_remedy_never_names_a_commercial_scaffold():
         """
         import librelane.steps  # noqa: F401  populates Step.factory
         import librelane.jobs.providers_vendor  # noqa: F401  the opt-in
-        from importlib.resources import files
-
-        from librelane.flows.job import resolve_jobs
-        from librelane.flows.predicates import config_terms
-        from librelane.flows.selection_validation import validate_selection
-        from librelane.flows.spec import load_flow_spec
-        from librelane.flows.spec_validation import validate_against_registry
+        
+        from librelane.engine.job import resolve_jobs
+        from librelane.engine.predicates import config_terms
+        from librelane.engine.spec_include import share_directory
+        from librelane.engine.selection_validation import validate_selection
+        from librelane.engine.spec import load_flow_spec
+        from librelane.engine.spec_validation import validate_against_registry
         from librelane.jobs import JobRegistry, JobResolutionError
 
         scaffolds = {"calibre", "icv", "pegasus"}
@@ -385,7 +385,7 @@ def test_a_remedy_never_names_a_commercial_scaffold():
             f"the opt-in did not take effect, so this proves nothing: {providers}"
         )
 
-        spec = load_flow_spec(str(files("librelane.flows").joinpath("classic.yaml")))
+        spec = load_flow_spec(str(share_directory().joinpath("classic.yaml")))
         validate_against_registry(spec)
         defaults = {declared.name: declared.default for declared in spec.config}
         enabled = {
@@ -632,7 +632,7 @@ def test_omitting_the_initial_views_is_the_same_call_as_passing_none(
     rather than over one of them.
 
     ``validate_selection`` grew a fourth parameter, and every caller that
-    predates it -- every embedder, and ``test/flows/test_documents.py`` -- keeps
+    predates it -- every embedder, and ``test/engine/test_documents.py`` -- keeps
     calling it with three. This pins that the parameter's absence and an empty
     set are the same question, so the eighteen verdicts in the table above are
     the same eighteen verdicts whether or not the argument is written.
@@ -687,7 +687,7 @@ def test_unrepeated_runtime_terms_finds_an_unrepeated_producer_term(counting_ste
     writes nothing when it does; 'consumer' does not repeat the term, so it is
     exposed to whatever state 'producer' passed through unchanged, silently.
     """
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -715,7 +715,7 @@ def test_unrepeated_runtime_terms_stays_silent_for_a_repeated_term(counting_step
     the exact term -- same operator, same literal -- so it inherits the
     producer's own disposition and sees a coherent story either way.
     """
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -738,7 +738,7 @@ def test_unrepeated_runtime_terms_stays_silent_for_a_repeated_term(counting_step
 def test_validate_selection_warns_for_an_unrepeated_runtime_term(
     caplog, counting_steps
 ):
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -842,7 +842,7 @@ def test_the_replay_reports_the_final_state_join_under_its_own_name(probe_job):
     document has one sink and so cannot exercise it; the probe document has two
     and declares no ``final``.
     """
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_PROBE_SPEC)
     jobs = resolve_jobs(spec, {"left": "beta"})
@@ -860,8 +860,8 @@ def test_the_document_alone_still_loads(probe_job, minimal_design, mock_pdk):
     The baseline the two tests below are measured against, and the thing that
     makes them about ``TOOLS`` rather than about a malformed document.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     workflow = Workflow(
         FlowSpec.model_validate(_PROBE_SPEC), minimal_design, **mock_pdk
@@ -883,8 +883,8 @@ def test_constructing_a_workflow_refuses_a_fatal_selection(
     validator directly -- which is the only way to show that the constructor
     reaches it at all.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     with pytest.raises(JobResolutionError) as refused:
         Workflow(
@@ -913,8 +913,8 @@ def test_constructing_a_workflow_accepts_the_same_selection_gated_off(
     no configuration to ask, and a check that ran earlier would have to refuse
     this.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     workflow = Workflow(
         FlowSpec.model_validate(_PROBE_SPEC),
@@ -940,8 +940,8 @@ def test_a_scoped_tools_selects_through_workflow_construction(
     ran ``alpha`` while ``--explain-variables``, which prints the resolved
     configuration, reported ``beta``.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     workflow = Workflow(
         FlowSpec.model_validate(_PROBE_SPEC),
@@ -965,8 +965,8 @@ def test_a_section_naming_another_pdk_selects_nothing(
     The other half: the mock tree's second PDK is a real one, so this pins that
     the section was matched and rejected rather than never looked at.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     workflow = Workflow(
         FlowSpec.model_validate(_PROBE_SPEC),
@@ -992,8 +992,8 @@ def test_a_scoped_tools_selects_under_the_pdks_default_scl(
     from the PDK's own configuration. This is the path where selection has to
     fetch the PDK rather than merely read a key.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     without_scl = {key: value for key, value in mock_pdk.items() if key != "scl"}
     workflow = Workflow(
@@ -1111,8 +1111,8 @@ def test_constructing_a_workflow_refuses_a_selection_that_drops_a_needed_view(
     The baseline for the test below, and the thing that must not change: a
     constructor told nothing about an initial state still refuses at load.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     with pytest.raises(JobResolutionError) as refused:
         Workflow(
@@ -1140,8 +1140,8 @@ def test_constructing_a_workflow_accepts_it_when_the_state_supplies_the_view(
     a state to reduce: ``librelane.cli.run.start_flow`` resolves the state
     first and hands the result here.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     workflow = Workflow(
         FlowSpec.model_validate(_VIEW_PROBE_SPEC),
@@ -1162,8 +1162,8 @@ def test_a_state_carrying_another_view_does_not_make_the_constructor_accept(
     boolean. An implementation that skipped the check whenever any state was
     present would pass the test above and accept this.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     with pytest.raises(JobResolutionError) as refused:
         Workflow(
@@ -1288,7 +1288,7 @@ def test_validate_selection_accepts_a_well_formed_ring(ring_probe_steps):
     correct, and the ring's own two members are not mistaken for a
     concurrency conflict of their own.
     """
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -1323,10 +1323,10 @@ def test_lost_views_attributes_a_ring_s_missing_requirement_to_the_gate(
     'member' is the one that actually requires json_h, but it has no entry of
     its own in the folded jobs -- :func:`_fold_rings` absorbed it into 'sta'
     -- so the refusal is reported against the gate, exactly as
-    :meth:`~librelane.flows.spec.FlowSpec.collapsed_edges` reports every
+    :meth:`~librelane.engine.spec.FlowSpec.collapsed_edges` reports every
     other fact about this ring under the gate's id.
     """
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -1369,7 +1369,7 @@ def test_join_conflicts_flags_a_real_conflict_against_a_ring(
     and must report against the gate's id, since that is the only id the
     folded jobs have for it.
     """
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {

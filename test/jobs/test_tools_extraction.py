@@ -368,7 +368,6 @@ def test_the_selection_and_the_loader_agree_on_a_scoped_tools(two_pdks, tmp_path
     what the resolved configuration -- which is what ``--explain-variables``
     prints -- ends up holding.
     """
-    from typing import Optional
 
     from librelane.config import Config, Variable
 
@@ -382,7 +381,7 @@ def test_the_selection_and_the_loader_agree_on_a_scoped_tools(two_pdks, tmp_path
         [
             Variable("DESIGN_NAME", str, description="x"),
             Variable("STD_CELL_LIBRARY", str, description="x", pdk=True),
-            Variable("TOOLS", Optional[dict[str, str]], description="x"),
+            Variable("TOOLS", dict[str, str] | None, description="x"),
         ],
         design_dir=str(tmp_path),
         pdk="alpha",

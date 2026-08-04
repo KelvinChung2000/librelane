@@ -367,7 +367,11 @@ def repr_type(t: type[Any], for_document: bool = False) -> str:  # pragma: no co
     optional = is_optional(t)
     some = unwrap_annotated(some_of(t))
 
-    if hasattr(some, "__name__"):  # Python 3.10+
+    # A PEP 604 union -- ``int | str``, a types.UnionType -- is the thing here
+    # without a ``__name__``; a class, a ``list[int]`` and even
+    # ``typing.Union[int, str]`` all have one. It renders through ``str``
+    # instead, which spells it the way it was written.
+    if hasattr(some, "__name__"):
         type_string = some.__name__
     else:
         type_string = str(some)
@@ -403,7 +407,7 @@ class Variable:
     """
     An object encapsulating metadata on an LibreLane configuration variable, which
     is used to name, document and validate values supplied to
-    :class:`librelane.steps.Step`\\s or :class:`librelane.flows.Flow`\\s.
+    :class:`librelane.steps.Step`\\s or :class:`librelane.engine.Flow`\\s.
 
     Values supplied for configuration variables are the primary interface by
     which users configure LibreLane flows.
@@ -970,6 +974,19 @@ class Variable:
         values_so_far: Mapping[str, Any] | None = None,
         permissive_typing: bool = False,
     ) -> tuple[str | None, Any]:
+        """
+        Reads one value out of a mapping and coerces it to this variable's
+        type.
+
+        No longer how a configuration is validated. Every layer of one --
+        the design's sources, a PDK's ``config.tcl``, a step's keyword
+        arguments -- goes through
+        :func:`librelane.config.validation.validate_mapping` and Pydantic, so
+        that a value is legal or not for reasons that do not depend on which
+        door it came in by. This and :meth:`__process` remain for
+        :meth:`Macro.from_state`, which coerces a state's views into a
+        ``Macro``'s fields and is not configuration at all.
+        """
         user_specified_key: str | None = None
         value: Any | None = None
 
@@ -1019,8 +1036,12 @@ class Variable:
         return hash((self.name, self.type, self.default))
 
     def __eq__(self, rhs: object) -> bool:
+        # As with 'GenericDict.__eq__': anything that is not a Variable is
+        # something this cannot answer about, which is what 'NotImplemented'
+        # says. Raising made 'variable == None' -- and every heterogeneous
+        # 'in' test over a list of variables -- an exception.
         if not isinstance(rhs, Variable):
-            raise NotImplementedError()
+            return NotImplemented
         return (
             self.name == rhs.name
             and self.type == rhs.type

@@ -1,0 +1,176 @@
+# Copyright 2026 LibreLane Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# The jobs the Classic-family documents share.
+#
+# Every job here is declared identically -- same steps or template, same 'if',
+# same 'needs' -- by classic.yaml, chip.yaml and vhdl_classic.yaml, and no job
+# outside this file is. What the three flows disagree about is their front end
+# and their finishing, and those they still write out themselves.
+#
+# This is not a base flow the three derive from, and there is still no
+# 'extends': nothing here filters or subtracts from another document, and no
+# document names another. It is a declaration none of them owns, merged into
+# each of them.
+#
+# It is also not a graph on its own. The three runs below are entered from jobs
+# the including document declares -- 'synthesis', 'macro_placement' and
+# 'post_gpl_checks' -- and left to jobs it declares, which is why a 'needs'
+# here can name a job this file does not. Whether the graph holds together is
+# checked once, on the merged document.
+jobs:
+  # Synthesis to floorplan.
+  pre_pnr_sta:
+    needs: [synthesis]
+    uses: pre_pnr_sta
+  floorplan:
+    needs: [pre_pnr_sta]
+    uses: floorplan
+  # Macro placement to the power grid.
+  tapcell_insertion:
+    needs: [macro_placement]
+    uses: tapcell_insertion
+    if: RUN_TAP_ENDCAP_INSERTION
+  power_grid:
+    needs: [tapcell_insertion]
+    uses: power_grid
+  # The repair after global placement through to the render: everything the
+  # three flows do between placement and their own signoff checks. The
+  # comments are Classic's, because this run is Classic's, unchanged, and
+  # neither of the other two ever disagreed with any of it.
+  post_gpl_repair:
+    needs: [post_gpl_checks]
+    uses: post_gpl_repair
+    if: RUN_POST_GPL_DESIGN_REPAIR
+  detailed_placement:
+    needs: [post_gpl_repair]
+    uses: detailed_placement
+  cts:
+    needs: [detailed_placement]
+    uses: cts
+    if: RUN_CTS
+  sta_mid_pnr_2:
+    needs: [cts]
+    steps: [OpenROAD.STAMidPNR]
+  post_cts_opt:
+    needs: [sta_mid_pnr_2]
+    uses: post_cts_opt
+    if: RUN_POST_CTS_RESIZER_TIMING
+  sta_mid_pnr_3:
+    needs: [post_cts_opt]
+    steps: [OpenROAD.STAMidPNR]
+  global_routing:
+    needs: [sta_mid_pnr_3]
+    uses: global_routing
+  post_grt_repair:
+    needs: [global_routing]
+    uses: post_grt_repair
+    if: RUN_POST_GRT_DESIGN_REPAIR
+  # The antenna_repair job's three steps, one job each. Splitting it is what
+  # lets a job-level 'if' say what the gating table said: the middle step
+  # carries the job's gate and its own, which is exactly the two-variable list
+  # the Python flow expanded for Odb.HeuristicDiodeInsertion.
+  diodes_on_ports:
+    needs: [post_grt_repair]
+    steps: [Odb.DiodesOnPorts]
+    if: RUN_ANTENNA_REPAIR
+  heuristic_diode_insertion:
+    needs: [diodes_on_ports]
+    steps: [Odb.HeuristicDiodeInsertion]
+    if: RUN_ANTENNA_REPAIR and RUN_HEURISTIC_DIODE_INSERTION
+  repair_antennas:
+    needs: [heuristic_diode_insertion]
+    steps: [OpenROAD.RepairAntennas]
+    if: RUN_ANTENNA_REPAIR
+  post_grt_opt:
+    needs: [repair_antennas]
+    uses: post_grt_opt
+    if: RUN_POST_GRT_RESIZER_TIMING
+  sta_mid_pnr_4:
+    needs: [post_grt_opt]
+    steps: [OpenROAD.STAMidPNR]
+  detailed_routing:
+    needs: [sta_mid_pnr_4]
+    uses: detailed_routing
+    if: RUN_DRT
+  routing_reports:
+    needs: [detailed_routing]
+    steps:
+      - Odb.ReportDisconnectedPins
+      - Odb.ReportWireLength
+  fill_insertion:
+    needs: [routing_reports]
+    uses: fill_insertion
+    if: RUN_FILL_INSERTION
+  cell_frequency_tables:
+    needs: [fill_insertion]
+    steps: [Odb.CellFrequencyTables]
+  extraction:
+    needs: [cell_frequency_tables]
+    uses: extraction
+    if: RUN_SPEF_EXTRACTION
+  signoff_sta:
+    needs: [extraction]
+    uses: signoff_sta
+    if: RUN_MCSTA
+  ir_drop:
+    needs: [signoff_sta]
+    uses: ir_drop
+    if: RUN_IRDROP_REPORT
+  # One job per streamout provider. A job runs one provider, so two tools for
+  # one phase is two jobs -- and that is also what makes the two independent
+  # booleans expressible, since a job-level 'if' is one condition. Likewise
+  # drc, below.
+  magic_streamout:
+    needs: [ir_drop]
+    uses: streamout/magic
+    if: RUN_MAGIC_STREAMOUT
+  # In series with magic_streamout, and this is the one edge in the signoff
+  # tail that is not relaxed. Neither stream-out writes the neutral 'gds'
+  # unconditionally: each writes it if its own tool is
+  # PRIMARY_GDSII_STREAMOUT_TOOL, or if nothing has written one yet. In series
+  # that reproduces "the primary tool owns 'gds'" exactly, including on a
+  # magic-primary PDK, which is every sky130 and gf180mcu configuration. In
+  # parallel both would see an empty incoming 'gds', both would write one, and
+  # the join would need a 'source' to choose. A 'source' names a job, so no
+  # static entry can say "whichever tool the PDK named", and either choice
+  # would silently change what the five later consumers of 'gds' read on half
+  # the PDKs.
+  klayout_streamout:
+    needs: [magic_streamout]
+    uses: streamout/klayout
+    if: RUN_KLAYOUT_STREAMOUT
+  # Not part of either streamout job: KLayout.Render's inputs are optional and
+  # its outputs are empty, so it satisfies no part of the job's 'gds' contract
+  # and carries no view across the job boundary. It is also ungated, where
+  # KLayout.StreamOut is gated.
+  #
+  # This run ends here, on the chain, and every document that includes it fans
+  # out below rather than beside it. The reason is framework metrics no
+  # contract declares: every OpenROAD invocation writes
+  # 'flow__warnings__count', 'flow__errors__count' and
+  # 'flow__warnings__type_count' into its '-metrics' JSON, which
+  # OpenROADStep.get_command and OdbpyStep.get_command pass unconditionally, so
+  # an OpenROAD-backed job in one branch of a fan-out rewrites all three while
+  # its siblings still carry the values from before it. The join below would
+  # then raise JoinConflictError on the first real run, and a 'source' cannot
+  # settle it: _check_sources_can_deliver rejects a 'source' naming a key no
+  # declared contract in the producer's branch mentions.
+  #
+  # The rule this encodes, which is not local to any one of the three: every
+  # branch of a fan-out must descend from the last OpenROAD-backed step, so
+  # that no branch writes a framework metric its siblings do not have.
+  render:
+    needs: [klayout_streamout]
+    steps: [KLayout.Render]

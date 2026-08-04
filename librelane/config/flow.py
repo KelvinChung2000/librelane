@@ -19,7 +19,7 @@ import pathlib
 from importlib.resources import files
 
 from decimal import Decimal
-from typing import Literal, Optional, Union
+from typing import Literal
 from collections.abc import Sequence
 
 from librelane.config.legacy import Macro
@@ -61,7 +61,7 @@ class PdkConfig(BaseConfigModel):
         deprecated_names=["PRIMARY_SIGNOFF_TOOL"],
     )
 
-    DEFAULT_MAX_TRAN: Optional[Decimal] = variable(
+    DEFAULT_MAX_TRAN: Decimal | None = variable(
         None,
         description="Defines the default maximum transition value used in Synthesis and CTS.\nA minimum of 0.1 * CLOCK_PERIOD and this variable, if defined, is used.",
         units="ns",
@@ -88,7 +88,7 @@ class PdkConfig(BaseConfigModel):
         pdk=True,
     )
 
-    ISOSUB_LAYER: Optional[tuple[int, int]] = variable(
+    ISOSUB_LAYER: tuple[int, int] | None = variable(
         None,
         description="The GDSII layer and datatype pair for the isolated substrate (subcut) layer, if the PDK has one.",
         pdk=True,
@@ -111,7 +111,7 @@ class SclConfig(BaseConfigModel):
         pdk=True,
     )
 
-    TRISTATE_CELLS: Optional[list[str]] = variable(
+    TRISTATE_CELLS: list[str] | None = variable(
         None,
         description="A list of cell names or wildcards of tri-state buffers.",
         deprecated_names=[("TRISTATE_CELL_PREFIX", _prefix_to_wildcard)],
@@ -147,25 +147,25 @@ class SclConfig(BaseConfigModel):
         pdk=True,
     )
 
-    CELL_VERILOG_MODELS: Optional[list[Path]] = variable(
+    CELL_VERILOG_MODELS: list[Path] | None = variable(
         None,
         description="Path(s) to cells' Verilog model(s)",
         pdk=True,
     )
 
-    CELL_BB_VERILOG_MODELS: Optional[list[Path]] = variable(
+    CELL_BB_VERILOG_MODELS: list[Path] | None = variable(
         None,
         description="Path(s) to cells' black-box Verilog model(s)",
         pdk=True,
     )
 
-    CELL_SPICE_MODELS: Optional[list[Path]] = variable(
+    CELL_SPICE_MODELS: list[Path] | None = variable(
         None,
         description="Path(s) to cells' SPICE model(s)",
         pdk=True,
     )
 
-    CELL_CDLS: Optional[list[Path]] = variable(
+    CELL_CDLS: list[Path] | None = variable(
         None,
         description="A circuit-design language view of the standard cell library.",
         pdk=True,
@@ -191,7 +191,7 @@ class SclConfig(BaseConfigModel):
         pdk=True,
     )
 
-    MAX_FANOUT_CONSTRAINT: Optional[int] = variable(
+    MAX_FANOUT_CONSTRAINT: int | None = variable(
         None,
         description="The max load that the output ports can drive to be used as a constraint on Synthesis and CTS. If not provided, the constraint is not set in the SDC file, which will fall back to the value set by the liberty file.",
         units="cells",
@@ -199,7 +199,7 @@ class SclConfig(BaseConfigModel):
         pdk=True,
     )
 
-    MAX_TRANSITION_CONSTRAINT: Optional[Decimal] = variable(
+    MAX_TRANSITION_CONSTRAINT: Decimal | None = variable(
         None,
         description="The max transition time (slew) from high to low or low to high on cell inputs in ns to be used as a constraint on Synthesis and CTS. If not provided, it is calculated at runtime as `10%` of the provided clock period, unless that exceeds the PDK's `DEFAULT_MAX_TRAN` value.",
         units="ns",
@@ -207,7 +207,7 @@ class SclConfig(BaseConfigModel):
         pdk=True,
     )
 
-    MAX_CAPACITANCE_CONSTRAINT: Optional[Decimal] = variable(
+    MAX_CAPACITANCE_CONSTRAINT: Decimal | None = variable(
         None,
         description="The maximum capacitance constraint. If not provided, the constraint is not set in the SDC file which will fall back to the value set by the liberty file",
         units="pF",
@@ -247,7 +247,7 @@ class SclConfig(BaseConfigModel):
         pdk=True,
     )
 
-    SYNTH_CLK_DRIVING_CELL: Optional[str] = variable(
+    SYNTH_CLK_DRIVING_CELL: str | None = variable(
         None,
         description="The cell to drive the clock input ports, used in synthesis and static timing analysis, in the format `{cell}/{port}`. If not specified, `SYNTH_DRIVING_CELL` will be used.",
         pdk=True,
@@ -278,20 +278,20 @@ class SclConfig(BaseConfigModel):
         pdk=True,
     )
 
-    DIODE_CELL: Optional[str] = variable(
+    DIODE_CELL: str | None = variable(
         None,
         description="Defines a diode cell used to fix antenna violations, in the format `{cell}/{port}`. If not defined, steps should not attempt to repair the antenna effect by inserting diode cells.",
         pdk=True,
     )
 
-    WELLTAP_CELL: Optional[str] = variable(
+    WELLTAP_CELL: str | None = variable(
         None,
         description="Defines the cell used for tap insertion. If not defined, steps should not attempt to insert welltap cells.",
         pdk=True,
         deprecated_names=["FP_WELLTAP_CELL"],
     )
 
-    ENDCAP_CELL: Optional[str] = variable(
+    ENDCAP_CELL: str | None = variable(
         None,
         description="Defines the so-called 'end-cap' cell- class of decap cells placed at either sides of a design, if available.",
         pdk=True,
@@ -326,77 +326,73 @@ class OptionConfig(BaseConfigModel):
         units="ns",
     )
 
-    CLOCK_PORT: Union[None, str, list[str]] = variable(
+    CLOCK_PORT: None | str | list[str] = variable(
         description="The name(s) of the design's clock port(s).",
     )
 
-    CLOCK_NET: Union[None, str, list[str]] = variable(
+    CLOCK_NET: None | str | list[str] = variable(
         description="The name of the net input to root clock buffer. If unset, it is presumed to be equal to CLOCK_PORT.",
     )
 
-    VDD_NETS: Optional[list[str]] = variable(
+    VDD_NETS: list[str] | None = variable(
         None,
         description="Specifies the power nets/pins to be used when creating the power grid for the design.",
     )
 
-    GND_NETS: Optional[list[str]] = variable(
+    GND_NETS: list[str] | None = variable(
         None,
         description="Specifies the ground nets/pins to be used when creating the power grid for the design.",
     )
 
-    DIE_AREA: Optional[tuple[Decimal, Decimal, Decimal, Decimal]] = variable(
+    DIE_AREA: tuple[Decimal, Decimal, Decimal, Decimal] | None = variable(
         None,
         description='Specific die area to be used in floorplanning. Specified as a 4-corner rectangle "x0 y0 x1 y1".',
         units="µm",
     )
 
-    EXTRA_EXCLUDED_CELLS: Optional[list[str]] = variable(
+    EXTRA_EXCLUDED_CELLS: list[str] | None = variable(
         None,
         description="Wildcards matching additional cells to exclude from both synthesis and PnR.",
-        deprecated_names=["RSZ_DONT_USE_CELLS", "DONT_USE_CELLS"],
     )
 
-    MACROS: Optional[dict[str, Macro]] = variable(
+    MACROS: dict[str, Macro] | None = variable(
         None,
         description="A dictionary of Macro definition objects. See {py:class}`librelane.config.Macro` for more info.",
     )
 
-    EXTRA_LEFS: Optional[list[Path]] = variable(
+    EXTRA_LEFS: list[Path] | None = variable(
         None,
         description="Specifies miscellaneous LEF files to be loaded indiscriminately whenever LEFs are loaded.",
     )
 
-    EXTRA_VERILOG_MODELS: Optional[list[Path]] = variable(
+    EXTRA_VERILOG_MODELS: list[Path] | None = variable(
         None,
         description="Specifies miscellaneous Verilog models to be loaded indiscriminately during synthesis.",
-        deprecated_names=["VERILOG_FILES_BLACKBOX"],
     )
 
-    EXTRA_SPICE_MODELS: Optional[list[Path]] = variable(
+    EXTRA_SPICE_MODELS: list[Path] | None = variable(
         None,
         description="Specifies miscellaneous SPICE models to be loaded indiscriminately whenever SPICE models are loaded.",
     )
 
-    EXTRA_CDLS: Optional[list[Path]] = variable(
+    EXTRA_CDLS: list[Path] | None = variable(
         None,
         description="Specifies miscellaneous CDL netlists to be loaded indiscriminately whenever CDL netlists are loaded.",
     )
 
-    EXTRA_LIBS: Optional[list[Path]] = variable(
+    EXTRA_LIBS: list[Path] | None = variable(
         None,
         description="Specifies LIB files of pre-hardened macros used in the current design, used during timing analyses (and during parasitics-based STA as a fallback). These are loaded indiscriminately for all timing corners.",
     )
 
-    EXTRA_GDS: Optional[list[Path]] = variable(
+    EXTRA_GDS: list[Path] | None = variable(
         None,
         description="Specifies GDS files of pre-hardened macros used in the current design, used during tape-out.",
-        deprecated_names=["EXTRA_GDS_FILES"],
     )
 
     FALLBACK_SDC: Path = variable(
         pathlib.Path(str(files("librelane").joinpath("scripts", "base.sdc"))),
         description="A fallback SDC file for when a step-specific SDC file is not defined.",
-        deprecated_names=["FALLBACK_SDC_FILE", "BASE_SDC_FILE", "SDC_FILE"],
     )
 
 
@@ -408,108 +404,108 @@ PadRotation = Literal["R0", "MY", "R90", "MXR90", "R180", "MX", "R270", "MYR90"]
 
 
 class PadConfig(BaseConfigModel):
-    PAD_GDS: Optional[list[Path]] = variable(
+    PAD_GDS: list[Path] | None = variable(
         None,
         description="Path(s) to IO pad GDS file(s).",
         pdk=True,
     )
 
-    PAD_LEFS: Optional[list[Path]] = variable(
+    PAD_LEFS: list[Path] | None = variable(
         None,
         description="Path(s) to IO pad LEF file(s).",
         pdk=True,
     )
 
-    PAD_VERILOG_MODELS: Optional[list[Path]] = variable(
+    PAD_VERILOG_MODELS: list[Path] | None = variable(
         None,
         description="Path(s) to IO pads' Verilog model(s)",
         pdk=True,
     )
 
-    PAD_SPICE_MODELS: Optional[list[Path]] = variable(
+    PAD_SPICE_MODELS: list[Path] | None = variable(
         None,
         description="Path(s) to IO pads' SPICE model(s)",
         pdk=True,
     )
 
-    PAD_CDLS: Optional[list[Path]] = variable(
+    PAD_CDLS: list[Path] | None = variable(
         None,
         description="A circuit-design language view of the io pad library.",
         pdk=True,
     )
 
-    PAD_LIBS: Optional[dict[str, list[Path]]] = variable(
+    PAD_LIBS: dict[str, list[Path]] | None = variable(
         None,
         description="A map from corner patterns to a list of associated liberty files. Exactly one entry must match the `DEFAULT_CORNER`.",
         pdk=True,
     )
 
-    PAD_CORNER: Optional[list[str]] = variable(
+    PAD_CORNER: list[str] | None = variable(
         None,
         description="The pad corner cell.",
         pdk=True,
     )
 
-    PAD_FILLERS: Optional[list[str]] = variable(
+    PAD_FILLERS: list[str] | None = variable(
         None,
         description="A list of pad filler cells.",
         pdk=True,
     )
 
-    PAD_SITE_NAME: Optional[str] = variable(
+    PAD_SITE_NAME: str | None = variable(
         None,
         description="Name of the pad site.",
         units="µm",
         pdk=True,
     )
 
-    PAD_CORNER_SITE_NAME: Optional[str] = variable(
+    PAD_CORNER_SITE_NAME: str | None = variable(
         None,
         description="Name of the corner site.",
         units="µm",
         pdk=True,
     )
 
-    PAD_FAKE_SITES: Optional[dict[str, tuple[Decimal, Decimal]]] = variable(
+    PAD_FAKE_SITES: dict[str, tuple[Decimal, Decimal]] | None = variable(
         None,
         description="A dict of fake pad sites and their width and height tuple. Use this if the LEF does not include the site definitions for the IO pads.",
         units="µm",
         pdk=True,
     )
 
-    PAD_BONDPAD_NAME: Optional[str] = variable(
+    PAD_BONDPAD_NAME: str | None = variable(
         None,
         description="Name of the bondpad cell, if empty, bondpads won't be placed.",
         pdk=True,
     )
 
-    PAD_BONDPAD_WIDTH: Optional[Decimal] = variable(
+    PAD_BONDPAD_WIDTH: Decimal | None = variable(
         None,
         description="Width of the bondpad.",
         units="µm",
         pdk=True,
     )
 
-    PAD_BONDPAD_HEIGHT: Optional[Decimal] = variable(
+    PAD_BONDPAD_HEIGHT: Decimal | None = variable(
         None,
         description="Height of the bondpad.",
         units="µm",
         pdk=True,
     )
 
-    PAD_BONDPAD_OFFSETS: Optional[dict[str, tuple[Decimal, Decimal]]] = variable(
+    PAD_BONDPAD_OFFSETS: dict[str, tuple[Decimal, Decimal]] | None = variable(
         None,
         description="A dict of pad master names or regular expressions to their bondpad (offset_x, offset_y) tuple.",
         pdk=True,
     )
 
-    PAD_PLACE_IO_TERMINALS: Optional[list[str]] = variable(
+    PAD_PLACE_IO_TERMINALS: list[str] | None = variable(
         None,
         description="Place I/O terminals for these master/pin combinations.",
         pdk=True,
     )
 
-    PAD_EDGE_SPACING: Optional[Decimal] = variable(
+    PAD_EDGE_SPACING: Decimal | None = variable(
         0,
         description="Distance from the padring to the die boundary. Used to account for the sealring when placing the pads.",
         units="µm",

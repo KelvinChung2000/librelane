@@ -19,7 +19,6 @@ from loguru import logger
 from importlib.resources import files
 import os
 import pathlib
-from typing import Optional
 
 from librelane.config import variable
 from librelane.state import DesignFormat, State
@@ -75,10 +74,9 @@ class WriteVerilogHeader(OdbpyStep):
     outputs = [DesignFormat.VERILOG_HEADER]
 
     class Config(OdbpyStep.Config):
-        VERILOG_POWER_DEFINE: Optional[str] = variable(
+        VERILOG_POWER_DEFINE: str | None = variable(
             "USE_POWER_PINS",
             description="Specifies the name of the define used to guard power and ground connections in the output Verilog header.",
-            deprecated_names=["SYNTH_USE_PG_PINS_DEFINES", "SYNTH_POWER_DEFINE"],
         )
 
     config: Config

@@ -18,7 +18,7 @@ from loguru import logger
 
 from importlib.resources import files
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Literal
 
 from librelane.common import Path
 from librelane.config import variable
@@ -44,7 +44,7 @@ class ApplyDEFTemplate(OdbpyStep):
     name = "Apply DEF Template"
 
     class Config(Step.Config):
-        FP_DEF_TEMPLATE: Optional[Path] = variable(
+        FP_DEF_TEMPLATE: Path | None = variable(
             None,
             description="Points to the DEF file to be used as a template.",
         )

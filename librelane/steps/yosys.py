@@ -21,7 +21,7 @@ import os
 import textwrap
 import subprocess
 from abc import abstractmethod
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 from collections.abc import Mapping
 
 from librelane.steps.tclstep import TclStep
@@ -164,34 +164,34 @@ def _generate_read_deps(
 # No longer used by us, kept for back-compat
 class YosysStep(TclStep):
     class Config(Step.Config):
-        SYNTH_LATCH_MAP: Optional[Path] = variable(
+        SYNTH_LATCH_MAP: Path | None = variable(
             None,
             description="A path to a file containing the latch mapping for Yosys.",
             pdk=True,
         )
 
-        SYNTH_TRISTATE_MAP: Optional[Path] = variable(
+        SYNTH_TRISTATE_MAP: Path | None = variable(
             None,
             description="A path to a file containing the tri-state buffer mapping for Yosys.",
             deprecated_names=["TRISTATE_BUFFER_MAP"],
             pdk=True,
         )
 
-        SYNTH_CSA_MAP: Optional[Path] = variable(
+        SYNTH_CSA_MAP: Path | None = variable(
             None,
             description="A path to a file containing the carry-select adder mapping for Yosys.",
             deprecated_names=["CARRY_SELECT_ADDER_MAP"],
             pdk=True,
         )
 
-        SYNTH_RCA_MAP: Optional[Path] = variable(
+        SYNTH_RCA_MAP: Path | None = variable(
             None,
             description="A path to a file containing the ripple-carry adder mapping for Yosys.",
             deprecated_names=["RIPPLE_CARRY_ADDER_MAP"],
             pdk=True,
         )
 
-        SYNTH_FA_MAP: Optional[Path] = variable(
+        SYNTH_FA_MAP: Path | None = variable(
             None,
             description="A path to a file containing the full adder mapping for Yosys.",
             deprecated_names=["FULL_ADDER_MAP"],
@@ -263,12 +263,12 @@ class EQY(Step):
     outputs = []
 
     class Config(VerilogRtlConfig, YosysStep.Config):
-        EQY_SCRIPT: Optional[Path] = variable(
+        EQY_SCRIPT: Path | None = variable(
             None,
             description="The EQY script to use. If unset, a generic EQY script will be generated, but this fails in a number of scenarios.",
         )
 
-        MACRO_PLACEMENT_CFG: Optional[Path] = variable(
+        MACRO_PLACEMENT_CFG: Path | None = variable(
             None,
             description="This step will warn if this deprecated variable is used, as it indicates Macros are used without the new Macro object.",
         )

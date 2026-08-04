@@ -23,7 +23,7 @@ import subprocess
 import pathlib
 from os.path import abspath
 from base64 import b64encode
-from typing import Optional, Literal
+from typing import Literal
 
 from loguru import logger
 
@@ -159,9 +159,9 @@ class StreamOut(KLayoutStep):
     outputs = [DesignFormat.GDS, DesignFormat.KLAYOUT_GDS]
 
     class Config(KLayoutStep.Config):
-        KLAYOUT_CONFLICT_RESOLUTION: Optional[
-            Literal["AddToCell", "OverwriteCell", "RenameCell", "SkipNewCell"]
-        ] = variable(
+        KLAYOUT_CONFLICT_RESOLUTION: (
+            Literal["AddToCell", "OverwriteCell", "RenameCell", "SkipNewCell"] | None
+        ) = variable(
             "RenameCell",
             description="Specifies the conflict resolution if a cell name conflict arises.",
         )
@@ -277,7 +277,6 @@ class OpenGUI(KLayoutStep):
         KLAYOUT_GUI_USE_GDS: bool = variable(
             True,
             description="Whether to prioritize GDS (if found) when running this step.",
-            deprecated_names=["KLAYOUT_PRIORITIZE_GDS"],
         )
 
     config: Config

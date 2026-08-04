@@ -5,7 +5,7 @@ import pathlib
 import pytest
 from rich.console import Console
 
-from librelane.flows import flow
+from librelane.engine import flow
 from librelane.steps import step
 
 
@@ -51,8 +51,8 @@ def _one_step_workflow(name: str, step_id: str, mock_conf_dir):
         The real-filesystem mock tree. Real rather than faked because a
         workflow runs its jobs on a thread pool, which pyfakefs cannot serve.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": name, "jobs": {name.lower(): {"steps": [step_id]}}}

@@ -18,7 +18,7 @@
 import os
 from decimal import Decimal
 from importlib.resources import files
-from typing import Literal, Optional
+from typing import Literal
 
 from librelane.common import process_list_file
 from librelane.config import variable
@@ -52,7 +52,7 @@ class RMP(OpenROADStep):
     long_name = "Local Resynthesis"
 
     class Config(OpenROADStep.Config):
-        RMP_CORNER: Optional[str] = variable(
+        RMP_CORNER: str | None = variable(
             None,
             description="IPVT corner whose liberty file is handed to ABC during restructuring. If unspecified, the value for `DEFAULT_CORNER` from the PDK will be used.",
         )
@@ -62,13 +62,13 @@ class RMP(OpenROADStep):
             description="What restructuring optimizes for. In area mode, the focus is area reduction, and timing may degrade. In timing mode, delay is likely reduced, but the area may increase.",
         )
 
-        RMP_SLACK_THRESHOLD: Optional[Decimal] = variable(
+        RMP_SLACK_THRESHOLD: Decimal | None = variable(
             None,
             description="Specifies a (setup) timing slack value below which timing paths need to be analyzed for restructuring. Only meaningful when `RMP_TARGET` is `timing`.",
             units="ns",
         )
 
-        RMP_DEPTH_THRESHOLD: Optional[int] = variable(
+        RMP_DEPTH_THRESHOLD: int | None = variable(
             None,
             description="Specifies the path depth above which a timing path would be considered for restructuring. Only meaningful when `RMP_TARGET` is `timing`.",
         )

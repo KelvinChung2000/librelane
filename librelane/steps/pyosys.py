@@ -27,7 +27,7 @@ import shutil
 import pathlib
 from decimal import Decimal
 from abc import abstractmethod
-from typing import Literal, Optional
+from typing import Literal
 
 from librelane.steps.step import (
     MetricGate,
@@ -124,24 +124,22 @@ class VerilogRtlConfig(BaseConfigModel):
         description="The paths of the design's Verilog files.",
     )
 
-    VERILOG_DEFINES: Optional[list[str]] = variable(
+    VERILOG_DEFINES: list[str] | None = variable(
         None,
         description="Preprocessor defines for input Verilog files.",
-        deprecated_names=["SYNTH_DEFINES"],
     )
 
-    VERILOG_POWER_DEFINE: Optional[str] = variable(
+    VERILOG_POWER_DEFINE: str | None = variable(
         "USE_POWER_PINS",
         description="Specifies the name of the define used to guard power and ground connections in the input RTL.",
-        deprecated_names=["SYNTH_USE_PG_PINS_DEFINES", "SYNTH_POWER_DEFINE"],
     )
 
-    VERILOG_INCLUDE_DIRS: Optional[list[Path]] = variable(
+    VERILOG_INCLUDE_DIRS: list[Path] | None = variable(
         None,
         description="Specifies the Verilog `include` directories.",
     )
 
-    SYNTH_PARAMETERS: Optional[list[str]] = variable(
+    SYNTH_PARAMETERS: list[str] | None = variable(
         None,
         description="Key-value pairs to be `chparam`ed in Yosys, in the format `key1=value1`.",
     )
@@ -149,10 +147,9 @@ class VerilogRtlConfig(BaseConfigModel):
     USE_SLANG: bool = variable(
         False,
         description="Use the Slang frontend to process files, which has better SystemVerilog parsing capabilities but is not as battle-tested as the default Yosys friend.",
-        deprecated_names=["USE_SYNLIG"],
     )
 
-    SLANG_ARGUMENTS: Optional[list[str]] = variable(
+    SLANG_ARGUMENTS: list[str] | None = variable(
         None,
         description="Pass arguments to the Slang frontend.",
     )
@@ -180,54 +177,53 @@ def _validate_icg(variable: Variable, input: str | None, warning_list_ref: list[
 
 class PyosysStep(Step):
     class Config(Step.Config):
-        SYNTH_LATCH_MAP: Optional[Path] = variable(
+        SYNTH_LATCH_MAP: Path | None = variable(
             None,
             description="A path to a file containing the latch mapping for Yosys.",
             pdk=True,
         )
 
-        SYNTH_TRISTATE_MAP: Optional[Path] = variable(
+        SYNTH_TRISTATE_MAP: Path | None = variable(
             None,
             description="A path to a file containing the tri-state buffer mapping for Yosys.",
             deprecated_names=["TRISTATE_BUFFER_MAP"],
             pdk=True,
         )
 
-        SYNTH_CSA_MAP: Optional[Path] = variable(
+        SYNTH_CSA_MAP: Path | None = variable(
             None,
             description="A path to a file containing the carry-select adder mapping for Yosys.",
             deprecated_names=["CARRY_SELECT_ADDER_MAP"],
             pdk=True,
         )
 
-        SYNTH_RCA_MAP: Optional[Path] = variable(
+        SYNTH_RCA_MAP: Path | None = variable(
             None,
             description="A path to a file containing the ripple-carry adder mapping for Yosys.",
             deprecated_names=["RIPPLE_CARRY_ADDER_MAP"],
             pdk=True,
         )
 
-        SYNTH_FA_MAP: Optional[Path] = variable(
+        SYNTH_FA_MAP: Path | None = variable(
             None,
             description="A path to a file containing the full adder mapping for Yosys.",
             deprecated_names=["FULL_ADDER_MAP"],
             pdk=True,
         )
 
-        SYNTH_CLOCKGATE_MIN_WIDTH: Optional[int] = variable(
+        SYNTH_CLOCKGATE_MIN_WIDTH: int | None = variable(
             None,
             description="If set to a value, a group of flip-flops with size >= SYNTH_CLOCKGATE_MIN_WIDTH and an enable signal are clock-gated instead.",
-            deprecated_names=[("USE_LIGHTER", lambda x: 1 if x else None)],
         )
 
-        SYNTH_CLOCKGATE_POSEDGE_ICG: Optional[str] = variable(
+        SYNTH_CLOCKGATE_POSEDGE_ICG: str | None = variable(
             None,
             description="The integrated clock gate cell used for positive-edge flip-flops, in the format `<cell>/<active-high clock enable port>/<clk port>/<gated clk port>`.",
             pdk=True,
             validator=_validate_icg,
         )
 
-        SYNTH_CLOCKGATE_NEGEDGE_ICG: Optional[str] = variable(
+        SYNTH_CLOCKGATE_NEGEDGE_ICG: str | None = variable(
             None,
             description="The integrated clock gate cell used for positive-edge flip-flops, in the format `<cell>/<active-high clock enable port>/<clk port>/<gated clk port>`.",
             pdk=True,
@@ -239,7 +235,7 @@ class PyosysStep(Step):
             description="Which log level for Yosys. At WARNING or higher, the initialization splash is also disabled.",
         )
 
-        SYNTH_CORNER: Optional[str] = variable(
+        SYNTH_CORNER: str | None = variable(
             None,
             description="A fully qualified IPVT corner to use during synthesis. If unspecified, the value for `DEFAULT_CORNER` from the PDK will be used.",
             pdk=True,
@@ -457,13 +453,11 @@ class SynthesisCommon(VerilogStep):
         ERROR_ON_UNMAPPED_CELLS: bool = variable(
             True,
             description="Checks for unmapped cells after synthesis and quits immediately if so.",
-            deprecated_names=["QUIT_ON_UNMAPPED_CELLS", "CHECK_UNMAPPED_CELLS"],
         )
 
         ERROR_ON_SYNTH_CHECKS: bool = variable(
             True,
             description="Quits the flow immediately if one or more synthesis check errors are flagged. This checks for combinational loops and/or wires with no drivers. The flagged problems are logged by the synthesis step and listed in its `reports/pre_synth_chk.rpt`.",
-            deprecated_names=["QUIT_ON_SYNTH_CHECKS"],
         )
 
         ERROR_ON_NL_ASSIGN_STATEMENTS: bool = variable(
@@ -499,7 +493,6 @@ class SynthesisCommon(VerilogStep):
         SYNTH_ABC_BUFFERING: bool = variable(
             False,
             description="Enables `abc` cell buffering.",
-            deprecated_names=["SYNTH_BUFFERING"],
         )
 
         SYNTH_ABC_LEGACY_REFACTOR: bool = variable(
@@ -527,7 +520,7 @@ class SynthesisCommon(VerilogStep):
             description="Experimental: uses the &nf delay-based mapper with a very high value instead of the amap area mapper, which may be better in some scenarios at recovering area.",
         )
 
-        SYNTH_ABC_STRATEGY_SCRIPT: Optional[Path] = variable(
+        SYNTH_ABC_STRATEGY_SCRIPT: Path | None = variable(
             None,
             description="Custom ABC strategy script. Runs instead of the default script for the selected 'SYNTH_STRATEGY'. All other 'SYNTH_ABC_*' variables except 'SYNTH_ABC_DFF' will have no effect.",
         )
@@ -535,7 +528,6 @@ class SynthesisCommon(VerilogStep):
         SYNTH_DIRECT_WIRE_BUFFERING: bool = variable(
             True,
             description="Enables inserting buffer cells for directly connected wires.",
-            deprecated_names=["SYNTH_BUFFER_DIRECT_WIRES"],
         )
 
         SYNTH_SPLITNETS: bool = variable(
@@ -551,24 +543,19 @@ class SynthesisCommon(VerilogStep):
         SYNTH_HIERARCHY_MODE: Literal["flatten", "deferred_flatten", "keep"] = variable(
             "flatten",
             description="Affects how hierarchy is maintained throughout and after synthesis. 'flatten' flattens it during and after synthesis. 'deferred_flatten' flattens it after synthesis. 'keep' never flattens it. Please note that when using the Slang plugin, you need to pass '--keep-hierarchy' to `SLANG_ARGUMENTS` separately. To keep the hierarchy partially, use one of the flattening options and set the 'keep_hierarchy' attribute on instances or modules via: `SYNTH_KEEP_HIERARCHY_INSTANCES`, `SYNTH_KEEP_HIERARCHY_MODULES` or `SYNTH_KEEP_HIERARCHY_MIN_COST`.",
-            deprecated_names=[
-                ("SYNTH_NO_FLAT", lambda x: "deferred_flatten" if x else "flatten"),
-                ("SYNTH_ELABORATE_FLATTEN", lambda x: "flatten" if x else "keep"),
-                ("SYNTH_FLAT_TOP", lambda x: "flatten" if x else "keep"),
-            ],
         )
 
-        SYNTH_KEEP_HIERARCHY_MIN_COST: Optional[int] = variable(
+        SYNTH_KEEP_HIERARCHY_MIN_COST: int | None = variable(
             None,
             description="Sets the 'keep_hierarchy' attribute on modules where the gate count is estimated to exceed the specified threshold. This prevents larger modules from being flattened. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
         )
 
-        SYNTH_KEEP_HIERARCHY_INSTANCES: Optional[list[str]] = variable(
+        SYNTH_KEEP_HIERARCHY_INSTANCES: list[str] | None = variable(
             None,
             description="A list of instances for which to set the 'keep_hierarchy' attribute. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
         )
 
-        SYNTH_KEEP_HIERARCHY_MODULES: Optional[list[str]] = variable(
+        SYNTH_KEEP_HIERARCHY_MODULES: list[str] | None = variable(
             None,
             description="A list of modules for which to set the 'keep_hierarchy' attribute. This variable only affects the design when 'flatten' is called through `SYNTH_HIERARCHY_MODE`.",
         )
@@ -583,7 +570,7 @@ class SynthesisCommon(VerilogStep):
             description="Adder type to which the $add and $sub operators are mapped to.  Possible values are `YOSYS/FA/RCA/CSA`; where `YOSYS` refers to using Yosys internal adder definition, `FA` refers to full-adder structure, `RCA` refers to ripple carry adder structure, and `CSA` refers to carry select adder.",
         )
 
-        SYNTH_EXTRA_MAPPING_FILE: Optional[Path] = variable(
+        SYNTH_EXTRA_MAPPING_FILE: Path | None = variable(
             None,
             description="Points to an extra techmap file for yosys that runs right after yosys `synth` before generic techmap.",
         )
@@ -598,7 +585,7 @@ class SynthesisCommon(VerilogStep):
             description="Runs the booth pass as part of synthesis: See https://yosyshq.readthedocs.io/projects/yosys/en/latest/cmd/booth.html",
         )
 
-        SYNTH_TIE_UNDEFINED: Optional[Literal["high", "low"]] = variable(
+        SYNTH_TIE_UNDEFINED: Literal["high", "low"] | None = variable(
             "low",
             description="Whether to tie undefined values low or high. Explicitly provide null if you wish to simply leave them undriven.",
         )
@@ -781,7 +768,7 @@ class VHDLSynthesis(SynthesisCommon):
             description="The paths of the design's VHDL files.",
         )
 
-        GHDL_ARGUMENTS: Optional[list[str]] = variable(
+        GHDL_ARGUMENTS: list[str] | None = variable(
             None,
             description="Pass arguments to the ghdl frontend.",
         )

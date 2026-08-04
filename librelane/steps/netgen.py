@@ -24,7 +24,6 @@ import json
 import textwrap
 from decimal import Decimal
 from abc import abstractmethod
-from typing import Optional
 
 from librelane.steps.step import ViewsUpdate, MetricsUpdate, MetricGate, Step
 from librelane.steps.tclstep import TclStep
@@ -159,7 +158,6 @@ class LVS(NetgenStep):
         ERROR_ON_LVS_ERROR: bool = variable(
             True,
             description="Checks for LVS errors after the selected LVS tool is executed. If any exist, it raises an error at the end of the flow.",
-            deprecated_names=["QUIT_ON_LVS_ERROR"],
         )
 
         LVS_INCLUDE_MARCO_NETLISTS: bool = variable(
@@ -167,12 +165,12 @@ class LVS(NetgenStep):
             description="A flag that enables including the gate-level netlist of macros while running Netgen",
         )
 
-        LVS_FLATTEN_CELLS: Optional[list[str]] = variable(
+        LVS_FLATTEN_CELLS: list[str] | None = variable(
             None,
             description="A list of cell names to be flattened while running LVS",
         )
 
-        LVS_IGNORE_CELLS: Optional[list[str]] = variable(
+        LVS_IGNORE_CELLS: list[str] | None = variable(
             None,
             description="A list of cell names to be ignored while running LVS",
         )

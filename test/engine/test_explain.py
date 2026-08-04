@@ -13,7 +13,7 @@
 # limitations under the License.
 import pytest
 
-from librelane.flows import engine as engine_module, flow as flow_module
+from librelane.engine import engine as engine_module, flow as flow_module
 from librelane.steps import step as step_module
 from test.conftest import COMMON_FLOW_VARS, MockConfTree
 
@@ -35,8 +35,8 @@ def _bool_var(name: str, default: bool) -> dict:
 def test_explain_names_the_condition_that_stops_a_job(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -67,8 +67,8 @@ def test_explain_reports_condition_runtime_for_an_undecided_runtime_term(
     with a mechanism distinct from every other row that also reports
     ``will_run`` true, so a reader can tell 'decided' from 'pending'.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -97,8 +97,8 @@ def test_explain_prefers_skip_and_a_false_configuration_term_over_a_runtime_term
     only asks the runtime term once the configuration half has already
     passed.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -131,8 +131,8 @@ def test_explain_prefers_skip_and_a_false_configuration_term_over_a_runtime_term
 def test_explain_marks_jobs_outside_the_target_subgraph(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -162,8 +162,8 @@ def test_explain_names_skip_as_the_mechanism_that_stopped_a_job(
     with a true condition would otherwise be indistinguishable from one whose
     condition happened to be false.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -199,8 +199,8 @@ def test_explain_reports_a_row_for_every_job_the_document_declares(
     answer the question the sample is there to answer, which is why a job the
     author expected is missing from the run.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -258,8 +258,8 @@ def test_explain_reports_a_row_for_every_job_the_document_declares(
 def test_explain_orders_its_rows_topologically(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -284,9 +284,9 @@ def test_explain_refuses_a_skip_that_the_target_already_excluded(
     ``run`` refuses the same pair, and an explanation that answered where the
     run would raise would be describing an invocation that cannot happen.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -305,9 +305,9 @@ def test_explain_refuses_a_skip_that_the_target_already_excluded(
 
 @mock_variables([flow_module, step_module])
 def test_explain_refuses_an_undeclared_job(counting_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -327,9 +327,9 @@ def test_explain_suggests_a_near_miss_for_a_misspelled_job(
     options name jobs from the same document: a suggestion for one spelling
     mistake and none for the other is an accident of where the check lives.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"synthesis": {"steps": ["Test.EngineFirst"]}}}
@@ -368,8 +368,8 @@ def test_explain_restricts_the_graph_to_the_reproducible_s_subgraph(
     so every other job is out of the run. An explanation that reported them as
     running would be describing an invocation nobody can make.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_repro_spec())
 
@@ -395,8 +395,8 @@ def test_explain_reports_the_reproducible_s_own_job_stopping_at_the_step(
     reproducible instead of running it, so it neither runs in full nor is
     excluded. Both facts are in the row.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_repro_spec())
 
@@ -420,8 +420,8 @@ def test_explain_reports_no_step_running_when_the_reproducible_is_the_first_step
     A reproducible for a job's first step packages that step and runs nothing
     of the job at all, which is a different answer from the row above.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_repro_spec())
 
@@ -440,9 +440,9 @@ def test_explain_reports_no_step_running_when_the_reproducible_is_the_first_step
 def test_explain_refuses_a_reproducible_alongside_a_target(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_repro_spec())
     flow = Workflow(spec, minimal_design, **mock_pdk)
@@ -455,9 +455,9 @@ def test_explain_refuses_a_reproducible_alongside_a_target(
 def test_explain_refuses_a_reproducible_for_a_skipped_job(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_repro_spec())
     flow = Workflow(spec, minimal_design, **mock_pdk)
@@ -470,9 +470,9 @@ def test_explain_refuses_a_reproducible_for_a_skipped_job(
 def test_explain_refuses_a_reproducible_for_a_job_a_condition_stops(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -491,9 +491,9 @@ def test_explain_refuses_a_reproducible_for_a_job_a_condition_stops(
 def test_explain_refuses_a_reproducible_naming_a_step_no_job_runs(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -512,9 +512,9 @@ def test_explain_refuses_an_undeclared_invalidate(
     ``run`` refuses the same typo, and an explanation that answered where the
     run would raise would be describing an invocation that cannot happen.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -529,9 +529,9 @@ def test_explain_refuses_an_undeclared_invalidate(
 def test_explain_refuses_an_invalidate_outside_the_target_subgraph(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_repro_spec())
     flow = Workflow(spec, minimal_design, **mock_pdk)
@@ -549,8 +549,8 @@ def test_explain_leaves_every_row_alone_for_an_invalidate_it_accepts(
     one verdict an explanation does not report. It is still refused when it
     names nothing, which is why it is a parameter at all.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_repro_spec())
     flow = Workflow(spec, minimal_design, **mock_pdk)
@@ -574,13 +574,13 @@ def _classic_workflow(mock_conf_dir: MockConfTree):
 
     Returns
     -------
-    librelane.flows.engine.Workflow
+    librelane.engine.engine.Workflow
         The Classic document, configured with every declared variable at its
         default.
     """
     from librelane.config import Config
-    from librelane.flows import Flow
-    from librelane.flows.engine import Workflow
+    from librelane.engine import Flow
+    from librelane.engine.engine import Workflow
 
     base, _ = Config.load(
         {"DESIGN_NAME": "whatever", "VERILOG_FILES": "dir::src/*.v"},
@@ -610,7 +610,7 @@ def test_explain_reports_every_job_of_the_classic_document(mock_conf_dir):
     "why is this job not in my run", and the tests above could all pass while
     a filter quietly dropped the jobs a user is looking for.
     """
-    from librelane.flows import Flow
+    from librelane.engine import Flow
 
     spec = Flow.factory.get("Classic")
     explanation = _classic_workflow(mock_conf_dir).explain()
@@ -637,7 +637,7 @@ def test_explain_keeps_every_row_when_a_target_narrows_the_classic_document(
     the refusal. The rows are counted rather than only keyed by job id: a
     duplicated row collapses into a dictionary without a trace.
     """
-    from librelane.flows import Flow
+    from librelane.engine import Flow
 
     spec = Flow.factory.get("Classic")
     explanation = _classic_workflow(mock_conf_dir).explain(
@@ -677,14 +677,14 @@ def _rows(explanation, name: str) -> list:
     """
     Parameters
     ----------
-    explanation : librelane.flows.Explanation
+    explanation : librelane.engine.Explanation
         What the workflow reported.
     name : str
         The variable to look up.
 
     Returns
     -------
-    list[librelane.flows.VariableDisposition]
+    list[librelane.engine.VariableDisposition]
         Every row for that variable. More than one only when the document's
         jobs resolved it differently, which is the case a single row cannot
         report.
@@ -696,7 +696,7 @@ def _row(explanation, name: str):
     """
     Returns
     -------
-    librelane.flows.VariableDisposition
+    librelane.engine.VariableDisposition
         The single row for ``name``.
     """
     rows = _rows(explanation, name)
@@ -718,8 +718,8 @@ def test_explain_reports_a_universal_variable_as_reaching_everything(
     mock_variables patches only the modules it is handed, so without it
     engine.py keeps the real list and this assertion fails.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
 
@@ -734,8 +734,8 @@ def test_explain_reports_a_universal_variable_as_reaching_everything(
 def test_explain_scopes_a_step_variable_to_the_jobs_that_read_it(
     minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
 
@@ -748,8 +748,8 @@ def test_explain_scopes_a_step_variable_to_the_jobs_that_read_it(
 
 @mock_variables([flow_module, engine_module, step_module])
 def test_explain_reports_a_variable_read_by_several_jobs(minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
 
@@ -769,8 +769,8 @@ def test_explain_names_the_class_that_declares_an_inherited_variable(
     OpenROAD step below it. Naming the family is the same fact as listing its
     members and is the one a reader can act on.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
 
@@ -790,8 +790,8 @@ def test_explain_names_a_declaring_class_by_its_step_id_when_it_has_one(
     concrete step does, and its ID is what a reader recognises: two step
     classes may share a Python name, and no two share an ID.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
 
@@ -809,8 +809,8 @@ def test_a_variable_two_classes_declare_separately_has_no_declaring_class(
     global placement step: neither inherits it from the other. There is no one
     class to name, so the jobs are the whole answer.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
 
@@ -827,8 +827,8 @@ def test_a_variable_no_step_declares_reaches_no_job(minimal_design, mock_pdk):
     claimed otherwise would say a job could change the provider selection from
     its own 'with' block.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
 
@@ -844,8 +844,8 @@ def test_a_variable_no_step_declares_reaches_no_job(minimal_design, mock_pdk):
 def test_explain_names_the_document_as_the_origin_of_a_document_value(
     minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "T", "with": {"FP_SIZING": "absolute"}, "jobs": _pnr_jobs()}
@@ -862,8 +862,8 @@ def test_explain_names_the_document_as_the_origin_of_a_document_value(
 def test_explain_names_the_design_as_the_origin_of_a_design_value(
     minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
 
@@ -878,8 +878,8 @@ def test_explain_names_the_design_as_the_origin_of_a_design_value(
 def test_explain_names_the_command_line_as_the_origin_of_an_override(
     minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "T", "with": {"FP_SIZING": "absolute"}, "jobs": _pnr_jobs()}
@@ -899,8 +899,8 @@ def test_explain_names_the_command_line_as_the_origin_of_an_override(
 def test_a_variable_no_source_wrote_reports_default_as_its_origin(
     minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
 
@@ -919,8 +919,8 @@ def test_explain_reports_both_values_when_two_jobs_set_a_variable_differently(
     variable that demonstrably has two, and would name whichever of the two
     jobs the reader was not asking about.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -960,8 +960,8 @@ def test_a_job_with_block_does_not_reattribute_a_document_value(
     read as though that job had supplied it, which is what merging the two
     into a single source named for the job would do.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -995,8 +995,8 @@ def test_explain_reports_a_row_for_every_configuration_variable(
     workflow engine design document uses a default row to demonstrate the
     'default' origin.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate({"name": "T", "jobs": _pnr_jobs()})
     workflow = Workflow(spec, minimal_design, **mock_pdk)
@@ -1010,14 +1010,14 @@ def test_explain_reports_a_row_for_every_configuration_variable(
 
 
 def _variables(*rows):
-    from librelane.flows import Explanation
+    from librelane.engine import Explanation
 
     return Explanation(variables=rows)
 
 
 def test_format_variable_explanation_renders_every_row():
     from librelane.cli.run import format_variable_explanation
-    from librelane.flows import VariableDisposition
+    from librelane.engine import VariableDisposition
 
     rendered = format_variable_explanation(
         _variables(
@@ -1041,7 +1041,7 @@ def test_format_variable_explanation_renders_every_row():
 
 def test_format_variable_explanation_rolls_a_universal_variable_up():
     from librelane.cli.run import format_variable_explanation
-    from librelane.flows import VariableDisposition
+    from librelane.engine import VariableDisposition
 
     rendered = format_variable_explanation(
         _variables(
@@ -1062,7 +1062,7 @@ def test_format_variable_explanation_rolls_a_universal_variable_up():
 
 def test_format_variable_explanation_rolls_up_by_declaring_class():
     from librelane.cli.run import format_variable_explanation
-    from librelane.flows import VariableDisposition
+    from librelane.engine import VariableDisposition
 
     rendered = format_variable_explanation(
         _variables(
@@ -1087,7 +1087,7 @@ def test_format_variable_explanation_names_the_jobs_of_a_short_reach():
     and naming them is strictly more information than naming their class.
     """
     from librelane.cli.run import format_variable_explanation
-    from librelane.flows import VariableDisposition
+    from librelane.engine import VariableDisposition
 
     rendered = format_variable_explanation(
         _variables(
@@ -1108,7 +1108,7 @@ def test_format_variable_explanation_names_the_jobs_of_a_short_reach():
 
 def test_format_variable_explanation_says_when_no_job_reads_a_variable():
     from librelane.cli.run import format_variable_explanation
-    from librelane.flows import VariableDisposition
+    from librelane.engine import VariableDisposition
 
     rendered = format_variable_explanation(
         _variables(VariableDisposition("RUN_CTS", True, "default", False, (), None))
@@ -1124,7 +1124,7 @@ def test_format_variable_explanation_truncates_a_value_that_would_set_the_width(
     every other row in the table.
     """
     from librelane.cli.run import format_variable_explanation
-    from librelane.flows import VariableDisposition
+    from librelane.engine import VariableDisposition
 
     rendered = format_variable_explanation(
         _variables(
@@ -1146,7 +1146,7 @@ def test_format_variable_explanation_truncates_a_value_that_would_set_the_width(
 
 def test_format_variable_explanation_does_not_say_all_1_jobs():
     from librelane.cli.run import format_variable_explanation
-    from librelane.flows import VariableDisposition
+    from librelane.engine import VariableDisposition
 
     rendered = format_variable_explanation(
         _variables(
@@ -1167,8 +1167,8 @@ def test_the_rendered_table_reports_what_the_engine_resolved(minimal_design, moc
     stops being the field the engine fills.
     """
     from librelane.cli.run import format_variable_explanation
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {

@@ -49,7 +49,6 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from typing import Optional
 
 import pya
 import click
@@ -124,7 +123,7 @@ def render(
     output: str,
     lyt: str,
     lyp: str,
-    lym: Optional[str],
+    lym: str | None,
     input: str,
     grid_visible: bool,
     grid_show_ruler: bool,

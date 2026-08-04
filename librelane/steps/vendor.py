@@ -101,7 +101,7 @@ class VendorTclStep(TclStep):
     #: anything yet. Declared rather than left to be discovered by calling it,
     #: because callers that need to know ask before anything runs:
     #: :attr:`librelane.jobs.registry.Registration.runnable` reads it so that
-    #: :mod:`librelane.flows.selection_validation` never offers a scaffold as a
+    #: :mod:`librelane.engine.selection_validation` never offers a scaffold as a
     #: remedy for a selection it refused.
     #:
     #: Whoever fills in :meth:`run` for one of these tools deletes the same

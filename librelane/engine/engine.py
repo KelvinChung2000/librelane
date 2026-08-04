@@ -34,6 +34,7 @@ from librelane.config import (
     AnyConfigs,
     Config,
     ConfigScope,
+    ConfigSource,
     Variable,
     build_scope,
     universal_flow_config_variables,
@@ -726,13 +727,12 @@ class Workflow(Flow):
             kwargs,
         )
         #: The scope each of the above is read through, so that a step running
-        #: under one of them finds it by asking rather than by being handed it.
-        #: Built here, up front, rather than when a job starts: validating a
-        #: sweep pass's configuration is how a bad value in an ``iterations``
-        #: entry is caught, and catching it at construction refuses the run
-        #: before any of it has been done. They share the flow's model type --
-        #: every one of these configurations covers the same variables, and
-        #: generating the model is the expensive part.
+        #: under one of them finds its configuration by asking rather than by
+        #: being handed it. Paired here rather than when a job starts, so that
+        #: the mapping is complete and inspectable before the run; the models
+        #: behind them are still built on first read, and they share the
+        #: flow's model type because every one of these configurations covers
+        #: the same variables.
         self.job_scopes: dict[str, ConfigScope] = {
             job_id: build_scope(resolved, model_type=self.config_model_type)
             for job_id, resolved in self.job_configs.items()
@@ -930,12 +930,28 @@ class Workflow(Flow):
             The job declaring the schedule, the 1-based pass, and that pass's
             values; or ``None`` outside a schedule.
         """
+        over: list[ConfigSource] = []
+        if iteration_values is not None:
+            gate_id, k, entry = iteration_values
+            # Above the design configuration rather than below it, unlike every
+            # other layer here: a schedule is the loop's algorithm and not a
+            # default, so a design that pins the scheduled variable must not
+            # quietly flatten every pass onto one setting. See 'over' in
+            # Config.load. Named per pass, so that '--explain-variables'
+            # attributes a scheduled value to the pass that set it rather than
+            # to the document generically.
+            over.append(
+                ConfigSource(
+                    dict(entry),
+                    f"<flow document: {gate_id}, iteration {k}>",
+                    "mapping",
+                )
+            )
         resolved, _ = Config.load(
             config_in=config,
             flow_config_vars=self.get_all_config_variables(),
-            flow_values=self.values,
-            job_values=job_values,
-            iteration_values=iteration_values,
+            under=self.document_layers(job_values),
+            over=over,
             config_override_strings=config_override_strings,
             pdk=load_kwargs.get("pdk"),
             pdk_root=load_kwargs.get("pdk_root"),

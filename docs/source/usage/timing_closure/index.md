@@ -419,7 +419,7 @@ constraint analysis (respectively) sorted by the slack (worst first). Here is
 one such example showing a timing path from the `max.rpt` report:
 
 ``` {code-block} text
-:caption: : Max slack report
+:caption: Max slack report
 :name: max-rpt-log
 :class: no-lines-numbers
 Startpoint: x[9] (input port clocked by clk)
@@ -607,10 +607,6 @@ The corrected files can be found
 AAT
 
     Actual Arrival Time
-
-
-RAT
-	Required Arrival Time
 
 CLA
 

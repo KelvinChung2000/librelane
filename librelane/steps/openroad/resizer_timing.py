@@ -17,9 +17,6 @@
 # limitations under the License.
 from importlib.resources import files
 from decimal import Decimal
-from typing import (
-    Optional,
-)
 
 
 from librelane.config import variable
@@ -49,13 +46,11 @@ class AddBuffer(ResizerStep):
         DESIGN_REPAIR_BUFFER_INPUT_PORTS: bool = variable(
             True,
             description="Specifies whether or not to insert buffers on input ports.",
-            deprecated_names=["PL_RESIZER_BUFFER_INPUT_PORTS"],
         )
 
         DESIGN_REPAIR_BUFFER_OUTPUT_PORTS: bool = variable(
             True,
             description="Specifies whether or not to insert buffers on output ports.",
-            deprecated_names=["PL_RESIZER_BUFFER_OUTPUT_PORTS"],
         )
 
     config: Config
@@ -80,34 +75,29 @@ class RepairDesignPostGPL(ResizerStep):
         DESIGN_REPAIR_TIE_FANOUT: bool = variable(
             True,
             description="Specifies whether or not to repair tie cells fanout when design repairs are run.",
-            deprecated_names=["PL_RESIZER_REPAIR_TIE_FANOUT"],
         )
 
         DESIGN_REPAIR_TIE_SEPARATION: bool = variable(
             False,
             description="Allows tie separation when performing design repairs.",
-            deprecated_names=["PL_RESIZER_TIE_SEPERATION"],
         )
 
         DESIGN_REPAIR_MAX_WIRE_LENGTH: Decimal = variable(
             0,
             description="Specifies the maximum wire length cap used by resizer to insert buffers during design repair. If set to 0, no buffers will be inserted.",
             units="µm",
-            deprecated_names=["PL_RESIZER_MAX_WIRE_LENGTH"],
         )
 
         DESIGN_REPAIR_MAX_SLEW_PCT: Decimal = variable(
             20,
             description="Specifies a margin for the slews during design repair.",
             units="%",
-            deprecated_names=["PL_RESIZER_MAX_SLEW_MARGIN"],
         )
 
         DESIGN_REPAIR_MAX_CAP_PCT: Decimal = variable(
             20,
             description="Specifies a margin for the capacitances during design repair.",
             units="%",
-            deprecated_names=["PL_RESIZER_MAX_CAP_MARGIN"],
         )
 
         DESIGN_REPAIR_REMOVE_BUFFERS: bool = variable(
@@ -150,21 +140,18 @@ class RepairDesignPostGRT(ResizerStep):
             0,
             description="Specifies the maximum wire length cap used by resizer to insert buffers during post-grt design repair. If set to 0, no buffers will be inserted.",
             units="µm",
-            deprecated_names=["GLB_RESIZER_MAX_WIRE_LENGTH"],
         )
 
         GRT_DESIGN_REPAIR_MAX_SLEW_PCT: Decimal = variable(
             10,
             description="Specifies a margin for the slews during post-grt design repair.",
             units="%",
-            deprecated_names=["GLB_RESIZER_MAX_SLEW_MARGIN"],
         )
 
         GRT_DESIGN_REPAIR_MAX_CAP_PCT: Decimal = variable(
             10,
             description="Specifies a margin for the capacitances during design post-grt repair.",
             units="%",
-            deprecated_names=["GLB_RESIZER_MAX_CAP_MARGIN"],
         )
 
     config: Config
@@ -205,14 +192,12 @@ class ResizerTimingPostCTS(ResizerStep):
         PL_RESIZER_HOLD_MAX_BUFFER_PCT: Decimal = variable(
             50,
             description="Specifies a max number of buffers to insert to fix hold violations. This number is calculated as a percentage of the number of instances in the design.",
-            deprecated_names=["PL_RESIZER_HOLD_MAX_BUFFER_PERCENT"],
         )
 
         PL_RESIZER_SETUP_MAX_BUFFER_PCT: Decimal = variable(
             50,
             description="Specifies a max number of buffers to insert to fix setup violations. This number is calculated as a percentage of the number of instances in the design.",
             units="%",
-            deprecated_names=["PL_RESIZER_SETUP_MAX_BUFFER_PERCENT"],
         )
 
         PL_RESIZER_ALLOW_SETUP_VIOS: bool = variable(
@@ -223,7 +208,6 @@ class ResizerTimingPostCTS(ResizerStep):
         PL_RESIZER_SETUP_GATE_CLONING: bool = variable(
             True,
             description="Enables gate cloning when attempting to fix setup violations",
-            deprecated_names=["PL_RESIZER_GATE_CLONING"],
         )
 
         PL_RESIZER_SETUP_BUFFERING: bool = variable(
@@ -236,25 +220,25 @@ class ResizerTimingPostCTS(ResizerStep):
             description="Buffer removal transform during setup fixing.",
         )
 
-        PL_RESIZER_SETUP_REPAIR_TNS_PCT: Optional[Decimal] = variable(
+        PL_RESIZER_SETUP_REPAIR_TNS_PCT: Decimal | None = variable(
             None,
             description="Percentage of violating endpoints to repair during setup fixing.",
             units="%",
         )
 
-        PL_RESIZER_SETUP_MAX_UTIL_PCT: Optional[Decimal] = variable(
+        PL_RESIZER_SETUP_MAX_UTIL_PCT: Decimal | None = variable(
             None,
             description="Defines the percentage of core area used during setup fixing.",
             units="%",
         )
 
-        PL_RESIZER_HOLD_REPAIR_TNS_PCT: Optional[Decimal] = variable(
+        PL_RESIZER_HOLD_REPAIR_TNS_PCT: Decimal | None = variable(
             None,
             description="Percentage of violating endpoints to repair during hold fixing.",
             units="%",
         )
 
-        PL_RESIZER_HOLD_MAX_UTIL_PCT: Optional[Decimal] = variable(
+        PL_RESIZER_HOLD_MAX_UTIL_PCT: Decimal | None = variable(
             None,
             description="Defines the percentage of core area used during hold fixing.",
             units="%",
@@ -293,40 +277,34 @@ class ResizerTimingPostGRT(ResizerStep):
             0.05,
             description="Specifies a time margin for the slack when fixing hold violations. Normally the resizer will stop when it reaches zero slack. This option allows you to overfix.",
             units="ns",
-            deprecated_names=["GLB_RESIZER_HOLD_SLACK_MARGIN"],
         )
 
         GRT_RESIZER_SETUP_SLACK_MARGIN: Decimal = variable(
             0.025,
             description="Specifies a time margin for the slack when fixing setup violations.",
             units="ns",
-            deprecated_names=["GLB_RESIZER_SETUP_SLACK_MARGIN"],
         )
 
         GRT_RESIZER_HOLD_MAX_BUFFER_PCT: Decimal = variable(
             50,
             description="Specifies a max number of buffers to insert to fix hold violations. This number is calculated as a percentage of the number of instances in the design.",
             units="%",
-            deprecated_names=["GLB_RESIZER_HOLD_MAX_BUFFER_PERCENT"],
         )
 
         GRT_RESIZER_SETUP_MAX_BUFFER_PCT: Decimal = variable(
             50,
             description="Specifies a max number of buffers to insert to fix setup violations. This number is calculated as a percentage of the number of instances in the design.",
             units="%",
-            deprecated_names=["GLB_RESIZER_SETUP_MAX_BUFFER_PERCENT"],
         )
 
         GRT_RESIZER_ALLOW_SETUP_VIOS: bool = variable(
             False,
             description="Allows setup violations when fixing hold.",
-            deprecated_names=["GLB_RESIZER_ALLOW_SETUP_VIOS"],
         )
 
         GRT_RESIZER_SETUP_GATE_CLONING: bool = variable(
             True,
             description="Enables gate cloning when attempting to fix setup violations",
-            deprecated_names=["GRT_RESIZER_GATE_CLONING"],
         )
 
         GRT_RESIZER_RUN_GRT: bool = variable(
@@ -344,25 +322,25 @@ class ResizerTimingPostGRT(ResizerStep):
             description="Buffer removal transform during setup fixing.",
         )
 
-        GRT_RESIZER_SETUP_REPAIR_TNS_PCT: Optional[Decimal] = variable(
+        GRT_RESIZER_SETUP_REPAIR_TNS_PCT: Decimal | None = variable(
             None,
             description="Percentage of violating endpoints to repair during setup fixing.",
             units="%",
         )
 
-        GRT_RESIZER_SETUP_MAX_UTIL_PCT: Optional[Decimal] = variable(
+        GRT_RESIZER_SETUP_MAX_UTIL_PCT: Decimal | None = variable(
             None,
             description="Defines the percentage of core area used during setup fixing.",
             units="%",
         )
 
-        GRT_RESIZER_HOLD_REPAIR_TNS_PCT: Optional[Decimal] = variable(
+        GRT_RESIZER_HOLD_REPAIR_TNS_PCT: Decimal | None = variable(
             None,
             description="Percentage of violating endpoints to repair during hold fixing.",
             units="%",
         )
 
-        GRT_RESIZER_HOLD_MAX_UTIL_PCT: Optional[Decimal] = variable(
+        GRT_RESIZER_HOLD_MAX_UTIL_PCT: Decimal | None = variable(
             None,
             description="Defines the percentage of core area used during hold fixing.",
             units="%",

@@ -60,9 +60,9 @@ Successful outputs will look like this:
 $ docker --version
 Docker version 27.3.1, build ce12230
 $ python3 --version
-Python 3.10.5
+Python 3.13.5
 $ python3 -m pip --version
-pip 21.0 from /usr/lib/python3.10/site-packages/pip (python 3.10)
+pip 21.0 from /usr/lib/python3.13/site-packages/pip (python 3.13)
 ...
 Once an environment has been created, you may wish to activate it, e.g. by
 sourcing an activate script in its bin directory.

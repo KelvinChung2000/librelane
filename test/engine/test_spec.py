@@ -13,7 +13,7 @@
 # limitations under the License.
 import pytest
 
-from librelane.flows.spec import FlowSpec, FlowSpecError, JobSpec, VariableSpec
+from librelane.engine.spec import FlowSpec, FlowSpecError, JobSpec, VariableSpec
 
 pytestmark = pytest.mark.all
 
@@ -462,7 +462,7 @@ def test_a_source_naming_a_transitive_ancestor_is_rejected():
 
 
 def test_load_flow_spec_reads_a_yaml_file(tmp_path):
-    from librelane.flows.spec import load_flow_spec
+    from librelane.engine.spec import load_flow_spec
 
     document = tmp_path / "tiny.yaml"
     document.write_text(
@@ -482,7 +482,7 @@ def test_load_flow_spec_reads_a_yaml_file(tmp_path):
 
 
 def test_load_flow_spec_names_the_file_when_the_document_is_bad(tmp_path):
-    from librelane.flows.spec import load_flow_spec
+    from librelane.engine.spec import load_flow_spec
 
     document = tmp_path / "broken.yaml"
     document.write_text(
@@ -508,7 +508,7 @@ def test_parse_predicate_returns_a_tuple_of_config_terms_for_a_conjunction():
     predicates.parse_predicate, is pinned in test_predicates.py; this only
     pins spec.py's use of it for 'if'.
     """
-    from librelane.flows.predicates import ConfigTerm, config_terms, parse_predicate
+    from librelane.engine.predicates import ConfigTerm, config_terms, parse_predicate
 
     assert parse_predicate("RUN_LINTER") == (ConfigTerm("RUN_LINTER"),)
     assert config_terms(parse_predicate("A and B and C")) == ("A", "B", "C")

@@ -16,7 +16,7 @@ import os
 import tempfile
 from unittest import mock
 from decimal import Decimal
-from typing import Any, Literal, NamedTuple, Optional
+from typing import Any, Literal, NamedTuple
 from collections.abc import Iterable, Callable, Iterator
 
 import pytest
@@ -285,7 +285,7 @@ MOCK_PDK_VARS = [
     ),
     Variable(
         "RANDOM_ARRAY",
-        Optional[list[str]],
+        list[str] | None,
         description="x",
     ),
 ]
@@ -335,7 +335,7 @@ MOCK_FLOW_VARS = [
     ),
     Variable(
         "MACROS",
-        Optional[dict[str, Macro]],
+        dict[str, Macro] | None,
         description="x",
         default=None,
     ),
@@ -450,10 +450,35 @@ class MockProgress(object):
 
 @pytest.fixture(autouse=True)
 def _mock_progress():
-    from librelane.flows import flow
+    from librelane.engine import flow
 
     with mock.patch.object(flow, "Progress", MockProgress):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _restore_current_config():
+    """
+    Undoes the process-wide configuration a flow publishes.
+
+    :meth:`librelane.engine.Flow.__init__` and
+    :meth:`librelane.config.Config.interactive` write
+    :func:`librelane.config.set_current_config`, which is the point of it: a
+    step built afterwards with no configuration argument finds one. In a test
+    session that carries into the next test, where a step meant to be built
+    without a configuration would silently pick up the previous test's, and a
+    test asserting that building one without a configuration fails would
+    instead watch it succeed.
+    """
+    from librelane.config import Config, set_current_config
+
+    previous = set_current_config(None)
+    interactive = Config.current_interactive
+    try:
+        yield
+    finally:
+        set_current_config(previous)
+        Config.current_interactive = interactive
 
 
 @pytest.fixture(autouse=True)

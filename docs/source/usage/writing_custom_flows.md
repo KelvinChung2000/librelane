@@ -15,7 +15,7 @@ This defines many of the terms used and enumerates strictures mentioned in this 
 A flow is a YAML file. It declares a graph of named **jobs**, each of which
 runs some steps, and the edges between them. Nothing about it is Python, and
 LibreLane's own flows -- `Classic`, `VHDLClassic` and `Chip` -- are exactly
-this and nothing else; they live in `librelane/flows/*.yaml`. Opening a run
+this and nothing else; they live in `librelane/share/*.yaml`. Opening a run
 in a viewer is not a flow and has no document: that is
 `librelane open <viewer>`.
 
@@ -59,8 +59,8 @@ express.
 Load and run it from Python:
 
 ```python
-from librelane.flows import load_flow_spec
-from librelane.flows.engine import Workflow
+from librelane.engine import load_flow_spec
+from librelane.engine.engine import Workflow
 
 flow = Workflow(
     load_flow_spec("./my_flow.yaml"),
@@ -76,7 +76,7 @@ flow = Workflow(
 flow.start()
 ```
 
-{py:meth}`librelane.flows.Flow.start` returns the final output state. The step
+{py:meth}`librelane.engine.Flow.start` returns the final output state. The step
 objects the run created are left on the flow instance as `step_objects`.
 
 `--flow` on the command line takes a *registered* name, not a path, so to run
@@ -84,7 +84,7 @@ your document that way register it at import time and load your module as a
 [plugin](./writing_plugins.md):
 
 ```python
-from librelane.flows import Flow, load_flow_spec
+from librelane.engine import Flow, load_flow_spec
 
 Flow.factory.register(load_flow_spec("./my_flow.yaml"))
 ```
@@ -182,7 +182,7 @@ jobs:
     if: RUN_CTS
 ```
 
-See `librelane/flows/classic.yaml` for a complete example: half of its
+See `librelane/share/classic.yaml` for a complete example: half of its
 forty-eight jobs carry an `if`, and the variables they name are declared in its
 own `config` section.
 
@@ -379,6 +379,103 @@ pass, not for the whole loop; a sweep's passes acquire independently, so a
 two-seat pool still runs a five-point sweep two passes at a time rather than
 one point or all five.
 
+### Sharing declarations between documents
+
+Two documents that declare the same thing may write it once, in a third file,
+and name that file under `include`:
+
+```yaml
+# gates.yaml
+config:
+  - name: RUN_CTS
+    type: bool
+    default: true
+    description: Enables clock tree synthesis using the OpenROAD.CTS step.
+
+jobs:
+  cts:
+    needs: [detailed_placement]
+    uses: cts
+    if: RUN_CTS
+```
+
+```yaml
+# my_flow.yaml
+name: MyFlow
+include: [./gates.yaml]
+
+jobs:
+  synthesis:
+    steps: [Yosys.Synthesis]
+  detailed_placement:
+    needs: [synthesis]
+    uses: detailed_placement
+```
+
+Each path is relative to the file that writes it, not to where LibreLane is
+run from, so a document and the files it reuses travel together. An included
+file may include others in turn; one reached down two paths at once is read
+once, and that is not an error.
+
+An included file need not be runnable. `name` and `jobs` are required of the
+document being *loaded* and of nothing it includes, so a file declaring
+nothing but `config` -- or nothing but a `with` block, or a set of resource
+pools -- is a legal include. It is merged as data and never registered, so it
+never appears under `--flow`; a `name` or `description` written in one is
+ignored, which is what lets it carry them for an editor to validate against
+the schema.
+
+#### The common library
+
+An entry written `common::<file>` names a file LibreLane itself ships, in
+`librelane/share/common/`:
+
+```yaml
+name: MyClassicVariant
+include: [common::classic_config.yaml, common::classic_jobs.yaml]
+
+jobs:
+  synthesis:
+    uses: synthesis/yosys_vhdl
+  # ...the front end and finishing this flow does differently
+```
+
+The directive exists because that library has no path a document can write.
+LibreLane lives wherever it was installed -- a virtual environment, a Nix store
+path, a system `site-packages` -- so a document in a design's own repository
+that reached it by path would be a document that works on one machine.
+`common::` is answered by the installation instead, and is the one form that
+still works for a document loaded from a Python mapping, which has no
+directory of its own for a relative path to be relative to. The error for a
+name the library does not have lists the names it does.
+
+`classic.yaml`, `chip.yaml` and `vhdl_classic.yaml` are written this way: what
+all three declare identically -- their configuration variables, and the runs
+of jobs from synthesis to the render -- is in that library, and each of them
+includes it with `common::`, exactly as your own document would.
+
+Two rules decide what the merged document says:
+
+* **The including document wins.** A job, variable, `with` entry, pool or
+  `final` it declares itself replaces the included one. A job is replaced
+  whole and never merged key by key, so an override is readable without
+  opening the file it overrides -- writing `uses` over an included job that
+  carried an `if` leaves no `if` behind.
+* **Two includes may not declare the same thing.** Nothing orders one include
+  above another, so a job, variable, value or pool declared by both is refused
+  by name rather than resolved. Declaring it in the document that includes
+  them both, which overrides either, is the way to say which was meant.
+
+There is no `extends` and no way to *remove* what an include declares. A flow
+is a self-contained statement of what it runs, and a filter expression over
+another flow's jobs is a substitution map wearing a different hat; a document
+that needs most of another's graph but not all of it shares the part it agrees
+with and writes the rest itself.
+
+Everything else is checked after merging, on the one document the merge
+produces: a `needs` may name a job another file declares, and the error for one
+that names nothing is the same error it always was.
+
 ### Editor support
 
 `librelane flow schema` writes a JSON Schema for everything above, so an
@@ -419,25 +516,30 @@ job's required view is produced upstream of it. A document the editor calls
 clean can still be refused at load time, with a better message than a
 validator would give.
 
+For the same reason it does not require `name` or `jobs`: an editor has no way
+to tell a document being written from a fragment being written, and a schema
+that guessed would flag every fragment. Both are written against it, and the
+loader is where the requirement can be stated without guessing.
+
 ## Fully Customized Flows
 
 A document declares a graph and the engine runs it, which is how every flow
 LibreLane ships is written. What a document cannot yet express is a decision
 taken *during* a run, on data that run produced -- running two variants and
 keeping the better one, or retrying a step with different settings after it
-failed. For that there is still Python, and {class}`librelane.flows.Flow` is
+failed. For that there is still Python, and {class}`librelane.engine.Flow` is
 still the abstract base to write it against.
 
 Treat this as an escape hatch rather than as the flow surface. `--flow` takes
 the name of a registered *document*, and `Flow.factory.register` takes a
-{class}`librelane.flows.spec.FlowSpec`, so a `Flow` subclass has no registered
+{class}`librelane.engine.spec.FlowSpec`, so a `Flow` subclass has no registered
 name and is constructed and started directly from your own code.
 
 A `Flow` subclass must:
 
 * Declare the steps used in the `Steps` attribute.
   * The steps are examined so their configuration variables can be validated ahead of time.
-* Implement the {meth}`librelane.flows.Flow.run` method.
+* Implement the {meth}`librelane.engine.Flow.run` method.
   * This step is responsible for the core logic of the flow, i.e., instantiating
     steps and calling them.
   * This method must return the final state and a list of step objects created.
@@ -487,9 +589,9 @@ Classic - Stage 19 - cts ━━━━━━━━━━━━━━━━━╺�
 
 The Flow object has methods to manage this progress bar:
 
-* {py:meth}`librelane.flows.Flow.progress_bar.set_max_stage_count`
-* {py:meth}`librelane.flows.Flow.progress_bar.start_stage`
-* {py:meth}`librelane.flows.Flow.progress_bar.end_stage`.
+* {py:meth}`librelane.engine.Flow.progress_bar.set_max_stage_count`
+* {py:meth}`librelane.engine.Flow.progress_bar.start_stage`
+* {py:meth}`librelane.engine.Flow.progress_bar.end_stage`.
 
 They are to be called from inside the `run` method. A workflow advances the bar
 once per job it selects and labels each stage with that job's name, so a stage
@@ -507,7 +609,7 @@ The `Flow` object is NOT thread-safe. If you're going to run one or more steps
 in parallel, please follow this guide on how to do so.
 ```
 
-The `Flow` object offers a method to run steps asynchronously, {meth}`librelane.flows.Flow.start_step_async`.
+The `Flow` object offers a method to run steps asynchronously, {meth}`librelane.engine.Flow.start_step_async`.
 This method returns a [`Future`](https://en.wikipedia.org/wiki/Futures_and_promises)
 encapsulating a State object, which can then be used as an input to future Steps.
 
@@ -551,7 +653,7 @@ class TryTwoUtilizations(Flow):
 ```
 
 A flow whose steps depend on each other's results this way is what the
-{meth}`librelane.flows.Flow.start_step_async` seam exists for. Note that the
+{meth}`librelane.engine.Flow.start_step_async` seam exists for. Note that the
 `Flow` object is not thread-safe, so everything above happens on one thread and
 only the steps themselves run concurrently. `start_step_async` submits to the
 same process-wide pool the workflow engine fills with whole jobs, which is why
@@ -590,13 +692,13 @@ Steps may throw one of these hierarchy of errors, namely:
 
 As a rule of thumb, it is sufficient to forward these errors as one of these two:
 
-* {exc}`librelane.flows.FlowError`
-  * {exc}`librelane.flows.FlowException`
+* {exc}`librelane.engine.FlowError`
+  * {exc}`librelane.engine.FlowException`
 
 Which share a similar hierarchy. Here is how the workflow engine handles a
 step's errors:
 
-```{literalinclude} ../../../librelane/flows/engine.py
+```{literalinclude} ../../../librelane/engine/engine.py
 ---
 language: python
 start-after: "shutil.rmtree(step_dir, ignore_errors=True)"

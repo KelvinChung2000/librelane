@@ -1,0 +1,158 @@
+# Copyright 2026 LibreLane Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# The configuration variables the Classic-family documents share.
+#
+# classic.yaml, chip.yaml and vhdl_classic.yaml declared these twenty-three
+# variables identically, three times over, and had to: the Python flows they
+# replaced inherited one configuration model, so every key any of them accepted
+# has to stay accepted by all of them. That is a rule about the set as a whole,
+# which makes it one declaration and not three that happen to agree.
+#
+# So a variable here gates nothing in some of the documents that include it,
+# deliberately. RUN_LINTER and RUN_EQY have no effect in VHDLClassic, which
+# runs neither job; RUN_RMP and RUN_MAGIC_WRITE_LEF have none in Chip. Their
+# descriptions say so. Dropping one from the document that does not read it
+# would turn an accepted configuration key into an unknown-key error.
+#
+# This file declares no jobs and is not a flow. It is merged into the documents
+# that include it; see docs/source/usage/writing_custom_flows.md.
+config:
+  - name: RUN_TAP_ENDCAP_INSERTION
+    type: bool
+    default: true
+    description: Enables the OpenROAD.TapEndcapInsertion step.
+    deprecated_names: [TAP_DECAP_INSERTION, RUN_TAP_DECAP_INSERTION]
+  - name: RUN_RMP
+    type: bool
+    default: false
+    description: >-
+      Enables local resynthesis after floorplanning using the OpenROAD.RMP
+      step. This is experimental and changes the netlist every later step works
+      on.
+  - name: RUN_POST_GPL_DESIGN_REPAIR
+    type: bool
+    default: true
+    description: >-
+      Enables resizer design repair after global placement using the
+      OpenROAD.RepairDesignPostGPL step.
+    deprecated_names: [PL_RESIZER_DESIGN_OPTIMIZATIONS, RUN_REPAIR_DESIGN]
+  - name: RUN_POST_GRT_DESIGN_REPAIR
+    type: bool
+    default: false
+    description: >-
+      Enables resizer design repair after global routing using the
+      OpenROAD.RepairDesignPostGRT step. This is experimental and may result in
+      hangs and/or extended run times.
+  - name: RUN_CTS
+    type: bool
+    default: true
+    description: Enables clock tree synthesis using the OpenROAD.CTS step.
+    deprecated_names: [CLOCK_TREE_SYNTH]
+  - name: RUN_POST_CTS_RESIZER_TIMING
+    type: bool
+    default: true
+    description: >-
+      Enables resizer timing optimizations after clock tree synthesis using the
+      OpenROAD.ResizerTimingPostCTS step.
+    deprecated_names: [PL_RESIZER_TIMING_OPTIMIZATIONS]
+  - name: RUN_POST_GRT_RESIZER_TIMING
+    type: bool
+    default: false
+    description: >-
+      Enables resizer timing optimizations after global routing using the
+      OpenROAD.ResizerTimingPostGRT step. This is experimental and may result in
+      hangs and/or extended run times.
+    deprecated_names: [GLB_RESIZER_TIMING_OPTIMIZATIONS]
+  - name: RUN_HEURISTIC_DIODE_INSERTION
+    type: bool
+    default: false
+    description: Enables the Odb.HeuristicDiodeInsertion step.
+  - name: RUN_ANTENNA_REPAIR
+    type: bool
+    default: true
+    description: Enables the OpenROAD.RepairAntennas step.
+    deprecated_names: [GRT_REPAIR_ANTENNAS]
+  - name: RUN_DRT
+    type: bool
+    default: true
+    description: Enables the OpenROAD.DetailedRouting step.
+  - name: RUN_FILL_INSERTION
+    type: bool
+    default: true
+    description: Enables the OpenROAD.FillInsertion step.
+  - name: RUN_MCSTA
+    type: bool
+    default: true
+    description: >-
+      Enables multi-corner static timing analysis using the OpenROAD.STAPostPNR
+      step.
+    deprecated_names: [RUN_SPEF_STA]
+  - name: RUN_SPEF_EXTRACTION
+    type: bool
+    default: true
+    description: Enables parasitics extraction using the OpenROAD.RCX step.
+  - name: RUN_IRDROP_REPORT
+    type: bool
+    default: true
+    description: >-
+      Enables generation of an IR Drop report using the OpenROAD.IRDropReport
+      step.
+  - name: RUN_LVS
+    type: bool
+    default: true
+    description: Enables the Netgen.LVS step.
+  - name: RUN_MAGIC_STREAMOUT
+    type: bool
+    default: true
+    description: Enables the Magic.StreamOut step to generate GDSII.
+    deprecated_names: [RUN_MAGIC]
+  - name: RUN_KLAYOUT_STREAMOUT
+    type: bool
+    default: true
+    description: Enables the KLayout.StreamOut step to generate GDSII.
+    deprecated_names: [RUN_KLAYOUT]
+  - name: RUN_MAGIC_WRITE_LEF
+    type: bool
+    default: true
+    description: Enables the Magic.WriteLEF step.
+    deprecated_names: [MAGIC_GENERATE_LEF]
+  - name: RUN_KLAYOUT_XOR
+    type: bool
+    default: true
+    description: >-
+      Enables running the KLayout.XOR step on the two GDSII files generated by
+      Magic and Klayout. Stream-outs for both KLayout and Magic should have
+      already run, and the PDK must support both signoff tools.
+  - name: RUN_MAGIC_DRC
+    type: bool
+    default: true
+    description: Enables the Magic.DRC step.
+  - name: RUN_KLAYOUT_DRC
+    type: bool
+    default: true
+    description: Enables the KLayout.DRC step.
+  - name: RUN_EQY
+    type: bool
+    default: false
+    description: >-
+      Enables the formal equivalence job, i.e. the Yosys.EQY step. Has no effect
+      in VHDLClassic, which does not run that job.
+  - name: RUN_LINTER
+    type: bool
+    default: true
+    description: >-
+      Enables the lint job, i.e. the Verilator.Lint step. Has no effect in
+      VHDLClassic, which does not run that job.
+    deprecated_names: [RUN_VERILATOR]

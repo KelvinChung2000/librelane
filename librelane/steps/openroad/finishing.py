@@ -24,9 +24,6 @@ import subprocess
 import pathlib
 from concurrent.futures import Future
 from decimal import Decimal
-from typing import (
-    Optional,
-)
 
 
 from librelane.common import (
@@ -106,7 +103,7 @@ class RCX(OpenROADStep):
             description="If enabled, the via and wire resistances will be merged.",
         )
 
-        RCX_SDC_FILE: Optional[Path] = variable(
+        RCX_SDC_FILE: Path | None = variable(
             None,
             description="Specifies SDC file to be used for RCX-based STA, which can be different from the one used for implementation.",
         )
@@ -116,7 +113,7 @@ class RCX(OpenROADStep):
             pdk=True,
         )
 
-        STA_THREADS: Optional[int] = variable(
+        STA_THREADS: int | None = variable(
             None,
             description="The maximum number of STA corners to run in parallel. If unset, this will be equal to your machine's thread count.",
         )
@@ -237,7 +234,7 @@ class IRDropReport(OpenROADStep):
     outputs = []
 
     class Config(OpenROADStep.Config):
-        VSRC_LOC_FILES: Optional[dict[str, Path]] = variable(
+        VSRC_LOC_FILES: dict[str, Path] | None = variable(
             None,
             description="Map of power and ground nets to OpenROAD PSM location files. See [this](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/psm#commands) for more info.",
         )
@@ -344,17 +341,15 @@ class CutRows(OpenROADStep):
             10,
             description="Specify the horizontal halo size around macros, within which standard cell rows are cut away.",
             units="µm",
-            deprecated_names=["FP_TAP_HORIZONTAL_HALO"],
         )
 
         FP_MACRO_VERTICAL_HALO: Decimal = variable(
             10,
             description="Specify the vertical halo size around macros, within which standard cell rows are cut away.",
             units="µm",
-            deprecated_names=["FP_TAP_VERTICAL_HALO"],
         )
 
-        FP_PRUNE_THRESHOLD: Optional[Decimal] = variable(
+        FP_PRUNE_THRESHOLD: Decimal | None = variable(
             None,
             description='If specified, all rows smaller in width than this value will be removed. This helps avoid "islets" of cells that are hard to route and connect to PDNs.',
             pdk=True,
@@ -435,19 +430,19 @@ class SaveImage(OpenROADStep):
             units="px",
         )
 
-        SAVE_IMAGE_RESOLUTION: Optional[Decimal] = variable(
+        SAVE_IMAGE_RESOLUTION: Decimal | None = variable(
             None,
             description="Microns per pixel. Overrides the width when set.",
             units="µm/px",
         )
 
-        SAVE_IMAGE_AREA: Optional[list[Decimal]] = variable(
+        SAVE_IMAGE_AREA: list[Decimal] | None = variable(
             None,
             description="The area to render as four numbers, x0 y0 x1 y1. The whole design is rendered when unset.",
             units="µm",
         )
 
-        SAVE_IMAGE_DISPLAY_OPTIONS: Optional[dict[str, bool]] = variable(
+        SAVE_IMAGE_DISPLAY_OPTIONS: dict[str, bool] | None = variable(
             None,
             description="OpenROAD display controls to override, e.g. {'Nets/Power': false}. The names are those of the GUI's Display Control pane.",
         )

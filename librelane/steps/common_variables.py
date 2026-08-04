@@ -16,7 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from decimal import Decimal
-from typing import Optional, Literal
+from typing import Literal
 
 from librelane.config import BaseConfigModel, model_to_variables, variable
 
@@ -38,29 +38,25 @@ class IoLayerConfig(BaseConfigModel):
         0,
         description="Extends the vertical io pins outside of the die by the specified units.",
         units="µm",
-        deprecated_names=["FP_IO_VEXTEND"],
     )
 
     IO_PIN_H_EXTENSION: Decimal = variable(
         0,
         description="Extends the horizontal io pins outside of the die by the specified units.",
         units="µm",
-        deprecated_names=["FP_IO_HEXTEND"],
     )
 
     IO_PIN_V_THICKNESS_MULT: Decimal = variable(
         2,
         description="A multiplier for vertical pin thickness. Base thickness is the pins layer min width.",
-        deprecated_names=["FP_IO_VTHICKNESS_MULT"],
     )
 
     IO_PIN_H_THICKNESS_MULT: Decimal = variable(
         2,
         description="A multiplier for horizontal pin thickness. Base thickness is the pins layer min width.",
-        deprecated_names=["FP_IO_HTHICKNESS_MULT"],
     )
 
-    IO_PIN_V_LENGTH: Optional[Decimal] = variable(
+    IO_PIN_V_LENGTH: Decimal | None = variable(
         None,
         description="\n        The length of the pins with a north or south orientation. If unspecified by a PDK, OpenROAD will use whichever is higher of the following two values:\n            * The pin width\n            * The minimum value satisfying the minimum area constraint given the pin width\n        ",
         units="µm",
@@ -68,7 +64,7 @@ class IoLayerConfig(BaseConfigModel):
         deprecated_names=["FP_IO_VLENGTH"],
     )
 
-    IO_PIN_H_LENGTH: Optional[Decimal] = variable(
+    IO_PIN_H_LENGTH: Decimal | None = variable(
         None,
         description="\n        The length of the pins with an east or west orientation. If unspecified by a PDK, OpenROAD will use whichever is higher of the following two values:\n            * The pin width\n            * The minimum value satisfying the minimum area constraint given the pin width\n        ",
         units="µm",
@@ -84,39 +80,33 @@ class PdnConfig(BaseConfigModel):
     PDN_SKIPTRIM: bool = variable(
         False,
         description="Enables `-skip_trim` option during pdngen which skips the metal trim step, which attempts to remove metal stubs.",
-        deprecated_names=["FP_PDN_SKIPTRIM"],
     )
 
     PDN_CORE_RING: bool = variable(
         False,
         description="Enables adding a core ring around the design. More details on the control variables in the PDK config documentation.",
-        deprecated_names=["FP_PDN_CORE_RING"],
     )
 
     PDN_ENABLE_RAILS: bool = variable(
         True,
         description="Enables the creation of rails in the power grid.",
-        deprecated_names=["FP_PDN_ENABLE_RAILS"],
     )
 
     PDN_HORIZONTAL_HALO: Decimal = variable(
         10,
         description="Sets the horizontal halo around the macros during power grid insertion. Should not exceed `FP_MACRO_HORIZONTAL_HALO`, otherwise cells may be placed in the band between the two where the macro power grid is suppressed.",
         units="µm",
-        deprecated_names=["FP_PDN_HORIZONTAL_HALO"],
     )
 
     PDN_VERTICAL_HALO: Decimal = variable(
         10,
         description="Sets the vertical halo around the macros during power grid insertion. Should not exceed `FP_MACRO_VERTICAL_HALO`, otherwise cells may be placed in the band between the two where the macro power grid is suppressed.",
         units="µm",
-        deprecated_names=["FP_PDN_VERTICAL_HALO"],
     )
 
     PDN_MULTILAYER: bool = variable(
         True,
         description="Controls the layers used in the power grid. If set to false, only the lower layer will be used, which is useful when hardening a macro for integrating into a larger top-level design.",
-        deprecated_names=["FP_PDN_MULTILAYER", "DESIGN_IS_CORE"],
     )
 
     PDN_RAIL_OFFSET: Decimal = variable(
@@ -230,7 +220,7 @@ class PdnConfig(BaseConfigModel):
         pdk=True,
     )
 
-    PDN_CORE_RING_CONNECT_TO_PAD_LAYERS: Optional[list[str]] = variable(
+    PDN_CORE_RING_CONNECT_TO_PAD_LAYERS: list[str] | None = variable(
         None,
         description="Restricts the connection between the core ring and the pad pins to these layers. Only applicable when `PDN_CORE_RING_CONNECT_TO_PADS` is enabled. If unset, every layer a pad pin appears on is eligible.",
         pdk=True,
@@ -267,13 +257,13 @@ class PdnConfig(BaseConfigModel):
         pdk=True,
     )
 
-    PDN_CORE_HORIZONTAL_LAYER: Optional[str] = variable(
+    PDN_CORE_HORIZONTAL_LAYER: str | None = variable(
         None,
         description="Defines the horizontal PDN layer for the core ring. Falls back to `PDN_HORIZONTAL_LAYER` if undefined.",
         pdk=True,
     )
 
-    PDN_CORE_VERTICAL_LAYER: Optional[str] = variable(
+    PDN_CORE_VERTICAL_LAYER: str | None = variable(
         None,
         description="Defines the vertical PDN layer for the core ring. Falls back to `PDN_VERTICAL_LAYER` if undefined.",
         pdk=True,
@@ -296,12 +286,12 @@ pdn_variables = model_to_variables(PdnConfig)
 
 
 class RoutingLayerConfig(BaseConfigModel):
-    RT_CLOCK_MIN_LAYER: Optional[str] = variable(
+    RT_CLOCK_MIN_LAYER: str | None = variable(
         None,
         description="The name of lowest layer to be used in routing the clock net.",
     )
 
-    RT_CLOCK_MAX_LAYER: Optional[str] = variable(
+    RT_CLOCK_MAX_LAYER: str | None = variable(
         None,
         description="The name of highest layer to be used in routing the clock net.",
     )
@@ -354,7 +344,7 @@ dpl_variables = model_to_variables(DplConfig)
 
 
 class GrtConfig(RoutingLayerConfig):
-    DIODE_PADDING: Optional[int] = variable(
+    DIODE_PADDING: int | None = variable(
         None,
         description="Diode cell padding; increases the width of diode cells during placement checks..",
         units="sites",
@@ -368,7 +358,6 @@ class GrtConfig(RoutingLayerConfig):
     GRT_ANTENNA_REPAIR_ITERS: int = variable(
         3,
         description="The maximum number of iterations for global antenna repairs.",
-        deprecated_names=["GRT_ANT_ITERS", "GRT_ANTENNA_ITERS"],
     )
 
     GRT_OVERFLOW_ITERS: int = variable(
@@ -380,7 +369,6 @@ class GrtConfig(RoutingLayerConfig):
         10,
         description="The margin to over fix antenna violations.",
         units="%",
-        deprecated_names=["GRT_ANT_MARGIN", "GRT_ANTENNA_MARGIN"],
     )
 
     GRT_ANTENNA_REPAIR_JUMPER_ONLY: bool = variable(
@@ -404,15 +392,14 @@ class RszConfig(DplConfig):
     RSZ_DONT_TOUCH_RX: str = variable(
         "$^",
         description='A single regular expression designating nets or instances as "don\'t touch" by design repairs or resizer optimizations.',
-        deprecated_names=["UNBUFFER_NETS"],
     )
 
-    RSZ_DONT_TOUCH_LIST: Optional[list[str]] = variable(
+    RSZ_DONT_TOUCH_LIST: list[str] | None = variable(
         None,
         description='A list of nets and instances as "don\'t touch" by design repairs or resizer optimizations.',
     )
 
-    RSZ_CORNERS: Optional[list[str]] = variable(
+    RSZ_CORNERS: list[str] | None = variable(
         None,
         description="Resizer step-specific override for PNR_CORNERS.",
     )

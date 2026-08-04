@@ -196,10 +196,22 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
             raise KeyError(key) from None
 
     def __iter__(self) -> Iterator[str]:  # type: ignore[override]
-        return iter(self.to_raw_dict())
+        """
+        Every declared field, then whatever arrived as an extra, which is the
+        order :meth:`to_raw_dict` produces.
+
+        Read off the model rather than out of a dump: ``to_raw_dict`` runs
+        ``model_dump``, which deep-copies every value, and one model now covers
+        a whole flow's variables. Nothing about a key requires knowing its
+        value, so ``for key in config``, ``len(config)`` and ``key in config``
+        -- the last of which the ``Mapping`` facade answers through
+        ``__getitem__`` -- should not pay to build them all.
+        """
+        yield from type(self).model_fields
+        yield from self.__pydantic_extra__ or {}
 
     def __len__(self) -> int:
-        return len(self.to_raw_dict())
+        return len(type(self).model_fields) + len(self.__pydantic_extra__ or {})
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Mapping):

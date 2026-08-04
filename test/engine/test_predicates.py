@@ -16,7 +16,7 @@ from decimal import Decimal
 import pytest
 
 from librelane.common.errors import FlowError
-from librelane.flows.predicates import (
+from librelane.engine.predicates import (
     ConfigTerm,
     MetricTerm,
     PredicateError,

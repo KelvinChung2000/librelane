@@ -13,7 +13,7 @@
 # limitations under the License.
 import sys
 from dataclasses import dataclass
-from typing import Literal, Optional, Union
+from typing import Literal
 from collections.abc import Sequence
 
 import odb
@@ -25,7 +25,7 @@ from reader import Table
 from rich.console import Console
 
 
-def is_connected(term: Union[odb.dbITerm, odb.dbBTerm]) -> bool:
+def is_connected(term: odb.dbITerm | odb.dbBTerm) -> bool:
     if isinstance(term, odb.dbITerm):
         return term.getNet() is not None
     # all bterms have a net, we need to check if it has another
@@ -37,7 +37,7 @@ def is_connected(term: Union[odb.dbITerm, odb.dbBTerm]) -> bool:
 @dataclass
 class Port:
     polarity: Literal["INPUT", "OUTPUT", "INOUT"]
-    signal_type: Optional[Literal["POWER", "GROUND", "SIGNAL"]]
+    signal_type: Literal["POWER", "GROUND", "SIGNAL"] | None
     connected: bool = False
 
 
@@ -128,7 +128,7 @@ class Module(object):
                 )
             return critical_disconnected_pins
 
-    def __init__(self, object: Union[odb.dbBlock, odb.dbInst]) -> None:
+    def __init__(self, object: odb.dbBlock | odb.dbInst) -> None:
         self.name = object.getName()
         self.ports: dict[str, Port] = {}
         terminals = (
@@ -241,7 +241,7 @@ class Module(object):
 def main(
     reader: OdbReader,
     ignore_modules: Sequence[str],
-    write_full_table_to: Optional[str],
+    write_full_table_to: str | None,
 ):
     db = reader.db
     block = db.getChip().getBlock()

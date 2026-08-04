@@ -23,9 +23,6 @@ import os
 import re
 import pathlib
 from dataclasses import dataclass
-from typing import (
-    Optional,
-)
 
 import rich
 import rich.table
@@ -126,10 +123,10 @@ def parse_antenna_report(report_file: str) -> list[AntennaViolation]:
         If a ``(VIOLATED)`` marker appears before any line the violation could
         be attributed to, which means the report format has changed.
     """
-    net: Optional[str] = None
-    pin: Optional[str] = None
-    layer: Optional[str] = None
-    calculated_ratio: Optional[float] = None
+    net: str | None = None
+    pin: str | None = None
+    layer: str | None = None
+    calculated_ratio: float | None = None
     violations: list[AntennaViolation] = []
 
     with open(report_file, "r", encoding="utf8") as f:
@@ -385,7 +382,6 @@ class DetailedRouting(OpenROADStep):
         ERROR_ON_TR_DRC: bool = variable(
             True,
             description="Checks for DRC violations after routing and exits the flow if any was found.",
-            deprecated_names=["QUIT_ON_TR_DRC"],
         )
 
         DRT_OPT_ITERS: int = variable(
@@ -407,7 +403,6 @@ class DetailedRouting(OpenROADStep):
             10,
             description="The margin to over fix antenna violations.",
             units="%",
-            deprecated_names=["DRT_ANTENNA_MARGIN"],
         )
 
         DRT_ANTENNA_REPAIR_JUMPER_ONLY: bool = variable(
@@ -420,17 +415,17 @@ class DetailedRouting(OpenROADStep):
             description="Only use antenna diodes to fix antenna violations. Cannot be used in conjunction with DRT_ANTENNA_REPAIR_JUMPER_ONLY.",
         )
 
-        DRT_SAVE_DRC_REPORT_ITERS: Optional[int] = variable(
+        DRT_SAVE_DRC_REPORT_ITERS: int | None = variable(
             None,
             description="Write a DRC report every N iterations. If DRT_SAVE_SNAPSHOTS is enabled, there is an implicit default value of 1.",
         )
 
-        NON_DEFAULT_RULES: Optional[dict[str, NDR]] = variable(
+        NON_DEFAULT_RULES: dict[str, NDR] | None = variable(
             None,
             description="Specify non-default rules. Can be used to change the width, spacing and vias of a net.",
         )
 
-        DRT_ASSIGN_NDR: Optional[dict[str, str]] = variable(
+        DRT_ASSIGN_NDR: dict[str, str] | None = variable(
             None,
             description="Specify which nets should be assigned to which non-default rule. The net name is a regular expression. Use '^name$' to match an exact name.",
         )

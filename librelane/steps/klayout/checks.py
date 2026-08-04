@@ -21,7 +21,6 @@ import os
 import sys
 import pathlib
 from os.path import abspath
-from typing import Optional
 
 from librelane.steps.step import MetricGate, ViewsUpdate, MetricsUpdate, Step
 
@@ -61,21 +60,20 @@ class XOR(KLayoutStep):
         ERROR_ON_XOR_ERROR: bool = variable(
             True,
             description="Checks for geometric differences between the Magic and KLayout stream-outs. If any exist, raise an error at the end of the flow.",
-            deprecated_names=["QUIT_ON_XOR_ERROR"],
         )
 
-        KLAYOUT_XOR_THREADS: Optional[int] = variable(
+        KLAYOUT_XOR_THREADS: int | None = variable(
             None,
             description="Specifies number of threads used in the KLayout XOR check. If unset, this will be equal to your machine's thread count.",
         )
 
-        KLAYOUT_XOR_IGNORE_LAYERS: Optional[list[str]] = variable(
+        KLAYOUT_XOR_IGNORE_LAYERS: list[str] | None = variable(
             None,
             description="KLayout layers to ignore during XOR operations.",
             pdk=True,
         )
 
-        KLAYOUT_XOR_TILE_SIZE: Optional[int] = variable(
+        KLAYOUT_XOR_TILE_SIZE: int | None = variable(
             None,
             description="The tile size to parallelize the XOR process with.",
             pdk=True,
@@ -179,19 +177,19 @@ class Density(KLayoutStep):
             description="Checks for density violations after KLayout density check is executed and exits the flow if any was found.",
         )
 
-        KLAYOUT_DENSITY_RUNSET: Optional[Path] = variable(
+        KLAYOUT_DENSITY_RUNSET: Path | None = variable(
             None,
             description="A path to KLayout density runset.",
             pdk=True,
         )
 
-        KLAYOUT_DENSITY_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
+        KLAYOUT_DENSITY_OPTIONS: dict[str, int | bool | str] | None = variable(
             None,
             description="Options passed directly to the KLayout density runset. They vary from one PDK to another.",
             pdk=True,
         )
 
-        KLAYOUT_DENSITY_THREADS: Optional[int] = variable(
+        KLAYOUT_DENSITY_THREADS: int | None = variable(
             None,
             description="Specifies the number of threads to be used in KLayout density check."
             + "If unset, this will be equal to your machine's thread count.",
@@ -310,13 +308,13 @@ class Antenna(KLayoutStep):
             description="Checks for antenna violations after KLayout antenna check is executed and exits the flow if any was found.",
         )
 
-        KLAYOUT_ANTENNA_RUNSET: Optional[Path] = variable(
+        KLAYOUT_ANTENNA_RUNSET: Path | None = variable(
             None,
             description="A path to KLayout antenna runset.",
             pdk=True,
         )
 
-        KLAYOUT_ANTENNA_OPTIONS: Optional[dict[str, int | bool | str]] = variable(
+        KLAYOUT_ANTENNA_OPTIONS: dict[str, int | bool | str] | None = variable(
             None,
             description="Options passed directly to the KLayout density runset. They vary from one PDK to another.",
             pdk=True,

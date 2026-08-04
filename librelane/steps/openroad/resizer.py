@@ -21,7 +21,6 @@ from importlib.resources import files
 from decimal import Decimal
 from typing import (
     Literal,
-    Optional,
 )
 
 
@@ -77,26 +76,26 @@ class CTS(OpenROADStep):
     name = "Clock Tree Synthesis"
 
     class Config(DplConfig, OpenROADStep.Config):
-        CTS_BALANCE_LEVELS: Optional[bool] = variable(
+        CTS_BALANCE_LEVELS: bool | None = variable(
             None,
             description="Attempts to keep a similar number of levels in the clock tree across non-register cells (e.g., clock-gate or inverter).",
         )
 
-        CTS_SINK_BUFFER_MAX_CAP_DERATE_PCT: Optional[Decimal] = variable(
+        CTS_SINK_BUFFER_MAX_CAP_DERATE_PCT: Decimal | None = variable(
             None,
             description="Controls automatic buffer selection. To favor strong(weak) drive strength buffers use a small(large) value."
             + "The value of 100 means no derating of max cap limit",
             units="%",
         )
 
-        CTS_DELAY_BUFFER_DERATE_PCT: Optional[Decimal] = variable(
+        CTS_DELAY_BUFFER_DERATE_PCT: Decimal | None = variable(
             None,
             description="This option balances latencies between macro cells and registers by inserting delay buffers"
             + "The value of 100 means all needed delay buffers are inserted",
             units="%",
         )
 
-        CTS_OBSTRUCTION_AWARE: Optional[bool] = variable(
+        CTS_OBSTRUCTION_AWARE: bool | None = variable(
             None,
             description="Enables obstruction-aware buffering such that clock buffers are not placed on top of blockages or hard macros. "
             + "This option may reduce legalizer displacement, leading to better latency, skew or timing QoR.",
@@ -108,23 +107,23 @@ class CTS(OpenROADStep):
             + "Each cluster is driven by a buffer which becomes the end point of the H-tree structure.",
         )
 
-        CTS_SINK_CLUSTERING_SIZE: Optional[int] = variable(
+        CTS_SINK_CLUSTERING_SIZE: int | None = variable(
             None,
             description="Specifies the maximum number of sinks per cluster.",
         )
 
-        CTS_SINK_CLUSTERING_MAX_DIAMETER: Optional[Decimal] = variable(
+        CTS_SINK_CLUSTERING_MAX_DIAMETER: Decimal | None = variable(
             None,
             description="Specifies the maximum diameter of the sink cluster.",
             units="µm",
         )
 
-        CTS_MACRO_CLUSTERING_SIZE: Optional[int] = variable(
+        CTS_MACRO_CLUSTERING_SIZE: int | None = variable(
             None,
             description="Specifies the maximum number of sinks per cluster for the macro tree.",
         )
 
-        CTS_MACRO_CLUSTERING_MAX_DIAMETER: Optional[Decimal] = variable(
+        CTS_MACRO_CLUSTERING_MAX_DIAMETER: Decimal | None = variable(
             None,
             description="Specifies the maximum diameter of the sink cluster for the macro tree.",
             units="µm",
@@ -147,7 +146,7 @@ class CTS(OpenROADStep):
             units="µm",
         )
 
-        CTS_CORNERS: Optional[list[str]] = variable(
+        CTS_CORNERS: list[str] | None = variable(
             None,
             description="Clock tree synthesis step-specific override for PNR_CORNERS.",
         )
@@ -163,13 +162,13 @@ class CTS(OpenROADStep):
             pdk=True,
         )
 
-        CTS_MAX_CAP: Optional[Decimal] = variable(
+        CTS_MAX_CAP: Decimal | None = variable(
             None,
             description="Overrides the maximum capacitance CTS characterization will test. If omitted, the capacitance is extracted from the lib information of the buffers in CTS_CLK_BUFFERS.",
             units="pF",
         )
 
-        CTS_MAX_SLEW: Optional[Decimal] = variable(
+        CTS_MAX_SLEW: Decimal | None = variable(
             None,
             description="Overrides the maximum transition time CTS characterization will test. If omitted, the slew is extracted from the lib information of the buffers in CTS_CLK_BUFFERS.",
             units="ns",

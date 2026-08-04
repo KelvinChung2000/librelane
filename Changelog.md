@@ -559,6 +559,54 @@ Style Notes
 
 ## Flows
 
+* Added `include` to the workflow document, which names files whose
+  declarations are merged underneath the document's own. Configuration
+  variables, jobs, `with` blocks, resource pools and `final` are all shareable;
+  each path is relative to the file that writes it, and an included file may
+  include others in turn.
+  * Added the `common::` directive, which names a file in the library
+    LibreLane ships in `librelane/share/common/` rather than one on disk
+    beside the document, spelled as a configuration file's `dir::` and
+    `pdk_dir::` are. That library has no path a document can write: LibreLane
+    lives wherever it was installed, inside a virtual environment or a Nix
+    store path, so a document in a design's own repository that reached it by
+    path would be a document that works on one machine. It is also the one
+    form of include that works for a document loaded from a Python mapping,
+    which has no directory of its own. A `common::` naming a file the library
+    does not have is answered with the list of files it does.
+  * An included file need not be runnable. `name` and `jobs` are required of
+    the document being loaded and of nothing it includes, so a file declaring
+    nothing but `config` is a legal include and never appears under `--flow`.
+    A `name` or `description` written in one is ignored, so it can carry them
+    for an editor to validate it against the schema.
+  * The including document wins, and replaces a job whole rather than merging
+    it key by key: writing `uses` over an included job that carried an `if`
+    leaves no `if` behind, so an override reads without opening the file it
+    overrides.
+  * Two includes declaring the same job, variable, value or pool is an error
+    naming both files. Nothing orders one include above another, so which was
+    meant is unanswerable; declaring it in the document that includes them
+    both, which overrides either, is the answer.
+  * There is still no `extends`, and no way to remove what an include
+    declares. What is shared is a declaration none of the sharers owns, not
+    one document reading as an edit of another.
+  * Merging happens before validation, on the raw mapping, so every existing
+    rule is checked against the one document the merge produces and a `needs`
+    may name a job another file declared. An error in a merged document names
+    the files merged into it.
+  * `librelane flow schema` carries `include`, names the common library's
+    files in its description, and no longer requires `name` or `jobs`: an
+    editor cannot tell a document being written from a fragment being written,
+    and a schema that guessed would flag every fragment. The loader still
+    requires both of the document it is given.
+* Moved what `classic.yaml`, `chip.yaml` and `vhdl_classic.yaml` declare
+  identically into the common library, which all three now include with
+  `common::`: their twenty-three configuration variables, and twenty-seven
+  jobs running from synthesis to the render. All three resolve to exactly the
+  flows they did before, job for job and step for step; what each still writes
+  out itself is what makes it Classic, Chip or VHDLClassic. They reach the
+  library the way any other document would, rather than by a relative path
+  that only works from inside the package.
 * Gave the `odb`-editing steps to the jobs whose `odb` they edit.
   `OpenROAD.CutRows`, `Odb.AddRoutingObstructions` and
   `Odb.ManualGlobalPlacement` were jobs of their own in all three shipped
@@ -808,7 +856,7 @@ Style Notes
     view the state maps to `null` is not supplied, which is the reading the step
     consuming it gives.
 * A `TOOLS` selection that would stop the run with a `JoinConflictError` is
-  refused at load. The same replay of `librelane.flows.join`'s rule that guards
+  refused at load. The same replay of `librelane.engine.join`'s rule that guards
   the shipped documents now runs over the providers a configuration actually
   selected, and the message names the colliding key, both jobs that write it,
   and every provider that would work instead. `{"magic_drc": "klayout"}`,
@@ -1005,7 +1053,82 @@ Style Notes
   * `yosys-ghdl` inclusion is decided by `lib.meta.availableOn`, which honours
     `meta.badPlatforms`, rather than by searching `meta.platforms`.
 
+## Testing
+
+* **Fixed:** `test_power_utils` mocks `odb.dbRegion` as well as `odb.dbMTerm`.
+  Both are named in annotations `power_utils` writes, which Python evaluates
+  when the function is defined up to 3.13 and, under PEP 649, only on demand
+  from 3.14 on. The mock supplied one of the two, so the three tests passed on
+  3.14 and raised `AttributeError` on every earlier version -- a split that
+  went unnoticed while the local interpreter was 3.14 and is exactly what
+  keeping two versions in the matrix is for.
+
 ## Misc. Enhancements/Bugfixes
+
+* Added `librelane.config.ambient`, which holds the configuration a run is
+  reading instead of threading it down the call chain. `current_config()`
+  answers with it from anywhere; `set_current_config()` writes the
+  process-wide one, which `Flow.__init__` and `Config.interactive` now
+  publish; `use_config()` opens a scoped override for an execution, which is
+  what a job's `with` block and each pass of a sweep run under. The scoped
+  tier is a `ContextVar`, so concurrent jobs and sweep passes keep their own
+  values rather than sharing one slot.
+
+  `Step`'s `config` argument is now optional: omitted, a step reads whatever
+  is current. Passing one still works and still wins, which is what
+  `Step.load` does for a reproducible.
+
+* One configuration model now serves every step in a run, generated from the
+  union of their variables, rather than one filtered and re-validated model
+  per step. A step's own variables are already in the union, coerced and
+  checked, so the per-step pass re-read the PDK to arrive at equal values.
+  What each step is *recorded* as having read is unchanged: a step holds a
+  `StepConfigView` over the shared model, narrowed to the variables it
+  declares, and it is that view the resume key, the `config.json` in its
+  directory, the reproducible and a Tcl step's environment are built from --
+  via the new `Step.own_config_dict()`.
+
+  Reading a variable a step does not declare raises `UndeclaredVariable`
+  rather than answering out of another step's declaration. It would otherwise
+  work for exactly as long as the step ran inside a flow: `Step.load`, which
+  is how a reproducible and a re-run are built, hands a step only what it
+  declares.
+
+  The model is generated on first read, so a flow that is only asked to
+  `explain()` itself, print its help or list its jobs no longer builds one.
+
+* **Fixed:** one set of rules now decides whether a configuration value is
+  legal, whichever door it came in by. The merged design sources were
+  validated by `validate_mapping` and Pydantic while a PDK's `config.tcl`, a
+  step's keyword arguments and `Config.interactive` went through
+  `Variable.compile`, and the two disagreed: a Boolean written `"yes"` was
+  accepted by the first and rejected by the second, so a PDK could not write
+  what a design could. All four now go through `validate_mapping`.
+  * A step's increment is read by the rules of the document it came from
+    rather than always strictly, so a value a version 1 design file may write,
+    a step handed the same value directly may write too.
+  * A missing required variable is now reported as "Required PDK variable 'X'
+    did not get a specified value. This PDK may be incompatible with your
+    flow." wherever it is found, rather than as Pydantic's "Field required".
+  * `Variable.compile` remains, for `Macro.from_state`, which coerces a
+    state's views into a `Macro`'s fields and is not configuration.
+
+* **Fixed:** displaying a `Config` in a notebook outside interactive mode
+  raised `NotImplementedError`. `GenericDict.__eq__` and `Variable.__eq__`
+  raised on an operand they could not compare instead of returning
+  `NotImplemented`, so `config == None` was an exception rather than `False`.
+
+* A `.json` design configuration with no `meta` block now says that it is
+  being read as a version 1 (OpenLane-era) document, where values written as
+  strings are parsed as Tcl. The same file named `.yaml` defaults to version 2
+  and is read as written, so renaming it silently changed what it meant.
+
+* `Config.load` takes its extra layers as `ConfigSource`s: `under=` for the
+  ones beneath the design configuration (a workflow document's `with` block,
+  a job's) and `over=` for the ones above it (a pass of an `iterations`
+  schedule). They replace `flow_values`, `job_values` and `iteration_values`,
+  whose precedence was a property of the parameter name and the order of the
+  `if` statements reading them. `Flow.document_layers()` builds the first two.
 
 * **Fixed:** a job continues past a deferred error with the deferring step's
   own output. The engine recorded the error and left the running state on the
@@ -1186,11 +1309,101 @@ Style Notes
 
 ## API Breaks
 
+* Replaced `Config.load`'s `flow_values`, `job_values` and `iteration_values`
+  parameters with `under` and `over`, each a sequence of `ConfigSource`.
+  Callers build the layer and name it -- `ConfigSource(values, "<flow
+  document>", "mapping")` -- and the position in the stack is which of the two
+  arguments it is passed as, rather than which parameter name it used.
+  `ConfigSource` is now exported from `librelane.config`.
+
+* Removed `Config.copy_filtered`'s `include_flow_variables` parameter,
+  deprecated since 2.0.0b5, whose default silently added the universal flow
+  variables to the filter. A caller that wants them lists them, which is what
+  `Step.get_all_config_variables()` returns.
+
+* Replaced `Step.__init__`'s `_no_revalidate_conf` and `_no_filter_conf`
+  keyword arguments with `_config_mode`, which is `"increment"` or
+  `"trusted"`. `_no_filter_conf` had no caller anywhere, and the two booleans
+  named three states of which one was rejected at runtime.
+
+* Removed a dead second implementation of the configuration preprocessor.
+  `librelane.config.preprocessor.legacy` defined `preprocess_dict`,
+  `process_config_dict`, `extract_process_vars`, `process_dict_recursive` and
+  `process_list_recursive`, none of which anything called: the package's own
+  `__init__` defines the first three itself and the staged loader has used
+  those since. The two sets shared their names, so the module pair read as one
+  API with two homes rather than as a live half and a dead one.
+
+  `Expr` and `process_string` are what that module still provides, unchanged,
+  and both remain re-exported from `librelane.config.preprocessor`.
+
+* Merged `librelane.config.preprocessor.ast` and
+  `librelane.config.preprocessor.graph` into
+  `librelane.config.preprocessor.resolve`. `ast` held the five dataclasses the
+  directive parser builds and `graph` the whole-mapping driver for the
+  single-directive resolver; each imported only from `resolve` or was imported
+  only by it. Every name they carried -- `resolve_symbols`, `SymbolCycleError`
+  and the AST nodes -- is unchanged and still reached through
+  `librelane.config.preprocessor`, which is how the codebase and its tests have
+  always addressed them.
+
+* Raised the Python requirement to **≥3.13**, from ≥3.10, and added 3.14 to the
+  tested matrix, which is now 3.13 and 3.14.
+
+  3.10 was already unsupported in fact: `librelane.common.misc` imports
+  `importlib.resources.abc`, which exists from 3.11 on, so `import
+  librelane.config` had been raising `ModuleNotFoundError` on 3.10 whatever
+  `requires-python` claimed. 3.14 was held back by a note saying lxml and
+  klayout had no wheels for it; both ship them now, and the suite passes on
+  3.14 unchanged.
+
+  With 3.10 and 3.11 gone, `pathlib.Path` is subclassable (it needs the
+  `_flavour` attribute private before 3.12), which lifts the constraint that
+  had `common.Path` and `ScopedFile` composing a path and implementing
+  `os.PathLike` rather than inheriting.
+
+* Spelled unions as `X | Y` and optionals as `X | None` throughout, replacing
+  `typing.Union` and `typing.Optional` at 269 sites, and `state.StateElement`
+  is now a PEP 695 `type` alias. The two spellings are equivalent at run time
+  and `Variable` has always accepted either, so a plugin passing
+  `Optional[int]` as a variable's type keeps working; only what LibreLane
+  itself writes changed.
+
+  Four places keep the old spelling deliberately, each for a reason that is
+  not style: `config.legacy` compares against the `typing.Union` sentinel to
+  recognise the spelling a *user* wrote and builds one back from a tuple,
+  which `|` cannot express; `test_variable`, `test_union_coercion` and
+  `test_union_syntax_equivalence` are that branch's only coverage, and
+  converting them would leave it untested; `env_info` guards its typing import
+  with `try`/`except ImportError` so it can report an environment under an
+  interpreter older than LibreLane supports; and `scripts/pyosys/ys_common`
+  runs inside Yosys' own bundled Python, whose version `requires-python` does
+  not govern.
+
+* Renamed `librelane.flows` to `librelane.engine`, and moved the documents it
+  used to sit beside into `librelane/share/`. Every module keeps its name:
+  `librelane.flows.engine` is `librelane.engine.engine`,
+  `librelane.flows.spec` is `librelane.engine.spec`, and so on for `flow`,
+  `job`, `join`, `net`, `predicates`, `resources`, `resume`, `explanation`,
+  `spec_graph`, `spec_include`, `spec_validation` and
+  `selection_validation`. There is no `librelane.flows` shim; the import
+  fails rather than warning, because a package that resolves under two names
+  is a package two halves of a codebase can disagree about.
+
+  The name was carrying two things at once. Since flows became documents the
+  package holds no flow -- it holds the code that reads one and runs it,
+  which is an engine, while the flows themselves are the three YAML files it
+  happened to ship in the same directory. Separating them puts the data in
+  `librelane/share/`, code-free, with the `common::` library under
+  `librelane/share/common/`, and leaves `librelane.engine` naming only what
+  it contains. `librelane/share/` is addressed through the installed package,
+  so a document that reaches it with `common::` is unaffected, and
+  `Flow.factory` registers the same three names it did before.
 * Flows are YAML documents rather than Python classes. `SequentialFlow` and
   `StagedFlow` are deleted, along with `Classic`, `VHDLClassic`, `Chip`,
   `OpenInKLayout`, `OpenInMagic`, `OpenInOpenROAD`, `OpenInOpenROADConsole`
   and `OpenInOpenSTAConsole` as importable classes. Three of them ship as
-  documents, `librelane/flows/chip.yaml`, `classic.yaml` and
+  documents, `librelane/share/chip.yaml`, `classic.yaml` and
   `vhdl_classic.yaml`, each registering under the name its class carried, so
   `--flow`, `meta.flow` and the `{flow}` documentation role are unaffected for
   those three. The five `OpenIn*` flows are not reborn as documents: opening
@@ -1198,8 +1411,8 @@ Style Notes
   nothing and waits for a human, so `librelane open <viewer>` replaces them
   instead -- see the CLI entry above.
   * `Flow.factory.get(name)` returns the
-    {class}`librelane.flows.spec.FlowSpec` the document parsed into, rather
-    than a `Flow` subclass, and {class}`librelane.flows.engine.Workflow` is
+    {class}`librelane.engine.spec.FlowSpec` the document parsed into, rather
+    than a `Flow` subclass, and {class}`librelane.engine.engine.Workflow` is
     what runs it. `Flow.factory.list` is unchanged.
   * `Flow.factory.register` takes a `FlowSpec` and is no longer a decorator.
     `@Flow.factory.register()` over a class raises `TypeError`. Register a
@@ -1288,7 +1501,7 @@ Style Notes
   is the supported way to bind one job to a multi-step tool sequence.
 * `FlowError` and `FlowException` moved to `librelane.common.errors` so that
   `librelane.jobs` can derive from them without an import cycle. They are
-  re-exported from `librelane.flows` and `librelane.flows.flow`, which remain
+  re-exported from `librelane.engine` and `librelane.engine.flow`, which remain
   their documented import sites.
 * Removed the Cloup-specific `librelane.flows.cloup_flow_opts` decorator and
   `librelane.common.cli` helpers. Reusable Typer option annotations now live in
@@ -1300,8 +1513,8 @@ Style Notes
   `librelane.cli.run`. `librelane.cli.main` now only assembles the app, and
   still exports `cli`.
 * Removed `librelane.flows.cli`, along with the `ResolvedPdkOptions` and
-  `resolve_pdk_options` re-exports from `librelane.flows`. Importing
-  `librelane.flows` no longer pulls in Typer.
+  `resolve_pdk_options` re-exports from that package. Importing
+  `librelane.engine` no longer pulls in Typer.
 * Removed the `librelane.help` package. Its command is now
   `librelane.cli.help`.
 * Removed the `librelane.env_info_cli` re-export from the top-level package.

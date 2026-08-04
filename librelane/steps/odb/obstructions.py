@@ -18,7 +18,7 @@ from loguru import logger
 
 from importlib.resources import files
 from decimal import Decimal
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 from librelane.config import variable
 from librelane.state import State
@@ -76,14 +76,13 @@ class AddRoutingObstructions(ObstructionStep):
     obstruction_variable = "ROUTING_OBSTRUCTIONS"
 
     class Config(ObstructionStep.Config):
-        ROUTING_OBSTRUCTIONS: Optional[
-            list[tuple[str, Decimal, Decimal, Decimal, Decimal]]
-        ] = variable(
+        ROUTING_OBSTRUCTIONS: (
+            list[tuple[str, Decimal, Decimal, Decimal, Decimal]] | None
+        ) = variable(
             None,
             description="Add routing obstructions to the design. If set to `None`, this step is skipped."
             + " Format of each obstruction item is a tuple of: layer name, llx, lly, urx, ury.",
             units="µm",
-            deprecated_names=["GRT_OBS"],
         )
 
     config: Config
@@ -122,9 +121,9 @@ class AddPDNObstructions(ObstructionStep):
     obstruction_variable = "PDN_OBSTRUCTIONS"
 
     class Config(ObstructionStep.Config):
-        PDN_OBSTRUCTIONS: Optional[
-            list[tuple[str, Decimal, Decimal, Decimal, Decimal]]
-        ] = variable(
+        PDN_OBSTRUCTIONS: (
+            list[tuple[str, Decimal, Decimal, Decimal, Decimal]] | None
+        ) = variable(
             None,
             description="Add routing obstructions to the design before PDN stage. If set to `None`, this step is skipped."
             + " Format of each obstruction item is a tuple of: layer name, llx, lly, urx, ury,.",

@@ -14,11 +14,10 @@
 import re
 import os
 import glob
-import fnmatch
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any, Union, cast
-from collections.abc import Mapping, Sequence
+from typing import Any, cast
+from collections.abc import Mapping
 
 from lark import Lark, Token, Transformer
 from lark.exceptions import UnexpectedCharacters, UnexpectedToken, VisitError
@@ -34,6 +33,14 @@ Keys = SimpleNamespace(
     design_dir="DESIGN_DIR",
 )
 
+#: The keys that name the process rather than configure the design: they are
+#: seeded by the loader, exposed to ``expr::``/``dir::`` resolution and emitted
+#: by every PDK's ``config.tcl``. Nothing declares them as configuration
+#: variables, so every pass that reports on keys it does not recognise has to
+#: pass over these -- which is why this is derived from :data:`Keys` and read
+#: from here rather than restated as a literal set at each of those passes.
+SPECIAL_KEYS: frozenset[str] = frozenset(vars(Keys).values())
+
 PROCESS_INFO_ALLOWLIST = [
     Keys.pdk,
     Keys.scl,
@@ -42,8 +49,8 @@ PROCESS_INFO_ALLOWLIST = [
 ]
 
 
-Scalar = Union[str, int, Decimal, float, bool, None]
-Valid = Union[Scalar, dict, list]
+Scalar = str | int | Decimal | float | bool | None
+Valid = Scalar | dict | list
 
 
 _EXPRESSION_GRAMMAR = r"""
@@ -228,158 +235,3 @@ def process_string(
         return files_escaped
     else:
         return mutable
-
-
-PDK_PREFIX = "pdk::"
-SCL_PREFIX = "scl::"
-
-
-def process_list_recursive(
-    input: Sequence[Any],
-    ref: list[Any],
-    symbols: dict[str, Any],
-    *,
-    key_path: str = "",
-):
-    for i, value in enumerate(input):
-        current_key_path = f"{key_path}[{i}]"
-        processed: Any = None
-        if isinstance(value, Mapping):
-            processed = {}
-            process_dict_recursive(
-                value,
-                processed,
-                symbols,
-                key_path=current_key_path,
-            )
-        elif isinstance(value, Sequence) and not is_string_like(value):
-            processed = []
-            process_list_recursive(
-                value,
-                processed,
-                symbols,
-                key_path=current_key_path,
-            )
-        elif is_string_like(value):
-            processed = process_string(str(value), symbols)
-        else:
-            processed = value
-
-        if processed is not None:
-            ref.append(processed)
-            symbols[current_key_path] = processed
-
-
-def process_dict_recursive(
-    input: Mapping[str, Any],
-    ref: dict[str, Any],
-    symbols: dict[str, Any],
-    *,
-    key_path: str = "",
-):
-    for key, value in input.items():
-        current_key_path = key
-        if key_path != "":
-            current_key_path = f"{key_path}.{key}"
-        processed: Any = None
-        if isinstance(value, Mapping):
-            if key.startswith(PDK_PREFIX):
-                pdk_match = key[len(PDK_PREFIX) :]
-                if fnmatch.fnmatch(ref[Keys.pdk], pdk_match):
-                    process_dict_recursive(
-                        value,
-                        ref,
-                        symbols,
-                        key_path=key_path,
-                    )
-            elif key.startswith(SCL_PREFIX):
-                scl_match = key[len(SCL_PREFIX) :]
-                if ref[Keys.scl] is not None and fnmatch.fnmatch(
-                    ref[Keys.scl], scl_match
-                ):
-                    process_dict_recursive(
-                        value,
-                        ref,
-                        symbols,
-                        key_path=key_path,
-                    )
-            else:
-                processed = {}
-                process_dict_recursive(
-                    value,
-                    processed,
-                    symbols,
-                    key_path=current_key_path,
-                )
-
-        elif isinstance(value, Sequence) and not is_string_like(value):
-            processed = []
-            process_list_recursive(
-                value,
-                processed,
-                symbols,
-                key_path=current_key_path,
-            )
-        elif is_string_like(value):
-            processed = process_string(str(value), symbols)
-        else:
-            processed = value
-
-        if not key.startswith(PDK_PREFIX) and not key.startswith(SCL_PREFIX):
-            ref[key] = processed
-            symbols[current_key_path] = processed
-
-
-def process_config_dict(
-    config_in: Mapping[str, Any],
-    exposed_variables: dict[str, Any],
-) -> dict[str, Any]:
-    state = dict(exposed_variables)
-    symbols = dict(exposed_variables)
-    process_dict_recursive(config_in, state, symbols)
-    return state
-
-
-def extract_process_vars(config_in: dict[str, str]) -> dict[str, str]:
-    return {
-        key: config_in[key]
-        for key in PROCESS_INFO_ALLOWLIST
-        if config_in.get(key) is not None and config_in.get(key) != ""
-    }
-
-
-def preprocess_dict(
-    config_dict: Mapping[str, Any],
-    design_dir: str,
-    only_extract_process_info: bool = False,
-    pdk: str | None = None,
-    pdkpath: str | None = None,
-    scl: str | None = None,
-    pad: str | None = None,
-) -> dict[str, Any]:
-    if None in (pdk, pdkpath, scl):
-        if only_extract_process_info:
-            pdkpath = ""
-            scl = ""
-            pdk = ""
-        else:
-            raise TypeError(
-                "pdk, pdkpath and scl all need to be non-None unless only_extract_process_info is passed"
-            )
-
-    base_vars = {
-        Keys.pdk: pdk,
-        Keys.pdkpath: pdkpath,
-        Keys.scl: scl,
-        Keys.pad: pad,
-        Keys.design_dir: design_dir,
-    }
-
-    preprocessed = process_config_dict(
-        config_dict,
-        base_vars,
-    )
-    if only_extract_process_info:
-        preprocessed = extract_process_vars(preprocessed)
-
-    return preprocessed

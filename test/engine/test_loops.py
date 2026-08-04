@@ -21,7 +21,7 @@ convergence be observed without a real STA run.
 
 import pytest
 
-from librelane.flows import flow as flow_module
+from librelane.engine import flow as flow_module
 from librelane.steps import step as step_module
 
 pytestmark = pytest.mark.all
@@ -248,8 +248,8 @@ def _two_member_ring(*, bound_key: str = "max", bound=3, extra_jobs=None):
 def test_a_ring_converges_on_pass_2_running_each_member_once_per_pass(
     loop_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_two_member_ring())
     flow = Workflow(spec, minimal_design, **mock_pdk)
@@ -265,8 +265,8 @@ def test_a_ring_converges_on_pass_2_running_each_member_once_per_pass(
 
 @mock_variables([flow_module, step_module])
 def test_a_ring_writes_its_pass_directories(loop_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_two_member_ring())
     flow = Workflow(spec, minimal_design, **mock_pdk)
@@ -285,8 +285,8 @@ def test_a_self_loop_ring_of_one_converges(loop_steps, minimal_design, mock_pdk)
     A single job that needs itself, gated by its own 'until': a ring of one,
     where the gate's intra-ring successor is itself.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -313,9 +313,9 @@ def test_a_self_loop_ring_of_one_converges(loop_steps, minimal_design, mock_pdk)
 def test_exhaustion_defers_downstream_still_runs_and_the_flow_fails_at_the_end(
     loop_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -355,8 +355,8 @@ def test_exhaustion_defers_downstream_still_runs_and_the_flow_fails_at_the_end(
 def test_iteration_values_are_visible_in_each_pass_and_the_provenance_names_the_pass(
     loop_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -395,8 +395,8 @@ def test_an_external_token_is_joined_on_pass_1_and_carried_by_every_later_pass(
     forward: 'require', a second ring member reading the same view, still
     sees it on pass 2 without 'produce' having run again.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -439,9 +439,9 @@ def test_a_member_s_config_term_if_passes_through_on_every_pass(
     proof the member was genuinely skipped throughout, not merely
     unproductive.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -483,9 +483,9 @@ def test_a_member_s_runtime_term_if_flips_per_pass(
     (bound low enough that the schedule exhausts), which is fine: the point
     here is which passes ran 'resize', not whether the loop converges.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -522,8 +522,8 @@ def test_a_member_s_runtime_term_if_flips_per_pass(
 def test_target_on_a_ring_member_selects_the_whole_ring(
     loop_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _two_member_ring(
@@ -544,9 +544,9 @@ def test_target_on_a_ring_member_selects_the_whole_ring(
 
 @mock_variables([flow_module, step_module])
 def test_skip_naming_a_ring_member_is_refused(loop_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_two_member_ring())
     flow = Workflow(spec, minimal_design, **mock_pdk)
@@ -562,9 +562,9 @@ def test_skip_naming_a_ring_member_is_refused(loop_steps, minimal_design, mock_p
 
 @mock_variables([flow_module, step_module])
 def test_skip_naming_the_gate_is_also_refused(loop_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_two_member_ring())
     flow = Workflow(spec, minimal_design, **mock_pdk)
@@ -579,9 +579,9 @@ def test_skip_naming_the_gate_is_also_refused(loop_steps, minimal_design, mock_p
 def test_reproducible_naming_a_ring_member_s_step_is_refused(
     loop_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_two_member_ring())
     flow = Workflow(spec, minimal_design, **mock_pdk)
@@ -597,8 +597,8 @@ def test_reproducible_naming_a_ring_member_s_step_is_refused(
 
 @mock_variables([flow_module, step_module])
 def test_an_unchanged_rerun_reuses_every_pass(loop_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     def make():
         return Workflow(
@@ -621,8 +621,8 @@ def test_an_unchanged_rerun_reuses_every_pass(loop_steps, minimal_design, mock_p
 def test_a_false_gate_config_term_fires_the_whole_ring_as_one_pass_through(
     loop_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -667,8 +667,8 @@ def test_the_gate_s_own_if_is_decided_once_at_entry_not_re_evaluated_per_pass(
     re-checked the gate's 'if' every pass, 'y' would freeze at 1 once
     'gate_ok' went false and the loop would exhaust instead of converging.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -710,8 +710,8 @@ def test_explain_variables_reports_each_pass_of_a_scheduled_variable(
     not touch (here, the universal 'DESIGN_NAME') is unaffected: still one
     row, reach unchanged.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -768,8 +768,8 @@ def test_a_ring_member_acquires_and_releases_its_pool_per_pass(
     on the flow's own ``pools`` object counts exactly that, without needing
     a second contender to prove serialization against.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {

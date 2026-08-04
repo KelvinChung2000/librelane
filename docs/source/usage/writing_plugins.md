@@ -25,7 +25,7 @@ decorator. A flow is a YAML document, so you load it and hand the result to
 `Flow.factory.register()`:
 
 ```python
-from librelane.flows import Flow, load_flow_spec
+from librelane.engine import Flow, load_flow_spec
 
 Flow.factory.register(load_flow_spec("./my_flow.yaml"))
 ```
@@ -40,8 +40,8 @@ MyCustomFlow = Flow.factory.get("MyCustomFlow")
 ```
 
 `Step.factory.get` returns the step class; `Flow.factory.get` returns the
-{class}`librelane.flows.spec.FlowSpec` the document parsed into, which
-{class}`librelane.flows.engine.Workflow` runs.
+{class}`librelane.engine.spec.FlowSpec` the document parsed into, which
+{class}`librelane.engine.engine.Workflow` runs.
 
 For information on writing the flows and steps themselves, see
 {doc}`/usage/writing_custom_flows` and {doc}`/usage/writing_custom_steps`.

@@ -66,8 +66,8 @@ class Registration:
         provider to speak one tool's database.
 
         Re-validated per run by
-        :func:`librelane.flows.selection_validation.lost_views`, which reads
-        this tuple off the :class:`librelane.flows.job.ResolvedJob` and treats
+        :func:`librelane.engine.selection_validation.lost_views`, which reads
+        this tuple off the :class:`librelane.engine.job.ResolvedJob` and treats
         each entry exactly as it treats a declared requirement. That check is a
         differential against the document's own providers, so what a wrong
         declaration costs is bounded but real: naming a view here that the
@@ -102,7 +102,7 @@ class Registration:
         Registering a provider that is not runnable stays legal and is the
         point of :mod:`librelane.jobs.providers_vendor`: the scaffolds exist to
         be selected, inspected and filled in. What reads this is
-        :mod:`librelane.flows.selection_validation`, which refuses to *offer*
+        :mod:`librelane.engine.selection_validation`, which refuses to *offer*
         one as the remedy for a selection it just rejected. Offering is a
         promise that the alternative works, and permitting is not.
         """

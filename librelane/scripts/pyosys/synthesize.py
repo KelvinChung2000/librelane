@@ -34,7 +34,6 @@
 import os
 import json
 import shutil
-from typing import Optional
 
 import click
 
@@ -152,7 +151,7 @@ def librelane_synth(
     abc_dff=False,
     undriven=True,
     arith_tree=True,
-    keep_hierarchy_min_cost: Optional[int],
+    keep_hierarchy_min_cost: int | None,
     keep_hierarchy_instances: list[str],
     keep_hierarchy_modules: list[str],
 ):

@@ -20,7 +20,6 @@ import os
 from importlib.resources import files
 from decimal import Decimal
 from dataclasses import dataclass
-from typing import Optional
 
 from librelane.config import variable
 from librelane.state import State
@@ -77,7 +76,7 @@ class InsertECOBuffers(OdbpyStep):
     name = "Insert ECO Buffers"
 
     class Config(GrtConfig, DplConfig, OdbpyStep.Config):
-        INSERT_ECO_BUFFERS: Optional[list[ECOBuffer]] = variable(
+        INSERT_ECO_BUFFERS: list[ECOBuffer] | None = variable(
             None,
             description="List of buffers to insert",
         )
@@ -139,7 +138,7 @@ class ReplaceECOCells(OdbpyStep):
     name = "Replace ECO Cells"
 
     class Config(GrtConfig, DplConfig, OdbpyStep.Config):
-        REPLACE_ECO_CELLS: Optional[list[ECOCellReplacement]] = variable(
+        REPLACE_ECO_CELLS: list[ECOCellReplacement] | None = variable(
             None,
             description="List of cell replacements to perform",
         )
@@ -197,7 +196,7 @@ class InsertECODiodes(OdbpyStep):
     name = "Insert ECO Diodes"
 
     class Config(DplConfig, GrtConfig, OdbpyStep.Config):
-        INSERT_ECO_DIODES: Optional[list[ECODiode]] = variable(
+        INSERT_ECO_DIODES: list[ECODiode] | None = variable(
             None,
             description="List of sinks to insert diodes for.",
         )

@@ -46,7 +46,13 @@ def load_design(monkeypatch, connections, pg_pins):
             odb=None,
         ),
     )
-    monkeypatch.setitem(sys.modules, "odb", SimpleNamespace(dbMTerm=object))
+    # Both names are read as *annotations* in power_utils' signatures, which
+    # Python evaluates eagerly before 3.14 and lazily from 3.14 on (PEP 649).
+    # A mock missing one therefore passes on 3.14 and raises AttributeError on
+    # 3.13, so every name the annotations mention has to be here.
+    monkeypatch.setitem(
+        sys.modules, "odb", SimpleNamespace(dbMTerm=object, dbRegion=object)
+    )
     monkeypatch.setitem(sys.modules, "utl", SimpleNamespace())
 
     master = SimpleNamespace(

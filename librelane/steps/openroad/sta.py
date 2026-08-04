@@ -28,7 +28,6 @@ from math import inf
 from collections.abc import Callable
 from typing import (
     Any,
-    Optional,
 )
 
 import rich
@@ -74,7 +73,7 @@ class STAMidPNR(OpenROADStep):
     outputs = []
 
     class Config(OpenROADStep.Config):
-        STA_MIDPNR_CORNERS: Optional[list[str]] = variable(
+        STA_MIDPNR_CORNERS: list[str] | None = variable(
             None,
             description="Mid-PnR STA step-specific override for the timing corners to report. If unset, `STA_CORNERS` is used, which is what the resizer steps around this one analyze.",
         )
@@ -365,17 +364,17 @@ class MultiCornerSTA(OpenSTAStep):
             description="Prioritize the use of Netlists + SPEF files over LIB files if available for Macros. Useful if extraction was done using OpenROAD, where SPEF files are far more accurate.",
         )
 
-        STA_MAX_VIOLATOR_COUNT: Optional[int] = variable(
+        STA_MAX_VIOLATOR_COUNT: int | None = variable(
             None,
             description="Maximum number of violators to list in violator_list.rpt",
         )
 
-        EXTRA_SPEFS: Optional[list[str | Path]] = variable(
+        EXTRA_SPEFS: list[str | Path] | None = variable(
             None,
             description="A variable that only exists for backwards compatibility with LibreLane <2.0.0 and should not be used by new designs.",
         )
 
-        STA_THREADS: Optional[int] = variable(
+        STA_THREADS: int | None = variable(
             None,
             description="The maximum number of STA corners to run in parallel. If unset, this will be equal to your machine's thread count.",
         )
@@ -641,7 +640,7 @@ class STAPostPNR(STAPrePNR):
     )
 
     class Config(STAPrePNR.Config):
-        SIGNOFF_SDC_FILE: Optional[Path] = variable(
+        SIGNOFF_SDC_FILE: Path | None = variable(
             None,
             description="Specifies the SDC file for STA during signoff",
         )
@@ -658,25 +657,25 @@ class STAPostPNR(STAPrePNR):
         # do not fail on them": max cap and max slew are advisory by default,
         # hold is checked everywhere, and setup takes whatever the PDK's shared
         # list says.
-        SETUP_VIOLATION_CORNERS: Optional[list[str]] = variable(
+        SETUP_VIOLATION_CORNERS: list[str] | None = variable(
             None,
             description="A list of wildcards matching IPVT corners to use during checking for setup violations.",
             pdk=True,
         )
 
-        HOLD_VIOLATION_CORNERS: Optional[list[str]] = variable(
+        HOLD_VIOLATION_CORNERS: list[str] | None = variable(
             ["*"],
             description="A list of wildcards matching IPVT corners to use during checking for hold violations.",
             pdk=True,
         )
 
-        MAX_SLEW_VIOLATION_CORNERS: Optional[list[str]] = variable(
+        MAX_SLEW_VIOLATION_CORNERS: list[str] | None = variable(
             [""],
             description="A list of wildcards matching IPVT corners to use during checking for max slew violations.",
             pdk=True,
         )
 
-        MAX_CAP_VIOLATION_CORNERS: Optional[list[str]] = variable(
+        MAX_CAP_VIOLATION_CORNERS: list[str] | None = variable(
             [""],
             description="A list of wildcards matching IPVT corners to use during checking for max cap violations.",
             pdk=True,

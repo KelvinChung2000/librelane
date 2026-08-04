@@ -139,9 +139,18 @@ def test_scoped_file_is_usable_as_a_path():
 
 
 def test_no_librelane_type_subclasses_pathlib_path():
-    """pathlib.Path cannot be subclassed before 3.12 while this project
-    supports 3.10, so nothing in the tree may try. ScopedFile was the last
-    thing that did."""
+    """Nothing in the tree subclasses pathlib.Path. ScopedFile was the last
+    thing that did.
+
+    This began as a language constraint: subclassing needs ``_flavour``, which
+    is private before 3.12, and the floor was 3.10. The floor is 3.13 now, so
+    a subclass would work -- which is exactly why this is still asserted. The
+    shipped design has ``common.Path`` as an ``Annotated`` alias and
+    ``ScopedFile`` composing a path, and roughly two dozen
+    ``isinstance(..., Path)`` sites are written to that shape. Reintroducing a
+    subclass is now a design change rather than an error the interpreter
+    catches, and it should be made deliberately instead of by someone reaching
+    for the obvious ``class Path(pathlib.Path)``."""
     import librelane
     from librelane.common import ScopedFile
 
@@ -156,8 +165,9 @@ def test_no_librelane_type_subclasses_pathlib_path():
 
 
 def test_path_is_an_annotated_alias_that_rejects_isinstance():
-    """The pydantic behaviour lives in Annotated metadata because the 3.10
-    floor forbids a subclass.
+    """The pydantic behaviour lives in Annotated metadata, which is what the
+    3.10 floor forced when this landed and what the design kept after the
+    floor moved to 3.13.
 
     The alias forwards ``__call__`` to pathlib.Path, so ``Path(x)`` quietly
     still builds the right object -- but ``isinstance(x, Path)`` raises. That

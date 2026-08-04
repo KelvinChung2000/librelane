@@ -63,6 +63,33 @@ class ReportingMixin:
     step_dir: pathlib.Path
     get_implementation_id: ClassVar[Callable[[], str]]
 
+    def own_config_dict(self) -> dict[str, Any]:
+        """
+        This step's configuration, as the values it declares.
+
+        Three places record what a step read and would each be wrong with a
+        wider answer: the resume key, where every variable in the flow would
+        make an edit to any of them re-run every step; the ``config.json`` a
+        step writes into its directory, which
+        :meth:`librelane.steps.Step.load` reads back as a step-filtered
+        configuration; and the reproducible, which copies every file its
+        configuration references and would otherwise copy the whole flow's
+        inputs.
+
+        Inside a flow ``config`` is a
+        :class:`librelane.steps.step.config_view.StepConfigView` over the model
+        the whole run shares, and dumping one already yields only what the step
+        declares; a step built on its own holds a model of exactly those
+        variables. So this narrows nothing itself -- it names the question, and
+        the answer is structural.
+
+        Returns
+        -------
+        dict[str, Any]
+            The step's configuration, without ``meta``.
+        """
+        return self.config.to_raw_dict()
+
     @classmethod
     def __get_desc(Self) -> str:  # pragma: no cover
         if hasattr(Self, "long_name"):
@@ -348,7 +375,9 @@ class ReportingMixin:
             return f"./{target_relpath}"
 
         # 1. Config
-        dumpable_config: dict = copy_recursive(self.config, translator=visitor)
+        dumpable_config: dict = copy_recursive(
+            self.own_config_dict(), translator=visitor
+        )
         dumpable_config["meta"] = {
             "librelane_version": __version__,
             "step": self.__class__.get_implementation_id(),

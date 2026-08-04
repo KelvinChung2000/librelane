@@ -261,20 +261,27 @@ below and is a maintainer's call, not an implementation task.
 
 `599` asks for "pathlib.Path **or a subclass of it**". The direct route needs no
 subclassing. An earlier revision of this file called the work blocked on 3.12;
-that was wrong — *nothing* is blocked. But one **hard design constraint** falls
-out of the version floor and governs the whole shape of the migration:
+that was wrong — *nothing* is blocked. One **hard design constraint** used to
+fall out of the version floor and governed the whole shape of the migration:
 
-> **`pathlib.Path` cannot be subclassed before Python 3.12, and
-> `requires-python = ">=3.10"`.** Subclassing it needs `_flavour`, which is
+> **`pathlib.Path` could not be subclassed before Python 3.12, and
+> `requires-python` was `">=3.10"`.** Subclassing it needs `_flavour`, which is
 > private and absent on 3.10/3.11.
 
-So anything that wants to *be* a path has to **compose** one and implement
+So anything that wanted to *be* a path had to **compose** one and implement
 `os.PathLike`, not inherit. That is why `ScopedFile` was recomposed in
 `9fb0886` — a prerequisite, not tidying — and it is why the pydantic behaviour
-has to live in an `Annotated` alias rather than in a subclass's
-`__get_pydantic_core_schema__`. Anyone reaching for the obvious
-`class Path(pathlib.Path)` will get a `TypeError` on the supported floor and
-should stop rather than raise the floor to 3.12 to make it work.
+lives in an `Annotated` alias rather than in a subclass's
+`__get_pydantic_core_schema__`.
+
+**This constraint has since been lifted.** `requires-python` is now `">=3.13"`,
+so `class Path(pathlib.Path)` is legal on every supported version and the
+`TypeError` this section warned about can no longer happen. Nothing below was
+rewritten on that account: the composed design works, is shipped, and is
+covered, so the constraint is now a *reason the code looks as it does* rather
+than a rule constraining what may be written next. A future revision of `599`
+may subclass if subclassing genuinely reads better — that is now an open design
+choice and not a forbidden one.
 
 `600` (portable states, keeping `dir::` / `pdk_dir::` unresolved and resolving on
 access) is the feature `599` was meant to unlock. It is now half done, and the
@@ -314,7 +321,8 @@ for the reasoning, not as a to-do list. The preparation landed in `14874a6`,
 
 `common.Path` is now `Annotated[pathlib.Path, _PathAnnotation]`. Values are
 ordinary `pathlib.Path` objects; the glob collapse and the existence check live
-in the `Annotated` metadata, because of the 3.10 subclassing constraint above.
+in the `Annotated` metadata, because of the subclassing constraint above, which
+held when this landed and has since been lifted.
 Three members moved off the old class first, since nothing can be added to
 `pathlib.Path`: `Path._dummy_path` → `common.DUMMY_PATH`, `Path.validate()` →
 `common.validate_path()`, `Path.rel_if_child()` → `common.rel_if_child()`
@@ -592,7 +600,7 @@ Counted on this branch rather than estimated:
 
 **The design that minimises the diff.** `Path` cannot stay one name doing both
 jobs, because the pydantic behaviour has to live in an `Annotated` alias (see
-the 3.10 subclassing constraint above) and an `Annotated` alias is neither
+the subclassing constraint above, since lifted) and an `Annotated` alias is neither
 callable nor usable with `isinstance`. Two spellings are unavoidable. Which
 name keeps which job decides the size of the diff:
 
@@ -855,9 +863,10 @@ at all and would have been dropped by every scoped sink. It now carries a
 `contextvars` copy taken on the constructing thread. Note Python 3.14 added
 `Thread(context=...)` and inherits the caller's context when
 `sys.flags.thread_inherit_context` is set, but that flag is **0** in this
-environment and the project supports 3.10+, so the explicit copy is
+environment and the project supports 3.13+, so the explicit copy is
 load-bearing. Beware: `Thread` itself owns the attribute name `_context` on
-3.14, so the copy is stored as `_log_context`.
+3.14, so the copy is stored as `_log_context`. Both facts were re-checked on
+3.14 when it joined the tested matrix and both still hold.
 
 ### Blocked on verification not possible headlessly
 
@@ -983,9 +992,11 @@ only reclassifies.
   **already fixed** on this branch as `5d865bb` in section A; item 5 is 996,
   below. Nothing about 995 itself is blocked.
 - **599** and **600** confirmed as the D section already states. `common.Path`
-  still exists at `common/types.py:39`, `requires-python` is `>=3.10`, and the
-  issue asks for "pathlib.Path **or a subclass of it**", so no 3.12 subclassing
-  is required. The earlier "blocked on 3.12" premise was false. In flight.
+  still exists at `common/types.py:39`, and the issue asks for "pathlib.Path
+  **or a subclass of it**", so no subclassing is required either way. The
+  earlier "blocked on 3.12" premise was false. `requires-python` has since
+  moved to `>=3.13`, so subclassing is now available as well — an option, not
+  a requirement. In flight.
 - **808** (GUI) asks for a Logisim-Evolution-style schematic editor shipped as a
   single Windows executable. No decision is pending; this is section F, external
   or out of scope, not section E.

@@ -21,6 +21,11 @@ configuration objects. Configuration objects are the primary input to a flow.
 
 from librelane.config.preprocessor import Keys
 from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
+
+# Part of :meth:`Config.load`'s signature: a caller layering a workflow
+# document's values under a design's names the layer and states the syntax it
+# is written in, which is what a source is.
+from librelane.config.loading import ConfigSource
 from librelane.config.legacy import Variable
 from librelane.config.model import (
     BaseConfigModel,
@@ -42,4 +47,16 @@ from librelane.config.config import (
 )
 from librelane.config.flow import (
     flow_common_variables as universal_flow_config_variables,
+)
+from librelane.config.ambient import (
+    ConfigScope,
+    NoCurrentConfig,
+    build_scope,
+    current_config,
+    current_raw_config,
+    current_scope,
+    get_current_config,
+    scope_model,
+    set_current_config,
+    use_config,
 )

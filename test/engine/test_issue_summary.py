@@ -5,7 +5,7 @@ import re
 import pytest
 from rich.console import Console
 
-from librelane.flows import flow
+from librelane.engine import flow
 from librelane.steps import step
 
 
@@ -16,8 +16,8 @@ pytestmark = pytest.mark.all
 
 def run_noisy_flow(mocker, tag, minimal_design, mock_pdk):
     """Runs a flow whose step emits a warning and an error, returns the terminal."""
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.logging import logger as logger_module
     from librelane.steps import Step
 
@@ -114,8 +114,8 @@ def test_a_flows_logs_exclude_another_concurrent_flows_records(
     another flow's context, which is what a concurrent flow looks like to this
     flow's sinks.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.logging import flow_context
     from librelane.logging import logger as logger_module
     from librelane.steps import Step
@@ -195,7 +195,7 @@ def test_the_issue_sink_does_not_lose_a_repeat_under_concurrency():
     """
     import threading
 
-    from librelane.flows.flow import Flow
+    from librelane.engine.flow import Flow
 
     sink = Flow._StepIssueSink()
 

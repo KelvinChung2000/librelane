@@ -23,7 +23,7 @@ from typing import Annotated
 import typer
 
 from librelane.config import Config
-from librelane.flows.flow import universal_flow_config_variables
+from librelane.engine.flow import universal_flow_config_variables
 from librelane.steps.pyosys import verilog_rtl_cfg_vars
 from librelane.cli._app import make_group
 from librelane.cli.options import (

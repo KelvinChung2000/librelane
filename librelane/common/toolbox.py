@@ -507,19 +507,25 @@ class Toolbox(object):
     ) -> bytes | None:  # pragma: no cover
         try:
             from librelane.steps import KLayout, StepError
-            from librelane.config import BaseConfigModel, Config, InvalidConfig
+            from librelane.config import Config, InvalidConfig
             from librelane.state import State
 
             # I'm too damn tired to figure out a way to forward-declare those two,
             # have fun if you want to
-            if isinstance(config, BaseConfigModel):
+            #
+            # Anything that can produce a raw dictionary is accepted, rather
+            # than the model type alone: a step passes 'self.config', which
+            # inside a flow is a 'StepConfigView' over the model the whole run
+            # shares and not the model itself. What is needed here is the
+            # values, and every one of those spellings has them.
+            if not isinstance(config, Config):
+                if not hasattr(config, "to_raw_dict"):
+                    raise TypeError("parameter config must be of type Config")
                 config = Config(
                     config.to_raw_dict(),
-                    meta=config.meta,
-                    diagnostics=config.diagnostics,
+                    meta=getattr(config, "meta", None),
+                    diagnostics=getattr(config, "diagnostics", None),
                 )
-            elif not isinstance(config, Config):
-                raise TypeError("parameter config must be of type Config")
 
             if not isinstance(state_in, State):
                 raise TypeError("parameter state_in must be of type State")
@@ -533,7 +539,7 @@ class Toolbox(object):
                     # loguru filter behind step.log, LiveLog's registry and the
                     # progress row read off it. One Toolbox is shared by a
                     # whole flow, and under
-                    # :class:`librelane.flows.engine.Workflow` several jobs
+                    # :class:`librelane.engine.engine.Workflow` several jobs
                     # render at once, so a bare class id would give every
                     # concurrent render the same key -- the same collision
                     # Workflow._run_job and CompositeStep disambiguate against.

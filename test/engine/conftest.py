@@ -97,7 +97,7 @@ def counting_steps():
     test can assert the engine's firing order without invoking a real tool.
 
     The class's id, not the instance's. A flow is free to give an instance a
-    per-run id -- :class:`librelane.flows.engine.Workflow` names the job in it
+    per-run id -- :class:`librelane.engine.engine.Workflow` names the job in it
     so two concurrent runs of one step class can be told apart in the logs --
     and which class ran is what a firing-order assertion is about.
 

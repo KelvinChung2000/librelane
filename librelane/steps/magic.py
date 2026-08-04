@@ -26,7 +26,7 @@ import pathlib
 from os.path import abspath
 from decimal import Decimal
 from abc import abstractmethod
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from librelane.steps.step import (
     DefaultOutputProcessor,
@@ -140,13 +140,13 @@ class MagicStep(TclStep):
             pdk=True,
         )
 
-        CELL_MAGS: Optional[list[Path]] = variable(
+        CELL_MAGS: list[Path] | None = variable(
             None,
             description="A list of pre-processed concrete views for cells. Read as a fallback for undefined cells.",
             pdk=True,
         )
 
-        CELL_MAGLEFS: Optional[list[Path]] = variable(
+        CELL_MAGLEFS: list[Path] | None = variable(
             None,
             description="A list of pre-processed abstract LEF views for cells. Read as a fallback for undefined cells in scripts where cells are black-boxed.",
             pdk=True,
@@ -280,7 +280,7 @@ class StreamOut(MagicStep):
     outputs = [DesignFormat.GDS, DesignFormat.MAG_GDS, DesignFormat.MAG]
 
     class Config(MagicStep.Config):
-        DIE_AREA: Optional[tuple[Decimal, Decimal, Decimal, Decimal]] = variable(
+        DIE_AREA: tuple[Decimal, Decimal, Decimal, Decimal] | None = variable(
             None,
             description='Specific die area to be used in floorplanning when `FP_SIZING` is set to `absolute`. Specified as a 4-corner rectangle "x0 y0 x1 y1".',
             units="µm",
@@ -294,7 +294,6 @@ class StreamOut(MagicStep):
         MAGIC_DISABLE_CIF_INFO: bool = variable(
             True,
             description="A flag to disable writing Caltech Intermediate Format (CIF) hierarchy and subcell array information to the GDSII file.",
-            deprecated_names=["MAGIC_DISABLE_HIER_GDS"],
         )
 
         MAGIC_ADD_ISOSUB: bool = variable(
@@ -396,13 +395,13 @@ class Filler(Step):
     outputs = [DesignFormat.GDS]
 
     class Config(Step.Config):
-        MAGIC_FILLER_SCRIPT: Optional[Path] = variable(
+        MAGIC_FILLER_SCRIPT: Path | None = variable(
             None,
             description="Path to the magic filler script.",
             pdk=True,
         )
 
-        MAGIC_FILLER_OPTIONS: Optional[list[str]] = variable(
+        MAGIC_FILLER_OPTIONS: list[str] | None = variable(
             None,
             description="Options passed directly to the magic filler script.",
             pdk=True,
@@ -522,7 +521,6 @@ class DRC(MagicStep):
         ERROR_ON_MAGIC_DRC: bool = variable(
             True,
             description="Checks for DRC violations after magic DRC is executed and exits the flow if any was found.",
-            deprecated_names=["QUIT_ON_MAGIC_DRC"],
         )
 
         MAGIC_DRC_USE_GDS: bool = variable(
@@ -530,12 +528,12 @@ class DRC(MagicStep):
             description="A flag to choose whether to run the Magic DRC checks on GDS or not. If not, then the checks will be done on the DEF view of the design, which is a bit faster, but may be less accurate as some DEF/LEF elements are abstract.",
         )
 
-        MAGIC_GDS_FLATGLOB: Optional[list[str]] = variable(
+        MAGIC_GDS_FLATGLOB: list[str] | None = variable(
             None,
             description="Flatten cells by name pattern on input. May be used to avoid false positive DRC errors. The strings may use standard shell-type glob patterns, with * for any length string match, ? for any single character match, \\ for special characters, and [] for matching character sets or ranges.",
         )
 
-        MAGIC_DRC_MAGLEFS: Optional[list[Path]] = variable(
+        MAGIC_DRC_MAGLEFS: list[Path] | None = variable(
             None,
             description="A list of pre-processed abstract LEF views for cells. They are read in before the design and act as blackboxes during DRC.",
         )
@@ -607,7 +605,6 @@ class SpiceExtraction(MagicStep):
         ERROR_ON_ILLEGAL_OVERLAPS: bool = variable(
             True,
             description="Checks for illegal overlaps during Magic extraction. In some cases, these imply existing undetected shorts in the design. It raises an error at the end of the flow if so.",
-            deprecated_names=["QUIT_ON_ILLEGAL_OVERLAPS"],
         )
 
         MAGIC_EXT_USE_GDS: bool = variable(
@@ -615,7 +612,7 @@ class SpiceExtraction(MagicStep):
             description="A flag to choose whether to use GDS for spice extraction or not. If not, then the extraction will be done using the DEF/LEF, which is faster.",
         )
 
-        MAGIC_EXT_ABSTRACT_CELLS: Optional[list[str]] = variable(
+        MAGIC_EXT_ABSTRACT_CELLS: list[str] | None = variable(
             None,
             description="A list of regular expressions which are matched against the cells of a "
             + "the design. Matches are abstracted (black-boxed) during SPICE extraction.",
@@ -624,10 +621,6 @@ class SpiceExtraction(MagicStep):
         MAGIC_EXT_UNIQUE: Literal["all", "notopports", "noports", "none"] = variable(
             "all",
             description='Runs `extract unique` with the specified option. The default is "all", and "none" disables `extract unique`, allowing connections between separate nets by label in LVS.',
-            deprecated_names=[
-                ("MAGIC_NO_EXT_UNIQUE", lambda o: "none" if o else "all"),
-                ("LVS_CONNECT_BY_LABEL", lambda o: "none" if o else "all"),
-            ],
         )
 
         MAGIC_EXT_SHORT_RESISTOR: bool = variable(

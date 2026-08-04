@@ -15,9 +15,9 @@ import pytest
 
 import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
-from librelane.flows.job import resolve_jobs
-from librelane.flows.predicates import ConfigTerm
-from librelane.flows.spec import FlowSpec
+from librelane.engine.job import resolve_jobs
+from librelane.engine.predicates import ConfigTerm
+from librelane.engine.spec import FlowSpec
 from librelane.jobs import Job, JobRegistry, JobResolutionError
 from librelane.state import DesignFormat
 from librelane.steps import Step

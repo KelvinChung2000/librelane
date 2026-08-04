@@ -19,7 +19,6 @@ from loguru import logger
 from importlib.resources import files
 import os
 from decimal import Decimal
-from typing import Optional
 
 from librelane.config import variable
 from librelane.state import DesignFormat, State
@@ -119,10 +118,9 @@ class ReportWireLength(OdbpyStep):
         ERROR_ON_LONG_WIRE: bool = variable(
             True,
             description="Checks if any wire length exceeds the threshold set in the PDK. If so, an error is raised at the end of the flow.",
-            deprecated_names=["QUIT_ON_LONG_WIRE"],
         )
 
-        WIRE_LENGTH_THRESHOLD: Optional[Decimal] = variable(
+        WIRE_LENGTH_THRESHOLD: Decimal | None = variable(
             None,
             description="A value above which wire lengths generate warnings.",
             units="µm",
@@ -183,7 +181,7 @@ class ReportDisconnectedPins(OdbpyStep):
     )
 
     class Config(OdbpyStep.Config):
-        IGNORE_DISCONNECTED_MODULES: Optional[list[str]] = variable(
+        IGNORE_DISCONNECTED_MODULES: list[str] | None = variable(
             None,
             description="Modules (or cells) to ignore when checking for disconnected pins.",
             pdk=True,
@@ -192,7 +190,6 @@ class ReportDisconnectedPins(OdbpyStep):
         ERROR_ON_DISCONNECTED_PINS: bool = variable(
             True,
             description="Checks for disconnected instance pins after detailed routing and quits immediately if so.",
-            deprecated_names=["QUIT_ON_DISCONNECTED_PINS"],
         )
 
     config: Config

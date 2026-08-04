@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-from importlib.resources import files
 from typing import Any
 
 import pytest
@@ -20,12 +19,13 @@ import yaml
 from jsonschema import Draft202012Validator
 
 import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
-from librelane.flows.spec import FlowSpecError, VariableSpec, load_flow_spec
-from librelane.flows.spec_schema import (
+from librelane.engine.spec_include import share_directory
+from librelane.engine.spec import FlowSpecError, VariableSpec, load_flow_spec
+from librelane.engine.spec_schema import (
     JSON_SCHEMA_DIALECT,
     workflow_document_schema,
 )
-from librelane.flows.spec_validation import validate_against_registry
+from librelane.engine.spec_validation import validate_against_registry
 
 pytestmark = pytest.mark.all
 
@@ -86,10 +86,20 @@ def _schema_accepts(validator: Draft202012Validator, document: dict[str, Any]) -
 
 
 def _shipped_documents() -> list[str]:
+    """
+    Every YAML file ``librelane/share/`` holds, the documents in its root and
+    the common library they include alike. Both are written against this
+    schema: an editor has no way to tell one from the other, which is the
+    reason the generator drops the ``name`` and ``jobs`` requirements.
+    """
+    root = share_directory()
     return sorted(
-        path.name
-        for path in files("librelane.flows").iterdir()
-        if path.name.endswith(".yaml")
+        [path.name for path in root.iterdir() if path.name.endswith(".yaml")]
+        + [
+            f"common/{path.name}"
+            for path in root.joinpath("common").iterdir()
+            if path.name.endswith(".yaml")
+        ]
     )
 
 
@@ -105,7 +115,7 @@ def test_every_shipped_document_satisfies_the_schema(
     validator: Draft202012Validator, name: str
 ):
     document = yaml.safe_load(
-        files("librelane.flows").joinpath(name).read_text(encoding="utf8")
+        share_directory().joinpath(name).read_text(encoding="utf8")
     )
 
     assert list(validator.iter_errors(document)) == []
@@ -249,6 +259,35 @@ def test_the_uses_enumeration_carries_bare_ids_and_provider_pairs(
     assert "synthesis/yosys" in values
     assert "synthesis" in values
     assert "synthesis/nonsense" not in values
+
+
+def test_the_schema_accepts_a_fragment_the_loader_will_not_run(
+    validator: Draft202012Validator,
+):
+    """
+    The other place the two deliberately differ.
+
+    A file with no ``name`` and no ``jobs`` is a legal include and an illegal
+    flow, and which of the two a file open in an editor is, is not a property
+    of the file. The requirement stays with the loader, which is told.
+    """
+    fragment = {"config": [{"name": "A", "type": "bool", "description": "d"}]}
+
+    assert _schema_accepts(validator, fragment)
+    assert not _librelane_accepts(fragment)
+
+
+def test_the_schema_carries_the_include_key(validator: Draft202012Validator):
+    """
+    ``include`` is resolved before a model exists, so it is not a field of
+    ``FlowSpec`` and pydantic cannot generate it. An editor still has to know
+    it is legal, and that it is a list of distinct paths.
+    """
+    assert _schema_accepts(validator, _document(include=["./shared.yaml"]))
+    assert not _schema_accepts(validator, _document(include="./shared.yaml"))
+    assert not _schema_accepts(
+        validator, _document(include=["./shared.yaml", "./shared.yaml"])
+    )
 
 
 def test_a_variable_type_the_schema_refuses_cannot_reach_a_run():

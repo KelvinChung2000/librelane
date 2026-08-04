@@ -22,8 +22,8 @@ def test_vendor_registration_is_opt_in_via_subprocess():
         """
         import librelane.steps  # noqa: F401  populates Step.factory
         from librelane.jobs import JobRegistry
-        from librelane.flows import Flow
-        from librelane.flows.engine import Workflow
+        from librelane.engine import Flow
+        from librelane.engine.engine import Workflow
 
         classic = Flow.factory.get("Classic")
 

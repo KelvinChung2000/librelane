@@ -74,7 +74,7 @@ def get_tpe() -> ThreadPoolExecutor:
     Warning
     -------
     This pool runs whole *jobs* for
-    :class:`librelane.flows.engine.Workflow`, so its workers are occupied for
+    :class:`librelane.engine.engine.Workflow`, so its workers are occupied for
     as long as a job takes. Code running inside a job -- which is to say, any
     step, and anything a step calls -- must not submit to it and wait on the
     result: with the pool full of jobs the submitted work can only start once

@@ -49,7 +49,6 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import sys
-from typing import Optional
 
 import pya
 import click
@@ -121,14 +120,14 @@ def stream_out(
     input_lefs: tuple[str, ...],
     lyt: str,
     lyp: str,
-    lym: Optional[str],
+    lym: str | None,
     input_gds_files: tuple[str, ...],
-    seal_gds: Optional[str],
+    seal_gds: str | None,
     design_name: str,
     input: str,
     conflict_resolution: str,
-    isosub_layer: Optional[int],
-    isosub_datatype: Optional[int],
+    isosub_layer: int | None,
+    isosub_datatype: int | None,
 ):  # Load technology file
     try:
         tech = pya.Technology()

@@ -29,8 +29,8 @@ A *provider* registration binds a job's template to the concrete steps that
 actually implement it for one tool. This split is what makes a job the unit of
 two things at once, which tool runs a phase and whether that phase can be
 turned off independently of every other phase. `Classic` and `VHDLClassic` are
-workflow documents; they live in `librelane/flows/classic.yaml` and
-`librelane/flows/vhdl_classic.yaml`.
+workflow documents; they live in `librelane/share/classic.yaml` and
+`librelane/share/vhdl_classic.yaml`.
 
 ## The `TOOLS` configuration variable
 
@@ -193,7 +193,7 @@ results are *semantically* compatible.
 
 ## Job ids in a workflow document
 
-A workflow document (`librelane/flows/*.yaml`) declares a graph of named jobs,
+A workflow document (`librelane/share/*.yaml`) declares a graph of named jobs,
 each naming the stage it runs with a `uses` key. The name and the stage are
 two different things, and `TOOLS` keys on the name:
 
@@ -464,7 +464,7 @@ The Alternatives column lists eighteen single-key selections across the three
 shipped documents. Seventeen of them are refused at load, which is a fact about
 those documents' graphs rather than about the tools: each one either drops a
 view something downstream hard-requires, or puts a second writer of one key on a
-branch that runs beside another writer's. `test/flows/test_selection_validation.py`
+branch that runs beside another writer's. `test/engine/test_selection_validation.py`
 measures the whole list and is the source of this table. Every row assumes a run
 that starts from nothing; see
 [What is checked, and when](#what-is-checked-when) for what

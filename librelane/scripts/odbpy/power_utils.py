@@ -18,7 +18,6 @@ import utl
 import re
 import json
 from dataclasses import dataclass
-from typing import Optional
 
 from reader import OdbReader, click_odb, click
 
@@ -180,7 +179,7 @@ class Design(object):
         pin_name: str,
         power: bool = False,
         ground: bool = False,
-        region: Optional[odb.dbRegion] = None,
+        region: odb.dbRegion | None = None,
     ):
         # Function adapted from OpenROAD
         #
@@ -335,7 +334,7 @@ cli.add_command(set_power_connections)
 def write_verilog_header(
     output_vh: str,
     input_json: str,
-    power_define: Optional[str],
+    power_define: str | None,
     reader: OdbReader,
 ):
     input_dict = json.load(open(input_json))

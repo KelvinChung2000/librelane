@@ -17,7 +17,7 @@ import librelane.steps  # noqa: F401  registers mag_gds and klayout_gds
 
 from librelane.common import Path
 from librelane.common.errors import FlowError
-from librelane.flows.join import (
+from librelane.engine.join import (
     JoinConflictError,
     join_sink_states,
     join_states,

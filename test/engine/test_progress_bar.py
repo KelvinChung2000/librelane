@@ -12,7 +12,7 @@ def real_progress(mocker):
     """
     Undoes the suite-wide MockProgress so the actual Rich bar is exercised.
     """
-    from librelane.flows import flow as flow_module
+    from librelane.engine import flow as flow_module
 
     import rich.progress
 

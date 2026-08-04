@@ -41,16 +41,16 @@ from librelane import common
 from librelane.__version__ import __version__
 from librelane.config import Config, InvalidConfig, PassedDirectoryError
 from librelane.container import run_in_container
-from librelane.flows import (
+from librelane.engine import (
     Explanation,
     Flow,
     FlowError,
     FlowException,
     VariableDisposition,
 )
-from librelane.flows.engine import Workflow
-from librelane.flows.selection_validation import supplied_views
-from librelane.flows.spec import FlowSpec
+from librelane.engine.engine import Workflow
+from librelane.engine.selection_validation import supplied_views
+from librelane.engine.spec import FlowSpec
 from librelane.state import DesignFormat, State
 from librelane.cli.options import (
     CondensedOption,
@@ -112,8 +112,8 @@ def _named_parameters(method: Any) -> frozenset[str]:
 
 
 #: Every keyword this module may hand to a workflow to shape a run: one both
-#: :meth:`librelane.flows.engine.Workflow.run` and
-#: :meth:`librelane.flows.engine.Workflow.explain` declare by name. Read from
+#: :meth:`librelane.engine.engine.Workflow.run` and
+#: :meth:`librelane.engine.engine.Workflow.explain` declare by name. Read from
 #: the engine rather than restated, so that renaming one there is caught here
 #: rather than turning a command-line option into a silent no-op, and
 #: intersected because the same keywords go to both: one the explanation did
@@ -237,7 +237,7 @@ def apply_initial_state_overrides(request: FlowRequest) -> State | None:
 
 def format_job_explanation(explanation: Explanation) -> str:
     """
-    Renders the job half of an :class:`librelane.flows.Explanation` as a
+    Renders the job half of an :class:`librelane.engine.Explanation` as a
     fixed-width table.
 
     Parameters
@@ -327,7 +327,7 @@ def _format_reach(disposition: VariableDisposition) -> str:
 
 def format_variable_explanation(explanation: Explanation) -> str:
     """
-    Renders the variable half of an :class:`librelane.flows.Explanation` as a
+    Renders the variable half of an :class:`librelane.engine.Explanation` as a
     fixed-width table.
 
     Every row is printed, including the variables sitting at their defaults. A
@@ -378,9 +378,9 @@ def _truncated(value: str) -> str:
 def bind_workflow_arguments(**arguments: Any) -> dict[str, Any]:
     """
     Checks that every flow-control keyword this module hands to
-    :meth:`librelane.flows.Flow.start` and to
-    :meth:`librelane.flows.engine.Workflow.explain` is one both
-    :meth:`librelane.flows.engine.Workflow.run` and ``explain`` declare by
+    :meth:`librelane.engine.Flow.start` and to
+    :meth:`librelane.engine.engine.Workflow.explain` is one both
+    :meth:`librelane.engine.engine.Workflow.run` and ``explain`` declare by
     name.
 
     ``Flow.start`` forwards its ``**kwargs`` into ``run`` unchanged, and ``run``

@@ -77,7 +77,8 @@ These get a deprecation path rather than a break.
 Inherited from the modernization roadmap:
 
 - Apache-2.0 compatible dependencies only. Pydantic is MIT, so it qualifies.
-- Python floor stays `>=3.10`. No `from __future__ import annotations`.
+- Python floor is `>=3.13`, raised from `>=3.10` after this spec was written.
+  No `from __future__ import annotations`.
 - Any `pyproject.toml` dependency change requires a matching `default.nix`
   change in the same commit.
 

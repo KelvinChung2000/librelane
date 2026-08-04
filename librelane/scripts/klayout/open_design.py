@@ -14,7 +14,6 @@
 # limitations under the License.
 import os
 import sys
-from typing import Optional
 
 import click
 import pya  # Must be run inside KLayout-- the library version of pya does not include "Application"
@@ -25,7 +24,7 @@ def open_design(
     input_lefs: tuple[str, ...],
     lyt: str,
     lyp: str,
-    lym: Optional[str],
+    lym: str | None,
     input: str,
 ):
     try:
@@ -77,9 +76,7 @@ def open_design(
     help="KLayout .map (LEF/DEF layer map) file. Omit when the .lyt embeds the mapping.",
 )
 @click.argument("input")
-def cli(
-    input_lefs: tuple[str, ...], lyt: str, lyp: str, lym: Optional[str], input: str
-):
+def cli(input_lefs: tuple[str, ...], lyt: str, lyp: str, lym: str | None, input: str):
     """Open a layout in the KLayout GUI."""
     open_design(input_lefs, lyt, lyp, lym, input)
 

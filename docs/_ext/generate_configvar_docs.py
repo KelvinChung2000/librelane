@@ -24,11 +24,11 @@ from sphinx.config import Config
 from sphinx.application import Sphinx
 
 import librelane
-import librelane.flows
+import librelane.engine
 import librelane.steps
 import librelane.config
 from librelane.common import slugify
-from librelane.flows.engine import Workflow
+from librelane.engine.engine import Workflow
 
 
 def setup(app: Sphinx):
@@ -64,7 +64,7 @@ def generate_module_docs(app: Sphinx, conf: Config):
 
         # 1. Flows
         template = env.get_template("flows.md")
-        flow_factory = librelane.flows.Flow.factory
+        flow_factory = librelane.engine.Flow.factory
 
         with open(os.path.join(doc_root_dir, "reference", "flows.md"), "w") as f:
             f.write(

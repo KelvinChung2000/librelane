@@ -33,7 +33,7 @@ from rich.text import Text
 from typer.testing import CliRunner
 
 from librelane.cli.main import cli
-from librelane.flows.spec_schema import JSON_SCHEMA_DIALECT, workflow_document_schema
+from librelane.engine.spec_schema import JSON_SCHEMA_DIALECT, workflow_document_schema
 
 
 pytestmark = pytest.mark.all
@@ -489,7 +489,7 @@ class TestMetaFlowSelection:
 class TestFlowControlArguments:
     """
     What ``--target``, ``--invalidate``, ``--skip`` and ``--reproducible`` hand
-    to :meth:`librelane.flows.engine.Workflow.run`.
+    to :meth:`librelane.engine.engine.Workflow.run`.
 
     :class:`librelane.cli.run.FlowRequest` stores them as tuples, and an empty
     tuple is not what ``run`` reads as "unset": ``target=()`` selects no jobs
@@ -574,7 +574,7 @@ class TestFlowConstructionErrors:
 
     Constructing it resolves the document against the registries and resolves
     ``TOOLS`` against the document, and both report a mistake as a
-    :class:`librelane.flows.FlowError`. Every one of those messages names the
+    :class:`librelane.engine.FlowError`. Every one of those messages names the
     offending key and the legal alternatives, which is worth nothing if it
     arrives as the last line of a traceback.
     """
@@ -615,7 +615,7 @@ class TestFlowConstructionErrors:
         import typer
 
         import librelane.cli.run as run_module
-        from librelane.flows.spec import FlowSpecError
+        from librelane.engine.spec import FlowSpecError
 
         mocker.patch.object(run_module, "select_flow")
         mocker.patch.object(
@@ -634,7 +634,7 @@ class TestFlowConstructionErrors:
 class TestJobExplanationTable:
     def test_explain_prints_a_job_table(self):
         from librelane.cli.run import format_job_explanation
-        from librelane.flows import Explanation, JobDisposition
+        from librelane.engine import Explanation, JobDisposition
 
         rendered = format_job_explanation(
             Explanation(
@@ -665,7 +665,7 @@ class TestJobExplanationTable:
         line with every other row in the table.
         """
         from librelane.cli.run import format_job_explanation
-        from librelane.flows import Explanation, JobDisposition
+        from librelane.engine import Explanation, JobDisposition
 
         rendered = format_job_explanation(
             Explanation(
@@ -770,7 +770,7 @@ class TestJobExplanationTable:
         import typer
 
         import librelane.cli.run as run_module
-        from librelane.flows import FlowException
+        from librelane.engine import FlowException
 
         mocker.patch.object(run_module, "select_flow")
         workflow = mocker.patch.object(run_module, "Workflow")
@@ -977,7 +977,7 @@ class TestExplainOption:
         """
         --explain short-circuits inside start_flow, which this test replaces,
         so it pins that the flag reaches the request. The table itself is
-        covered by test/flows/test_explain.py.
+        covered by test/engine/test_explain.py.
         """
         import librelane.cli.run as run_module
 
@@ -1126,7 +1126,7 @@ class TestLibraryIsNotCoupledToTheCli:
             [
                 sys.executable,
                 "-c",
-                "import librelane.flows, sys; print('typer' in sys.modules)",
+                "import librelane.engine, sys; print('typer' in sys.modules)",
             ],
             capture_output=True,
             cwd=REPO_ROOT,
@@ -1135,7 +1135,7 @@ class TestLibraryIsNotCoupledToTheCli:
 
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == "False", (
-            "librelane.flows must be usable without pulling in the CLI layer"
+            "librelane.engine must be usable without pulling in the CLI layer"
         )
 
     def test_top_level_package_does_not_export_a_cli(self):
@@ -1153,7 +1153,7 @@ class TestLibraryIsNotCoupledToTheCli:
                 sys.executable,
                 "-c",
                 "import librelane.cli.options, sys;"
-                "print(any(m.startswith('librelane.flows') or"
+                "print(any(m.startswith('librelane.engine') or"
                 " m.startswith('librelane.steps') for m in sys.modules))",
             ],
             capture_output=True,

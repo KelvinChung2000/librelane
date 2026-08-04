@@ -21,7 +21,7 @@ Fake steps throughout, no real tools -- the same style ``test_loops.py`` and
 
 import pytest
 
-from librelane.flows import flow as flow_module
+from librelane.engine import flow as flow_module
 from librelane.steps import step as step_module
 
 pytestmark = pytest.mark.all
@@ -234,8 +234,8 @@ def _sweep_spec(iterations, select="score min", steps=None, name="Sweep"):
 def test_sweep_keeps_the_pass_with_the_minimum_select_metric(
     sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec({"SWEEP_SCORE": [30, 10, 20]}, select="score min")
@@ -250,8 +250,8 @@ def test_sweep_keeps_the_pass_with_the_minimum_select_metric(
 def test_sweep_keeps_the_pass_with_the_maximum_select_metric(
     sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec({"SWEEP_SCORE": [30, 10, 20]}, select="score max")
@@ -266,8 +266,8 @@ def test_sweep_keeps_the_pass_with_the_maximum_select_metric(
 def test_sweep_tie_breaks_to_the_lowest_pass_index(
     sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec(
@@ -285,9 +285,9 @@ def test_sweep_tie_breaks_to_the_lowest_pass_index(
 def test_a_missing_select_metric_fails_naming_job_pass_and_metric(
     sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec(
@@ -315,9 +315,9 @@ def test_a_boolean_select_metric_fails_naming_the_pass_and_metric(
     raising a raw, unnamed decimal.InvalidOperation instead of the named
     refusal this pins.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec(
@@ -341,9 +341,9 @@ def test_a_boolean_select_metric_fails_naming_the_pass_and_metric(
 def test_a_raised_pass_fails_the_sweep_naming_the_pass(
     sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec(
@@ -366,8 +366,8 @@ def test_a_raised_pass_fails_the_sweep_naming_the_pass(
 def test_a_losing_pass_s_deferral_warns_and_does_not_fail_the_flow(
     caplog, sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec(
@@ -390,9 +390,9 @@ def test_a_losing_pass_s_deferral_warns_and_does_not_fail_the_flow(
 def test_the_winning_pass_s_deferral_fails_the_flow(
     sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec(
@@ -414,9 +414,9 @@ def test_the_winning_pass_s_deferral_fails_the_flow(
 def test_every_pass_is_contract_checked_even_a_losing_one(
     sweep_contract_job, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -449,8 +449,8 @@ def test_every_pass_is_contract_checked_even_a_losing_one(
 
 @mock_variables([flow_module, step_module])
 def test_sweep_writes_a_pass_directory_per_point(sweep_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec({"SWEEP_SCORE": [1, 2, 3]}, select="score min")
@@ -467,8 +467,8 @@ def test_sweep_writes_a_pass_directory_per_point(sweep_steps, minimal_design, mo
 def test_a_two_variable_matrix_sweeps_every_combination(
     sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec(
@@ -495,8 +495,8 @@ def test_sweep_runs_every_pass_concurrently(minimal_design, mock_pdk):
     import threading
 
     from librelane.config import variable
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     # A barrier sized to the sweep's point count, not a sleep: every pass
@@ -535,8 +535,8 @@ def test_sweep_runs_every_pass_concurrently(minimal_design, mock_pdk):
 def test_skip_on_a_sweep_job_is_a_whole_job_pass_through(
     sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec({"SWEEP_SCORE": [1, 2]}, select="score min")
@@ -552,9 +552,9 @@ def test_skip_on_a_sweep_job_is_a_whole_job_pass_through(
 def test_reproducible_naming_a_sweep_job_s_step_is_refused(
     sweep_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec({"SWEEP_SCORE": [1, 2]}, select="score min")
@@ -571,8 +571,8 @@ def test_reproducible_naming_a_sweep_job_s_step_is_refused(
 
 @mock_variables([flow_module, step_module])
 def test_explain_reports_a_sweep_row(sweep_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         _sweep_spec({"SWEEP_SCORE": [1, 2, 3]}, select="score min")

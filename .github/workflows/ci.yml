@@ -110,7 +110,7 @@ jobs:
       - name: Set Up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.13"
       - name: Set Up uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -139,7 +139,7 @@ jobs:
     needs: [lint, prepare-test-matrices]
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"] # , "3.14"] # lxml, klayout still not built
+        python-version: ["3.13", "3.14"]
       fail-fast: false
     name: Unit Tests (no step-impl) / Python ${{ matrix.python-version }}
     steps:
@@ -414,7 +414,7 @@ jobs:
       - name: Set Up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.13"
       - name: Set Up uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -759,7 +759,7 @@ jobs:
         if: ${{ env.PUBLISH == '1' }}
         uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.13"
       - name: Set Up uv
         if: ${{ env.PUBLISH == '1' }}
         uses: astral-sh/setup-uv@v5
@@ -774,7 +774,7 @@ jobs:
         run: |
           uv venv /tmp/wheel-check
           uv pip install --python /tmp/wheel-check dist/*.whl
-          /tmp/wheel-check/bin/python -c "from librelane.flows import Flow; flows = set(Flow.factory.list()); assert {'Classic', 'Chip', 'VHDLClassic'} <= flows, flows"
+          /tmp/wheel-check/bin/python -c "from librelane.engine import Flow; flows = set(Flow.factory.list()); assert {'Classic', 'Chip', 'VHDLClassic'} <= flows, flows"
       - name: Publish
         if: ${{ env.PUBLISH == '1' }}
         uses: pypa/gh-action-pypi-publish@release/v1

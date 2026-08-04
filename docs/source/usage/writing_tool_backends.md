@@ -88,7 +88,7 @@ a list value, and a key naming a job that lists its steps inline.
 
 **Load time** is where the document's own structural check runs, over the
 declared graph rather than over a resolved step list. `_check_requirements_are_reachable`
-in `librelane/flows/spec_validation.py` checks that every view a job `requires`
+in `librelane/engine/spec_validation.py` checks that every view a job `requires`
 is `provide`d by some job upstream of it. This is what makes an untested
 document safe to attempt, because a graph that leaves a consumer stranded is
 refused before the run starts, naming the view and the job, rather than crashing

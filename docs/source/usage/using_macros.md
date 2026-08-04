@@ -220,7 +220,7 @@ Using these is considered **undefined behavior** and the flow will likely crash
 because of assumptions about the hierarchy involving these characters.
 
 ```verilog
-CellType \instance/name (…);
+CellType \instance/name (...);
 ```
 ````
 

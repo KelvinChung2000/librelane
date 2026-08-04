@@ -21,22 +21,23 @@ that the registry answers for every document the package ships.
 """
 
 import itertools
-from importlib.resources import files
 
 import pytest
+import yaml
 
 import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
 
-from librelane.flows.job import resolve_jobs
-from librelane.flows.predicates import config_terms
-from librelane.flows.selection_validation import (
+from librelane.engine.spec_include import common_directory, share_directory
+from librelane.engine.job import resolve_jobs
+from librelane.engine.predicates import config_terms
+from librelane.engine.selection_validation import (
     FRAMEWORK_METRICS,
     JoinConflict,
     join_conflicts,
 )
-from librelane.flows.spec import FlowSpec, load_flow_spec
-from librelane.flows.spec_graph import ancestors
-from librelane.flows.spec_validation import validate_against_registry
+from librelane.engine.spec import FlowSpec, load_flow_spec
+from librelane.engine.spec_graph import ancestors
+from librelane.engine.spec_validation import validate_against_registry
 from librelane.jobs import JobRegistry
 
 pytestmark = pytest.mark.all
@@ -52,14 +53,19 @@ def _document(name: str) -> FlowSpec:
     asserts rather than raises on a name that does not resolve, so skipping the
     second pass would turn a misspelled step into a bare ``AssertionError``.
     """
-    spec = load_flow_spec(str(files("librelane.flows").joinpath(name)))
+    spec = load_flow_spec(str(share_directory().joinpath(name)))
     validate_against_registry(spec)
     return spec
 
 
 def _shipped_documents() -> list[str]:
     """
-    Every ``.yaml`` document shipped inside :mod:`librelane.flows`, discovered.
+    Every ``.yaml`` document shipped in ``librelane/share/``, discovered.
+
+    That directory only. ``share/common/`` holds the fragments the documents
+    include with ``common::``, which are not flows and cannot be loaded alone;
+    they are checked here through the documents that include them, and against
+    the schema in ``test_spec_schema.py``.
 
     Deliberately not a hand-written list. The framework-metric guard below was
     added for ``classic.yaml`` and extended to two more by name, and in the gap
@@ -69,9 +75,7 @@ def _shipped_documents() -> list[str]:
     reads the package instead.
     """
     return sorted(
-        path.name
-        for path in files("librelane.flows").iterdir()
-        if path.name.endswith(".yaml")
+        path.name for path in share_directory().iterdir() if path.name.endswith(".yaml")
     )
 
 
@@ -125,7 +129,7 @@ def _gating_variables(name: str) -> list[tuple[str, str, tuple[str, ...]]]:
     former counterpart, ``_flow_gating_variables``, is gone for good, because
     there is no longer a Python flow to derive it from.
 
-    ``conditions`` is projected through :func:`~librelane.flows.predicates.config_terms`
+    ``conditions`` is projected through :func:`~librelane.engine.predicates.config_terms`
     since spec 3 retyped ``ResolvedJob.conditions`` to carry parsed predicate
     terms rather than bare names: no shipped document declares a ``metric::``
     term, so this is the same set of names it always was, read off the
@@ -144,7 +148,7 @@ def _join_conflicts(
     name: str, tools: dict[str, str] | None = None
 ) -> list[JoinConflict]:
     """
-    Replays :mod:`librelane.flows.join`'s rule over a document, with every job
+    Replays :mod:`librelane.engine.join`'s rule over a document, with every job
     modelled as enabled.
 
     Returns
@@ -153,7 +157,7 @@ def _join_conflicts(
         One entry per unresolved conflict.
 
     The replay itself is
-    :func:`librelane.flows.selection_validation.join_conflicts`, which this file
+    :func:`librelane.engine.selection_validation.join_conflicts`, which this file
     is where it was written: it started as a guard over the shipped documents
     and became a library function once the engine gained a load-time check that
     has to ask the same question of a user's ``TOOLS`` entry. Calling it rather
@@ -220,13 +224,13 @@ def _alternate_providers(name: str) -> list[tuple[str, str]]:
 #: Selecting the ``klayout`` provider of ``lvs`` opens that job with
 #: ``OpenROAD.WriteCDL``, whose framework metrics its concurrent peers inherit
 #: unchanged from the last OpenROAD-backed job above the fan-out. Neither
-#: ``librelane.flows.spec_validation`` nor this guard's pre-selection form
+#: ``librelane.engine.spec_validation`` nor this guard's pre-selection form
 #: could see it: the metrics are declared nowhere, and the provider is named
 #: nowhere in the document.
 #:
 #: Pinned rather than left to be discovered on a real run, and pinned as an
 #: equality so that a selection becoming safe fails here too. What the engine
-#: does about them is ``test/flows/test_selection_validation.py``'s subject;
+#: does about them is ``test/engine/test_selection_validation.py``'s subject;
 #: this file pins that the replay still measures them.
 _SELECTIONS_A_DOCUMENT_DOES_NOT_SURVIVE = {
     ("chip.yaml", "klayout_drc", "magic"): ["magic__drc_error__count"],
@@ -1005,7 +1009,7 @@ def test_the_shipped_document_guard_covers_every_document():
 
 
 def test_every_document_is_registered_under_its_name():
-    from librelane.flows import Flow
+    from librelane.engine import Flow
 
     for name in ["Classic", "VHDLClassic", "Chip"]:
         registered = Flow.factory.get(name)
@@ -1019,7 +1023,7 @@ def test_the_factory_registers_every_shipped_document():
     that a document added to the package without reaching the registry fails
     here. The list above pins the names; this pins that none was skipped.
     """
-    from librelane.flows import Flow
+    from librelane.engine import Flow
 
     for document in _shipped_documents():
         name = _document(document).name
@@ -1033,18 +1037,47 @@ def test_the_factory_lists_exactly_the_shipped_documents():
     the list is now exactly the shipped documents -- which is what lets every
     caller that iterates it look each name up without a ``None`` check.
     """
-    from librelane.flows import Flow
+    from librelane.engine import Flow
 
     assert Flow.factory.list() == sorted(
         _document(document).name for document in _shipped_documents()
     )
 
 
+def test_the_common_library_is_included_and_not_registered():
+    """
+    ``common/`` holds what the three documents declare identically. A fragment
+    there is not a flow: it has no name to be registered under, and the
+    registration loop does not descend into the directory, so nothing has to
+    filter it out. Every one of them is reached, because every one of them is
+    included -- and reached the way any other document would reach it, through
+    ``common::``, rather than by the path that only works from in here.
+    """
+    from librelane.engine import Flow
+
+    library = sorted(
+        path.name
+        for path in common_directory().iterdir()
+        if path.name.endswith(".yaml")
+    )
+    assert library, "the documents below claim to include something"
+
+    included = {
+        entry
+        for document in _SHIPPED_DOCUMENTS
+        for entry in yaml.safe_load(
+            share_directory().joinpath(document).read_text(encoding="utf8")
+        )["include"]
+    }
+    assert included == {f"common::{name}" for name in library}
+    assert Flow.factory.list() == ["Chip", "Classic", "VHDLClassic"]
+
+
 def test_a_name_no_document_claims_is_looked_up_as_none():
     """
     ``get`` answers for the document registry and for nothing else.
     """
-    from librelane.flows import Flow
+    from librelane.engine import Flow
 
     assert isinstance(Flow.factory.get("Classic"), FlowSpec)
     assert Flow.factory.get("NoSuchFlow") is None
@@ -1056,8 +1089,8 @@ def test_registering_a_document_twice_is_an_error():
     loser would be whichever the registration loop reached second. The
     duplicate is refused instead.
     """
-    from librelane.flows import Flow
-    from librelane.flows.flow import FlowException
+    from librelane.engine import Flow
+    from librelane.engine.flow import FlowException
 
     spec = Flow.factory.get("Classic")
 
@@ -1066,7 +1099,7 @@ def test_registering_a_document_twice_is_an_error():
 
 
 def test_a_document_is_rejected_at_import_if_it_is_malformed(tmp_path):
-    from librelane.flows.spec import FlowSpecError
+    from librelane.engine.spec import FlowSpecError
 
     bad = tmp_path / "bad.yaml"
     bad.write_text("name: Bad\njobs:\n  a:\n    needs: [nope]\n    uses: lint\n")
@@ -1076,7 +1109,7 @@ def test_a_document_is_rejected_at_import_if_it_is_malformed(tmp_path):
 
 
 def test_help_for_a_document_lists_its_jobs_and_their_providers():
-    from librelane.flows.engine import Workflow
+    from librelane.engine.engine import Workflow
 
     help_md = Workflow.help_md_for_document(_document("classic.yaml"))
 
@@ -1087,7 +1120,7 @@ def test_help_for_a_document_lists_its_jobs_and_their_providers():
 
 
 def test_help_for_a_document_lists_its_steps():
-    from librelane.flows.engine import Workflow
+    from librelane.engine.engine import Workflow
 
     help_md = Workflow.help_md_for_document(_document("classic.yaml"))
 
@@ -1096,7 +1129,7 @@ def test_help_for_a_document_lists_its_steps():
 
 
 def test_help_for_a_document_declares_its_own_variables():
-    from librelane.flows.engine import Workflow
+    from librelane.engine.engine import Workflow
 
     help_md = Workflow.help_md_for_document(_document("classic.yaml"))
 
@@ -1122,7 +1155,7 @@ def test_help_for_a_document_documents_the_tools_variable():
     own configuration model, which put the variable at the head of ``Classic``'s
     list.
     """
-    from librelane.flows.engine import Workflow
+    from librelane.engine.engine import Workflow
 
     help_md = Workflow.help_md_for_document(_document("classic.yaml"))
 
@@ -1135,7 +1168,7 @@ def test_help_documents_the_tools_variable_for_a_document_declaring_none():
     about which variables that document adds, so the section appears even for
     a document whose own ``config`` list is empty.
     """
-    from librelane.flows.engine import Workflow
+    from librelane.engine.engine import Workflow
 
     spec = FlowSpec.model_validate({"name": "NoVariables", "jobs": {"floorplan": {}}})
     validate_against_registry(spec)
@@ -1152,7 +1185,7 @@ def test_help_names_the_other_provider_of_a_template_as_an_alternative():
     template's two providers, so each row names the other tool -- which is
     exactly what a reader needs to write a ``TOOLS`` entry for that job.
     """
-    from librelane.flows.engine import Workflow
+    from librelane.engine.engine import Workflow
 
     help_md = Workflow.help_md_for_document(_document("classic.yaml"))
 

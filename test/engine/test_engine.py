@@ -13,7 +13,7 @@
 # limitations under the License.
 import pytest
 
-from librelane.flows import flow as flow_module
+from librelane.engine import flow as flow_module
 from librelane.steps import step as step_module
 
 pytestmark = pytest.mark.all
@@ -40,7 +40,7 @@ def contract_job():
     is derived from its steps' ``outputs``, which a step declares as a
     permission rather than an obligation. Only a ``uses`` job carries a
     contract someone wrote down on purpose, so only a ``uses`` job can exercise
-    :meth:`librelane.flows.engine.Workflow._check_contract` at all -- including
+    :meth:`librelane.engine.engine.Workflow._check_contract` at all -- including
     its metric half, which nothing else in the phase reaches, because an inline
     job's ``metrics`` is always empty.
 
@@ -227,8 +227,8 @@ def cascading_steps():
 
 @mock_variables([flow_module, step_module])
 def test_jobs_fire_in_topological_order(counting_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -251,8 +251,8 @@ def test_jobs_fire_in_topological_order(counting_steps, minimal_design, mock_pdk
 def test_the_document_name_is_the_flow_name(
     counting_steps, minimal_design, mock_pdk, mocker
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -275,8 +275,8 @@ def test_the_document_name_is_the_flow_name(
 def test_a_false_condition_passes_state_through_without_running(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -301,8 +301,8 @@ def test_a_false_condition_passes_state_through_without_running(
 def test_a_conjunction_runs_the_job_only_when_every_variable_is_true(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -326,8 +326,8 @@ def test_a_conjunction_runs_the_job_only_when_every_variable_is_true(
 def test_a_conjunction_whose_variables_are_all_true_runs_the_job(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -352,7 +352,7 @@ def metric_producers():
     Three trivially registered steps, each depositing a fixed value for
     metric ``x`` and nothing else, so a runtime ``if`` term has something
     concrete to compare against without going through
-    :meth:`~librelane.flows.flow.Flow.start`'s ``with_initial_state``, whose
+    :meth:`~librelane.engine.flow.Flow.start`'s ``with_initial_state``, whose
     ``with_initial_state or State()`` idiom silently drops a state carrying
     only metrics (``bool()`` on a :class:`~librelane.state.State` reads its
     view count, not its metrics). Reading the metric off an upstream job's
@@ -400,8 +400,8 @@ def metric_producers():
 def test_a_true_runtime_condition_runs_the_job(
     metric_producers, counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, First, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -428,8 +428,8 @@ def test_a_true_runtime_condition_runs_the_job(
 def test_a_false_runtime_condition_passes_through_with_the_observed_value(
     caplog, metric_producers, counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, Second = counting_steps
     spec = FlowSpec.model_validate(
@@ -463,9 +463,9 @@ def test_a_false_runtime_condition_passes_through_with_the_observed_value(
 def test_a_runtime_condition_with_a_missing_metric_fails_the_job_naming_it(
     metric_producers, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -496,8 +496,8 @@ def test_a_runtime_condition_with_a_missing_metric_fails_the_job_naming_it(
 def test_a_mixed_conjunction_needs_both_the_configuration_and_the_runtime_term(
     metric_producers, counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, First, _ = counting_steps
 
@@ -541,8 +541,8 @@ def test_a_false_configuration_term_short_circuits_before_the_runtime_term(
     term were evaluated here, the missing metric would fail the job, so
     running clean proves the short circuit rather than merely a lucky order.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -569,8 +569,8 @@ def test_a_false_configuration_term_short_circuits_before_the_runtime_term(
 def test_a_skipped_job_passes_state_through_without_running(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -593,8 +593,8 @@ def test_a_skipped_job_passes_state_through_without_running(
 def test_a_step_writes_into_its_job_s_directory(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -611,8 +611,8 @@ def test_a_step_writes_into_its_job_s_directory(
 def test_a_uses_job_honours_its_template_derived_contract(
     contract_job, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.state import DesignFormat
 
     spec = FlowSpec.model_validate(
@@ -632,9 +632,9 @@ def test_a_uses_job_honours_its_template_derived_contract(
 def test_a_uses_job_that_does_not_produce_its_declared_view_raises(
     contract_job, minimal_design, mock_pdk
 ):
-    from librelane.flows.flow import FlowError
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.flow import FlowError
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"liar": {"uses": "engine_contract/no_view"}}}
@@ -661,9 +661,9 @@ def test_a_uses_job_that_does_not_produce_its_declared_view_raises(
 def test_a_uses_job_that_does_not_produce_its_declared_metric_raises(
     contract_job, minimal_design, mock_pdk
 ):
-    from librelane.flows.flow import FlowError
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.flow import FlowError
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"quiet": {"uses": "engine_contract/no_metric"}}}
@@ -681,8 +681,8 @@ def test_a_uses_job_that_does_not_produce_its_declared_metric_raises(
 
 @mock_variables([flow_module, step_module])
 def test_an_inline_job_is_exempt_from_the_output_contract(minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.state import DesignFormat
     from librelane.steps import Step
 
@@ -711,8 +711,8 @@ def test_an_inline_job_is_exempt_from_the_output_contract(minimal_design, mock_p
 def test_a_pass_through_job_is_exempt_from_the_output_contract(
     contract_job, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -736,9 +736,9 @@ def test_a_pass_through_job_is_exempt_from_the_output_contract(
 def test_a_deferred_error_is_not_replaced_by_a_contract_error(
     contract_job, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import JobContractError, Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import JobContractError, Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"deferrer": {"uses": "engine_contract/deferring"}}}
@@ -822,8 +822,8 @@ def _two_streamouts(final: str | None = None) -> dict:
 def test_the_final_state_is_the_join_of_the_leaves(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     # Two leaves whose metrics differ in name but not in value, so the join
     # merges rather than conflicting and the result carries both.
@@ -847,9 +847,9 @@ def test_the_final_state_is_the_join_of_the_leaves(
 def test_two_leaves_with_conflicting_views_are_a_run_time_conflict(
     gds_writers, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.join import JoinConflictError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.join import JoinConflictError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(_two_streamouts())
 
@@ -879,8 +879,8 @@ def test_two_leaves_with_conflicting_views_are_a_run_time_conflict(
 def test_final_names_the_job_whose_state_is_returned(
     gds_writers, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.state import DesignFormat
 
     spec = FlowSpec.model_validate(_two_streamouts(final="klayout_streamout"))
@@ -895,8 +895,8 @@ def test_final_names_the_job_whose_state_is_returned(
 
 @mock_variables([flow_module, step_module])
 def test_independent_branches_both_run(minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     ran: list[str] = []
@@ -964,8 +964,8 @@ def two_workers():
 def test_two_enabled_jobs_run_at_the_same_time(minimal_design, mock_pdk):
     import threading
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     # A barrier, not a sleep: neither job can return until both have arrived,
@@ -1014,9 +1014,9 @@ def test_two_enabled_jobs_run_at_the_same_time(minimal_design, mock_pdk):
 def test_a_failure_reports_every_failed_job_not_just_the_first(
     minimal_design, mock_pdk
 ):
-    from librelane.flows.flow import FlowError
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.flow import FlowError
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
     from librelane.steps.step.exceptions import StepError
 
@@ -1062,9 +1062,9 @@ def test_a_failure_reports_every_failed_job_not_just_the_first(
 
 @mock_variables([flow_module, step_module])
 def test_a_job_downstream_of_a_failure_does_not_run(minimal_design, mock_pdk):
-    from librelane.flows.flow import FlowError
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.flow import FlowError
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
     from librelane.steps.step.exceptions import StepError
 
@@ -1113,9 +1113,9 @@ def test_a_job_downstream_of_a_failure_does_not_run(minimal_design, mock_pdk):
 def test_one_job_s_deferral_does_not_exempt_another_from_its_contract(
     contract_job, minimal_design, mock_pdk
 ):
-    from librelane.flows.flow import FlowError
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.flow import FlowError
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import DeferredStepError, Step
 
     # The interleaving is the whole test, and it has to be exact. An engine
@@ -1186,8 +1186,8 @@ def test_two_jobs_running_one_step_class_do_not_share_a_log(minimal_design, mock
 
     from loguru import logger
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.steps import Step
 
     # Both steps are inside their step_context, and so both step.log sinks are
@@ -1240,9 +1240,9 @@ def test_two_jobs_running_one_step_class_do_not_share_a_log(minimal_design, mock
 def test_an_error_scheduling_a_job_is_collected_not_raised_from_the_sweep(
     gds_writers, minimal_design, mock_pdk
 ):
-    from librelane.flows.flow import FlowError
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.flow import FlowError
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     # 'sink' consumes two predecessors that wrote different GDSIIs, so the
     # join of its *input* raises on the scheduling thread, not in a worker.
@@ -1275,8 +1275,8 @@ def test_an_error_scheduling_a_job_is_collected_not_raised_from_the_sweep(
 def test_a_job_that_omits_uses_runs_the_template_its_id_names(
     contract_job, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.state import DesignFormat
 
     # The document's central convenience, and the reason the spec's own sample
@@ -1296,8 +1296,8 @@ def test_a_job_that_omits_uses_runs_the_template_its_id_names(
 def test_a_resumed_workflow_executes_nothing(minimal_design, mock_pdk):
     import pathlib
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.state import DesignFormat, State
     from librelane.steps import Step
 
@@ -1371,8 +1371,8 @@ def test_a_resumed_workflow_executes_nothing(minimal_design, mock_pdk):
 def test_target_excludes_the_jobs_downstream_of_the_named_one(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -1397,8 +1397,8 @@ def test_target_excludes_the_jobs_downstream_of_the_named_one(
 def test_target_pulls_in_the_named_job_s_ancestors(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -1421,9 +1421,9 @@ def test_target_pulls_in_the_named_job_s_ancestors(
 def test_target_naming_an_unknown_job_is_an_error(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -1442,9 +1442,9 @@ def test_target_naming_an_unknown_job_is_an_error(
 def test_invalidate_naming_an_unknown_job_is_an_error(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -1464,9 +1464,9 @@ def test_invalidate_naming_an_unknown_job_is_an_error(
 def test_skip_outside_the_target_subgraph_is_an_error(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -1498,9 +1498,9 @@ def test_the_out_of_subgraph_error_names_reproducible_when_it_narrowed(
     refusal must name it. A fixed ``--target`` here told a user who passed only
     ``--reproducible`` about an option they never used.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -1535,9 +1535,9 @@ def test_the_out_of_subgraph_error_summarises_a_long_selection(
     buries the one name the reader can act on. What has to survive is the job
     they named and the option that excluded it.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     chain = {
         f"job{index}": {
@@ -1575,9 +1575,9 @@ def test_a_targeted_run_that_excludes_final_says_so_when_its_leaves_disagree(
     The error must name the flow control that excluded it rather than
     prescribe the key the document already has.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.join import JoinConflictError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.join import JoinConflictError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -1605,9 +1605,9 @@ def test_a_targeted_run_that_excludes_final_says_so_when_its_leaves_disagree(
 def test_invalidate_outside_the_target_subgraph_is_an_error(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -1630,8 +1630,8 @@ def test_invalidate_outside_the_target_subgraph_is_an_error(
 def test_target_runs_a_job_whose_ancestor_is_skipped(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -1657,8 +1657,8 @@ def test_target_runs_a_job_whose_ancestor_is_skipped(
 def test_invalidate_forces_a_job_and_its_descendants_to_rerun(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -1685,8 +1685,8 @@ def test_invalidate_forces_a_job_and_its_descendants_to_rerun(
 def test_invalidate_leaves_the_named_job_s_ancestors_reusable(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, _ = counting_steps
     spec = FlowSpec.model_validate(
@@ -1716,8 +1716,8 @@ def test_invalidate_leaves_the_named_job_s_ancestors_reusable(
 def test_a_targeted_run_joins_its_own_sinks_when_final_is_outside_it(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -1750,8 +1750,8 @@ def test_the_engine_reads_tools_before_resolving_its_configuration(
     pins that TOOLS taken from the raw configuration mapping, which is not a
     resolved Config yet, is what self.Steps is built from.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"contract": {"uses": "engine_contract/honest"}}}
@@ -1774,8 +1774,8 @@ def test_the_engine_declares_tools_itself(contract_job, minimal_design, mock_pdk
     resolved configuration alongside the document's variables. Assigning only
     the document's would make a configuration setting TOOLS an unknown key.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -1805,8 +1805,8 @@ def test_the_engine_reads_tools_out_of_an_already_resolved_configuration(
     resolved configuration -- which is how a reproducible re-runs -- would
     silently run the default provider.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"contract": {"uses": "engine_contract/honest"}}}
@@ -1827,8 +1827,8 @@ def test_the_engine_reads_tools_out_of_an_already_resolved_configuration(
 def test_the_engine_rejects_a_tools_key_naming_no_job(
     contract_job, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.jobs import JobResolutionError
 
     spec = FlowSpec.model_validate(
@@ -1843,8 +1843,8 @@ def test_the_engine_rejects_a_tools_key_naming_no_job(
 def test_reproducible_stops_before_the_named_step(
     counting_steps, minimal_design, mock_pdk, mocker
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, First, _ = counting_steps
     created = mocker.patch.object(First, "create_reproducible")
@@ -1871,8 +1871,8 @@ def test_reproducible_stops_before_the_named_step(
 def test_reproducible_runs_the_named_job_s_ancestors(
     counting_steps, minimal_design, mock_pdk, mocker
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     order, _, Second = counting_steps
     mocker.patch.object(Second, "create_reproducible")
@@ -1904,9 +1904,9 @@ def test_a_reproducible_run_frames_an_ancestor_s_deferred_errors(
     still fail the run after the reproducible is written -- and must say what
     the list of messages is.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     _, _, Second = counting_steps
     mocker.patch.object(Second, "create_reproducible")
@@ -1933,8 +1933,8 @@ def test_a_reproducible_run_frames_an_ancestor_s_deferred_errors(
 def test_reproducible_returns_the_state_the_named_step_would_have_consumed(
     counting_steps, minimal_design, mock_pdk, mocker
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     _, _, Second = counting_steps
     mocker.patch.object(Second, "create_reproducible")
@@ -1961,8 +1961,8 @@ def test_reproducible_returns_the_state_the_named_step_would_have_consumed(
 def test_reproducible_is_written_under_the_named_step_s_directory(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -1991,9 +1991,9 @@ def test_reproducible_is_written_under_the_named_step_s_directory(
 def test_reproducible_for_a_step_in_several_jobs_is_ambiguous(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -2018,9 +2018,9 @@ def test_reproducible_for_a_step_in_several_jobs_is_ambiguous(
 def test_reproducible_naming_a_step_no_job_runs_is_an_error(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -2046,8 +2046,8 @@ def test_reproducible_accepts_a_wildcard(
     always accepted, and pointing the switch at a document may not quietly
     take them away.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     _, _, Second = counting_steps
     created = mocker.patch.object(Second, "create_reproducible")
@@ -2071,9 +2071,9 @@ def test_reproducible_accepts_a_wildcard(
 def test_reproducible_refuses_a_wildcard_matching_several_steps(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -2102,9 +2102,9 @@ def test_reproducible_suggests_a_near_miss(counting_steps, minimal_design, mock_
     refusal. The suggestion is named and never acted on: writing a
     reproducible for a step the user did not name is worse than stopping.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -2125,9 +2125,9 @@ def test_reproducible_for_a_job_a_false_condition_stops_is_refused(
     minimal_design,
     mock_pdk,
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -2148,9 +2148,9 @@ def test_reproducible_for_a_job_a_false_condition_stops_is_refused(
 def test_reproducible_for_a_skipped_job_is_refused(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -2169,9 +2169,9 @@ def test_reproducible_for_a_skipped_job_is_refused(
 def test_reproducible_and_target_together_are_refused(
     counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowException
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowException
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -2191,8 +2191,8 @@ def test_reproducible_and_target_together_are_refused(
 
 @mock_variables([flow_module, step_module])
 def test_the_run_writes_a_final_snapshot(counting_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -2216,8 +2216,8 @@ def test_the_snapshot_holds_the_flow_s_final_state(
     """
     import json
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -2246,9 +2246,9 @@ def test_a_deferring_run_still_leaves_a_final_snapshot(
     A deferred error is one the run continued past, so the run produced views
     and the snapshot of them is exactly what the user needs to diagnose it.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -2276,8 +2276,8 @@ def test_a_reproducible_run_still_writes_a_final_snapshot(
     would have consumed is the run's final state, snapshotted before returning.
     Nothing about the request says to stop writing the run's artefacts.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -2305,8 +2305,8 @@ def test_the_flow_remembers_the_state_it_returned(
     flow's final state carries the join of both. _save_snapshot_ef must use the
     second, and on a list the two coincided.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -2344,8 +2344,8 @@ def test_the_efabless_snapshot_carries_every_leaf_s_metrics(
     """
     import csv
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -2380,8 +2380,8 @@ def test_saving_the_efabless_snapshot_before_running_is_an_error(
     ``start()`` returned. It raises rather than falling back to the step list,
     which is what the code it replaced did.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"only": {"steps": ["Test.EngineFirst"]}}}
@@ -2396,8 +2396,8 @@ def test_saving_the_efabless_snapshot_before_running_is_an_error(
 def test_the_run_reports_what_it_reused(
     caplog, counting_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -2413,8 +2413,8 @@ def test_the_run_reports_what_it_reused(
 
 @mock_variables([flow_module, step_module])
 def test_a_first_run_reports_no_reuse(caplog, counting_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Tiny", "jobs": {"first": {"steps": ["Test.EngineFirst"]}}}
@@ -2436,9 +2436,9 @@ def test_a_deferring_run_reports_neither_reuse_nor_completion(
     The reuse report and 'Flow complete.' both sit after the deferred-error
     raise. A run that is about to fail must not announce that it finished.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.flow import FlowError
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.flow import FlowError
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {
@@ -2463,8 +2463,8 @@ def test_a_deferring_run_reports_neither_reuse_nor_completion(
 
 @mock_variables([flow_module, step_module])
 def test_an_unchanged_rerun_reuses_every_job(cascading_steps, minimal_design, mock_pdk):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(CASCADE_SPEC)
     config = dict(minimal_design, TEST_CASCADE_KNOB=1)
@@ -2488,8 +2488,8 @@ def test_an_unchanged_rerun_reuses_every_job(cascading_steps, minimal_design, mo
 def test_a_changed_variable_reruns_only_that_job_and_its_descendants(
     cascading_steps, minimal_design, mock_pdk
 ):
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(CASCADE_SPEC)
 
@@ -2522,8 +2522,8 @@ def test_the_instance_help_reports_the_provider_tools_selected(
     workflow actually resolved, so a ``TOOLS`` override is what its provider
     column says.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {"name": "Contracted", "jobs": {"work": {"uses": "engine_contract"}}}
@@ -2556,8 +2556,8 @@ def test_the_run_gets_an_aggregate_runtimes_csv(
     import csv
     import pathlib
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     spec = FlowSpec.model_validate(
         {

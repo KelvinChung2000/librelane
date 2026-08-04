@@ -119,16 +119,6 @@ def test_every_linter_vlt_is_forwarded(mock_config, mocker):
 
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([step])
-def test_the_deprecated_scalar_linter_vlt_still_works(mock_config, mocker):
-    _write_vlts("/cwd/src/a.vlt")
-
-    argv = _lint_command(mock_config, mocker, LINTER_VLT="/cwd/src/a.vlt")
-
-    assert "/cwd/src/a.vlt" in argv
-
-
-@pytest.mark.usefixtures("_mock_conf_fs")
-@mock_variables([step])
 def test_pdk_models_are_included_by_default(mock_config, mocker):
     """LINTER_INCLUDE_PDK_MODELS was declared but never read."""
     argv = _lint_command(

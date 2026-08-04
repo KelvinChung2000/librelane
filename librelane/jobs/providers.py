@@ -16,7 +16,7 @@ Provider registrations for the open-source toolchain.
 
 Every sequence here is a partition of what the ``Classic`` flow class ran. A
 golden equivalence test pinned them down against that class; the class and the
-test went with phase 5, and ``test/flows/test_documents.py`` is what exercises
+test went with phase 5, and ``test/engine/test_documents.py`` is what exercises
 these sequences now, through the documents that resolve to them.
 
 The registrations are declared as data and applied in a loop at the bottom of
@@ -119,7 +119,7 @@ _YOSYS_NAMESPACES = (
 #: OpenROAD's ``odb`` is a tool-native database handed from one OpenROAD step to
 #: the next. It is not a neutral view, so it is declared rather than promoted
 #: into any job's ``requires``;
-#: :func:`librelane.flows.selection_validation.lost_views` is what verifies an
+#: :func:`librelane.engine.selection_validation.lost_views` is what verifies an
 #: OpenROAD job is actually preceded by one that produces it, over the steps a
 #: run resolved rather than over the document's declarations.
 _ODB = (DesignFormat.odb,)

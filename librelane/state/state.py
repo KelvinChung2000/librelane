@@ -23,7 +23,7 @@ import json
 import shutil
 import pathlib
 from decimal import Decimal
-from typing import Union, Any
+from typing import Any
 from collections.abc import Callable, Mapping
 
 from librelane.state.design_format import (
@@ -41,7 +41,7 @@ class InvalidState(RuntimeError):
     pass
 
 
-StateElement = Union[Path, list[Path], dict[str, Path | list[Path]], None]
+type StateElement = Path | list[Path] | dict[str, Path | list[Path]] | None
 
 
 class State(GenericImmutableDict[str, StateElement]):

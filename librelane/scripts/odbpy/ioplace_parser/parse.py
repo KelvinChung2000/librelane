@@ -17,7 +17,7 @@
 # limitations under the License.
 import re
 from enum import IntEnum
-from typing import Literal, Optional, Union
+from typing import Literal
 from decimal import Decimal
 import warnings
 
@@ -31,10 +31,10 @@ class Order(IntEnum):
 
 @dataclass
 class Side:
-    min_distance: Optional[Decimal] = None
+    min_distance: Decimal | None = None
     reverse_result: bool = False
-    pins: list[Union[str, int]] = field(default_factory=list)
-    sort_mode: Optional[Order] = Order.busMajor
+    pins: list[str | int] = field(default_factory=list)
+    sort_mode: Order | None = Order.busMajor
 
 
 VALUE_ANNOTATIONS = ["min_distance"]
@@ -53,9 +53,9 @@ def parse(string: str) -> dict[Literal["N", "E", "W", "S"], Side]:
     :raises ValueError: On syntax or token recognition errors
     """
     sides = {}
-    current_side: Optional[Side] = None
+    current_side: Side | None = None
     global_sort_mode: Order = Order.busMajor
-    global_min_distance: Optional[Decimal] = None
+    global_min_distance: Decimal | None = None
 
     string_mut = string
 

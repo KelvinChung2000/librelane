@@ -19,8 +19,8 @@ import rich.console
 import rich.markdown
 import typer
 
-from librelane.flows import Flow
-from librelane.flows.engine import Workflow
+from librelane.engine import Flow
+from librelane.engine.engine import Workflow
 from librelane.steps import Step
 from librelane.cli._app import make_app
 

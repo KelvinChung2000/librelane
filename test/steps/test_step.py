@@ -486,7 +486,7 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
     step = StepTest(
         config=Config(config_dict),
         state_in=state_in,
-        _no_revalidate_conf=True,
+        _config_mode="trusted",
     )
     out_file = "out.txt"
     report_file = "test.rpt"
@@ -607,7 +607,7 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
     step = BadStep(
         config=Config(config_dict),
         state_in=State(),
-        _no_revalidate_conf=True,
+        _config_mode="trusted",
     )
 
     with pytest.raises(StepException, match="non-UTF-8"):
@@ -622,7 +622,7 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
     step = StepTest(
         config=Config(config_dict),
         state_in=state_in,
-        _no_revalidate_conf=True,
+        _config_mode="trusted",
     )
     step.run_subprocess(
         [sys.executable, "-c", "import os; print(os.environ['COLUMNS'])"],
@@ -689,7 +689,7 @@ def test_a_failed_subprocess_leaves_no_monitor_thread_running():
             }
         ),
         state_in=State(),
-        _no_revalidate_conf=True,
+        _config_mode="trusted",
     )
 
     before = {

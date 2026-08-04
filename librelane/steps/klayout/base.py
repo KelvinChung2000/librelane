@@ -16,7 +16,7 @@
 # See the License for the specific language governing permissions and
 import os
 from os.path import abspath
-from typing import Any, Optional
+from typing import Any
 from collections.abc import Sequence
 
 from librelane.steps.step import Step, StepError, StepException
@@ -46,7 +46,7 @@ class KLayoutStep(Step):
             pdk=True,
         )
 
-        KLAYOUT_DEF_LAYER_MAP: Optional[Path] = variable(
+        KLAYOUT_DEF_LAYER_MAP: Path | None = variable(
             None,
             description="A path to the KLayout LEF/DEF layer mapping (.map) file. Optional: a PDK whose .lyt file already embeds the mapping, as asap7 does, should leave this unset so the embedded one is used.",
             pdk=True,

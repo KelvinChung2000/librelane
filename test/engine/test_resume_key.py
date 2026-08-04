@@ -5,7 +5,7 @@ import pytest
 
 from librelane.common import Fingerprinter
 from librelane.config import variable
-from librelane.flows import flow
+from librelane.engine import flow
 from librelane.steps import step
 
 pytestmark = pytest.mark.all
@@ -58,7 +58,7 @@ def _make_step(KeyStep, overrides=None):
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
 def test_the_same_step_and_state_give_the_same_key(KeyStep):
-    from librelane.flows.resume import resume_key
+    from librelane.engine.resume import resume_key
     from librelane.state import State
 
     fingerprinter = Fingerprinter()
@@ -71,7 +71,7 @@ def test_the_same_step_and_state_give_the_same_key(KeyStep):
 @pytest.mark.usefixtures("_mock_conf_fs")
 @mock_variables([flow, step])
 def test_a_changed_config_value_changes_the_key(KeyStep):
-    from librelane.flows.resume import resume_key
+    from librelane.engine.resume import resume_key
     from librelane.state import State
 
     fingerprinter = Fingerprinter()
@@ -90,7 +90,7 @@ def test_an_edited_input_file_changes_the_key_though_paths_are_identical(KeyStep
     The case a path-equality design gets wrong. VERILOG_FILES still names
     exactly /cwd/src/a.v; only its contents moved.
     """
-    from librelane.flows.resume import resume_key
+    from librelane.engine.resume import resume_key
     from librelane.state import State
 
     pathlib.Path("/cwd/src/a.v").write_text("module top(); endmodule")
@@ -106,7 +106,7 @@ def test_an_edited_input_file_changes_the_key_though_paths_are_identical(KeyStep
 @mock_variables([flow, step])
 def test_a_changed_input_metric_changes_the_key(KeyStep):
     """A step may read state_in.metrics, so metrics are part of the key."""
-    from librelane.flows.resume import resume_key
+    from librelane.engine.resume import resume_key
     from librelane.state import State
 
     fingerprinter = Fingerprinter()
@@ -129,7 +129,7 @@ def test_a_path_is_not_walked_as_a_sequence(KeyStep):
     paths with identical contents must collide; per-character walking would
     make them differ.
     """
-    from librelane.flows.resume import _substitute_paths
+    from librelane.engine.resume import _substitute_paths
 
     fingerprinter = Fingerprinter()
     pathlib.Path("/cwd/src/a.v").write_text("same")
@@ -151,7 +151,7 @@ def test_paths_inside_a_dataclass_are_fingerprinted():
     that skips dataclasses would let a macro's GDS change go unnoticed.
     """
     from librelane.config.legacy import Macro
-    from librelane.flows.resume import _substitute_paths
+    from librelane.engine.resume import _substitute_paths
 
     pathlib.Path("/cwd/src/m.gds").write_text("gds-one")
     pathlib.Path("/cwd/src/m.lef").write_text("lef")
@@ -167,13 +167,13 @@ def test_paths_inside_a_dataclass_are_fingerprinted():
 
 
 def test_a_missing_entry_is_a_miss(tmp_path):
-    from librelane.flows.resume import reusable_state
+    from librelane.engine.resume import reusable_state
 
     assert reusable_state(tmp_path, "any-key", Fingerprinter()) is None
 
 
 def test_a_mismatched_key_is_a_miss(tmp_path):
-    from librelane.flows.resume import reusable_state
+    from librelane.engine.resume import reusable_state
 
     (tmp_path / "resume.json").write_text(
         json.dumps(
@@ -187,7 +187,7 @@ def test_a_mismatched_key_is_a_miss(tmp_path):
 
 def test_a_truncated_entry_is_a_miss_not_an_error(tmp_path):
     """kill -9 mid-write is expected. It means miss, not crash."""
-    from librelane.flows.resume import reusable_state
+    from librelane.engine.resume import reusable_state
 
     (tmp_path / "resume.json").write_text('{"schema": 1, "key": "reco')
 
@@ -195,7 +195,7 @@ def test_a_truncated_entry_is_a_miss_not_an_error(tmp_path):
 
 
 def test_a_future_schema_is_a_miss(tmp_path):
-    from librelane.flows.resume import reusable_state
+    from librelane.engine.resume import reusable_state
 
     (tmp_path / "resume.json").write_text(
         json.dumps({"schema": 99, "key": "k", "step": "X", "librelane_version": "0"})
@@ -206,7 +206,7 @@ def test_a_future_schema_is_a_miss(tmp_path):
 
 
 def test_a_deleted_output_view_is_a_miss(tmp_path):
-    from librelane.flows.resume import reusable_state
+    from librelane.engine.resume import reusable_state
 
     view = tmp_path / "out.json"
     view.write_text("{}")
@@ -224,7 +224,7 @@ def test_a_deleted_output_view_is_a_miss(tmp_path):
 
 
 def test_a_matching_entry_returns_the_output_state(tmp_path):
-    from librelane.flows.resume import reusable_state
+    from librelane.engine.resume import reusable_state
 
     (tmp_path / "resume.json").write_text(
         json.dumps({"schema": 1, "key": "k", "step": "X", "librelane_version": "0"})

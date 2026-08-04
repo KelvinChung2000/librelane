@@ -31,7 +31,7 @@ from typing import (
     ClassVar,
     TypeVar,
 )
-from collections.abc import Sequence, Callable
+from collections.abc import Callable, Mapping, Sequence
 
 from rich.progress import (
     Progress,
@@ -52,6 +52,7 @@ from librelane.config import (
     BaseConfigModel,
     Config,
     ConfigScope,
+    ConfigSource,
     Variable,
     build_scope,
     model_to_variables,
@@ -568,7 +569,7 @@ class Flow(ABC):
             config, design_dir = Config.load(
                 config_in=config,
                 flow_config_vars=self.get_all_config_variables(),
-                flow_values=self.values,
+                under=self.document_layers(),
                 config_override_strings=config_override_strings,
                 pdk=pdk,
                 pdk_root=pdk_root,
@@ -595,14 +596,13 @@ class Flow(ABC):
         #: steps reads. Built once, from the union
         #: :meth:`get_all_config_variables` collects, which is what lets a
         #: single model answer for every step rather than one per step.
-        #: The model type behind it, kept because a subclass may resolve
-        #: further configurations -- one per job with a ``with`` block, one per
-        #: sweep pass -- and generating the model is the expensive half of
-        #: building a scope.
-        self.config_model_type = scope_model(
-            self.get_all_config_variables(),
-            f"{type(self).__name__}Config",
-        )
+        self._config_model_type: Any = None
+        self._config_model_lock = threading.Lock()
+        #: This flow's configuration paired with the model every one of its
+        #: steps reads. One model, generated from the union
+        #: :meth:`get_all_config_variables` collects, rather than one per step:
+        #: the union covers every step's variables by construction, so a step
+        #: finds its own already validated in it.
         self.config_scope: ConfigScope = build_scope(
             config,
             model_type=self.config_model_type,
@@ -615,6 +615,75 @@ class Flow(ABC):
         set_current_config(self.config_scope)
         self.design_dir = pathlib.Path(self.config["DESIGN_DIR"])
         self.progress_bar = FlowProgressBar(self.name)
+
+    def document_layers(
+        self,
+        job: tuple[str, Mapping[str, Any]] | None = None,
+    ) -> list[ConfigSource]:
+        """
+        The layers a workflow document supplies, in the order they are layered.
+
+        Parameters
+        ----------
+        job : tuple[str, Mapping[str, Any]] | None
+            A job id and the values that job's own ``with`` block supplies, or
+            ``None`` for a job that supplies none.
+
+            One argument and not two because the attribution *is* the id:
+            every key the mapping writes is reported as coming from that job,
+            and two arguments could name a different job than they carried.
+
+        Returns
+        -------
+        list[ConfigSource]
+            The document's own ``with`` block, then the job's, so that the job
+            overrides the document and anything the job is silent about still
+            comes from it. Each is a source of its own rather than one merged
+            mapping so that a document-level value reaching a job unchanged is
+            not reported as something the job asked for.
+
+            Passed to :meth:`librelane.config.Config.load` as ``under``, which
+            is what puts them below the design configuration and above the PDK.
+        """
+        layers: list[ConfigSource] = []
+        if self.values:
+            layers.append(ConfigSource(dict(self.values), "<flow document>", "mapping"))
+        if job is not None:
+            job_id, values = job
+            layers.append(
+                ConfigSource(dict(values), f"<flow document: {job_id}>", "mapping")
+            )
+        return layers
+
+    def config_model_type(self) -> Any:
+        """
+        The model every configuration this flow resolves is read through:
+        the flow's own, each job's ``with`` block, each sweep pass.
+
+        Generated once and memoized, because generating it is the expensive
+        half of building a scope and all of those configurations cover the
+        same variables. Generated on demand rather than in ``__init__``,
+        because a flow that is only asked to explain itself, print its help or
+        list its jobs never reads a configuration through a model and should
+        not pay to build one -- nor should it be held to
+        :meth:`get_all_config_variables`, which refuses a variable name two
+        steps declare incompatibly and is a question about running, not about
+        describing.
+
+        Returns
+        -------
+        type[librelane.config.BaseConfigModel]
+            The model.
+        """
+        if self._config_model_type is None:
+            with self._config_model_lock:
+                if self._config_model_type is None:
+                    self._config_model_type = scope_model(
+                        self.get_all_config_variables(),
+                        f"{type(self).__name__}Config",
+                        base=Step.Config,
+                    )
+        return self._config_model_type
 
     def get_all_config_variables(self) -> list[Variable]:
         """

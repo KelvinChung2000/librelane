@@ -17,7 +17,6 @@
 # limitations under the License.
 import os
 import re
-from typing import Optional
 
 from librelane.steps.step import (
     MetricGate,
@@ -78,34 +77,30 @@ class Lint(Step):
         ERROR_ON_LINTER_ERRORS: bool = variable(
             True,
             description="Quit immediately on any linter errors.",
-            deprecated_names=["QUIT_ON_VERILATOR_ERRORS", "QUIT_ON_LINTER_ERRORS"],
         )
 
         ERROR_ON_LINTER_WARNINGS: bool = variable(
             False,
             description="Raise an error immediately on any linter warnings.",
-            deprecated_names=["QUIT_ON_VERILATOR_WARNINGS", "QUIT_ON_LINTER_WARNINGS"],
         )
 
         ERROR_ON_LINTER_TIMING_CONSTRUCTS: bool = variable(
             True,
             description="Quit immediately on any discovered timing constructs during linting.",
-            deprecated_names=["QUIT_ON_LINTER_TIMING_CONSTRUCTS"],
         )
 
         VERILOG_FILES: list[Path] = variable(
             description="The paths of the design's Verilog files.",
         )
 
-        VERILOG_INCLUDE_DIRS: Optional[list[Path]] = variable(
+        VERILOG_INCLUDE_DIRS: list[Path] | None = variable(
             None,
             description="Specifies the Verilog `include` directories.",
         )
 
-        VERILOG_POWER_DEFINE: Optional[str] = variable(
+        VERILOG_POWER_DEFINE: str | None = variable(
             "USE_POWER_PINS",
             description="Specifies the name of the define used to guard power and ground connections in the input RTL.",
-            deprecated_names=["SYNTH_USE_PG_PINS_DEFINES", "SYNTH_POWER_DEFINE"],
         )
 
         LINTER_INCLUDE_PDK_MODELS: bool = variable(
@@ -116,7 +111,6 @@ class Lint(Step):
         LINTER_RELATIVE_INCLUDES: bool = variable(
             True,
             description="When a file references an include file, resolve the filename relative to the path of the referencing file, instead of relative to the current directory.",
-            deprecated_names=["VERILATOR_RELATIVE_INCLUDES"],
         )
 
         LINTER_ERROR_ON_LATCH: bool = variable(
@@ -129,34 +123,32 @@ class Lint(Step):
             description="When a net has multiple drivers, report this as a linter error.",
         )
 
-        VERILOG_DEFINES: Optional[list[str]] = variable(
+        VERILOG_DEFINES: list[str] | None = variable(
             None,
             description="Preprocessor defines for input Verilog files",
-            deprecated_names=["SYNTH_DEFINES"],
         )
 
-        LINTER_DEFINES: Optional[list[str]] = variable(
+        LINTER_DEFINES: list[str] | None = variable(
             None,
             description="Linter-specific preprocessor definitions; overrides VERILOG_DEFINES for the lint step if exists",
         )
 
-        LINTER_DISABLE_WARNINGS: Optional[list[str]] = variable(
+        LINTER_DISABLE_WARNINGS: list[str] | None = variable(
             ["DECLFILENAME", "EOFNEWLINE"],
             description="Warning codes that are passed to the linter to be disabled.",
         )
 
-        LINTER_DISABLE_WARNINGS_BLACKBOX: Optional[list[str]] = variable(
+        LINTER_DISABLE_WARNINGS_BLACKBOX: list[str] | None = variable(
             ["UNDRIVEN", "UNUSEDSIGNAL"],
             description="Warning codes that are passed to the linter to be disabled for all blackbox modules.",
         )
 
-        LINTER_VLTS: Optional[list[Path]] = variable(
+        LINTER_VLTS: list[Path] | None = variable(
             None,
             description="List of paths to Verilator Configuration format files (`.vlt`) that are passed to the linter.",
-            deprecated_names=[("LINTER_VLT", lambda x: [x])],
         )
 
-        LINTER_ARGUMENTS: Optional[list[str]] = variable(
+        LINTER_ARGUMENTS: list[str] | None = variable(
             None,
             description="Extra arguments passed verbatim to Verilator, for options LibreLane does not expose as variables. For example, `--no-timing` suppresses the errors Verilator raises for the delay controls (`#1`) commonly used to model propagation delay in simulation.",
         )

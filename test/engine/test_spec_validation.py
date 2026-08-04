@@ -14,8 +14,8 @@
 import pytest
 
 import librelane.steps  # noqa: F401  populates Step.factory and JobRegistry
-from librelane.flows.spec import FlowSpec, FlowSpecError
-from librelane.flows.spec_validation import validate_against_registry
+from librelane.engine.spec import FlowSpec, FlowSpecError
+from librelane.engine.spec_validation import validate_against_registry
 
 pytestmark = pytest.mark.all
 
@@ -518,7 +518,7 @@ def test_a_ring_document_passes_validate_against_registry():
     now that the engine runs a ring: a document declaring one legal ring and
     nothing else wrong passes the registry-backed checks exactly as any other
     well-formed document does. That the engine actually constructs and runs
-    a ring is pinned in test/flows/test_loops.py, which is where the
+    a ring is pinned in test/engine/test_loops.py, which is where the
     execution-level assertion this guard's own test used to make now
     belongs.
     """
@@ -688,7 +688,7 @@ def test_a_source_naming_a_framework_metric_is_accepted():
     Every OpenROAD invocation writes the framework metrics and no registration
     mentions them, so two OpenROAD-backed branches meeting at one consumer
     disagree about them and
-    :func:`librelane.flows.selection_validation.validate_selection` refuses the
+    :func:`librelane.engine.selection_validation.validate_selection` refuses the
     document naming the metric. ``source`` is the remedy that check honours, so
     the two checks here -- the registry check, which sees an unregistered
     metric, and the delivery check, which sees an undeclared one -- must both

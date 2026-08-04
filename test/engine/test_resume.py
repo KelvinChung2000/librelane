@@ -4,7 +4,7 @@ import pathlib
 import pytest
 
 from librelane.config import variable
-from librelane.flows import flow
+from librelane.engine import flow
 from librelane.steps import step
 
 pytestmark = pytest.mark.all
@@ -104,8 +104,8 @@ def ResumeFlow(ResumeSteps, minimal_design, mock_pdk):
     """
     _, runs = ResumeSteps
 
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
 
     def make():
         return Workflow(
@@ -176,7 +176,7 @@ def test_an_edited_input_file_reruns_the_flow(ResumeFlow, mock_conf_dir):
 
 @mock_variables([flow, step])
 def test_a_crash_resumes_at_the_failing_job(ResumeSteps, ResumeFlow):
-    from librelane.flows import FlowError
+    from librelane.engine import FlowError
     from librelane.steps import Step, StepError
 
     (_, Second, _), runs = ResumeSteps
@@ -250,7 +250,7 @@ def test_a_deferred_error_step_runs_again_and_raises_again(ResumeSteps, ResumeFl
     A step that deferred an error never wrote an entry, so it re-runs. That is
     what keeps a deferred failure from being silently reused as a success.
     """
-    from librelane.flows import FlowError
+    from librelane.engine import FlowError
     from librelane.steps import DeferredStepError, Step
 
     (_, Second, _), runs = ResumeSteps
@@ -317,8 +317,8 @@ def test_an_explicit_initial_state_is_what_the_first_job_consumes(
     first job reads rather than something the run overwrites before anyone
     looks at it.
     """
-    from librelane.flows.engine import Workflow
-    from librelane.flows.spec import FlowSpec
+    from librelane.engine.engine import Workflow
+    from librelane.engine.spec import FlowSpec
     from librelane.state import State
 
     make, _ = ResumeFlow

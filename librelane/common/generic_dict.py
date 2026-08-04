@@ -14,6 +14,7 @@
 import os
 import json
 import dataclasses
+from contextlib import contextmanager
 from enum import Enum
 from decimal import Decimal
 from collections import UserString
@@ -108,24 +109,21 @@ class GenericDict(Mapping[KT, VT]):
         return iter(self.__data)
 
     def __eq__(self, __o: object) -> bool:
-        if not (isinstance(__o, GenericDict) or isinstance(__o, dict)):
-            raise NotImplementedError()
+        # 'NotImplemented' and not a raise: an object this cannot be compared
+        # against is Python's cue to try the reflected operation and then fall
+        # back to identity, which is what makes 'config == None' False rather
+        # than an exception. Raising here made every such comparison a bug at
+        # the call site -- 'Config._repr_markdown_' compares against
+        # 'current_interactive', so displaying any configuration in a notebook
+        # outside interactive mode raised.
+        if not isinstance(__o, (GenericDict, dict)):
+            return NotImplemented
 
         rhs = __o
         if isinstance(__o, GenericDict):
             rhs = __o.to_raw_dict()
 
-        lhs = self.to_raw_dict()
-
-        return rhs == lhs
-
-        # ---
-        for key in set(self.keys()).union(__o.keys()):
-            if key not in self or key not in __o:
-                return False
-            if self[key] != __o[key]:
-                return False
-        return True
+        return self.to_raw_dict() == rhs
 
     def pop(self, key: KT, /) -> VT:
         """
@@ -271,7 +269,26 @@ class GenericDict(Mapping[KT, VT]):
 
 
 class GenericImmutableDict(GenericDict[KT, VT]):
-    __lock: bool
+    """
+    A :class:`GenericDict` that refuses writes -- to its items and to its
+    attributes alike -- once it has been constructed.
+
+    A subclass with attributes of its own assigns them before calling this
+    initializer, which is what :class:`librelane.config.Config` and
+    :class:`librelane.state.State` do: nothing is frozen until the base
+    initializer returns. A subclass that has to assign one afterwards opens
+    :meth:`_unlocked` and says so, rather than discovering that the order it
+    wrote its initializer in was load-bearing.
+    """
+
+    #: Declared at class level, so that ``__setattr__`` can read it on an
+    #: instance whose ``__init__`` has not run yet. It used to be an instance
+    #: attribute that did not exist until the end of ``__init__``, and the
+    #: guard below swallowed the resulting ``AttributeError`` -- which is what
+    #: silently made "assign before ``super().__init__()``" the only order that
+    #: worked, and made assigning afterwards fail with "is immutable" on an
+    #: object the caller was still building.
+    _frozen: bool = False
 
     def __init__(
         self,
@@ -281,29 +298,42 @@ class GenericImmutableDict(GenericDict[KT, VT]):
         **kwargs,
     ) -> None:
         super().__init__(copying, *args, **kwargs)
-        self.__lock = True
+        object.__setattr__(self, "_frozen", True)
+
+    @contextmanager
+    def _unlocked(self) -> Iterator[None]:
+        """
+        Permits writes for the duration of the block, on this object only.
+
+        For a subclass that has to finish initializing after the base
+        initializer has run. Restores whatever the previous state was, so it
+        nests and is safe to use on an object that was not frozen yet.
+        """
+        was_frozen = self._frozen
+        object.__setattr__(self, "_frozen", False)
+        try:
+            yield
+        finally:
+            object.__setattr__(self, "_frozen", was_frozen)
 
     def __setitem__(self, key: KT, item: VT):
-        if self.__lock:
+        if self._frozen:
             raise TypeError(f"{self.__class__.__name__} is immutable")
         return super().__setitem__(key, item)
 
     def __delitem__(self, key: KT):
-        if self.__lock:
+        if self._frozen:
             raise TypeError(f"{self.__class__.__name__} is immutable")
         return super().__delitem__(key)
 
     def __delattr__(self, attr: str):
-        if self.__lock:
+        if self._frozen:
             raise TypeError(f"{self.__class__.__name__} is immutable")
         return super().__delattr__(attr)
 
     def __setattr__(self, attr: str, value: Any):
-        try:
-            if self.__lock:
-                raise TypeError(f"{self.__class__.__name__} is immutable")
-        except AttributeError:
-            pass
+        if self._frozen:
+            raise TypeError(f"{self.__class__.__name__} is immutable")
         return super().__setattr__(attr, value)
 
     def copy_mut(self) -> GenericDict[KT, VT]:

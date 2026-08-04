@@ -95,64 +95,46 @@ def migrate_old_config(config: Mapping[str, Any]) -> dict[str, Any]:
         del new["CLOCK_WIRE_RC_LAYER"]
 
     # 8. Implicit Open PDK Dependencies
-    if "CELL_VERILOG_MODELS" not in config:
-        model_glob = os.path.join(
-            config["PDK_ROOT"],
-            config["PDK"],
-            "libs.ref",
-            config["STD_CELL_LIBRARY"],
-            "verilog",
-            "*.v",
+    #
+    # Every one of these is the same path under the standard cell library --
+    # <PDK_ROOT>/<PDK>/libs.ref/<STD_CELL_LIBRARY>/ -- and differs only in the
+    # subdirectory and the pattern, which is what this leaves visible. Written
+    # out per entry, the five agreed on that prefix by repetition, and the one
+    # detail distinguishing them sat six lines into an identical block.
+    def cell_library_glob(subdirectory: str, pattern: str) -> list[str]:
+        return glob(
+            os.path.join(
+                config["PDK_ROOT"],
+                config["PDK"],
+                "libs.ref",
+                config["STD_CELL_LIBRARY"],
+                subdirectory,
+                pattern,
+            )
         )
+
+    if "CELL_VERILOG_MODELS" not in config:
         new["CELL_VERILOG_MODELS"] = sorted(
-            [path for path in glob(model_glob) if "_blackbox" not in path]
+            path
+            for path in cell_library_glob("verilog", "*.v")
+            if "_blackbox" not in path
         )
 
     if "CELL_BB_VERILOG_MODELS" not in config:
-        bb_glob = os.path.join(
-            config["PDK_ROOT"],
-            config["PDK"],
-            "libs.ref",
-            config["STD_CELL_LIBRARY"],
-            "verilog",
-            "*__blackbox*.v",
-        )
-
-        if blackbox_models := glob(bb_glob):
+        # Assigned only when the glob matches, unlike the rest: an empty list
+        # here would claim the PDK ships no blackbox models, rather than that
+        # this PDK does not separate them out.
+        if blackbox_models := cell_library_glob("verilog", "*__blackbox*.v"):
             new["CELL_BB_VERILOG_MODELS"] = sorted(blackbox_models)
 
     if "CELL_SPICE_MODELS" not in config:
-        spice_glob = os.path.join(
-            config["PDK_ROOT"],
-            config["PDK"],
-            "libs.ref",
-            config["STD_CELL_LIBRARY"],
-            "spice",
-            "*.spice",
-        )
-        new["CELL_SPICE_MODELS"] = sorted(glob(spice_glob))
+        new["CELL_SPICE_MODELS"] = sorted(cell_library_glob("spice", "*.spice"))
 
     if "CELL_MAGS" not in config:
-        mag_glob = os.path.join(
-            config["PDK_ROOT"],
-            config["PDK"],
-            "libs.ref",
-            config["STD_CELL_LIBRARY"],
-            "mag",
-            "*.mag",
-        )
-        new["CELL_MAGS"] = sorted(glob(mag_glob))
+        new["CELL_MAGS"] = sorted(cell_library_glob("mag", "*.mag"))
 
     if "CELL_MAGLEFS" not in config:
-        maglef_glob = os.path.join(
-            config["PDK_ROOT"],
-            config["PDK"],
-            "libs.ref",
-            config["STD_CELL_LIBRARY"],
-            "maglef",
-            "*.mag",
-        )
-        new["CELL_MAGLEFS"] = sorted(glob(maglef_glob))
+        new["CELL_MAGLEFS"] = sorted(cell_library_glob("maglef", "*.mag"))
 
     if "MAGIC_PDK_SETUP" not in config:
         new["MAGIC_PDK_SETUP"] = os.path.join(

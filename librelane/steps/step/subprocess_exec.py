@@ -65,7 +65,7 @@ class SubprocessMixin:
             Override it to change the default log path.
 
         Named after the step's *class*, not the instance. A flow may give an
-        instance a per-run id -- :class:`librelane.flows.engine.Workflow`
+        instance a per-run id -- :class:`librelane.engine.engine.Workflow`
         names the job in it so two concurrent runs of one step class can be
         told apart in the logs -- and that name is already the directory this
         file sits in. Spelling it twice would rename every default subprocess

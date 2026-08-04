@@ -6,14 +6,14 @@
 
 **Architecture:** Five independent tracks, deliberately sequenced so that toolchain changes (which touch every file's formatting and every CI install step) land *before* structural refactors (which produce large mechanical diffs). Each track is its own plan document and produces working, testable software on its own.
 
-**Tech Stack:** Python >=3.10, uv, ruff, mypy, pytest, Nix flakes, GitHub Actions, Sphinx/MyST.
+**Tech Stack:** Python >=3.13, uv, ruff, mypy, pytest, Nix flakes, GitHub Actions, Sphinx/MyST.
 
 ## Global Constraints
 
 Every task in every track implicitly includes these.
 
 - **License:** LibreLane is Apache-2.0 and is distributed as a *library*. GPL and LGPL dependencies are not acceptable. MIT, BSD, Apache-2.0, ISC are fine.
-- **Python floor:** `requires-python = ">=3.10"`. Do not raise it without an explicit decision. Do not add an upper bound to paper over a test bug.
+- **Python floor:** `requires-python = ">=3.13"`, raised from `">=3.10"` by an explicit decision. The tested matrix is 3.13 and 3.14. Do not raise it further without another explicit decision, and do not add an upper bound to paper over a test bug. Two things the raise settled: 3.10 was already broken in fact (`common.misc` imports `importlib.resources.abc`, which is 3.11+), and `pathlib.Path` is subclassable from 3.12, which lifts the constraint recorded in `ISSUE_SWEEP.md` that had `common.Path` and `ScopedFile` composing rather than inheriting.
 - **Local interpreter is Python 3.14.3.** `uv` will resolve to it unless pinned. Any test relying on CPython implementation details will surface here first.
 - **No `from __future__ import annotations` in new code.** Type things directly. (Note: `librelane/steps/step.py` already has it; leave existing usage alone.)
 - **Nix consumes the Python build.** `default.nix` reads `pyproject.toml` for the version (`default.nix:74`) and uses `format = "pyproject"` with `poetry-core` in `nativeBuildInputs` (`default.nix:38,80`). Any `[build-system]` change requires a matching `default.nix` change in the same commit.

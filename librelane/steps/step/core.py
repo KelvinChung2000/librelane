@@ -29,6 +29,7 @@ from concurrent.futures import Future
 from typing import (
     Any,
     ClassVar,
+    Literal,
     TYPE_CHECKING,
     TypeVar,
     cast,
@@ -40,6 +41,7 @@ from librelane.config import (
     BaseConfigModel,
     Config as ConfigMap,
     Variable,
+    current_scope,
     model_to_variables,
     variables_to_model,
 )
@@ -63,6 +65,7 @@ from librelane.steps.step.exceptions import (
     StepNotFound,
     StepSignalled,
 )
+from librelane.steps.step.config_view import StepConfigView
 from librelane.steps.step.factory import StepFactory
 from librelane.steps.step.gate import Gate
 from librelane.steps.step.output_processor import (
@@ -93,7 +96,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     paths and/or metrics.
 
     The initializer may be called from any thread.
-    :class:`librelane.flows.engine.Workflow` constructs a job's steps on the
+    :class:`librelane.engine.engine.Workflow` constructs a job's steps on the
     worker running that job. Everything it writes is on the instance, and it
     calls three class methods. ``assert_concrete`` and
     ``get_all_config_variables`` only read class attributes.
@@ -119,8 +122,12 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     config : ConfigMap | BaseConfigModel | None
         A configuration object.
 
-        If running in interactive mode, you can set this to ``None``, but it is
-        otherwise required.
+        Optional. Omitted, the step reads whatever configuration is current --
+        the scope its job opened, or the process-wide one a flow published or
+        :meth:`librelane.config.Config.interactive` set. See
+        :mod:`librelane.config.ambient`. Passing one explicitly is for a step
+        built outside any run: :meth:`load` does it for a reproducible, and a
+        caller with a configuration of its own may.
     state_in : State | None | Future[State]
         The state object this step will use as an input.
 
@@ -265,6 +272,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
     _config_model_cache: ClassVar[
         "tuple[tuple[tuple[str, Any, Any], ...], type[Step.Config]] | None"
     ] = None
+    _declared_names_cache: ClassVar["frozenset[str] | None"] = None
 
     # Instance Variables
     name: str
@@ -295,8 +303,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         long_name: str | None = None,
         flow: Any | None = None,
         _config_quiet: bool = False,
-        _no_revalidate_conf: bool = False,
-        _no_filter_conf: bool = False,
+        _config_mode: Literal["increment", "trusted"] = "increment",
         **kwargs,
     ):
         self.__class__.assert_concrete()
@@ -309,12 +316,18 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         if id is not None:
             self.id = id
 
-        if config is None:
-            if current_interactive := ConfigMap.current_interactive:
-                config = current_interactive
-            else:
-                raise TypeError("Missing required argument 'config'")
-        elif isinstance(config, BaseConfigModel):
+        # A step with nothing passed reads the ambient configuration, which is
+        # the ordinary case inside a run: the flow published one and, where the
+        # job or the sweep pass has its own, opened a scope holding it. Nothing
+        # in between had to carry it here.
+        ambient = current_scope() if config is None else None
+        if config is None and ambient is None:
+            raise TypeError(
+                "Missing required argument 'config', and no configuration is "
+                "current. Construct a flow, open a scope with "
+                "librelane.config.use_config(), or call Config.interactive()."
+            )
+        if isinstance(config, BaseConfigModel):
             config = ConfigMap(
                 config.to_raw_dict(),
                 meta=config.meta,
@@ -339,34 +352,66 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         elif not hasattr(self, "long_name"):
             self.long_name = self.name
 
-        if _no_filter_conf and _no_revalidate_conf:
-            raise ValueError(
-                "Cannot pass both _no_filter_conf and _no_revalidate_conf as True"
-            )
-
-        if _no_revalidate_conf:
-            filtered_config = config.copy_filtered(
-                self.get_all_config_variables(),
-                include_flow_variables=False,  # get_all_config_variables() gets them anyway
-            )
-        elif _no_filter_conf:
-            filtered_config = config.copy()
-        else:
-            filtered_config = config.with_increment(
-                self.get_all_config_variables(),
-                kwargs,
-                _config_quiet,
-            )
-        model_type = self._get_config_model()
-        raw_filtered = filtered_config.to_raw_dict(include_meta=False)
-        if _no_revalidate_conf:
-            typed_config = model_type.model_construct(**raw_filtered)
-        else:
-            typed_config = model_type.model_validate(raw_filtered, strict=True)
-        self.config = typed_config.attach_context(
-            diagnostics=filtered_config.diagnostics,
-            meta=filtered_config.meta,
+        # Interactive mode's configuration is deliberately partial -- it holds
+        # the universal flow variables and nothing else -- so a step there
+        # still has to increment it with its own, which is what the mode is
+        # for. Its scope is published so that a step can be constructed
+        # without being handed one, not so that it can skip the increment.
+        shared = (
+            ambient is not None
+            and not kwargs
+            and ambient.raw is not ConfigMap.current_interactive
         )
+        if shared:
+            assert ambient is not None
+            # One model serves every step in the scope. The flow built it from
+            # the union of every step's variables, so this step's own are
+            # already in it, already coerced and already validated; deriving a
+            # per-step copy would re-read the PDK once per step to arrive at
+            # equal values. The view narrows what this step may read back down
+            # to what it declares -- which is what it would be handed if it ran
+            # on its own -- without copying or re-validating anything.
+            self.config = cast(
+                "Step.Config",
+                StepConfigView(
+                    ambient.typed,
+                    self._declared_config_names(),
+                    self.id,
+                ),
+            )
+        else:
+            # Either a configuration was passed in, or the caller supplied
+            # overrides for this step alone, which the shared model cannot
+            # carry without changing what every other step in the scope reads.
+            source = ambient.raw if ambient is not None else config
+            assert source is not None
+            model_type = self._get_config_model()
+            if _config_mode == "trusted":
+                # Narrow, but do not re-read: this configuration was validated
+                # when it was written and its files were resolved against a
+                # tree that may no longer exist -- a reproducible is unpacked
+                # somewhere else entirely, and validating a path variable
+                # checks that the path is there.
+                filtered_config = source.copy_filtered(
+                    self.get_all_config_variables(),
+                )
+                typed_config = model_type.model_construct(
+                    **filtered_config.to_raw_dict(include_meta=False)
+                )
+            else:
+                filtered_config = source.with_increment(
+                    self.get_all_config_variables(),
+                    kwargs,
+                    _config_quiet,
+                )
+                typed_config = model_type.model_validate(
+                    filtered_config.to_raw_dict(include_meta=False),
+                    strict=True,
+                )
+            self.config = typed_config.attach_context(
+                diagnostics=filtered_config.diagnostics,
+                meta=filtered_config.meta,
+            )
 
         state_in_future: Future[State] = Future()
         if isinstance(state_in, State):
@@ -386,6 +431,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         if "Config" in cls.__dict__:
             cls.config_vars = model_to_variables(cls.Config)
         cls._config_model_cache = None
+        cls._declared_names_cache = None
         if hasattr(cls, "flow_control_variable"):
             raise TypeError(
                 f"Step '{cls.__name__}' defines 'flow_control_variable', which "
@@ -546,7 +592,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         return Self(
             config=config,
             state_in=state_in,
-            _no_revalidate_conf=True,
+            _config_mode="trusted",
         )
 
     @classmethod
@@ -582,6 +628,28 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         step_object.step_dir = step_path
         step_object.state_out = State.loads(state_out_path.read_text())
         return step_object
+
+    @classmethod
+    def _declared_config_names(Self) -> frozenset[str]:
+        """
+        Returns
+        -------
+        frozenset[str]
+            Every variable name this step declares, its own and the universal
+            flow ones. What :class:`StepConfigView` narrows a shared model to.
+
+        Cached per class, because a step is constructed once per job per pass
+        and the answer is a property of the class. Read out of ``__dict__`` so
+        that a subclass does not inherit its base's answer, and cleared by
+        ``__init_subclass__`` alongside the model cache.
+        """
+        cached = Self.__dict__.get("_declared_names_cache")
+        if cached is None:
+            cached = frozenset(
+                variable.name for variable in Self.get_all_config_variables()
+            )
+            Self._declared_names_cache = cached
+        return cached
 
     @classmethod
     def get_all_config_variables(Self) -> list[Variable]:
@@ -709,7 +777,7 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
 
         self.config_path = self.step_dir / "config.json"
         with self.config_path.open("w") as f:
-            config_mut = self.config.to_raw_dict()
+            config_mut = self.own_config_dict()
             config_mut["meta"] = {
                 "librelane_version": __version__,
                 "step": self.__class__.get_implementation_id(),
