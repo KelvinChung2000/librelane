@@ -25,7 +25,13 @@ import textwrap
 from decimal import Decimal
 from abc import abstractmethod
 
-from librelane.steps.step import ViewsUpdate, MetricsUpdate, MetricGate, Step
+from librelane.steps.step import (
+    ViewsUpdate,
+    MetricsUpdate,
+    MetricGate,
+    Step,
+    StepError,
+)
 from librelane.steps.tclstep import TclStep
 
 from librelane.common import Path, mkdirp, TclUtils
@@ -111,7 +117,8 @@ class NetgenStep(TclStep):
             description="A flag to choose whether to use GDS for spice extraction or not. If not, then the extraction will be done using the DEF/LEF, which is faster.",
         )
 
-        NETGEN_SETUP: Path = variable(
+        NETGEN_SETUP: Path | None = variable(
+            None,
             description="A path to the setup file for Netgen used to configure LVS. If set to None, this PDK will not support Netgen-based steps.",
             deprecated_names=["NETGEN_SETUP_FILE"],
             pdk=True,
@@ -184,6 +191,15 @@ class LVS(NetgenStep):
         return os.path.join(self.step_dir, "lvs_script.lvs")
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
+        # Optional so that a PDK with no Netgen support still passes
+        # configuration validation with the step gated off; running it anyway
+        # is the point at which the missing support becomes an error.
+        if self.config.NETGEN_SETUP is None:
+            raise StepError(
+                f"The PDK '{self.config.PDK}' does not provide Netgen support "
+                f"(NETGEN_SETUP is not set by the PDK). Gate this step off, "
+                f"e.g. RUN_LVS: false."
+            )
         spice_files = []
         if self.config.CELL_SPICE_MODELS is None:
             logger.bind(step=self.id).warning(

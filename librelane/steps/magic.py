@@ -123,20 +123,23 @@ class MagicStep(TclStep):
             description="A flag to choose whether to include GDS pointers in the generated mag files or not.",
         )
 
-        MAGICRC: Path = variable(
-            description="A path to the `.magicrc` file which is sourced before running magic in the flow.",
+        MAGICRC: Path | None = variable(
+            None,
+            description="A path to the `.magicrc` file which is sourced before running magic in the flow. If unset, the PDK does not support Magic, and Magic-based steps refuse to run.",
             deprecated_names=["MAGIC_MAGICRC"],
             pdk=True,
         )
 
-        MAGIC_TECH: Path = variable(
-            description="A path to a Magic tech file which, mainly, has DRC rules.",
+        MAGIC_TECH: Path | None = variable(
+            None,
+            description="A path to a Magic tech file which, mainly, has DRC rules. If unset, the PDK does not support Magic, and Magic-based steps refuse to run.",
             deprecated_names=["MAGIC_TECH_FILE"],
             pdk=True,
         )
 
-        MAGIC_PDK_SETUP: Path = variable(
-            description="A path to a PDK-specific setup file sourced by `.magicrc`.",
+        MAGIC_PDK_SETUP: Path | None = variable(
+            None,
+            description="A path to a PDK-specific setup file sourced by `.magicrc`. If unset, the PDK does not support Magic, and Magic-based steps refuse to run.",
             pdk=True,
         )
 
@@ -187,6 +190,21 @@ class MagicStep(TclStep):
         return env
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
+        # Optional as a trio so that a PDK with no Magic support at all -- a
+        # vendored predictive PDK, say -- still passes configuration
+        # validation with the steps merely gated off. Reaching this line means
+        # somebody ran the step anyway, which is where the missing support
+        # stops being ignorable.
+        if (
+            self.config.MAGICRC is None
+            or self.config.MAGIC_TECH is None
+            or self.config.MAGIC_PDK_SETUP is None
+        ):
+            raise StepError(
+                f"The PDK '{self.config.PDK}' does not provide Magic support "
+                f"(MAGICRC, MAGIC_TECH and MAGIC_PDK_SETUP must all be set "
+                f"by the PDK). Gate this step off, e.g. RUN_MAGIC_DRC: false."
+            )
         kwargs, env = self.extract_env(kwargs)
         env = self.prepare_env(env, state_in)
 
