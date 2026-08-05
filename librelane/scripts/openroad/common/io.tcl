@@ -18,19 +18,27 @@
 source $::env(_TCL_ENV_IN)
 source $::env(SCRIPTS_DIR)/openroad/common/set_global_connections.tcl
 
-# The same units the signoff scripts pin, for the same reason: without this,
-# the session's units are whatever the first liberty declares, and a
-# configuration value -- CLOCK_PERIOD, a constraint, an RC figure -- means
-# something different on a picosecond- or femtofarad-denominated PDK (asap7,
-# gt2n) than on a nanosecond one. Configuration variables are documented in
-# ns/pF and are read in ns/pF, on every PDK.
-set_cmd_units\
-    -time ns\
-    -capacitance pF\
-    -current mA\
-    -voltage V\
-    -resistance kOhm\
-    -distance um
+# Without this, the session's units are whatever the first liberty declares,
+# and a configuration value -- CLOCK_PERIOD, a constraint, an RC figure --
+# means something different on a picosecond- or femtofarad-denominated PDK
+# (asap7, gt2n) than on a nanosecond one. Configuration variables are
+# documented in ns/pF and are read in ns/pF, on every PDK.
+#
+# A proc called after the liberty reads, not a call at source time: OpenSTA
+# takes its session units from the FIRST read_liberty, silently overwriting
+# any earlier set_cmd_units -- verified empirically against asap7's ps/fF
+# liberty (pin-then-read ends at 1ps/1fF; read-then-pin ends at 1ns/1pF).
+# The signoff scripts pinned before reading for years and it never bit,
+# because every liberty they ever read already declared ns/pF.
+proc pin_cmd_units {} {
+    set_cmd_units\
+        -time ns\
+        -capacitance pF\
+        -current mA\
+        -voltage V\
+        -resistance kOhm\
+        -distance um
+}
 
 namespace eval lln {
     proc get_corner_names {} {
@@ -283,6 +291,10 @@ proc read_timing_info {args} {
             }
         }
     }
+    # After the last read_liberty above, or the first library's own units
+    # override it -- see pin_cmd_units.
+    pin_cmd_units
+
     if { [info exists flags(-powered)] } {
         read_current_netlist -powered
     } else {
@@ -369,6 +381,10 @@ proc read_pnr_libs {args} {
             }
         }
     }
+
+    # After the last read_liberty above, or the first library's own units
+    # override it -- see pin_cmd_units.
+    pin_cmd_units
 }
 
 proc read_tech_lef {{tlef_key "TECH_LEF"}} {
