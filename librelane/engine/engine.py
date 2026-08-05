@@ -675,6 +675,16 @@ class Workflow(Flow):
             spec,
             self._selected_tools(config, config_override_strings, kwargs),
         )
+        #: Each job id mapped to its 1-based position in document order, which
+        #: is what prefixes its run directory. Document order, not execution
+        #: order: execution races under concurrency, and a listing that
+        #: changed from run to run could never be diffed against the last one.
+        #: Every declared job gets a number whether or not its gate fires, so
+        #: flipping a RUN_* variable leaves every other job's directory name
+        #: alone and a skipped job reads as a gap.
+        self.job_ordinals: dict[str, int] = {
+            job_id: ordinal for ordinal, job_id in enumerate(self.jobs, start=1)
+        }
         self.Steps = [step for job in self.jobs.values() for step in job.steps]
         # Flow.__init__ builds the Config from get_all_config_variables(), which
         # reads Steps and config_vars; resolves the flow name from the class
@@ -3232,24 +3242,26 @@ class Workflow(Flow):
         """
         Returns
         -------
-        ``<run_dir>/<job id>/<n>-<step slug>``, or, when ``pass_index`` is not
-        ``None``, ``<run_dir>/<job id>/<pass_index>/<n>-<step slug>``: a ring
-        member's or (task 5) a sweep execution's own directory for that pass,
-        one level below the job's, so pass 3 does not overwrite pass 2's, and
-        an ordinary job's directory (``pass_index=None``, the default) is
-        untouched and byte-identical to what it always was.
+        ``<run_dir>/<k>-<job id>/<n>-<step slug>``, or, when ``pass_index`` is
+        not ``None``, ``<run_dir>/<k>-<job id>/<pass_index>/<n>-<step slug>``:
+        a ring member's or (task 5) a sweep execution's own directory for that
+        pass, one level below the job's, so pass 3 does not overwrite pass 2's.
 
-        Keyed by the job rather than by a global counter, because under
-        concurrency there is no global step order and a positional prefix would
-        change whenever an unrelated edge was added, invalidating resume for
-        every step after it.
+        ``k`` is the job's 1-based position in *document* order
+        (:attr:`job_ordinals`), so a run directory lists in flow order rather
+        than alphabetically. Not execution order — that races under
+        concurrency and would name directories differently run to run — and
+        counted over every declared job whether or not its gate fires, so
+        toggling a ``RUN_*`` variable leaves the other jobs' names alone and a
+        gated-off job reads as a gap in the numbering.
 
-        The ordinal is not zero-padded, for the same reason. A width derived
-        from the step count changes the moment the count crosses a power of
-        ten, so appending a tenth step to a nine-step job would rename
-        ``1-a``…``9-i`` to ``01-a``…``09-i`` and every one of the nine would
-        miss its resume entry and re-run. Unpadded, only the appended step is
-        new.
+        Neither ordinal is zero-padded, both for the same reason. A width
+        derived from the count changes the moment the count crosses a power of
+        ten, so appending a tenth entry would rename ``1-a``…``9-i`` to
+        ``01-a``…``09-i`` and every one of the nine would miss its resume
+        entry and re-run. Unpadded, only what the document *appends* is new;
+        the cost, accepted at the step level long before jobs were numbered,
+        is that an *insertion* still renames what follows it.
 
         The slug comes from the *class's* id, not the instance's.
         :meth:`_execute_steps` gives each instance an id naming its job (and,
@@ -3263,7 +3275,7 @@ class Workflow(Flow):
             raise FlowException(
                 "Attempted to name a step directory before the flow started."
             )
-        job_dir = self.run_dir / job.id
+        job_dir = self.run_dir / f"{self.job_ordinals[job.id]}-{job.id}"
         if pass_index is not None:
             job_dir = job_dir / str(pass_index)
         return job_dir / f"{index + 1}-{slugify(type(step).id)}"

@@ -179,7 +179,7 @@ def test_each_step_gets_its_own_log_file(mock_conf_dir):
     flow.start(tag="TALKATIVE")
 
     run_dir = pathlib.Path(flow.run_dir)
-    step_logs = sorted(run_dir.glob("talkative/*-test-talkativestep/step.log"))
+    step_logs = sorted(run_dir.glob("1-talkative/*-test-talkativestep/step.log"))
     assert step_logs, f"no per-step log written; run dir held {list(run_dir.iterdir())}"
 
     contents = step_logs[0].read_text()

@@ -460,7 +460,7 @@ def test_sweep_writes_a_pass_directory_per_point(sweep_steps, minimal_design, mo
 
     # slugify("Test.SweepScore") is "test-sweepscore".
     for k in (1, 2, 3):
-        assert (flow.run_dir / "sweep" / str(k) / "1-test-sweepscore").is_dir()
+        assert (flow.run_dir / "1-sweep" / str(k) / "1-test-sweepscore").is_dir()
 
 
 @mock_variables([flow_module, step_module])
@@ -486,7 +486,7 @@ def test_a_two_variable_matrix_sweeps_every_combination(
     assert final.metrics["score"] == 20
     assert final.metrics["tag"] == "a"
     for k in (1, 2, 3, 4):
-        assert (flow.run_dir / "sweep" / str(k) / "1-test-sweepscore").is_dir()
+        assert (flow.run_dir / "1-sweep" / str(k) / "1-test-sweepscore").is_dir()
 
 
 @pytest.mark.usefixtures("three_workers")

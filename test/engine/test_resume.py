@@ -218,7 +218,7 @@ def test_a_deleted_output_view_reruns_only_its_step(ResumeFlow):
     first = make()
     first.start(tag="T")
     (
-        pathlib.Path(first.run_dir) / "second" / "1-test-resumesecond" / "whatever.json"
+        pathlib.Path(first.run_dir) / "2-second" / "1-test-resumesecond" / "whatever.json"
     ).unlink()
 
     make().start(last_run=True)
@@ -324,7 +324,7 @@ def test_an_explicit_initial_state_is_what_the_first_job_consumes(
     make, _ = ResumeFlow
     source = make()
     source.start(tag="SOURCE")
-    produced_by_first = pathlib.Path(source.run_dir) / "first" / "1-test-resumefirst"
+    produced_by_first = pathlib.Path(source.run_dir) / "1-first" / "1-test-resumefirst"
     handoff = State.loads((produced_by_first / "state_out.json").read_text())
 
     # A one-job document whose only step consumes the handed view, so that what
@@ -339,7 +339,7 @@ def test_an_explicit_initial_state_is_what_the_first_job_consumes(
     consumer.start(tag="ECO", with_initial_state=handoff)
 
     consumed = json.loads(
-        (pathlib.Path(consumer.run_dir) / "only" / "1-test-resumesecond")
+        (pathlib.Path(consumer.run_dir) / "1-only" / "1-test-resumesecond")
         .joinpath("whatever.json")
         .read_text()
     )

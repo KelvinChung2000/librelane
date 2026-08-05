@@ -604,7 +604,7 @@ def test_a_step_writes_into_its_job_s_directory(
     flow.start(tag="t")
 
     # slugify("Test.EngineFirst") is "test-enginefirst".
-    assert (flow.run_dir / "first" / "1-test-enginefirst").is_dir()
+    assert (flow.run_dir / "1-first" / "1-test-enginefirst").is_dir()
 
 
 @mock_variables([flow_module, step_module])
@@ -889,7 +889,7 @@ def test_final_names_the_job_whose_state_is_returned(
     final = flow.start(tag="t")
 
     assert str(final[DesignFormat.gds]).startswith(
-        str(flow.run_dir / "klayout_streamout")
+        str(flow.run_dir / "2-klayout_streamout")
     )
 
 
@@ -1223,17 +1223,17 @@ def test_two_jobs_running_one_step_class_do_not_share_a_log(minimal_design, mock
     flow = Workflow(spec, minimal_design, **mock_pdk)
     flow.start(tag="t")
 
-    a_log = (flow.run_dir / "a" / "1-test-enginemarker" / "step.log").read_text()
-    b_log = (flow.run_dir / "b" / "1-test-enginemarker" / "step.log").read_text()
+    a_log = (flow.run_dir / "1-a" / "1-test-enginemarker" / "step.log").read_text()
+    b_log = (flow.run_dir / "2-b" / "1-test-enginemarker" / "step.log").read_text()
 
     # The loguru sink behind step.log filters on the running step's id, and
     # LiveLog keys its registry on the same id. Two jobs running one step
     # class shared both, so each job's records landed in the other's step.log
     # as well as its own.
-    assert "marker for a" in a_log
-    assert "marker for b" not in a_log
-    assert "marker for b" in b_log
-    assert "marker for a" not in b_log
+    assert "marker for 1-a" in a_log
+    assert "marker for 2-b" not in a_log
+    assert "marker for 2-b" in b_log
+    assert "marker for 1-a" not in b_log
 
 
 @mock_variables([flow_module, step_module])
@@ -1980,7 +1980,7 @@ def test_reproducible_is_written_under_the_named_step_s_directory(
     # The real Step.create_reproducible, not a mock: what makes '<job>/<step>'
     # the natural address is that the reproducible lands inside the directory
     # that address already names, and only running it proves that.
-    written = flow.run_dir / "second" / "1-test-enginesecond" / "reproducible"
+    written = flow.run_dir / "2-second" / "1-test-enginesecond" / "reproducible"
     assert (written / "run_ol.sh").is_file()
     # The state 'first' produced, carried into the reproducible rather than
     # the empty state a run starts from.

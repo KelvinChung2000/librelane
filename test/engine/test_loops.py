@@ -273,10 +273,10 @@ def test_a_ring_writes_its_pass_directories(loop_steps, minimal_design, mock_pdk
     flow.start(tag="t")
 
     # slugify("Test.LoopIncrement") is "test-loopincrement".
-    assert (flow.run_dir / "resize" / "1" / "1-test-loopincrement").is_dir()
-    assert (flow.run_dir / "resize" / "2" / "1-test-loopincrement").is_dir()
-    assert (flow.run_dir / "sta" / "1" / "1-test-loopmeasure").is_dir()
-    assert (flow.run_dir / "sta" / "2" / "1-test-loopmeasure").is_dir()
+    assert (flow.run_dir / "1-resize" / "1" / "1-test-loopincrement").is_dir()
+    assert (flow.run_dir / "1-resize" / "2" / "1-test-loopincrement").is_dir()
+    assert (flow.run_dir / "2-sta" / "1" / "1-test-loopmeasure").is_dir()
+    assert (flow.run_dir / "2-sta" / "2" / "1-test-loopmeasure").is_dir()
 
 
 @mock_variables([flow_module, step_module])
