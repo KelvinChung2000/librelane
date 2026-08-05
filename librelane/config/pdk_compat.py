@@ -13,6 +13,7 @@
 # limitations under the License.
 import os
 import re
+from decimal import Decimal
 from glob import glob
 from typing import Any
 from collections.abc import Mapping
@@ -302,9 +303,13 @@ def migrate_old_config(config: Mapping[str, Any]) -> dict[str, Any]:
     # x4. Constraints (sky130/gf180mcu)
     if new["PDK"].startswith("sky130") or new["PDK"].startswith("gf180mcu"):
         if "CLOCK_UNCERTAINTY_CONSTRAINT" not in config:
-            new["CLOCK_UNCERTAINTY_CONSTRAINT"] = 0.25
+            new["CLOCK_UNCERTAINTY_CONSTRAINT"] = Decimal("0.25")
         if "CLOCK_TRANSITION_CONSTRAINT" not in config:
-            new["CLOCK_TRANSITION_CONSTRAINT"] = 0.15
+            # A float literal here resolves through binary floating point: 0.15
+            # becomes Decimal('0.1499999999999999944...'), a value a descriptor
+            # cannot even write. 0.25 is exact in binary, but both are spelled
+            # the same way so neither invites the mistake back.
+            new["CLOCK_TRANSITION_CONSTRAINT"] = Decimal("0.15")
         if "TIME_DERATING_CONSTRAINT" not in config:
             new["TIME_DERATING_CONSTRAINT"] = 5
         if "IO_DELAY_CONSTRAINT" not in config:
