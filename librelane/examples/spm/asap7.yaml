@@ -1,0 +1,56 @@
+# SPM on ASAP7.
+#
+# A configuration of its own rather than another `pdk::` branch in
+# config.yaml, because what ASAP7 needs is not another set of numbers: the
+# PDK has no open-source signoff decks at all -- DRC and LVS exist for Calibre
+# only -- and no Magic technology file, so it is stricter than nangate45.
+# KLayout streams the GDSII out and then nothing checks it.
+#
+# Run it with:
+#   librelane --pdk asap7 --pdk-root ~/.ciel librelane/examples/spm/asap7.yaml
+DESIGN_NAME: spm
+VERILOG_FILES: dir::src/*.v
+CLOCK_PORT: clk
+
+# 650 ps, written in the nanoseconds every configuration variable is read in.
+# ASAP7's liberty is denominated in picoseconds, but OpenROAD sessions re-pin
+# ns after reading it, so this is 0.65 and not 650. SPM's critical path
+# through this library is around 150 ps of logic on top of the clock tree,
+# and 0.65 closes it at all three corners including the slow one.
+CLOCK_PERIOD: 0.65
+PNR_SDC_FILE: dir::src/impl.sdc
+SIGNOFF_SDC_FILE: dir::src/signoff.sdc
+
+IO_PIN_ORDER_CFG: dir::pin_order.cfg
+
+FP_CORE_UTIL: 40
+PL_TARGET_DENSITY_PCT: 55
+
+# The resizer's slack margins are absolute nanoseconds and default to values
+# picked for a 130nm-scale clock: 0.1 ns of hold overfix and 0.05 ns of setup
+# margin are 15% and 8% of this design's entire 0.65 ns period, where on
+# sky130 they would be about 1% and 0.5%. Left at the defaults, post-CTS hold
+# repair chases 100 ps of margin through cells that switch in ten and dies on
+# RSZ-0060, max buffer count. These are the sky130 ratios rewritten for a
+# 7nm clock.
+PL_RESIZER_HOLD_SLACK_MARGIN: 0.01
+PL_RESIZER_SETUP_SLACK_MARGIN: 0.005
+
+# Sized down from the PDK's ORFS-derived defaults: at a 5.4 um pitch a core
+# this small would carry one strap pair per direction.
+PDN_VPITCH: 2.7
+PDN_HPITCH: 2.7
+
+# Signoff. Every Magic and Netgen job is off because the PDK configures
+# neither tool, and KLayout's DRC goes with them: ASAP7 ships no open-source
+# rule deck of any kind, only a Calibre one it cannot redistribute. The XOR
+# compares the two stream-outs against each other and there is only one, so it
+# goes too. KLayout's stream-out is all that is left, which is what the
+# descriptor's PRIMARY_GDSII_STREAMOUT_TOOL says.
+RUN_MAGIC_STREAMOUT: false
+RUN_MAGIC_WRITE_LEF: false
+RUN_MAGIC_DRC: false
+RUN_LVS: false
+RUN_KLAYOUT_XOR: false
+RUN_KLAYOUT_STREAMOUT: true
+RUN_KLAYOUT_DRC: false
