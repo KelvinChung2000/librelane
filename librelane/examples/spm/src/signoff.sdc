@@ -62,8 +62,8 @@ set cap_load [expr $::env(OUTPUT_CAP_LOAD) / 1000.0]
 puts "\[INFO] Setting load to: $cap_load"
 set_load $cap_load [all_outputs]
 
-puts "\[INFO] Setting clock uncertainty to: 0.1"
-set_clock_uncertainty 0.1 $clocks
+puts "\[INFO] Setting clock uncertainty to: $::env(CLOCK_UNCERTAINTY_CONSTRAINT)"
+set_clock_uncertainty $::env(CLOCK_UNCERTAINTY_CONSTRAINT) $clocks
 
 puts "\[INFO] Setting timing derate to: $::env(TIME_DERATING_CONSTRAINT)%"
 set_timing_derate -early [expr 1-[expr $::env(TIME_DERATING_CONSTRAINT) / 100]]
