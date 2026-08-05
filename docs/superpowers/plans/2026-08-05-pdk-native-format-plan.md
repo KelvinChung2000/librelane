@@ -21,7 +21,7 @@ Strategy recap (decided in design discussion):
 | W0 | Descriptor format spec | — | **done** |
 | W1 | Descriptor loader in `Config.__get_pdk_raw` (YAML-first, Tcl fallback, strict typing, origins from layering) + Tcl-vs-YAML diff harness | W0 | **done** — `librelane/config/descriptor.py`, parity harness `test/config/test_pdk_parity.py` (self-armed via synthetic dual-tree PDK; real PDKs skip until W5). Spec erratum fixed: interpolation is `$VAR` inside `ref::`/`refg::`/`expr::` only; `${` is rejected |
 | W2 | Converter `tools/pdk_import.py` (config.tcl tree → descriptor tree) | W0 | **done** — parity gate passes for sky130A, gf180mcuD, ihp-sg13g2 (after the `pdk_compat.py` `Decimal("0.15")` fix). See "W5 notes" |
-| W3 | ciel fork: `nangate45`, `asap7`, `gt2n` families with trivial builds (pattern: `ciel/build/ihp-sg13g2.py`) | — | agent running |
+| W3 | ciel fork: `nangate45`, `asap7`, `gt2n` families with trivial builds (pattern: `ciel/build/ihp-sg13g2.py`) | — | **done** — branch `native-families` (7 commits, `1166265..9a7556b`), all three families built/installed/enabled end-to-end; sparse+blobless clones keep asap7 at 241 MB. See "W6 notes" |
 | W4 | open_pdks fork survey: additive injection recipe for descriptor install rules; auto-bump viability data | — | **done** — see "W4 findings" below |
 | W5 | Convert sky130A/gf180mcuD/ihp-sg13g2 with W2, verify identical via W1 harness, commit descriptors into open-pdks fork per W4 recipe | W1, W2, W4 | pending |
 | W6 | NanGate45, ASAP7 (4x scale: `meta.dbu_per_micron`/`gds_scale`), gt2n as **native ciel families** with hand-written descriptors, plus librelane-side support: family entries in `pdk_hashes.yaml`, `cli/runtime.py` fetch path, docs. No capabilities machinery (decision 2026-08-05): `meta.capabilities` stays informational; users gate DRC/LVS/signoff steps off in their own flow specs — ship a documented example flow spec per family instead | W1, W3 | pending |
@@ -51,6 +51,33 @@ Strategy recap (decided in design discussion):
 
 Licensing of vendored families: accepted as workable, deferred (user
 decision 2026-08-04).
+
+## W6 notes (from W3 family builds, 2026-08-05)
+
+Pinned upstreams: nangate45 = ORFS `f4b9d7d`; asap7 superproject `d24f8b8`
+(sc6t `390b499`, sc7p5t `f970bd3`, pdk_r1p7 `58d72c9`, sram `522eecc`);
+gt2n = lambdapdk `1aac92f` → GT2N data repo `54f81fe`.
+
+- **gt2n's PDK data lives in a third repo** (`azadnaeemi/GT2N`); lambdapdk
+  holds only tool setup (klayout, pdngen/tapcell tcl), installed under
+  `gt2n/lambdapdk/`. Descriptors address both.
+- **gt2n has exactly one corner** (`tt`, `_tt_0p7v25c` liberty). `STA_CORNERS`
+  and `LIB` get a single entry; more corners are "under development" upstream.
+- **asap7 ships 1x AND pre-scaled LEF** (`LEF/*_1x_*.lef` vs `LEF/scaled/`).
+  The descriptor's choice decides whether `meta.dbu_per_micron`/`gds_scale`
+  are needed. NLDM liberty only (no CCS/QRC in the build — saves 6.4 GiB);
+  **no IO cells at the pinned sc7p5t commit** (exist on newer main — bump if
+  wanted).
+- **nangate45's fakeram45 is 22 independent LEF/lib macro pairs** — descriptor
+  enumerates or globs; no aggregate file.
+- **Descriptor delivery path**: the builds create `libs.tech/librelane/` with
+  a README placeholder (empty dirs don't survive ciel's tarballing; fetch uses
+  `libs.tech` to detect installs). W6 must decide where descriptor sources
+  live in the ciel fork and have the build modules copy them in.
+- `Family.monolithic` (new) marks all three: one tree, no per-library
+  tarballs; `--include-libraries` is inert for them.
+- ciel's CI `ls-remote` test will fail for the new families until W8 lands
+  the forked ciel-releases manifest — known, deliberate.
 
 ## W5 notes (from W2 conversion, 2026-08-05)
 
