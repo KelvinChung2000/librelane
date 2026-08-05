@@ -1,0 +1,49 @@
+# SPM on nangate45.
+#
+# A configuration of its own rather than another 'pdk::' branch in config.yaml,
+# because what nangate45 needs is not another set of numbers: the PDK configures
+# neither Magic nor Netgen, so every job that runs one has to be off and KLayout
+# does the stream-out and the DRC alone.
+#
+# Run it with:
+#   librelane --pdk nangate45 --pdk-root ~/.ciel librelane/examples/spm/nangate45.yaml
+
+# Basics
+DESIGN_NAME: spm
+VERILOG_FILES: dir::src/*.v
+CLOCK_PORT: clk
+PNR_SDC_FILE: dir::src/impl.sdc
+SIGNOFF_SDC_FILE: dir::src/signoff.sdc
+
+# 45nm: SPM closes this with room to spare, which is what a PDK bring-up wants
+# out of the timing corner rather than a number to chase.
+CLOCK_PERIOD: 5.0
+
+# Floorplan
+FP_CORE_UTIL: 40
+
+# PDN. The PDK's own pitches come from ORFS' grid, which is written for designs
+# far larger than this one -- a 56um vertical pitch puts no strap at all inside
+# an SPM core -- so both are brought down to something that fits.
+PDN_VPITCH: 20
+PDN_HPITCH: 20
+PDN_VOFFSET: 2
+PDN_HOFFSET: 2
+PDN_SKIPTRIM: true
+
+# Pin Order
+IO_PIN_ORDER_CFG: dir::pin_order.cfg
+
+# Signoff. KLayout streams the GDSII out and checks it against the PDK's own
+# FreePDK45 rule deck. Every Magic and Netgen job is off, because the PDK
+# configures neither tool: it has no .magicrc and no PDK setup file, and no
+# SPICE models for an extraction to be compared against. The XOR compares the
+# two stream-outs against each other and there is only one, so it goes with
+# them.
+RUN_MAGIC_STREAMOUT: false
+RUN_MAGIC_WRITE_LEF: false
+RUN_MAGIC_DRC: false
+RUN_LVS: false
+RUN_KLAYOUT_XOR: false
+RUN_KLAYOUT_STREAMOUT: true
+RUN_KLAYOUT_DRC: true
