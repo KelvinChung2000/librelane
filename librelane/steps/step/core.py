@@ -327,7 +327,13 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
                 "current. Construct a flow, open a scope with "
                 "librelane.config.use_config(), or call Config.interactive()."
             )
-        if isinstance(config, BaseConfigModel):
+        # A StepConfigView is how a composite's own configuration arrives when
+        # the composite ran under a flow's shared scope, and its narrowing --
+        # the composite's declared names -- covers every constituent's, so
+        # converting through to_raw_dict loses nothing a child may read. Left
+        # unconverted, the view reaches the trusted branch below, which asks it
+        # for copy_filtered and gets the shared model's AttributeError instead.
+        if isinstance(config, (BaseConfigModel, StepConfigView)):
             config = ConfigMap(
                 config.to_raw_dict(),
                 meta=config.meta,

@@ -138,3 +138,35 @@ def test_a_composite_s_children_are_told_apart_by_their_parent(mock_config):
     # The directory does not move with the id: the parent's own directory
     # already says which run this is.
     assert {directory for _, directory in seen} == {"1-test-compositeidchild"}
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_a_composite_running_under_a_shared_scope_can_run_its_children(
+    mock_config,
+):
+    """
+    Under a flow's shared scope a composite's own configuration is a
+    StepConfigView, and that view is what run() hands each child with
+    _config_mode="trusted". The trusted path asks it for copy_filtered, which
+    the view forwards to the shared model -- an AttributeError on every
+    in-flow composite until the view was accepted for conversion.
+    """
+    from librelane.config import build_scope, use_config
+    from librelane.state import State
+    from librelane.steps.step.config_view import StepConfigView
+
+    probe = _composite(mock_config)
+    Parent = type(probe)
+
+    scope = build_scope(
+        mock_config,
+        variables=list(probe.get_all_config_variables()),
+    )
+    with use_config(scope):
+        parent = Parent(state_in=State())
+        assert isinstance(parent.config, StepConfigView)
+
+        state_out = parent.start(step_dir="/cwd/composite-scoped")
+
+    assert state_out.metrics["test__child_knob"] == 3
