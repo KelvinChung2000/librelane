@@ -114,10 +114,14 @@ jobs:
     steps: [Magic.WriteLEF]
     if: RUN_MAGIC_WRITE_LEF
   # Also a real data edge: Odb.CheckDesignAntennaProperties consumes 'lef', and
-  # Magic.WriteLEF is the only step in Classic that produces one.
+  # Magic.WriteLEF is the only step in Classic that produces one -- which is
+  # why this job shares its producer's gate. With write_lef off there is no
+  # 'lef' anywhere in the flow, and an ungated check died here on every PDK
+  # that cannot run Magic.
   check_antenna_properties:
     needs: [write_lef]
     steps: [Odb.CheckDesignAntennaProperties]
+    if: RUN_MAGIC_WRITE_LEF
   # The fan-out point: the last OpenROAD-backed job in the flow, and the four
   # jobs below it are the heavy ones. render and write_lef are cheap, so
   # keeping them on the chain costs almost nothing.
