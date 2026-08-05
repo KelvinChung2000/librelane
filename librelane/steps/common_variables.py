@@ -48,12 +48,14 @@ class IoLayerConfig(BaseConfigModel):
 
     IO_PIN_V_THICKNESS_MULT: Decimal = variable(
         2,
-        description="A multiplier for vertical pin thickness. Base thickness is the pins layer min width.",
+        description="A multiplier for vertical pin thickness. Base thickness is the pins layer min width. PDK-overridable because it can be a process constraint, not a preference: a PDK whose routing layers are rectangle-only (LEF58_RECTONLY) cannot legalize a pin drawn wider than the wire that meets it, and must say 1.",
+        pdk=True,
     )
 
     IO_PIN_H_THICKNESS_MULT: Decimal = variable(
         2,
-        description="A multiplier for horizontal pin thickness. Base thickness is the pins layer min width.",
+        description="A multiplier for horizontal pin thickness. Base thickness is the pins layer min width. PDK-overridable because it can be a process constraint, not a preference: a PDK whose routing layers are rectangle-only (LEF58_RECTONLY) cannot legalize a pin drawn wider than the wire that meets it, and must say 1.",
+        pdk=True,
     )
 
     IO_PIN_V_LENGTH: Decimal | None = variable(

@@ -89,6 +89,26 @@ no `${VAR}` brace form. A descriptor string containing `${` is rejected at
 load time (it can only be a mistranscribed directive that would otherwise
 pass through literally and silently).
 
+`pdk_dir::` is glob-based and resolves to a **list** — use it only for
+Path-typed (and list/dict-of-Path) variables. A path inside a string-typed
+variable is written `ref::$PDKPATH/<path>`.
+
+### Unit-fixed variables
+
+Two variables have units fixed by the scripts that consume them, regardless
+of what the PDK's liberty declares. Descriptor authors converting from a PDK
+whose liberty uses fF must convert:
+
+- `LAYERS_RC` resistance/capacitance values are **kΩ/µm and pF/µm**
+  (`scripts/openroad/common/set_rc.tcl`). Unconverted fF/µm values make the
+  resizer see every wire as 1000x too capacitive — the symptom is absurd
+  buffer counts followed by detailed-placement failure, with no hint of the
+  cause.
+- `OUTPUT_CAP_LOAD` is declared in fF, but the implementation SDC divides it
+  by 1000 assuming a pF liberty; on an fF liberty the PnR-time load is 1000x
+  small while signoff STA (which pins pF) stays right. Known issue — needs a
+  unit-aware fix.
+
 Directives are legal inside list elements and dict values. Paths in a
 descriptor should always be `pdk_dir::`-relative; absolute paths are a
 conversion bug.
