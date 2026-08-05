@@ -23,7 +23,7 @@ Strategy recap (decided in design discussion):
 | W2 | Converter `tools/pdk_import.py` (config.tcl tree → descriptor tree) | W0 | **done** — parity gate passes for sky130A, gf180mcuD, ihp-sg13g2 (after the `pdk_compat.py` `Decimal("0.15")` fix). See "W5 notes" |
 | W3 | ciel fork: `nangate45`, `asap7`, `gt2n` families with trivial builds (pattern: `ciel/build/ihp-sg13g2.py`) | — | **done** — branch `native-families` (7 commits, `1166265..9a7556b`), all three families built/installed/enabled end-to-end; sparse+blobless clones keep asap7 at 241 MB. See "W6 notes" |
 | W4 | open_pdks fork survey: additive injection recipe for descriptor install rules; auto-bump viability data | — | **done** — see "W4 findings" below |
-| W5 | Convert sky130A/gf180mcuD/ihp-sg13g2 with W2, verify identical via W1 harness, commit descriptors into open-pdks fork per W4 recipe | W1, W2, W4 | pending |
+| W5 | Convert sky130A/gf180mcuD/ihp-sg13g2 with W2, verify identical via W1 harness, commit descriptors into open-pdks fork per W4 recipe | W1, W2, W4 | **done** — descriptors installed in all three local trees, parity 5/5 no skips; open-pdks branch `librelane-descriptors` (4 commits on `026824c`) carries TECHNAME-neutral sources, the `descriptors-%` make rules, the two EOF includes, and `.librelane-fork/` lint+additive-check tooling (additive check green: 1759 added, 0 deleted). Deviations recorded by the agent: `libs.tech/librelane` paths (upstream already renamed), corrected excluded-cell filenames (fixes both "broken upstream" SCLs — upstream had renamed the files, the ciel tree predates it), `#ifdef RERAM` around sky130's RCX rulesets (B ships no calibre rules), `test -f` loops, STAGING_PATH guard. **Follow-up: coverage is partial** — 2/8 sky130 SCLs, 2/6 gf180mcu, no pad.yaml; the rest need a converter run inside a real open_pdks build |
 | W6 | NanGate45, ASAP7 (4x scale: `meta.dbu_per_micron`/`gds_scale`), gt2n as **native ciel families** with hand-written descriptors, plus librelane-side support: family entries in `pdk_hashes.yaml`, `cli/runtime.py` fetch path, docs. No capabilities machinery (decision 2026-08-05): `meta.capabilities` stays informational; users gate DRC/LVS/signoff steps off in their own flow specs — ship a documented example flow spec per family instead | W1, W3 | pending |
 | W7 | Delete the Tcl path: `_eval_env`, `CoercionSyntax.TCL`, `permissive_typing` threading (11 recursive sites in `variable.py`), `pdk_compat.py`, PDK `deprecated_names`, `_migrate_diode_strategy`. Converter keeps private copies of the migration tables it still needs | W5 | pending |
 | W8 | Distribution: fork `ciel-releases` (GitHub Pages), make `librelane/cli/runtime.py` honour `CIEL_DATA_SOURCE` (today hardcoded), drop `--volare-pdk` alias, auto-bump bot with additive-only CI check | W3, W5 | pending |
@@ -37,7 +37,8 @@ Strategy recap (decided in design discussion):
 - **W6 gate**: a smoke design hardens on NanGate45 and gt2n using the
   documented example flow spec (magic/netgen signoff steps gated off by the
   user-side flow, not by librelane); ASAP7 GDS streamout is dimensionally
-  correct after 0.25x downscale.
+  correct — **no downscale**: only 1x cell GDS ships, 1x views are used
+  throughout (as current ORFS does), and the streamed GDS decodes correct.
 - **W7 gate**: full test suite green; `grep -r "permissive_typing\|_eval_env"
   librelane/` empty; wheel does not contain `tools/`.
 
@@ -51,6 +52,76 @@ Strategy recap (decided in design discussion):
 
 Licensing of vendored families: accepted as workable, deferred (user
 decision 2026-08-04).
+
+## W6 status (2026-08-05)
+
+- **asap7: DONE.** SPM green through KLayout streamout: setup/hold/slew/cap
+  all zero at three corners, 0 route DRCs, 0 antenna, fmax 3.4 GHz TT at a
+  0.65 ns clock. SCL `asap7sc7p5t_28_rvt` (each VT flavour is its own SCL —
+  separate LEF/GDS). 1x views, `gds_scale: 1`, no downscale. Liberty: .7z
+  unpacked and five cell-group files merged to one per corner (guarded
+  merge, raises on template conflict) — LibreLane has no compressed-liberty
+  support. ORFS DONT_USE verbatim + tap-with-filler. KLayout-only streamout.
+  Future: no IO cells at the pin (newer main has them), NLDM only, no
+  antenna diode cell (repair no-ops).
+- **nangate45: DONE.** Hand-written descriptors (six files incl. tracks.info
+  and exclude lists, no magic/netgen), KLayout DRC wired
+  (`freepdk45_drc.drc`), SPM green with no workarounds: 0 DRC / 0 antenna,
+  setup +3.601 ns, fmax 715 MHz. Descriptors ship via
+  `ciel/build/descriptors/nangate45/` merged in at build time (`93f8bda`).
+  `DIODE_CELL` deliberately omitted: ANTENNA_X1's LEF says
+  `ANTENNADIFFAREA 0.0  # unknown` and OpenROAD rejects it (GRT-0244).
+- **Converter caveat found**: `pdk_dir::` is glob-expanding (`refg::`) and
+  resolves to a one-element *list* — illegal for string-typed variables
+  (e.g. inside `KLAYOUT_DRC_OPTIONS`). Hand-written descriptors use
+  `ref::$PDKPATH/...` there; `tools/pdk_import.py` should pick the prefix by
+  the variable's declared type (latent — no shipped conversion hits it).
+- **SDC unit assumption found**: `base.sdc`'s impl path divides
+  `OUTPUT_CAP_LOAD` by 1000 assuming a pF liberty; an fF liberty (confirmed:
+  nangate45 and asap7 both declare fF) makes the PnR-time output load 1000x
+  small while signoff STA stays correct — signoff pins pF via
+  `sta/corner.tcl`, PnR never calls `set_cmd_units` so it inherits the
+  liberty's unit. **Proper fix identified**: PnR scripts should
+  `set_cmd_units` the way `corner.tcl` does, which would also make
+  `LAYERS_RC`'s conversion factors unconditional. Descriptors carry the
+  honest fF value (correct at signoff; benign under-buffering on SPM).
+  **RESOLVED (12901b5)**: `common/io.tcl` now pins the same
+  `set_cmd_units` block signoff always pinned — configuration values are
+  read in their documented units (ns/pF) in every session on every PDK.
+  No-op for sky130/gf180mcu/ihp (their liberties already declare ns/pF,
+  verified); a 1000x correctness fix for ps/fF PDKs, where signoff STA was
+  reading `CLOCK_PERIOD` 1000x relaxed. asap7/gt2n descriptor and example
+  values are ns-denominated as the variables document.
+- **asap7 scaling RESOLVED by artifact**: the streamed GDS decodes to
+  0.25 nm/dbu (4000/µm) with dimensionally correct 1x geometry at a DEF
+  written at 1000 dbu/µm — `meta.dbu_per_micron` is the LEF/DEF database
+  unit, the GDS grid is the cell-GDS drawing grid, and they legitimately
+  differ. `meta.gds_scale` stays 1; the feared 0.25x post-P&R downscale is
+  not needed at all. Distinction documented in the descriptor.
+- **Resizer slack margins are absolute ns** (`PL_RESIZER_HOLD_SLACK_MARGIN`
+  0.1, setup 0.05): ~1%/0.5% of a sky130 clock but 15%/8% of asap7's
+  0.65 ns — post-CTS hold repair chased 100 ps of overfix and died on
+  RSZ-0060. Masked before the unit fix (margins read as 0.1 *ps* ≈ zero).
+  asap7/gt2n examples carry rescaled values. **Follow-up decision**: make
+  the margins `None`-default and compute a percent-of-clock at runtime,
+  the `MAX_TRANSITION_CONSTRAINT` pattern — not changed now because it
+  would alter behavior for already-verified PDKs mid-milestone. Applies to
+  `GRT_RESIZER_*` too.
+- **Yosys liberty-cache race (found via asap7, fixed 4c747cd)**: yosys's
+  merged-liberty SCL cache (`passes/techmap/liberty_cache.h`) uses a 32-bit
+  path hash, second-granularity mtime freshness, and a shared non-unique
+  `.tmp` staging file — concurrent conversions can publish a merge silently
+  missing an input library; ABC then segfaults with no buffer/inverter.
+  librelane now confines the cache per-step via TMPDIR. asap7 additionally
+  ships one merged liberty per corner (the shape every other PDK has).
+  Worth an upstream yosys issue (mkstemp + content hashing).
+- **gt2n BSPDN limit (upstream OpenROAD)**: detailed_route segfaults in
+  `drt::FlexTAWorker::initFixedObjs` if *any* backside geometry exists
+  (bisected: BPR rails, BM mesh, BV vias each individually crash it; GT2N's
+  own authors stub pdngen and materialize the backside grid post-GDS with
+  KLayout). gt2n's example therefore overrides the PDK PDN with a frontside
+  M10/M11 mesh. Not a descriptor bug; revisit when upstream DRT learns
+  backside layers.
 
 ## W6 notes (from W3 family builds, 2026-08-05)
 

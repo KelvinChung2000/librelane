@@ -1,0 +1,104 @@
+# SPM on GT2N, the open-source virtual 2nm nanosheet PDK with backside power
+# delivery (Jang et al., ISCAS 2026). Run it with:
+#
+#   librelane --pdk gt2n --pdk-root ~/.ciel librelane/examples/spm/gt2n.yaml
+#
+# Until the forked ciel that knows the gt2n family is what LibreLane's
+# environment installs, add --manual-pdk: the PDK resolution path asks ciel
+# which family a name belongs to, and upstream ciel has never heard of this
+# one. --manual-pdk skips that and reads $PDK_ROOT/$PDK directly, which is
+# where an already-installed gt2n is anyway.
+#
+# This is a standalone configuration rather than a `pdk::gt2n*` block in
+# config.yaml, because almost nothing in that file carries over: its PDN
+# geometry is micron-scale and its 10 ns clock is twenty times slower than
+# anything this library would be asked for.
+DESIGN_NAME: spm
+VERILOG_FILES: dir::src/*.v
+CLOCK_PORT: clk
+# Nanoseconds, as everywhere else. 0.5 ns is a deliberately loose target for a
+# first bring-up on a 2 nm library, not a characterisation of what GT2N can do.
+CLOCK_PERIOD: 0.5
+PNR_SDC_FILE: dir::src/impl.sdc
+SIGNOFF_SDC_FILE: dir::src/signoff.sdc
+
+FP_CORE_UTIL: 40
+PL_TARGET_DENSITY_PCT: 45
+
+# The die is 7.5 um across, so a routing GCell (15 M3 pitches, 0.42 um) tiles it
+# about 18 x 18 times, and RePlAce's routability loop reports every congestion
+# average over that grid as nan. It then "reverts" to the target density of the
+# best iteration, which is 0, and diverges on the next gradient step. Plain
+# density-driven placement is well behaved here.
+PL_ROUTABILITY_DRIVEN: false
+
+PDN_SKIPTRIM: true
+
+# ---------------------------------------------------------------------------
+# Frontside router view, in place of the PDK's backside power grid
+# ---------------------------------------------------------------------------
+# pdk.yaml describes GT2N's real power grid: BPR followpins rails, which are
+# where the standard cells' vdd/vss pins actually are, under a BM1/BM2 backside
+# mesh. pdngen builds it correctly -- the run this configuration replaced came
+# out with 46 BPR rail, 168 BM1 and 32 BM2 shapes and a clean
+# check_power_grid -- and then OpenROAD's detailed router segfaults in
+# FlexTAWorker::initFixedObjs the moment track assignment reaches a backside
+# layer holding any of it. Removing the BM1/BM2 straps does not help, nor does
+# removing the BPR rails, nor the BV vias; only removing every backside shape
+# does. DRT builds default vias for V1 upward and none for BV0..BV4 or V0, and
+# assigns tracks on backside layers anyway.
+#
+# So this run does what the GT2N authors' own OpenROAD package does in
+# platforms/gt2n_compat_bspdn_proxy: give the router a frontside-only view and
+# leave the backside grid to a post-GDS step. Theirs stubs pdngen out entirely
+# and materializes real BPR/BM/BRDL geometry into the streamed GDS with a
+# KLayout script; LibreLane has no such step, so the design gets a frontside
+# M10/M11 mesh instead -- above RT_MAX_LAYER, so it costs no signal routing
+# resources -- and no rails at all.
+#
+# What that means for the result: the cells' power pins are not connected to
+# anything. This is a routable, streamable, timing-analysable SPM, not a
+# powered one, and IR drop on it is meaningless.
+PDN_ENABLE_RAILS: false
+PDN_VERTICAL_LAYER: M11
+PDN_HORIZONTAL_LAYER: M10
+PDN_VWIDTH: 0.448
+PDN_HWIDTH: 0.448
+PDN_VSPACING: 0.112
+PDN_HSPACING: 0.112
+PDN_VPITCH: 1.792
+PDN_HPITCH: 1.792
+PDN_VOFFSET: 0.896
+PDN_HOFFSET: 0.896
+RUN_IRDROP_REPORT: false
+
+# Every GT2N routing layer carries LEF58_RECTONLY, and OpenROAD's detailed
+# router skips the LEF58_ENCLOSURE rules on V1..V8 for want of a CUTCLASS, so a
+# residual count of rect-only violations is what this PDK routes to: the GT2N
+# authors' own AES runs report 97 (frontside) and 16 (backside proxy) DRCs.
+# Here the count plateaus in the forties by the tenth iteration and does not
+# improve after it, so the loop is capped where the authors' ORFS setup caps it
+# (DETAILED_ROUTE_END_ITERATION = 20) rather than spending 40 more minutes on
+# the default 64.
+DRT_OPT_ITERS: 20
+# ...and for the same reason the residual count is a warning here rather than
+# the end of the flow. GT2N has no open-source DRC deck to check the result
+# against anyway -- its runsets are Synopsys IC Validator only -- so a
+# TritonRoute self-report of rules it has already said it cannot fully enforce
+# is not a signoff verdict, and treating it as one would mean this PDK could
+# never produce a GDS.
+ERROR_ON_TR_DRC: false
+
+# GT2N ships no open-source signoff decks: DRC and LVS runsets exist only as
+# Synopsys IC Validator rule sets under icv_runset/, and there is no Magic tech
+# file or Netgen setup at all. Everything downstream of those tools is off.
+RUN_MAGIC_DRC: false
+RUN_KLAYOUT_DRC: false
+RUN_LVS: false
+RUN_MAGIC_STREAMOUT: false
+RUN_MAGIC_WRITE_LEF: false
+RUN_KLAYOUT_XOR: false
+
+# The library's tap cells have no GDS view (see the SCL descriptor), so nothing
+# may place one.
+RUN_TAP_ENDCAP_INSERTION: false
