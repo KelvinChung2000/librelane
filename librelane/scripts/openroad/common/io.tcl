@@ -18,6 +18,20 @@
 source $::env(_TCL_ENV_IN)
 source $::env(SCRIPTS_DIR)/openroad/common/set_global_connections.tcl
 
+# The same units the signoff scripts pin, for the same reason: without this,
+# the session's units are whatever the first liberty declares, and a
+# configuration value -- CLOCK_PERIOD, a constraint, an RC figure -- means
+# something different on a picosecond- or femtofarad-denominated PDK (asap7,
+# gt2n) than on a nanosecond one. Configuration variables are documented in
+# ns/pF and are read in ns/pF, on every PDK.
+set_cmd_units\
+    -time ns\
+    -capacitance pF\
+    -current mA\
+    -voltage V\
+    -resistance kOhm\
+    -distance um
+
 namespace eval lln {
     proc get_corner_names {} {
         # returns: names as a Tcl list, compatible with both OpenSTA 2 and 3

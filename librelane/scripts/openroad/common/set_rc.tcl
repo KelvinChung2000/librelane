@@ -28,10 +28,11 @@ proc log_cmd_rc {cmd args} {
 # PDK's liberty files happen to declare.
 #
 # set_layer_rc reads its arguments in the units currently active in the
-# embedded OpenSTA. The signoff scripts under scripts/openroad/sta/ pin those
-# with set_cmd_units, but the PnR scripts that source this file do not call it
-# at all, so there they are whatever the first liberty file declared. The three
-# procs below convert a standard-unit value into the active one.
+# embedded OpenSTA. Both the signoff scripts under scripts/openroad/sta/ and
+# common/io.tcl now pin those with set_cmd_units, so the factors below are
+# 1.0 in practice; the procs stay because they convert from what the active
+# units *are* rather than assuming anyone pinned them, which is what kept
+# this file correct back when the PnR scripts did not.
 #
 # The resistance factor is exactly 1.0 when the liberty already declares kohm,
 # as sky130's does. The other two are 1.0 only to about nine digits, because
