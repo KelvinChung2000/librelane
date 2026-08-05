@@ -40,6 +40,7 @@ from librelane.config.loading import (
     read_source,
 )
 from librelane.config.ambient import build_scope, set_current_config
+from librelane.config.descriptor import read_pdk_descriptor
 from librelane.config.removals import removed_variables
 from librelane.config.flow import (
     pdk_variables,
@@ -1158,23 +1159,62 @@ class Config(GenericImmutableDict[str, Any]):
     @lru_cache(1, True)
     def __get_pdk_raw(
         pdk_root: str, pdk: str, scl: str | None, pad: str | None
-    ) -> tuple[GenericImmutableDict[str, Any], str, str, str | None, dict[str, str]]:
+    ) -> tuple[
+        GenericImmutableDict[str, Any], str, str, str | None, dict[str, str], bool
+    ]:
         """
         Returns
         -------
-        tuple[GenericImmutableDict[str, Any], str, str, str | None, dict[str, str]]
+        tuple[GenericImmutableDict[str, Any], str, str, str | None, dict[str, str], bool]
             The merged PDK environment, the PDK path, the SCL, the pad cell
-            library, and a map from each key of the environment to the layer
-            that last wrote it.
+            library, a map from each key of the environment to the layer that
+            last wrote it, and whether the environment was read from typed
+            descriptors rather than evaluated as Tcl.
 
             Every key of the returned environment has an entry. The map is keyed
             by the names the *migrated* environment uses, which are the names the
             configuration ends up with, and not by the names the ``.tcl`` files
             wrote -- see the comment on the comparison below.
 
+            The last element is what decides how the environment is compiled: a
+            descriptor holds native values, so a string reaching a list- or
+            dictionary-typed variable from one is an error and not Tcl text to
+            split. It is reported from here because this is what knows which
+            files were read.
+
         The origin map is memoized along with everything else here, so callers
         read it and never mutate it.
         """
+        pdkpath = os.path.join(pdk_root, pdk)
+        if not os.path.exists(pdkpath):
+            matches = sorted(glob(f"{pdkpath}*"))
+            errors = [f"The PDK {pdk} was not found."]
+            warnings = []
+            for match in matches:
+                basename = os.path.basename(match)
+                warnings.append(f"A similarly-named PDK was found: {basename}")
+            raise InvalidConfig("PDK configuration", warnings, errors)
+
+        # A PDK that ships descriptors is read from them and never as Tcl. The
+        # two are not merged: a descriptor tree is a complete statement of the
+        # PDK, and reading a 'config.tcl' underneath one would let the program
+        # this format exists to retire keep supplying values.
+        if descriptor := read_pdk_descriptor(
+            pdkpath,
+            pdk_root=pdk_root,
+            pdk=pdk,
+            scl=scl,
+            pad=pad,
+        ):
+            return (
+                GenericImmutableDict(descriptor.values),
+                pdkpath,
+                descriptor.scl,
+                descriptor.pad,
+                descriptor.origins,
+                True,
+            )
+
         pdk_config: GenericDict[str, Any] = GenericDict(
             {
                 SpecialKeys.pdk_root: pdk_root,
@@ -1192,16 +1232,6 @@ class Config(GenericImmutableDict[str, Any]):
 
         if pad is not None:
             pdk_config[SpecialKeys.pad] = pad
-
-        pdkpath = os.path.join(pdk_root, pdk)
-        if not os.path.exists(pdkpath):
-            matches = sorted(glob(f"{pdkpath}*"))
-            errors = [f"The PDK {pdk} was not found."]
-            warnings = []
-            for match in matches:
-                basename = os.path.basename(match)
-                warnings.append(f"A similarly-named PDK was found: {basename}")
-            raise InvalidConfig("PDK configuration", warnings, errors)
 
         pdk_config_path = os.path.join(pdkpath, "libs.tech", "librelane", "config.tcl")
         if not os.path.exists(pdk_config_path):
@@ -1308,7 +1338,7 @@ class Config(GenericImmutableDict[str, Any]):
         # never one that was merely renamed.
         origins = {key: origin for key, origin in origins.items() if key in full_env}
 
-        return GenericImmutableDict(full_env), pdkpath, scl, pad, origins
+        return GenericImmutableDict(full_env), pdkpath, scl, pad, origins, False
 
     @staticmethod
     def __get_pdk_config(
@@ -1342,7 +1372,7 @@ class Config(GenericImmutableDict[str, Any]):
             passed by ``--scl`` from one passed by an API caller.
         """
 
-        frozen, pdkpath, scl, pad, origins = Config.__get_pdk_raw(
+        frozen, pdkpath, scl, pad, origins, typed = Config.__get_pdk_raw(
             pdk_root, pdk, scl, pad
         )
         if flow_pdk_vars is None or len(flow_pdk_vars) == 0:
@@ -1354,7 +1384,13 @@ class Config(GenericImmutableDict[str, Any]):
                 raw,
                 flow_pdk_vars,
                 on_unknown_key=None,
-                permissive_typing=True,
+                # Permissive only for an environment a 'config.tcl' was
+                # evaluated into, where every value is Tcl text and a list is a
+                # word list. A descriptor's values arrive typed, so reading them
+                # that way would take a one-element list written as a string --
+                # a cell name with a space in it -- for two cells, and would
+                # accept a Tcl word list nobody meant to write.
+                permissive_typing=not typed,
             )
         )
 
