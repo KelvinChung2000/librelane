@@ -57,11 +57,21 @@ decision 2026-08-04).
 
 - **gt2n: DONE.** SPM green through KLayout streamout at a 0.5 ns clock:
   setup +0.148 ns / hold +0.032 ns, TNS 0, 0 antenna, 0 power-grid
-  violations, GDS 438 KB. Ten SCLs (w13/w31 nanosheet widths × five VTs),
-  single tt corner. Frontside-mesh PDN override in the example (upstream
-  DRT crashes on backside geometry); `ERROR_ON_TR_DRC: false` waives the
-  rect-only self-reports (56 here; GT2N's own AES runs show 97/16), with
-  the justification written into the example.
+  violations, GDS 438 KB. Ten SCLs (w13/w31 nanosheet widths × five VTs,
+  default `gt2n_stdcells_w31_lvt` per upstream's own examples), single tt
+  corner (`nom_tt_0p7v25c`), power pins lowercase `vdd`/`vss` per the LEF.
+  Frontside-mesh PDN override in the example (upstream DRT crashes on
+  backside geometry); `ERROR_ON_TR_DRC: false` waives the rect-only
+  self-reports (56 here; GT2N's own AES runs show 97/16), with the
+  justification written into the example. **Honest caveats, stated in the
+  example**: (a) with the frontside compromise the cells' power pins
+  connect to nothing — this is a routable and timeable SPM, not a powered
+  one, and IR drop is off; the descriptor's *real* BSPDN values (BPR rails
+  + BM1/BM2 mesh) build and pass check_power_grid, blocked only by the
+  upstream DRT crash. (b) Tap insertion is off: the LEF/liberty define
+  `gt2_6t_tapbspdn`/`tapfspdn` but the GDS ships only an unreferenced
+  `gt2_6t_tap` — a shipped-collateral gap; upstream issue candidate
+  (rename or ship the layouts). No antenna diode among the 72 cells.
 - **asap7: DONE.** SPM green through KLayout streamout: setup/hold/slew/cap
   all zero at three corners, 0 route DRCs, 0 antenna, fmax 3.4 GHz TT at a
   0.65 ns clock. SCL `asap7sc7p5t_28_rvt` (each VT flavour is its own SCL —
