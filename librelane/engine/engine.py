@@ -675,15 +675,19 @@ class Workflow(Flow):
             spec,
             self._selected_tools(config, config_override_strings, kwargs),
         )
-        #: Each job id mapped to its 1-based position in document order, which
-        #: is what prefixes its run directory. Document order, not execution
-        #: order: execution races under concurrency, and a listing that
-        #: changed from run to run could never be diffed against the last one.
-        #: Every declared job gets a number whether or not its gate fires, so
-        #: flipping a RUN_* variable leaves every other job's directory name
-        #: alone and a skipped job reads as a gap.
+        #: Each job id mapped to its 1-based position in flow order, which is
+        #: what prefixes its run directory. Flow order is a topological order
+        #: of the ring-collapsed graph with document order breaking ties --
+        #: not raw document order, because an ``include`` puts the library's
+        #: jobs before the document's own and Classic would number lint 28th;
+        #: and not execution order, which races under concurrency, so a
+        #: listing that changed from run to run could never be diffed against
+        #: the last one. Every declared job gets a number whether or not its
+        #: gate fires, so flipping a ``RUN_*`` variable leaves every other
+        #: job's directory name alone and a skipped job reads as a gap.
         self.job_ordinals: dict[str, int] = {
-            job_id: ordinal for ordinal, job_id in enumerate(self.jobs, start=1)
+            job_id: ordinal
+            for ordinal, job_id in enumerate(self._flow_order(spec), start=1)
         }
         self.Steps = [step for job in self.jobs.values() for step in job.steps]
         # Flow.__init__ builds the Config from get_all_config_variables(), which
@@ -3231,6 +3235,46 @@ class Workflow(Flow):
                     write_entry(step_dir, step, key)
                 submitted.executed += 1
         return current
+
+    def _flow_order(self, spec: FlowSpec) -> list[str]:
+        """
+        Returns
+        -------
+        Every declared job id, in the order :attr:`job_ordinals` numbers
+        them: a topological order of the ring-collapsed dependency graph,
+        choosing the document-earliest ready node at every step, with a
+        ring's members expanded in document order at their gate's position.
+
+        The collapsed graph is a DAG by construction (a ring is a strongly
+        connected component, and a condensation is always acyclic), so the
+        loop below always finds a ready node until nothing remains.
+        """
+        doc_pos = {job_id: i for i, job_id in enumerate(spec.jobs)}
+
+        def pos(node: str) -> int:
+            if members := self.rings.get(node):
+                return min(doc_pos[member] for member in members)
+            return doc_pos[node]
+
+        remaining = spec.collapsed_edges()
+        placed: set[str] = set()
+        order: list[str] = []
+        while remaining:
+            ready = min(
+                (
+                    node
+                    for node, deps in remaining.items()
+                    if all(dep in placed for dep in deps)
+                ),
+                key=pos,
+            )
+            placed.add(ready)
+            del remaining[ready]
+            if members := self.rings.get(ready):
+                order.extend(sorted(members, key=doc_pos.__getitem__))
+            else:
+                order.append(ready)
+        return order
 
     def dir_for_job_step(
         self,
