@@ -20,7 +20,7 @@ Strategy recap (decided in design discussion):
 |---|---|---|---|
 | W0 | Descriptor format spec | — | **done** |
 | W1 | Descriptor loader in `Config.__get_pdk_raw` (YAML-first, Tcl fallback, strict typing, origins from layering) + Tcl-vs-YAML diff harness | W0 | **done** — `librelane/config/descriptor.py`, parity harness `test/config/test_pdk_parity.py` (self-armed via synthetic dual-tree PDK; real PDKs skip until W5). Spec erratum fixed: interpolation is `$VAR` inside `ref::`/`refg::`/`expr::` only; `${` is rejected |
-| W2 | Converter `tools/pdk_import.py` (config.tcl tree → descriptor tree) | W0 | agent running |
+| W2 | Converter `tools/pdk_import.py` (config.tcl tree → descriptor tree) | W0 | **done** — parity gate passes for sky130A, gf180mcuD, ihp-sg13g2 (after the `pdk_compat.py` `Decimal("0.15")` fix). See "W5 notes" |
 | W3 | ciel fork: `nangate45`, `asap7`, `gt2n` families with trivial builds (pattern: `ciel/build/ihp-sg13g2.py`) | — | agent running |
 | W4 | open_pdks fork survey: additive injection recipe for descriptor install rules; auto-bump viability data | — | **done** — see "W4 findings" below |
 | W5 | Convert sky130A/gf180mcuD/ihp-sg13g2 with W2, verify identical via W1 harness, commit descriptors into open-pdks fork per W4 recipe | W1, W2, W4 | pending |
@@ -51,6 +51,37 @@ Strategy recap (decided in design discussion):
 
 Licensing of vendored families: accepted as workable, deferred (user
 decision 2026-08-04).
+
+## W5 notes (from W2 conversion, 2026-08-05)
+
+- **Ownership rule** (accepted): sky130's `config.tcl` `source`s the SCL's
+  file itself and interpolates the library name into paths, so the Tcl path
+  attributes library-derived keys (`CELL_LEFS`, `LIB`, `TECH_LEFS`, …) to
+  `<pdk>`; descriptors put them in the library's own file. The parity harness
+  reports but does not fail on these origin moves — deliberate.
+- **Convert inside the open_pdks build, not from a partial ciel install**: a
+  ciel install only carries fetched libraries (5 of sky130A's 7 SCLs were
+  absent locally), and a conversion there would ship a truncated but
+  self-consistent `meta.scls`.
+- **Two SCLs are broken upstream and convert broken** (same failure on the
+  Tcl path today): `sky130_fd_sc_hvl` references `no_synth.cells` /
+  `drc_exclude.cells` its directory does not contain; `gf180mcu_fd_sc_mcu9t5v0`
+  is missing `drc_exclude.cells`. Decide: fix in the open_pdks fork (good
+  upstream PR candidates) or ship failing values.
+- **gf180mcu's `DIODE_INSERTION_STRATEGY 4` is inert**: it expands to three
+  variables none of which is `pdk=True`, so they never reach the config.
+  Relevant when W7 deletes `_migrate_diode_strategy`.
+- **`RT_CLOCK_MIN_LAYER` (sky130A sets `met3`) and `CTS_MAX_CAP` are silently
+  dropped** because they are real variables not marked `pdk=True`. Decide
+  whether that is intended; one-word fixes if not.
+- **Expanded globs are the bulk of the diff**: sky130_fd_sc_hd's `scl.yaml`
+  is ~923 `pdk_dir::` lines (`CELL_MAGS`/`CELL_MAGLEFS`); W8's auto-bump will
+  see it churn whenever a library gains a cell (regenerable data, expected).
+- `IGNORE_DISCONNECTED_MODULES: [sky130_fd_sc_hd__conb_1]` is duplicated into
+  every sky130 `scl.yaml` by the ownership rule — faithful to today's values,
+  visibly odd in `sky130_fd_sc_hvl`.
+- `meta.dbu_per_micron` is not auto-populated (source `DEF_UNITS_PER_MICRON`
+  exists) — W6 decision.
 
 ## W4 findings: open_pdks additive injection (surveyed 2026-08-05)
 
