@@ -39,7 +39,7 @@ from librelane.steps.step import (
 
 from librelane.config import BaseConfigModel, Variable, model_to_variables, variable
 from librelane.state import State, DesignFormat
-from librelane.common import Path, process_list_file
+from librelane.common import Path, mkdirp, process_list_file
 
 starts_with_whitespace = re.compile(r"^\s+.+$")
 
@@ -285,6 +285,18 @@ class PyosysStep(Step):
                 str(files("librelane").joinpath("scripts", "pyosys")),
             )
         )
+        # Yosys caches ABC's merged-liberty SCL under get_base_tmpdir(), which
+        # honours TMPDIR. The cache (passes/techmap/liberty_cache.h) keys on a
+        # 32-bit path hash, freshness-checks at whole-second mtime granularity,
+        # and stages through one shared '<target>.tmp' with no mkstemp -- so
+        # two processes converting concurrently can publish a merge that is
+        # silently missing an input library, and the first symptom is ABC
+        # segfaulting on a netlist with no buffer or inverter to map to.
+        # Confining the cache to the step directory removes every
+        # cross-process interaction; within one step, access is sequential.
+        step_tmp = os.path.join(self.step_dir, "tmp")
+        mkdirp(step_tmp)
+        env["TMPDIR"] = step_tmp
         subprocess_result = super().run_subprocess(cmd, env=env, **kwargs)
         return {}, subprocess_result["generated_metrics"]
 
