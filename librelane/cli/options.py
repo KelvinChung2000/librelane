@@ -237,7 +237,6 @@ CondensedOption = Annotated[
 UseCielOption = Annotated[
     bool,
     typer.Option(
-        "--volare-pdk/--manual-pdk",
         "--ciel-pdk/--manual-pdk",
         help="Automatically install and enable the requested PDK with Ciel.",
         rich_help_panel=PDK_OPTIONS,

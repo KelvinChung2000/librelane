@@ -1,3 +1,9 @@
 sky130: 8afc8346a57fe1ab7934ba5a6056ea8b43078e71
 gf180mcu: 54435919abffb937387ec956209f9cf5fd2dfbee
 ihp-sg13g2: c4b8b4e5e7a05f375cca3815d51b3a37721fbf5c
+# Vendored families served by the forked ciel: nangate45 pins an
+# OpenROAD-flow-scripts commit, asap7 its superproject, gt2n a lambdapdk
+# commit (which itself pins the GT2N data repository).
+nangate45: f4b9d7dbe727c054da13449c0b281cafa616c921
+asap7: d24f8b857ff74cf5b21ab18a7e1b11a3954c449b
+gt2n: 1aac92fa23359b7e739f88b369811f75a73d0fd2

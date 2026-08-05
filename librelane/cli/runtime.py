@@ -134,7 +134,6 @@ def resolve_pdk_options(
     pdk: str,
     scl: str | None,
     pad: str | None,
-    volare_pdk_override: str | None = None,
 ) -> ResolvedPdkOptions:
     """Resolve manual or Ciel-managed PDK inputs and consume their environment."""
     for variable in ("PDK_ROOT", "PDK", "STD_CELL_LIBRARY", "PAD_CELL_LIBRARY"):
@@ -148,9 +147,25 @@ def resolve_pdk_options(
         return ResolvedPdkOptions(pdk_root_string, pdk, scl, pad)
 
     import ciel
-    from ciel.source import StaticWebDataSource
+    from ciel.source import DataSource
 
-    opdks_rev = volare_pdk_override or get_pdk_hash(pdk)
+    # The same spelling and default the ciel CLI uses, so pointing a fork's
+    # release channel at LibreLane is one environment variable and not a code
+    # change.
+    data_source_spec = os.getenv(
+        "CIEL_DATA_SOURCE",
+        "static-web:https://fossi-foundation.github.io/ciel-releases",
+    )
+    scheme, _, target = data_source_spec.partition(":")
+    data_source_cls = DataSource.factory.get(scheme)
+    if not target or data_source_cls is None:
+        logger.error(
+            f"CIEL_DATA_SOURCE {data_source_spec!r} is not in the format "
+            f"'class:argument' with a class among: " + ", ".join(DataSource.factory)
+        )
+        raise typer.Exit(1)
+
+    opdks_rev = get_pdk_hash(pdk)
     ciel_home = ciel.get_ciel_home(pdk_root_string)
 
     include_libraries = ["default"]
@@ -179,9 +194,7 @@ def resolve_pdk_options(
             ciel_home,
             pdk_family,
             opdks_rev,
-            data_source=StaticWebDataSource(
-                "https://fossi-foundation.github.io/ciel-releases"
-            ),
+            data_source=data_source_cls(target),
             include_libraries=include_libraries,
         )
         pdk_root_string = version.get_dir(ciel_home)
