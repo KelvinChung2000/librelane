@@ -154,18 +154,25 @@ def _refusal(
 #: Verilog front end takes nothing away.
 _SINGLE_KEY_SELECTIONS: dict[tuple[str, str, str], str | None] = {
     ("chip.yaml", "synthesis", "yosys_vhdl"): "requires view 'json_h'",
+    ("chip.yaml", "synthesis", "openroad"): "requires view 'json_h'",
     ("chip.yaml", "magic_streamout", "klayout"): "requires view 'mag_gds'",
     ("chip.yaml", "klayout_streamout", "magic"): "requires view 'klayout_gds'",
     ("chip.yaml", "magic_drc", "klayout"): "both write 'klayout__drc_error__count'",
     ("chip.yaml", "klayout_drc", "magic"): "both write 'magic__drc_error__count'",
     ("chip.yaml", "lvs", "klayout"): "both write 'flow__errors__count'",
     ("classic.yaml", "synthesis", "yosys_vhdl"): "requires view 'json_h'",
+    ("classic.yaml", "synthesis", "openroad"): "requires view 'json_h'",
     ("classic.yaml", "magic_streamout", "klayout"): "requires view 'mag_gds'",
     ("classic.yaml", "klayout_streamout", "magic"): "requires view 'klayout_gds'",
     ("classic.yaml", "magic_drc", "klayout"): "both write 'klayout__drc_error__count'",
     ("classic.yaml", "klayout_drc", "magic"): "both write 'magic__drc_error__count'",
     ("classic.yaml", "lvs", "klayout"): "both write 'flow__errors__count'",
     ("vhdl_classic.yaml", "synthesis", "yosys"): None,
+    # Accepted by *selection* validation: vhdl_classic has no json_h consumer
+    # and views are all this layer checks. The mismatch that actually stops
+    # it -- OpenROAD.Synthesis requires VERILOG_FILES, which a VHDL design
+    # does not set -- is a configuration error, raised at load.
+    ("vhdl_classic.yaml", "synthesis", "openroad"): None,
     ("vhdl_classic.yaml", "magic_streamout", "klayout"): "requires view 'mag_gds'",
     ("vhdl_classic.yaml", "klayout_streamout", "magic"): (
         "requires view 'klayout_gds'"

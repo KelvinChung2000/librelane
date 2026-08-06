@@ -148,6 +148,25 @@ _REGISTRATIONS: list[dict] = [
         "namespaces": _YOSYS_NAMESPACES + ("GHDL_", "VHDL_"),
     },
     {
+        # OpenROAD's integrated synthesis (slang elaboration + built-in
+        # mapper). Like yosys_vhdl, it provides no json_h: the JSON header is
+        # a Yosys artifact, so documents whose power-connection steps need it
+        # cannot select this provider. Upstream flattens unconditionally and
+        # does not preserve macro instance names.
+        "job": "synthesis",
+        "provider": "openroad",
+        "steps": [OpenROAD.Synthesis],
+        "namespaces": _OPENROAD_NAMESPACES
+        + (
+            "VERILOG_",
+            "SLANG_",
+            "USE_SLANG",
+            "SYNTH_PARAMETERS",
+            "SYNTH_REDUCE_NAME_LOSS",
+            "SYNTH_NAMING_THRESHOLD",
+        ),
+    },
+    {
         "job": "pre_pnr_sta",
         "provider": "openroad",
         "steps": [

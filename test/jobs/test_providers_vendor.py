@@ -28,7 +28,7 @@ def test_vendor_registration_is_opt_in_via_subprocess():
         classic = Flow.factory.get("Classic")
 
         before = set(JobRegistry.providers("synthesis"))
-        assert before == {"yosys", "yosys_vhdl"}, before
+        assert before == {"openroad", "yosys", "yosys_vhdl"}, before
         assert not ({"dc", "fc", "genus"} & before), before
 
         before_help = Workflow.help_md_for_document(classic)

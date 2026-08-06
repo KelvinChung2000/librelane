@@ -34,10 +34,14 @@ def test_streamout_and_drc_each_have_two_providers():
     assert sorted(JobRegistry.providers("drc")) == ["klayout", "magic"]
 
 
-def test_synthesis_has_two_providers():
+def test_synthesis_has_three_providers():
     from librelane.jobs import JobRegistry
 
-    assert sorted(JobRegistry.providers("synthesis")) == ["yosys", "yosys_vhdl"]
+    assert sorted(JobRegistry.providers("synthesis")) == [
+        "openroad",
+        "yosys",
+        "yosys_vhdl",
+    ]
 
 
 def test_lvs_offers_klayout_as_an_alternative_to_netgen():
