@@ -40,7 +40,7 @@ def cli(reader):
     i = 0
     diodes = reader.config["INSERT_ECO_DIODES"] or []
     for target_info in diodes:
-        target_name, target_pin = target_info["target"].split("/")
+        target_name, target_pin = target_info["target"].rsplit("/", 1)
         name_escaped = reader.escape_verilog_name(target_name)
 
         target = reader.block.findInst(name_escaped)
