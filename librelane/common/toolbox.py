@@ -24,8 +24,10 @@ from enum import IntEnum
 from decimal import Decimal
 from functools import lru_cache
 from typing import (
+    TYPE_CHECKING,
     Any,
     Literal,
+    Protocol,
 )
 from collections.abc import Iterable, Mapping, Sequence
 
@@ -38,6 +40,28 @@ from librelane.common.types import DUMMY_PATH, Path
 from librelane.common.generic_dict import GenericImmutableDict
 from librelane.state import DesignFormat
 from librelane.common import Filter
+
+if TYPE_CHECKING:
+    from librelane.config import Macro
+
+
+class ViewsConfig(Protocol):
+    """
+    The slice of a resolved configuration the view/timing helpers read,
+    attribute-typed: any step's or flow's ``Config`` model satisfies it.
+    Read-only properties rather than attributes, so a model's more precise
+    field types still match.
+    """
+
+    @property
+    def DEFAULT_CORNER(self) -> str: ...
+
+    @property
+    def LIB(self) -> Mapping[str, Any]: ...
+
+    @property
+    def MACROS(self) -> "Mapping[str, Macro] | None": ...
+
 
 
 class Toolbox(object):
@@ -97,7 +121,7 @@ class Toolbox(object):
 
     def filter_views(
         self,
-        config: Mapping[str, Any],
+        config: ViewsConfig,
         views_by_corner: Mapping[str, Path | Iterable[Path]],
         timing_corner: str | None = None,
     ) -> list[Path]:
@@ -123,7 +147,7 @@ class Toolbox(object):
         list[Path]
             The created list
         """
-        timing_corner = timing_corner or config["DEFAULT_CORNER"]
+        timing_corner = timing_corner or config.DEFAULT_CORNER
         result: list[Path] = []
 
         for key in Filter(views_by_corner).get_matching_wildcards(timing_corner):
@@ -143,7 +167,7 @@ class Toolbox(object):
 
     def check_corner_granularity(
         self,
-        config: Mapping[str, Any],
+        config: ViewsConfig,
         views_by_corner: Mapping[str, Path | Iterable[Path]],
         *,
         corners: Sequence[str],
@@ -254,7 +278,7 @@ class Toolbox(object):
 
     def get_macro_views(
         self,
-        config: Mapping[str, Any],
+        config: ViewsConfig,
         view: DesignFormat,
         timing_corner: str | None = None,
         unless_exist: None | DesignFormat | Sequence[DesignFormat] = None,
@@ -293,8 +317,8 @@ class Toolbox(object):
         """
         from librelane.config import Macro
 
-        timing_corner = timing_corner or config["DEFAULT_CORNER"]
-        macros = config["MACROS"]
+        timing_corner = timing_corner or config.DEFAULT_CORNER
+        macros = config.MACROS
         result: list[Path] = []
 
         if macros is None:
@@ -340,7 +364,7 @@ class Toolbox(object):
 
     def get_macro_views_by_priority(
         self,
-        config: Mapping[str, Any],
+        config: ViewsConfig,
         design_formats: Sequence[DesignFormat],
         timing_corner: str | None = None,
     ) -> list[tuple[Path, DesignFormat]]:
@@ -360,7 +384,7 @@ class Toolbox(object):
 
     def get_timing_files_categorized(
         self,
-        config: Mapping[str, Any],
+        config: ViewsConfig,
         timing_corner: str | None = None,
         prioritize_nl: bool = False,
     ) -> tuple[str, list[Path], list[Path], list[tuple[str, Path]]]:
@@ -393,16 +417,16 @@ class Toolbox(object):
         """
         from librelane.config import Macro
 
-        timing_corner = timing_corner or config["DEFAULT_CORNER"]
+        timing_corner = timing_corner or config.DEFAULT_CORNER
 
-        all_libs: list[Path] = self.filter_views(config, config["LIB"], timing_corner)
+        all_libs: list[Path] = self.filter_views(config, config.LIB, timing_corner)
         if len(all_libs) == 0:
             logger.warning(f"No SCL lib files found for {timing_corner}.")
 
         all_netlists: list[Path] = []
         all_spefs: list[tuple[str, Path]] = []
 
-        macros = config["MACROS"]
+        macros = config.MACROS
         if macros is None:
             macros = {}
 
@@ -454,7 +478,7 @@ class Toolbox(object):
 
     def get_timing_files(
         self,
-        config: Mapping[str, Any],
+        config: ViewsConfig,
         timing_corner: str | None = None,
         prioritize_nl: bool = False,
     ) -> tuple[str, list[str]]:

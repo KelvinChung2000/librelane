@@ -18,6 +18,7 @@ import textwrap
 from unittest import mock
 
 import pytest
+from types import SimpleNamespace
 import pathlib
 from pyfakefs.fake_filesystem_unittest import Patcher
 
@@ -28,7 +29,9 @@ pytestmark = pytest.mark.all
 def mock_macros_config():
     from librelane.config import Macro, Instance
 
-    return {
+    # Attribute-style, as Toolbox's ViewsConfig protocol reads it -- the same
+    # shape a step's or flow's Config model presents.
+    return SimpleNamespace(**{
         "DEFAULT_CORNER": "nom_tt_025C_1v80",
         "LIB": {
             "*": "/pdk/my.lib",
@@ -72,7 +75,7 @@ def mock_macros_config():
                 json_h=None,
             ),
         },
-    }
+    })
 
 
 @pytest.fixture
@@ -490,7 +493,7 @@ def test_get_macro_views_without_macros(
 
     assert (
         toolbox.get_macro_views(
-            {"DEFAULT_CORNER": "nom_ss_n40C_1v80", "MACROS": None},
+            SimpleNamespace(DEFAULT_CORNER="nom_ss_n40C_1v80", MACROS=None),
             view,
             corner,
             unless_exist,
@@ -522,7 +525,7 @@ def test_get_macro_views_by_priority():
     from librelane.config import Macro, Instance
     from librelane.common import Toolbox
 
-    cfg = {
+    cfg = SimpleNamespace(**{
         "MACROS": {
             "macro_a": Macro(
                 gds=[""],
@@ -575,7 +578,7 @@ def test_get_macro_views_by_priority():
                 json_h=None,
             ),
         }
-    }
+    })
 
     toolbox = Toolbox(".")
 
@@ -667,8 +670,8 @@ def test_get_timing_files_warnings(
     cfg = mock_macros_config
 
     # 0. Missing netlists
-    netlist_bk = cfg["MACROS"]["b"].nl
-    cfg["MACROS"]["b"].nl = []
+    netlist_bk = cfg.MACROS["b"].nl
+    cfg.MACROS["b"].nl = []
 
     assert toolbox.get_timing_files(
         cfg,
@@ -683,11 +686,11 @@ def test_get_timing_files_warnings(
         "get_timing_files did not warn about missing netlists"
     )
 
-    cfg["MACROS"]["b"].nl = netlist_bk
+    cfg.MACROS["b"].nl = netlist_bk
 
     # 1. Missing spefs
-    spefs_bk = cfg["MACROS"]["b"].spef
-    cfg["MACROS"]["b"].spef = {}
+    spefs_bk = cfg.MACROS["b"].spef
+    cfg.MACROS["b"].spef = {}
 
     assert toolbox.get_timing_files(
         cfg,
@@ -702,11 +705,11 @@ def test_get_timing_files_warnings(
         "get_timing_files did not warn about missing spefs"
     )
 
-    cfg["MACROS"]["b"].spef = spefs_bk
+    cfg.MACROS["b"].spef = spefs_bk
 
     # 2. No SCLs
-    cfg = cfg.copy()
-    cfg["LIB"] = {}
+    cfg = SimpleNamespace(**vars(cfg))
+    cfg.LIB = {}
 
     assert toolbox.get_timing_files(
         cfg,
