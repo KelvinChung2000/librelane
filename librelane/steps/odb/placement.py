@@ -75,12 +75,12 @@ class ManualMacroPlacement(OdbpyStep):
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         cfg_file = pathlib.Path(os.path.join(self.step_dir, "placement.cfg"))
-        if cfg_ref := self.config.get("MACRO_PLACEMENT_CFG"):
+        if cfg_ref := self.config.MACRO_PLACEMENT_CFG:
             logger.bind(step=self.id).warning(
                 "Using 'MACRO_PLACEMENT_CFG' is deprecated. It is recommended to use the new 'MACROS' configuration variable."
             )
             shutil.copyfile(cfg_ref, cfg_file)
-        elif macros := self.config.get("MACROS"):
+        elif macros := self.config.MACROS:
             instance_count = sum(len(m.instances) for m in macros.values())
             if instance_count >= 1:
                 with open(cfg_file, "w") as f:

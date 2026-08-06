@@ -21,8 +21,7 @@ import os
 import textwrap
 import subprocess
 from abc import abstractmethod
-from typing import Any, Literal, Optional
-from collections.abc import Mapping
+from typing import Literal, Optional
 
 from librelane.steps.tclstep import TclStep
 from librelane.steps.step import ViewsUpdate, MetricsUpdate, Step, StepException
@@ -46,7 +45,7 @@ VHDLSynthesis
 
 # This is now only used by EQY since we moved our Yosys scripts to Python.
 def _generate_read_deps(
-    config: Mapping[str, Any],
+    config: "YosysStep.Config",
     toolbox: Toolbox,
     power_defines: bool = False,
     tcl: bool = True,
@@ -54,14 +53,12 @@ def _generate_read_deps(
     commands = ""
 
     synth_defines = [
-        f"PDK_{config['PDK'].replace('-', '_')}",
-        f"SCL_{config['STD_CELL_LIBRARY']}",
+        f"PDK_{config.PDK.replace('-', '_')}",
+        f"SCL_{config.STD_CELL_LIBRARY}",
         "__librelane__",
         "__pnr__",
     ]
-    synth_defines += (
-        config.get("VERILOG_DEFINES") or []
-    )  # VERILOG_DEFINES not defined for VHDLSynthesis
+    synth_defines += config.VERILOG_DEFINES or []
     if tcl:
         commands += "set ::_synlig_defines [list]\n"
     for define in synth_defines:
@@ -71,27 +68,25 @@ def _generate_read_deps(
                 f"lappend ::_synlig_defines {TclUtils.escape(f'+define+{define}')}\n"
             )
 
-    scl_lib_list = toolbox.filter_views(config, config["LIB"])
+    scl_lib_list = toolbox.filter_views(config, config.LIB)
 
     if power_defines:
-        if power_define := config.get(
-            "VERILOG_POWER_DEFINE"
-        ):  # VERILOG_POWER_DEFINE not defined for VHDLSynthesis
+        if power_define := config.VERILOG_POWER_DEFINE:
             commands += f"verilog_defines {TclUtils.escape(f'-D{power_define}')}\n"
             if tcl:
                 commands += f"lappend ::_synlig_defines {TclUtils.escape(f'+define+{power_define}')}\n"
 
     # Try your best to use powered blackbox models if power_defines is true
     if power_defines:
-        if config["CELL_VERILOG_MODELS"] is not None:
+        if config.CELL_VERILOG_MODELS is not None:
             scl_blackbox_models = toolbox.create_blackbox_model(
-                frozenset(config["CELL_VERILOG_MODELS"]),
+                frozenset(config.CELL_VERILOG_MODELS),
                 frozenset(["USE_POWER_PINS"]),
             )
             commands += f"read_verilog -sv -lib {scl_blackbox_models}\n"
-        if config["PAD_VERILOG_MODELS"] is not None:
+        if config.PAD_VERILOG_MODELS is not None:
             pad_blackbox_models = toolbox.create_blackbox_model(
-                frozenset(config["PAD_VERILOG_MODELS"]),
+                frozenset(config.PAD_VERILOG_MODELS),
                 frozenset(["USE_POWER_PINS"]),
             )
             commands += f"read_verilog -sv -lib {pad_blackbox_models}\n"
@@ -103,9 +98,9 @@ def _generate_read_deps(
                 f"read_liberty -lib -ignore_miss_dir -setattr blackbox {lib_str}\n"
             )
 
-    excluded_cells: set[str] = set(config["EXTRA_EXCLUDED_CELLS"] or [])
-    excluded_cells.update(process_list_file(config["SYNTH_EXCLUDED_CELL_FILE"]))
-    excluded_cells.update(process_list_file(config["PNR_EXCLUDED_CELL_FILE"]))
+    excluded_cells: set[str] = set(config.EXTRA_EXCLUDED_CELLS or [])
+    excluded_cells.update(process_list_file(config.SYNTH_EXCLUDED_CELL_FILE))
+    excluded_cells.update(process_list_file(config.PNR_EXCLUDED_CELL_FILE))
 
     lib_synth = toolbox.remove_cells_from_lib(
         frozenset([str(lib) for lib in scl_lib_list]),
@@ -117,7 +112,7 @@ def _generate_read_deps(
         )
 
     verilog_include_args = []
-    if dirs := config.get("VERILOG_INCLUDE_DIRS"):
+    if dirs := config.VERILOG_INCLUDE_DIRS:
         for dir in dirs:
             verilog_include_args.append(f"-I{dir}")
 
@@ -146,14 +141,14 @@ def _generate_read_deps(
         else:
             commands += f"read_verilog -sv -lib {TclUtils.join(verilog_include_args)} {view_escaped}\n"
 
-    if libs := config.get("EXTRA_LIBS"):
+    if libs := config.EXTRA_LIBS:
         for lib in libs:
             lib_str = TclUtils.escape(str(lib))
             commands += (
                 f"read_liberty -lib -ignore_miss_dir -setattr blackbox {lib_str}\n"
             )
 
-    if models := config["EXTRA_VERILOG_MODELS"]:
+    if models := config.EXTRA_VERILOG_MODELS:
         for model in models:
             model_str = TclUtils.escape(str(model))
             commands += f"read_verilog -sv -lib {TclUtils.join(verilog_include_args)} {model_str}\n"
@@ -163,7 +158,9 @@ def _generate_read_deps(
 
 # No longer used by us, kept for back-compat
 class YosysStep(TclStep):
-    class Config(Step.Config):
+    # VerilogRtlConfig, because run() renders _generate_read_deps commands,
+    # which read the Verilog source variables.
+    class Config(VerilogRtlConfig, Step.Config):
         SYNTH_LATCH_MAP: Optional[Path] = variable(
             None,
             description="A path to a file containing the latch mapping for Yosys.",
@@ -262,7 +259,7 @@ class EQY(Step):
     inputs = [DesignFormat.NETLIST]
     outputs = []
 
-    class Config(VerilogRtlConfig, YosysStep.Config):
+    class Config(YosysStep.Config):
         EQY_SCRIPT: Optional[Path] = variable(
             None,
             description="The EQY script to use. If unset, a generic EQY script will be generated, but this fails in a number of scenarios.",

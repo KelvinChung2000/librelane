@@ -308,7 +308,7 @@ class VerilogStep(PyosysStep):
 
         blackbox_models = []
         scl_lib_list = self.toolbox.filter_views(
-            self.config, self.config.LIB, self.config.get("SYNTH_CORNER")
+            self.config, self.config.LIB, self.config.SYNTH_CORNER
         )
 
         if self.power_defines:
@@ -357,9 +357,9 @@ class VerilogStep(PyosysStep):
             if format == DesignFormat.LIB:
                 macro_lib_views.append(str(view))
 
-        if libs := self.config.get("EXTRA_LIBS"):
+        if libs := self.config.EXTRA_LIBS:
             blackbox_models.extend(str(f) for f in libs)
-        if models := self.config.get("EXTRA_VERILOG_MODELS"):
+        if models := self.config.EXTRA_VERILOG_MODELS:
             blackbox_models.extend(str(f) for f in models)
 
         excluded_cells: set[str] = set(self.config.EXTRA_EXCLUDED_CELLS or [])
@@ -377,7 +377,7 @@ class VerilogStep(PyosysStep):
         )
         # ABC and dfflibmap only ever saw the standard cell library, so a macro
         # had no area and no timing during synthesis.
-        if extra_libs := self.config.get("EXTRA_LIBS"):
+        if extra_libs := self.config.EXTRA_LIBS:
             libs_synth.extend(str(f) for f in extra_libs)
         libs_synth.extend(macro_lib_views)
         libs_synth = list(dict.fromkeys(libs_synth))

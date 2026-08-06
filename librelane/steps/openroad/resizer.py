@@ -187,7 +187,7 @@ class CTS(OpenROADStep):
 
     def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
         kwargs, env = self.extract_env(kwargs)
-        if self.config.get("CLOCK_NET") is None:
+        if self.config.CLOCK_NET is None:
             if clock_port := self.config.CLOCK_PORT:
                 if isinstance(clock_port, list):
                     env["CLOCK_NET"] = TclUtils.join(clock_port)

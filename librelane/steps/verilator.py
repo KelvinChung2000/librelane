@@ -240,7 +240,7 @@ class Lint(Step):
             "__librelane__",
             "__pnr__",
         ]
-        if verilog_power_define := self.config.get("VERILOG_POWER_DEFINE"):
+        if verilog_power_define := self.config.VERILOG_POWER_DEFINE:
             defines += [verilog_power_define]
 
         defines += self.config.LINTER_DEFINES or self.config.VERILOG_DEFINES or []

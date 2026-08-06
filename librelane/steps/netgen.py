@@ -194,13 +194,10 @@ class LVS(NetgenStep):
         else:
             spice_files = self.config.CELL_SPICE_MODELS.copy()
 
-        if pdk_spice_files := self.config.get("SPICE_MODELS"):
-            spice_files = pdk_spice_files.copy()
-
-        if extra_spice_files := self.config.get("EXTRA_SPICE_MODELS"):
+        if extra_spice_files := self.config.EXTRA_SPICE_MODELS:
             spice_files += extra_spice_files.copy()
 
-        if pad_spice_files := self.config.get("PAD_SPICE_MODELS"):
+        if pad_spice_files := self.config.PAD_SPICE_MODELS:
             spice_files += pad_spice_files.copy()
 
         design_name = self.config.DESIGN_NAME
