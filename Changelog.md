@@ -52,7 +52,22 @@ Style Notes
   `None`. `CELL_SPICE_MODELS`/`EXTRA_SPICE_MODELS`/`PAD_SPICE_MODELS` remain
   the supported spellings.
 
+* Fixed `OpenROAD.GeneratePDN`'s violation count against PSM's 2026 report
+  format: the inline `srcs: net:VPWR` parses as a YAML string, and counting
+  its `len()` counted characters, inflating 998 real violations into 69360.
+  Both the inline and the older list format are handled, with unit tests.
+
 ## Flows
+
+* Flows now carry their resolved configuration as a typed model, exactly as
+  steps do: `Flow.__init__` constructs the loader's result into a model over
+  every variable `get_all_config_variables()` reports, so flow code reads
+  `self.config.DESIGN_NAME` under mypy. The model remains a `Mapping` and now
+  also carries per-key `provenance`; the engine accepts either form, and one
+  flow's `config` can seed another. `Toolbox`'s view/timing helpers type
+  their `config` parameter as the new `ViewsConfig` protocol, which any
+  step's or flow's model satisfies. See the new "Typed configuration access"
+  contributor document for the invariant and the plan for the loader.
 
 * Registrations may now declare `optional_metrics`: metrics a provider
   writes only when a precondition holds. They count as writes for join
@@ -73,6 +88,15 @@ Style Notes
   exemption and join-validation visibility).
 * Fixed `test_power_utils`: the stubbed `odb` module now carries
   `dbRegion`, which `power_utils.py` references in an annotation.
+* Rebaselined the step-test reproducibles for the gates-on-steps model and
+  current tool versions: the full tier is green (164 passed). The two
+  remaining tool-version drifts are xfailed with their causes recorded
+  (netgen 1.5.320 pinless-cell flattening; PSM's pre-route connectivity on
+  the 2022-era ef decap endcaps in the frozen `generatepdn` DEFs).
+* Sealed a test-ordering flake: mock `Test.*` steps registered by the flow
+  fixtures leaked into the global step factory, so registry-enumerating
+  tests passed or failed by worker scheduling; the flows conftest now
+  restores the registry per module.
 
 ## Tool Updates
 

@@ -7,5 +7,6 @@ code
 docs
 ci
 classes
+typed_config
 updating_tools
 ```
