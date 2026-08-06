@@ -64,6 +64,9 @@ _OPENROAD_NAMESPACES = (
     "IO_",
     "DIODE_",
     "DESIGN_REPAIR_",
+    # OpenROAD.RTLMacroPlacer (hierarchical RTL macro placement).
+    "RTLMP_",
+    "RUN_RTLMP",
     # Corner and parasitic setup shared by every OpenROAD step.
     "CLOCK_WIRE_RC_LAYERS",
     "DEDUPLICATE_CORNERS",
