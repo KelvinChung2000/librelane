@@ -67,7 +67,7 @@ def test_every_registered_variable_builds_a_model_field():
 
     # Anti-silent-shrinkage baseline for distinct fields reachable from the
     # registry. Update deliberately when adding/removing or changing fields.
-    assert len(declarations) == 367
+    assert len(declarations) == 384
 
     for index, legacy in enumerate(declarations.values()):
         model = variables_to_model(f"HarvestedConfig{index}", [legacy])

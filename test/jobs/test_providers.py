@@ -220,6 +220,7 @@ def test_the_odb_editing_steps_belong_to_the_job_whose_odb_they_edit():
 
     assert JobRegistry.get("macro_placement", "openroad").steps == (
         Odb.ManualMacroPlacement,
+        OpenROAD.RTLMacroPlacer,
         OpenROAD.CutRows,
     )
     assert JobRegistry.get("power_grid", "openroad").steps == (

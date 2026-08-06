@@ -127,6 +127,7 @@
   "OpenROAD.PadRing",
   "OpenROAD.RCX",
   "OpenROAD.RMP",
+  "OpenROAD.RTLMacroPlacer",
   "OpenROAD.RepairAntennas",
   "OpenROAD.RepairDesign",
   "OpenROAD.RepairDesignPostGPL",

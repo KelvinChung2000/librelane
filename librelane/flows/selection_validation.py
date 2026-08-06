@@ -668,7 +668,11 @@ def produced_keys(
         if job_id not in enabled:
             produced[job_id] = set()
             continue
-        keys = {str(view) for view in job.provides} | set(job.metrics)
+        keys = (
+            {str(view) for view in job.provides}
+            | set(job.metrics)
+            | set(job.optional_metrics)
+        )
         for step in job.steps:
             keys.update(view.id for view in step.outputs)
         if any(issubclass(step, (OpenROADStep, OdbpyStep)) for step in job.steps):

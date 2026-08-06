@@ -357,7 +357,11 @@ _REGISTRATIONS: list[dict] = [
         "provider": "klayout",
         "steps": [KLayout.DRC],
         "namespaces": ("KLAYOUT_", "ERROR_ON_KLAYOUT_DRC"),
-        "metrics": ["klayout__drc_error__count"],
+        # Optional, not contracted: KLayout.DRC skips itself on PDKs that
+        # ship no KLAYOUT_DRC_RUNSET (e.g. gf180mcu), and
+        # Misc.ReportManufacturability already reports the metric's absence
+        # as "may have been skipped".
+        "optional_metrics": ["klayout__drc_error__count"],
     },
     {
         "job": "lvs",

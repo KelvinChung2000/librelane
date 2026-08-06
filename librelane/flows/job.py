@@ -77,6 +77,7 @@ class ResolvedJob:
     requires: tuple[DesignFormat, ...]
     provides: tuple[DesignFormat, ...]
     metrics: tuple[str, ...]
+    optional_metrics: tuple[str, ...]
     steps: tuple[type[Step], ...]
     provider: str | None
     native_views: tuple[DesignFormat, ...]
@@ -205,6 +206,7 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
             requires=tuple(sorted(requires, key=str)),
             provides=tuple(sorted(provides, key=str)),
             metrics=(),
+            optional_metrics=(),
             steps=tuple(steps),
             provider=None,
             # An inline job has no registration, so nothing has been exempted
@@ -267,6 +269,7 @@ def _resolve(name: str, spec: JobSpec, override: str | None) -> ResolvedJob:
         requires=tuple(template.requires),
         provides=tuple(sorted(provides, key=str)),
         metrics=tuple(sorted(metrics)),
+        optional_metrics=tuple(sorted(registration.optional_metrics)),
         steps=tuple(registration.steps),
         provider=provider,
         native_views=registration.native_views,

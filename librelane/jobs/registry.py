@@ -57,6 +57,15 @@ class Registration:
     metrics : tuple[str, ...]
         Metric names this provider guarantees beyond the job's
         own ``metrics``.
+    optional_metrics : tuple[str, ...]
+        Metric names this provider writes only when a precondition holds, for
+        example ``klayout__drc_error__count``, which ``KLayout.DRC`` writes
+        only on PDKs that ship a ``KLAYOUT_DRC_RUNSET``. Counted by
+        :func:`librelane.flows.selection_validation.produced_keys` as writes
+        for the join rule, and exempt from the completion-time contract check,
+        which reads only ``metrics``: an optional metric's absence is the
+        consumer's business — ``Misc.ReportManufacturability`` reports it as
+        "may have been skipped" — not a contract violation.
     native_views : tuple[DesignFormat, ...]
         Tool-native views this provider carries across job
         boundaries itself, for example OpenROAD's ``odb``. Exempt from the
@@ -82,6 +91,7 @@ class Registration:
     namespaces: tuple[str, ...]
     provides: tuple[DesignFormat, ...] = ()
     metrics: tuple[str, ...] = ()
+    optional_metrics: tuple[str, ...] = ()
     native_views: tuple[DesignFormat, ...] = ()
 
     @property
@@ -128,6 +138,7 @@ class JobRegistry(object):
         namespaces: Sequence[str],
         provides: Sequence[DesignFormat] = (),
         metrics: Sequence[str] = (),
+        optional_metrics: Sequence[str] = (),
         native_views: Sequence[DesignFormat] = (),
     ) -> Registration:
         """
@@ -143,6 +154,7 @@ class JobRegistry(object):
             namespaces=tuple(namespaces),
             provides=tuple(provides),
             metrics=tuple(metrics),
+            optional_metrics=tuple(optional_metrics),
             native_views=tuple(native_views),
         )
 

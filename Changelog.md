@@ -40,6 +40,15 @@ Style Notes
   split on the last `/`, so instances inside a preserved hierarchy
   (`SYNTH_HIERARCHY_MODE: keep`) can be targeted.
 
+## Flows
+
+* Registrations may now declare `optional_metrics`: metrics a provider
+  writes only when a precondition holds. They count as writes for join
+  validation but are exempt from the completion-time contract check.
+  `klayout__drc_error__count` is the first: `KLayout.DRC` skips itself on
+  PDKs without a `KLAYOUT_DRC_RUNSET` (e.g. gf180mcu), which previously
+  failed the flow with a job-contract error at `klayout_drc`.
+
 ## Tool Updates
 
 * Updated OpenROAD to `2026-08-05` (`b9a38929`), OpenSTA to `2026-07-22`
