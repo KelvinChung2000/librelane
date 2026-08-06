@@ -649,16 +649,25 @@ proc _lln_emit_metric {metric json_value} {
     close $f
 }
 
+# Metric writes are echoed to the log for the reader following along --
+# except while a report redirect is open, where the echo would land in the
+# report file instead of the log. The sidecar write happens either way.
+proc _lln_metric_echo {metric value} {
+    if { $::_lln_report_open == "" } {
+        puts "Writing metric $metric: $value"
+    }
+}
+
 proc write_metric_str {metric value} {
-    puts "Writing metric $metric: $value"
+    _lln_metric_echo $metric $value
     _lln_emit_metric $metric [_lln_json_string $value]
 }
 proc write_metric_int {metric value} {
-    puts "Writing metric $metric: $value"
+    _lln_metric_echo $metric $value
     _lln_emit_metric $metric [expr {int($value)}]
 }
 proc write_metric_num {metric value} {
-    puts "Writing metric $metric: $value"
+    _lln_metric_echo $metric $value
     if { $value == 1e30 } {
         _lln_emit_metric $metric [_lln_json_string "Infinity"]
     } elseif { $value == -1e30 } {
