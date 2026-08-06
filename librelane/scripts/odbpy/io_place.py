@@ -263,15 +263,19 @@ def io_place(
     H_WIDTH = int(Decimal(hor_width_mult) * H_LAYER.getWidth())
     V_WIDTH = int(Decimal(ver_width_mult) * V_LAYER.getWidth())
 
+    def min_area_dbu2(layer):
+        # dbTechLayer.getArea returns µm² as a float on older OpenROAD
+        # versions and DBU² as an integer on newer ones
+        area = layer.getArea()
+        if isinstance(area, float):
+            return area * micron_in_units * micron_in_units
+        return area
+
     if hor_length is not None:
         H_LENGTH = int(micron_in_units * hor_length)
     else:
         H_LENGTH = max(
-            int(
-                math.ceil(
-                    H_LAYER.getArea() * micron_in_units * micron_in_units / H_WIDTH
-                )
-            ),
+            int(math.ceil(min_area_dbu2(H_LAYER) / H_WIDTH)),
             H_WIDTH,
         )
 
@@ -279,11 +283,7 @@ def io_place(
         V_LENGTH = int(micron_in_units * ver_length)
     else:
         V_LENGTH = max(
-            int(
-                math.ceil(
-                    V_LAYER.getArea() * micron_in_units * micron_in_units / V_WIDTH
-                )
-            ),
+            int(math.ceil(min_area_dbu2(V_LAYER) / V_WIDTH)),
             V_WIDTH,
         )
 
