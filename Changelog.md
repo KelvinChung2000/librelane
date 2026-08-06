@@ -40,6 +40,18 @@ Style Notes
   split on the last `/`, so instances inside a preserved hierarchy
   (`SYNTH_HIERARCHY_MODE: keep`) can be targeted.
 
+* Replaced the remaining string-keyed `self.config["X"]`/`self.config.get("X")`
+  reads in steps with typed attribute access (`self.config.X`), which mypy
+  checks against each step's declared `Config` model. `_generate_read_deps`
+  (yosys) is now typed against `YosysStep.Config`, which gained the
+  `VerilogRtlConfig` mix-in its body always read (no variable changes for any
+  concrete step; `Yosys.EQY` already declared it).
+
+* `Netgen.LVS`: removed a read of `SPICE_MODELS`, a variable no step, PDK, or
+  flow declares — the lookup predates LibreLane 2 and could only ever return
+  `None`. `CELL_SPICE_MODELS`/`EXTRA_SPICE_MODELS`/`PAD_SPICE_MODELS` remain
+  the supported spellings.
+
 ## Flows
 
 * Registrations may now declare `optional_metrics`: metrics a provider
@@ -74,6 +86,13 @@ Style Notes
     module (`sv_elaborate`/`synthesize`), which the shipped binary now
     includes.
   * `write_timing_model` uses the OpenSTA 3 scene syntax when available.
+  * Added `python_metrics_flush.patch`, fixing an upstream regression where
+    `-metrics` wrote nothing in `-python` mode: the flush is registered as a
+    Tcl exit handler, which neither a normal `Py_RunMain()` return nor the
+    `exit()` CPython performs on an uncaught `SystemExit` (how `sys.exit()`
+    and every click-based odbpy script terminates) ever invoked. The patch
+    registers `Tcl_Finalize` with `atexit`, covering both paths. This
+    restores the metrics of every `Odb.*` step under the new binary.
 
 # 3.0.5
 
