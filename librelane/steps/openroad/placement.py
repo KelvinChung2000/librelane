@@ -235,3 +235,119 @@ class DetailedPlacement(OpenROADStep):
 
     def get_script_path(self):
         return files("librelane").joinpath("scripts", "openroad", "dpl.tcl")
+
+
+@Step.factory.register()
+class RTLMacroPlacer(OpenROADStep):
+    """
+    Places macros automatically using OpenROAD's hierarchical RTL macro placer
+    (RTL-MP), which clusters the design by logical hierarchy and dataflow to
+    derive a macro placement.
+
+    Macro instances that were already placed and fixed (e.g. by
+    ``Odb.ManualMacroPlacement``) are left untouched; the step is skipped
+    entirely if the design has no unfixed macro instances or if ``RUN_RTLMP``
+    is not set.
+    """
+
+    id = "OpenROAD.RTLMacroPlacer"
+    name = "RTL Macro Placer"
+
+    class Config(OpenROADStep.Config):
+        RUN_RTLMP: bool = variable(
+            False,
+            description="Enables automatic macro placement using OpenROAD's hierarchical RTL macro placer. Macros with fixed manual placements are left untouched.",
+        )
+
+        RTLMP_HALO_WIDTH: Decimal = variable(
+            10,
+            description="Horizontal halo around macros for the RTL macro placer.",
+            units="µm",
+        )
+
+        RTLMP_HALO_HEIGHT: Decimal = variable(
+            10,
+            description="Vertical halo around macros for the RTL macro placer.",
+            units="µm",
+        )
+
+        RTLMP_MAX_LEVEL: Optional[int] = variable(
+            None,
+            description="Maximum depth of the physical hierarchical tree built by the RTL macro placer. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_TARGET_UTIL: Optional[Decimal] = variable(
+            None,
+            description="Target utilization of standard-cell clusters. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_MIN_AR: Optional[Decimal] = variable(
+            None,
+            description="Minimum aspect ratio (height/width) of standard-cell clusters. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_TOLERANCE: Optional[Decimal] = variable(
+            None,
+            description="Per-level tolerance on the size limits of macro and standard-cell clusters. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_COARSENING_RATIO: Optional[Decimal] = variable(
+            None,
+            description="Ratio between the maximum cluster sizes of adjacent levels of the physical hierarchy. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_LARGE_NET_THRESHOLD: Optional[int] = variable(
+            None,
+            description="Nets with more connections than this are ignored during clustering. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_AREA_WEIGHT: Optional[Decimal] = variable(
+            None,
+            description="Weight for the area of the current floorplan in the RTL macro placer's cost function. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_OUTLINE_WEIGHT: Optional[Decimal] = variable(
+            None,
+            description="Weight for violating the fixed outline in the RTL macro placer's cost function. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_WIRELENGTH_WEIGHT: Optional[Decimal] = variable(
+            None,
+            description="Weight for wirelength in the RTL macro placer's cost function. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_GUIDANCE_WEIGHT: Optional[Decimal] = variable(
+            None,
+            description="Weight for macro guidance regions in the RTL macro placer's cost function. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_FENCE_WEIGHT: Optional[Decimal] = variable(
+            None,
+            description="Weight for macro fence regions in the RTL macro placer's cost function. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_BOUNDARY_WEIGHT: Optional[Decimal] = variable(
+            None,
+            description="Weight for pushing macros to the core boundary in the RTL macro placer's cost function. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_NOTCH_WEIGHT: Optional[Decimal] = variable(
+            None,
+            description="Weight for notch regions created between macros in the RTL macro placer's cost function. Unset uses OpenROAD's default.",
+        )
+
+        RTLMP_MACRO_BLOCKAGE_WEIGHT: Optional[Decimal] = variable(
+            None,
+            description="Weight for macro blockage regions in the RTL macro placer's cost function. Unset uses OpenROAD's default.",
+        )
+
+    config: Config
+
+    def get_script_path(self):
+        return files("librelane").joinpath("scripts", "openroad", "rtlmp.tcl")
+
+    def run(self, state_in: State, **kwargs) -> tuple[ViewsUpdate, MetricsUpdate]:
+        if not self.config.RUN_RTLMP:
+            logger.info(f"'RUN_RTLMP' not set. Skipping '{self.id}'…")
+            return {}, {}
+        return super().run(state_in, **kwargs)

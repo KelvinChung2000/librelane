@@ -178,7 +178,10 @@ _REGISTRATIONS: list[dict] = [
         # job resolved to OpenROAD, which is what makes it a member of this
         # registration rather than a step a document lists. Every document that
         # placed macros ran it immediately afterwards.
-        "steps": [Odb.ManualMacroPlacement, OpenROAD.CutRows],
+        # Manual placement runs first and fixes its instances;
+        # OpenROAD.RTLMacroPlacer (opt-in via RUN_RTLMP) then places whatever
+        # macros remain unfixed.
+        "steps": [Odb.ManualMacroPlacement, OpenROAD.RTLMacroPlacer, OpenROAD.CutRows],
         "namespaces": _OPENROAD_NAMESPACES,
         "native_views": _ODB,
     },

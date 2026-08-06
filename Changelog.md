@@ -25,6 +25,30 @@ Style Notes
 
 -->
 
+# 3.0.6
+
+## Steps
+
+* Created `OpenROAD.RTLMacroPlacer`: automatic macro placement using
+  OpenROAD's hierarchical RTL macro placer (RTL-MP). Opt-in via the new
+  `RUN_RTLMP` variable; runs in the `macro_placement` job after
+  `Odb.ManualMacroPlacement`, placing only macros that were not fixed
+  manually. Added `RTLMP_*` variables covering halos, clustering controls
+  and cost-function weights.
+
+* `Odb.InsertECOBuffers`, `Odb.InsertECODiodes`: instance targets are now
+  split on the last `/`, so instances inside a preserved hierarchy
+  (`SYNTH_HIERARCHY_MODE: keep`) can be targeted.
+
+## Tool Updates
+
+* Updated OpenROAD to `2026-08-05` (`b9a38929`), OpenSTA to `2026-07-22`
+  (`31e8fff`, OpenSTA 3) and OpenROAD's abc fork to `2026-06-15`
+  (`d527cfa`).
+  * Removed `grt_pin_layers.patch`: upstreamed.
+  * Rebased the abc `zlib.patch` onto the new abc Makefile layout.
+  * `write_timing_model` uses the OpenSTA 3 scene syntax when available.
+
 # 3.0.5
 
 ## CLI

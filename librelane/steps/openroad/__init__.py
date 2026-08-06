@@ -36,6 +36,7 @@ from librelane.steps.openroad.placement import (
     GlobalPlacement,
     GlobalPlacementSkipIO,
     DetailedPlacement,
+    RTLMacroPlacer,
 )
 from librelane.steps.openroad.routing import (
     CheckAntennas,
@@ -90,6 +91,7 @@ _REEXPORTED_CLASSES = [
     GlobalPlacement,
     GlobalPlacementSkipIO,
     DetailedPlacement,
+    RTLMacroPlacer,
     CheckAntennas,
     GlobalRouting,
     _DiodeInsertion,
