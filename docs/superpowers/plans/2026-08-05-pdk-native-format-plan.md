@@ -72,6 +72,10 @@ decision 2026-08-04).
   `gt2_6t_tapbspdn`/`tapfspdn` but the GDS ships only an unreferenced
   `gt2_6t_tap` — a shipped-collateral gap; upstream issue candidate
   (rename or ship the layouts). No antenna diode among the 72 cells.
+- **gt2n now has a KLayout DRC deck** (2026-08-06). See "gt2n ICV → KLayout
+  DRC port" below. `RUN_KLAYOUT_DRC` is on in the example and
+  `ERROR_ON_KLAYOUT_DRC` is off; the flow is otherwise unchanged (setup
+  +0.148 ns, hold +0.032 ns, TNS 0, 0 antenna, 0 power-grid, 56 route DRCs).
 - **asap7: DONE.** SPM green through KLayout streamout: setup/hold/slew/cap
   all zero at three corners, 0 route DRCs, 0 antenna, fmax 3.4 GHz TT at a
   0.65 ns clock. SCL `asap7sc7p5t_28_rvt` (each VT flavour is its own SCL —
@@ -139,6 +143,89 @@ decision 2026-08-04).
   KLayout). gt2n's example therefore overrides the PDK PDN with a frontside
   M10/M11 mesh. Not a descriptor bug; revisit when upstream DRT learns
   backside layers.
+
+## gt2n ICV → KLayout DRC port (2026-08-06)
+
+GT2N shipped no open-source DRC deck — only the Synopsys IC Validator runset
+under `icv_runset/` (`gt2_main.drc.rs` plus 24 includes, BSD 3-Clause). That
+runset is now ported to the KLayout DRC language and ships in the descriptors
+as `gt2n_drc.drc`; `KLAYOUT_DRC_RUNSET` in `pdk.yaml` points at it and
+`meta.capabilities` gained `klayout-drc`. 168 rule categories, ICV identifiers
+and descriptions preserved verbatim so a violation names the rule the vendor
+runset would have named. It is a native deck, written straight against the
+runner's `$input`/`$topcell`/`$report`/`$threads` interface, so unlike
+nangate45's it needs no wrapper and no `KLAYOUT_DRC_OPTIONS`.
+
+**Primitive mapping.** ICV names the axis a check measures along; KLayout names
+the orientation of the edges it measures between, and the two are
+perpendicular. Every directional rule is therefore a KLayout
+width/space/separation/enclosing check plus `with_angle(90)` for ICV
+HORIZONTAL and `with_angle(0)` for VERTICAL on the resulting edge pairs.
+`extension = NONE` is the projection metric, `RADIAL` is euclidian. The
+convention was confirmed against a dozen rules whose dimensions the cell
+library hits exactly (BPR at 32 nm vertical, SDCON at 16 nm horizontal, V0 at
+14 × 12, V0.M0.1's enclosure at exactly 4 nm), and by 44 synthetic unit tests.
+ICV's exact-width idiom (`internal1(l, == d)` then `l not check`) becomes
+`l - (polygons(width < d + 1 dbu) - polygons(width < d))`, which reproduces
+both the too-narrow and too-wide halves at ICV's part-of-polygon granularity.
+
+**Three semantic deviations**, each stated at the rule in the deck:
+
+1. *Corner-to-corner* (`external_corner1 CONVEX_TO_CONVEX`, 13 rules) is
+   diagonal-only: a euclidian spacing check with the parts a projection check
+   also finds taken out. Read literally, ICV measures between convex corner
+   vertices, which also measures across a straight gap — and read that way the
+   rule contradicts the library it was written for. M1.3 permits 14 nm between
+   M1 wires where M1.5 would then demand 16 nm between their corners, and
+   every cell that brings an M1 stub down to two adjacent M0 tracks stacks V0
+   12 nm apart where V0.6 would demand 18. The first port did measure straight
+   gaps and fired on `gt2_6t_buf_x4` and `gt2_6t_dffasync_x1`; the vendor's own
+   cells are what settled it. Cost: straight-gap spacing on the via layers goes
+   unchecked, ICV having left V0.7/V1.5/V2.5/V3.5/V4.5/V5.5 unwritten.
+2. *GATE.2* checks only that horizontal gate spacing is not below 28 nm. The
+   ICV formulation subtracts the gate-patterned region from the whole layer
+   extent, making every unpatterned part of the die a violation — its own
+   authors note it "may give false DRC errors".
+3. *SDCON.2* is net-blind. ICV restricts it to different nets via the
+   `CONNECT_DB` connectivity database and notes an exception for the BPR
+   connection to VDD/VSS; this deck builds no connectivity. That is precisely
+   what the 946 hits are: zero within any single cell, all of them between the
+   power contacts of abutted rows.
+
+Rules ICV leaves commented out (ACT.5) or with an empty body (V0.7) are carried
+over in the same state and marked. `CONNECT_DB` is not ported — SDCON.2 was its
+only consumer.
+
+**Verification.** (a) 44 synthetic unit tests, one passing and one failing
+geometry per primitive class, in the ciel fork at
+`.librelane-fork/drc_tests/run.py` — outside `descriptors/`, so nothing ships.
+(b) Standalone run on the existing `gt2n-spm` GDS. (c) Full SPM flow, which
+reports the same 1731 the standalone run does.
+
+**What the 1731 are.** 157 of 168 categories are silent. The eleven that are
+not break down as:
+
+| n | rule | reading |
+|---|---|---|
+| 946 | SDCON.2 | The net-blind deviation above. Not a real violation. |
+| 573 | SDCON.ACT.1 | Real, and a library-vs-runset disagreement: the cells extend SDCON 5 nm past ACT where the rule asks 10. Hand-verified on `gt2_6t_inv_x1` — 6 predicted from its geometry, 6 reported. |
+| 99 | M1.3 | Real. 41 of the 71 cells place M1 on the 21 nm half-pitch grid, and where a half-pitch shape ends up beside a full-pitch one the gap is 7 nm against a 14 nm rule. Router-to-router M1 spacing is clean (0), the router being on the tech LEF's 28 nm pitch — which is what says the rule's threshold and direction are right. |
+| 41 | V0.7 | 41 of 23,358 V0 vertical edges (0.18%) not coincident with an M1 edge. |
+| 28 | M1.4 | Real. Line-end gaps of 6/18/19 nm against a 20 nm track-to-track rule. The tech LEF gives the router a single `SPACING 0.014`, so 18–19 nm is legal to the router and illegal to the runset. |
+| 20 | V1.3 | 20 of 4,016 V1 vertical edges (0.5%). |
+| 16 | M1.6 | Merged M1 L-shapes where a router wire meets a cell pin. No top-level M1 shape is individually non-rectangular — this is the mask-geometry view of what TritonRoute self-reports as 56 rect-only violations across all layers. |
+| 4 / 2 | PSEL.2 / NSEL.2 | Row-end implant stripes under 84 nm. A filler cell alone shows the same; abutment resolves all but the row ends. |
+| 1 / 1 | M1.5 / M2.5 | Diagonal corner proximity below 16 / 15 nm. |
+
+So no category is a mapping artefact, and the two large ones are the deviation
+and a genuine disagreement between GT2N's cell library and GT2N's own runset.
+The tap-site voids anticipated before the port never materialised: the example
+turns tap insertion off, so there are no tap sites, and BPR comes out clean
+(BPR.1–BPR.4 all zero, including BPR.3's 10 µm continuity check).
+
+**Upstream issue candidates** (same GT2N repo as the tap-cell GDS gap):
+SDCON.ACT.1 vs the cells' 5 nm extension; the M1 half-pitch grid vs M1.3; and
+M1.4's 20 nm track-to-track rule being absent from the technology LEF.
 
 ## W6 notes (from W3 family builds, 2026-08-05)
 
