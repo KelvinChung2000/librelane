@@ -83,6 +83,8 @@ stdenv.mkDerivation (finalAttrs: {
     "-DUSE_SYSTEM_ABC:BOOL=ON"
     "-DUSE_SYSTEM_OPENSTA:BOOL=ON"
     "-DOPENSTA_HOME=${opensta.dev}"
+    "-DOPENSTA_LIBRARY=${opensta.dev}/lib/libOpenSTA.a"
+    "-DOPENSTA_INCLUDE_DIR=${opensta.dev}/include"
     "-DABC_LIBRARY=${openroad-abc}/lib/libabc.a"
   ];
 
