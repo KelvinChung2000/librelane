@@ -47,6 +47,10 @@ Style Notes
   (`d527cfa`).
   * Removed `grt_pin_layers.patch`: upstreamed.
   * Rebased the abc `zlib.patch` onto the new abc Makefile layout.
+  * The OpenROAD source is now fetched with submodules for
+    `third-party/slang-elab`, needed by OpenROAD's new integrated synthesis
+    module (`sv_elaborate`/`synthesize`), which the shipped binary now
+    includes.
   * `write_timing_model` uses the OpenSTA 3 scene syntax when available.
 
 # 3.0.5

@@ -45,7 +45,7 @@
   # top
   rev ? "b9a38929e3421ae8e9db83750d11d2194e2e4e5d",
   rev-date ? "2026-08-05",
-  sha256 ? "sha256-JV34+vO+V+lchpcJNTnnXbE6mldl0R7Ms0XTNnw/TUs=",
+  sha256 ? "sha256-05suVOw3PgQOgfmF+CCzRoxB9QV1qhQJ+Via6bVd+II=",
   # tests tend to time out and fail, esp on Darwin. imperatively it's easy to
   # re-run them but in Nix it starts the long compile all over again.
   enableTesting ? false,
@@ -72,6 +72,10 @@ stdenv.mkDerivation (finalAttrs: {
     repo = "OpenROAD";
     inherit rev;
     inherit sha256;
+    # required for third-party/slang-elab, used by the new synthesis module
+    # (src/syn); the OpenSTA and abc submodules remain unused as both are
+    # built externally (USE_SYSTEM_OPENSTA/USE_SYSTEM_ABC).
+    fetchSubmodules = true;
   };
 
   cmakeFlags = (cmakeFlagsCommon false) ++ [
