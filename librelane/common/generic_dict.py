@@ -347,10 +347,14 @@ def copy_recursive(input, translator: Callable = idem):
             for key, value in input.items():
                 result[key] = recursive(value, visit_stack)
         elif dataclasses.is_dataclass(input) and not isinstance(input, type):
+            # Walk fields shallowly: asdict() would deep-convert nested
+            # dataclasses (e.g. a Macro's Instances) into dicts before
+            # replace() re-runs __post_init__, which reads their attributes.
             replace = {}
-            as_dict = dataclasses.asdict(input)
-            for key, value in as_dict.items():
-                replace[key] = recursive(value, visit_stack)
+            for dataclass_field in dataclasses.fields(input):
+                replace[dataclass_field.name] = recursive(
+                    getattr(input, dataclass_field.name), visit_stack
+                )
             result = dataclasses.replace(input, **replace)
         elif not is_string(input) and isinstance(input, Sequence):
             result = sequence_cls()
