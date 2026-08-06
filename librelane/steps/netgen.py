@@ -169,12 +169,12 @@ class LVS(NetgenStep):
 
         LVS_FLATTEN_CELLS: Optional[list[str]] = variable(
             None,
-            description="A list of cell names to be flattened while running LVS",
+            description="A list of cell names to be flattened while running LVS. For hierarchical cells with pins; since netgen 1.5.320, flattening no longer removes a pinless placeholder cell -- list those in LVS_IGNORE_CELLS instead.",
         )
 
         LVS_IGNORE_CELLS: Optional[list[str]] = variable(
             None,
-            description="A list of cell names to be ignored while running LVS",
+            description="A list of cell names to be ignored while running LVS. The right tool for pinless placeholder modules that exist only in the schematic-side netlist.",
         )
 
     config: Config

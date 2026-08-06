@@ -89,10 +89,21 @@ Style Notes
 * Fixed `test_power_utils`: the stubbed `odb` module now carries
   `dbRegion`, which `power_utils.py` references in an annotation.
 * Rebaselined the step-test reproducibles for the gates-on-steps model and
-  current tool versions: the full tier is green (164 passed). The two
-  remaining tool-version drifts are xfailed with their causes recorded
-  (netgen 1.5.320 pinless-cell flattening; PSM's pre-route connectivity on
-  the 2022-era ef decap endcaps in the frozen `generatepdn` DEFs).
+  current tool versions, then retired every version-drift expectation
+  outright: the full tier is 173 passed, 0 failed, with only a known
+  aarch64-darwin flake left in `xfails`. Notable migrations, each asserting
+  the current tools' behavior: the detailed router attempts out-of-range
+  guides instead of refusing (DRT-0155 gone; the DRC gate reports the
+  result); low GPL target density is a warning, not an error; GPL validates
+  port placement before utilization, so the util case's pins are now placed;
+  `DRT_THREADS` cases migrated to `OPENROAD_THREADS`; the `generatepdn` DEF
+  is regenerated from the current flow (PSM cannot trace the 2022-era ef
+  decap plates), and its misconnect case asserts pdngen's own `PDN-0200`
+  floating-shape removal, which superseded the PSM report.
+* `LVS_FLATTEN_CELLS`/`LVS_IGNORE_CELLS` descriptions now record the netgen
+  1.5.320 behavior change: flattening no longer removes a pinless
+  placeholder cell -- `LVS_IGNORE_CELLS` is the working semantics, and the
+  LVS reproducibles migrated accordingly.
 * Sealed a test-ordering flake: mock `Test.*` steps registered by the flow
   fixtures leaked into the global step factory, so registry-enumerating
   tests passed or failed by worker scheduling; the flows conftest now
