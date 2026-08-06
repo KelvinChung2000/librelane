@@ -46,7 +46,9 @@ def load_design(monkeypatch, connections, pg_pins):
             odb=None,
         ),
     )
-    monkeypatch.setitem(sys.modules, "odb", SimpleNamespace(dbMTerm=object))
+    monkeypatch.setitem(
+        sys.modules, "odb", SimpleNamespace(dbMTerm=object, dbRegion=object)
+    )
     monkeypatch.setitem(sys.modules, "utl", SimpleNamespace())
 
     master = SimpleNamespace(

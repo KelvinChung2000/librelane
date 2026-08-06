@@ -38,6 +38,20 @@ def grid_to_tracks(origin, count, step):
     return tracks
 
 
+def min_area_dbu2(layer, dbu_per_micron):
+    """
+    The layer's minimum-area rule in DBU².
+
+    ``dbTechLayer.getArea`` returns µm² as a float on OpenROAD versions up to
+    early 2026 and DBU² as an integer on newer ones; the type is the only
+    signal distinguishing the two.
+    """
+    area = layer.getArea()
+    if isinstance(area, float):
+        return area * dbu_per_micron * dbu_per_micron
+    return area
+
+
 def equally_spaced_sequence(side, side_pin_placement, possible_locations):
     virtual_pin_count = 0
     actual_pin_count = len(side_pin_placement)
@@ -263,19 +277,11 @@ def io_place(
     H_WIDTH = int(Decimal(hor_width_mult) * H_LAYER.getWidth())
     V_WIDTH = int(Decimal(ver_width_mult) * V_LAYER.getWidth())
 
-    def min_area_dbu2(layer):
-        # dbTechLayer.getArea returns µm² as a float on older OpenROAD
-        # versions and DBU² as an integer on newer ones
-        area = layer.getArea()
-        if isinstance(area, float):
-            return area * micron_in_units * micron_in_units
-        return area
-
     if hor_length is not None:
         H_LENGTH = int(micron_in_units * hor_length)
     else:
         H_LENGTH = max(
-            int(math.ceil(min_area_dbu2(H_LAYER) / H_WIDTH)),
+            int(math.ceil(min_area_dbu2(H_LAYER, micron_in_units) / H_WIDTH)),
             H_WIDTH,
         )
 
@@ -283,7 +289,7 @@ def io_place(
         V_LENGTH = int(micron_in_units * ver_length)
     else:
         V_LENGTH = max(
-            int(math.ceil(min_area_dbu2(V_LAYER) / V_WIDTH)),
+            int(math.ceil(min_area_dbu2(V_LAYER, micron_in_units) / V_WIDTH)),
             V_WIDTH,
         )
 

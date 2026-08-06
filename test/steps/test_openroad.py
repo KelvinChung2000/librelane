@@ -948,3 +948,28 @@ def test_save_image_reads_the_odb_so_it_can_run_anywhere():
     assert SaveImage.inputs == [DesignFormat.ODB]
     # It must not claim a view, or two instances would collide in the state.
     assert SaveImage.outputs == []
+
+
+def test_rtl_macro_placer_is_resolvable_by_id():
+    import librelane.steps  # noqa: F401
+    from librelane.steps import Step
+
+    resolved = Step.factory.get("OpenROAD.RTLMacroPlacer")
+
+    assert resolved is not None
+    assert resolved.id == "OpenROAD.RTLMacroPlacer"
+
+
+@pytest.mark.usefixtures("_mock_conf_fs")
+@mock_variables([step])
+def test_rtl_macro_placer_skips_unless_opted_in(mock_config):
+    """RUN_RTLMP defaults to false: a design that placed all its macros
+    manually must not have them second-guessed, so the step's default is a
+    no-op that touches neither views nor metrics."""
+    from librelane.state import State
+    from librelane.steps.openroad.placement import RTLMacroPlacer
+
+    instance = RTLMacroPlacer(config=mock_config, state_in=State())
+
+    assert instance.config.RUN_RTLMP is False
+    assert instance.run(State()) == ({}, {})

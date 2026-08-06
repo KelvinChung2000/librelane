@@ -14,11 +14,17 @@
     - name: cell_inverter
       args: ["--target", "synthesis"]
     - spm
+    - name: spm
+      test_name: spm_hier_keep
+      config_file: hier_config.json
     - gcd
     - caravel_upw
     - io_placer
     - test_sram_macro
     - manual_macro_placement_test
+    - name: manual_macro_placement_test
+      test_name: rtlmp_macro_placement
+      config_file: rtlmp_config.json
     - tt_um_urish_simon
     - name: partial_hierarchy
       config_file: config.yaml
@@ -98,6 +104,9 @@
   name: fastest_test_set
   designs:
     - spm
+    - name: spm
+      test_name: spm_hier_keep
+      config_file: hier_config.json
     - APU
     - usb
     - usb_cdc_core
@@ -142,6 +151,9 @@
     - name: cell_inverter
       args: ["--target", "synthesis"]
     - spm
+    - name: spm
+      test_name: spm_hier_keep
+      config_file: hier_config.json
     - name: full_chip
       config_file: config.yaml
     - name: non_const_async_reset

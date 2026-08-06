@@ -49,6 +49,19 @@ Style Notes
   PDKs without a `KLAYOUT_DRC_RUNSET` (e.g. gf180mcu), which previously
   failed the flow with a job-contract error at `klayout_drc`.
 
+## Testing
+
+* Added CI design tests for the new features: `spm_hier_keep` (spm with
+  `SYNTH_HIERARCHY_MODE: keep`) and `rtlmp_macro_placement`
+  (`manual_macro_placement_test` with unplaced macros and `RUN_RTLMP`),
+  both in the fastest test set.
+* Added unit tests for `min_area_dbu2` (the µm²/DBU² `getArea`
+  compatibility shim in `io_place.py`), `OpenROAD.RTLMacroPlacer`'s
+  registration and opt-in skip, and `optional_metrics` (contract
+  exemption and join-validation visibility).
+* Fixed `test_power_utils`: the stubbed `odb` module now carries
+  `dbRegion`, which `power_utils.py` references in an annotation.
+
 ## Tool Updates
 
 * Updated OpenROAD to `2026-08-05` (`b9a38929`), OpenSTA to `2026-07-22`

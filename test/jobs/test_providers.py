@@ -253,3 +253,69 @@ def test_add_buffer_is_not_a_member_of_the_global_placement_provider():
     assert (
         OpenROAD.AddBuffer not in JobRegistry.get("global_placement", "openroad").steps
     )
+
+
+def test_the_klayout_drc_metric_is_optional_not_contracted():
+    """
+    KLayout.DRC skips itself on PDKs that ship no KLAYOUT_DRC_RUNSET, so its
+    metric cannot be a completion-time obligation: a stock gf180mcu run died
+    with a job-contract error at klayout_drc. It stays declared as optional so
+    join validation still sees that both DRC providers write the same name.
+    """
+    from librelane.jobs import JobRegistry
+
+    registration = JobRegistry.get("drc", "klayout")
+
+    assert registration.metrics == ()
+    assert registration.optional_metrics == ("klayout__drc_error__count",)
+
+
+def test_an_optional_metric_is_exempt_from_the_completion_contract():
+    """
+    The two halves of ``optional_metrics``, against the real engine code: the
+    completion-time contract check accepts a state without the metric, and
+    join validation still counts it as a write.
+    """
+    from dataclasses import replace
+
+    from librelane.flows.engine import Workflow
+    from librelane.flows.job import ResolvedJob
+    from librelane.flows.selection_validation import produced_keys
+    from librelane.state import State
+
+    job = ResolvedJob(
+        id="klayout_drc",
+        needs=(),
+        source={},
+        conditions=(),
+        requires=(),
+        provides=(),
+        metrics=(),
+        optional_metrics=("klayout__drc_error__count",),
+        steps=(),
+        provider="klayout",
+        native_views=(),
+        until_terms=(),
+        iterations=({},),
+        max_passes=None,
+        select=None,
+        resources=(),
+    )
+
+    # Skipped step, empty state: must not raise.
+    Workflow._check_contract(None, job, State())
+
+    # A required metric on the same job still is an obligation.
+    required = replace(job, metrics=("klayout__drc_error__count",))
+    from librelane.flows.engine import JobContractError
+
+    try:
+        Workflow._check_contract(None, required, State())
+    except JobContractError:
+        pass
+    else:
+        raise AssertionError("a required metric's absence must raise")
+
+    # Join validation counts the optional metric as a write either way.
+    keys = produced_keys({"klayout_drc": job}, {"klayout_drc"})
+    assert "klayout__drc_error__count" in keys["klayout_drc"]
