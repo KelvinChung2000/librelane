@@ -42,19 +42,19 @@ String-keyed access remains correct in exactly two situations:
 
 ## What still speaks strings, and the plan
 
-1. **The loader** (`config/config.py`) resolves sources against
-   `Variable` lists (`config/legacy.py`), which are themselves derived from
-   the models via `model_to_variables`, and steps/flows then re-validate the
-   result back into models. The end-state is to invert this: compose one
-   model per flow (the `extend_model`/`variables_to_model` machinery already
-   exists, and `BaseConfigModel._coerce_shapes` already understands per-key
-   coercion syntaxes and deprecated names), validate each layered source
-   against it once, and keep per-key provenance — which `BaseConfigModel`
-   now carries — as the loader records it today. `Variable` then survives
-   only as the documentation/JSON-schema bridge until docs generation reads
-   model fields directly, after which `legacy.py` can go. This is a large,
-   self-contained refactor of ~1,600 lines and should be its own change
-   series, not a rider on anything else.
+1. **The loader** (`config/config.py`) now validates every layer through
+   one model-based path: `validate_mapping` composes a model from the
+   requested variables and validates with per-key coercion syntaxes. The
+   design layer always worked this way; the PDK layer, the per-step
+   increment, and interactive mode migrated onto it too, retiring
+   `Variable.compile` from the loader (it survives only inside `Macro`'s
+   own field handling). One behavioral alignment came with this: the
+   current variable name now outranks a deprecated one at *every* layer,
+   where `compile` used to invert that at the PDK layer only. What remains
+   of `legacy.py` is `Variable` as the declaration interchange — steps
+   declare models, `model_to_variables` bridges them to the loader's
+   signature and to docs/JSON-schema generation. Passing models end-to-end
+   and deleting the bridge is the last leg.
 
 2. **Tool-side scripts** (`scripts/pyosys/synthesize.py`,
    `scripts/odbpy/*`) receive configuration as JSON or environment variables
