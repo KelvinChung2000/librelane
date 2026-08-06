@@ -420,7 +420,18 @@ def get_psm_error_count(rpt: io.TextIOWrapper) -> int:
 
     sio.seek(0)
     violations = yaml.load(sio, Loader=yaml.SafeLoader) or []
-    return sum(len(violation["srcs"]) for violation in violations)
+
+    # PSM used to list one source per line under 'srcs:', which parses as a
+    # list; since mid-2026 it writes a single inline 'srcs: net:VPWR', which
+    # parses as a string -- and len() of that is a character count, which
+    # inflated 998 real violations into 69360.
+    def source_count(violation: dict) -> int:
+        sources = violation.get("srcs") or []
+        if isinstance(sources, str):
+            return 1
+        return len(sources)
+
+    return sum(source_count(violation) for violation in violations)
 
 
 @Step.factory.register()

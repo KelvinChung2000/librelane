@@ -973,3 +973,47 @@ def test_rtl_macro_placer_skips_unless_opted_in(mock_config):
 
     assert instance.config.RUN_RTLMP is False
     assert instance.run(State()) == ({}, {})
+
+
+def test_psm_error_count_reads_the_inline_srcs_format():
+    """PSM's 2026 report format writes 'srcs: net:VPWR' inline, which parses
+    as a YAML string; counting len() of it counts characters, which inflated
+    998 real violations into 69360 in a step-test reproducible."""
+    import io
+
+    from librelane.steps.openroad.floorplan import get_psm_error_count
+
+    report = io.StringIO(
+        "violation type: Unconnected shape\n"
+        "\tsrcs: net:VPWR\n"
+        "\tbbox = (5.7660, 48.8700) - (9.1790, 49.3500) on Layer met1\n"
+        "violation type: Unconnected instance\n"
+        "\tsrcs: inst:_476_\n"
+        "\tbbox = (9.5040, 27.9050) - (9.5040, 27.9050) on Layer met1\n"
+    )
+    assert get_psm_error_count(report) == 2
+
+
+def test_psm_error_count_still_reads_the_list_srcs_format():
+    """The pre-2026 format lists one source per line, which parses as a YAML
+    list; every listed source counts."""
+    import io
+
+    from librelane.steps.openroad.floorplan import get_psm_error_count
+
+    report = io.StringIO(
+        "violation type: Unconnected node\n"
+        "\tsrcs:\n"
+        "\t  - inst:_100_\n"
+        "\t  - inst:_101_\n"
+        "\tbbox = (1.0, 1.0) - (2.0, 2.0) on Layer met1\n"
+    )
+    assert get_psm_error_count(report) == 2
+
+
+def test_psm_error_count_of_an_empty_report_is_zero():
+    import io
+
+    from librelane.steps.openroad.floorplan import get_psm_error_count
+
+    assert get_psm_error_count(io.StringIO("\n")) == 0
