@@ -1,0 +1,19 @@
+--- a/src/Main.cc	2026-08-06 15:18:25
++++ b/src/Main.cc	2026-08-06 15:18:25
+@@ -300,7 +300,15 @@
+
+ #if PY_VERSION_HEX >= 0x03080000
+     initPython(cmd_argc, cmd_argv, exit);
+-    return Py_RunMain();
++    // Metrics are written by a Tcl exit handler (OpenRoad::init registers
++    // finalizeLoggerMetrics via Tcl_CreateExitHandler), which Py_RunMain()
++    // bypasses; without this, -metrics silently writes nothing in -python
++    // mode. An atexit handler rather than a statement after Py_RunMain(),
++    // because an uncaught SystemExit -- how click scripts and sys.exit()
++    // terminate -- makes CPython call exit() directly and never return
++    // here. Tcl_Finalize() is idempotent, so both exit paths are safe.
++    std::atexit(Tcl_Finalize);
++    return Py_RunMain();
+ #else
+     initPython();
+     std::vector<wchar_t*> args;
