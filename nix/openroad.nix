@@ -78,12 +78,6 @@ stdenv.mkDerivation (finalAttrs: {
     fetchSubmodules = true;
   };
 
-  patches = [
-    # Upstream bug: -metrics writes nothing under -python, because the flush
-    # is a Tcl exit handler and Py_RunMain() exits without running them.
-    ./patches/openroad/python_metrics_flush.patch
-  ];
-
   cmakeFlags = (cmakeFlagsCommon false) ++ [
     "-DENABLE_TESTS:BOOL=${if enableTesting then "ON" else "OFF"}"
     "-DUSE_SYSTEM_ABC:BOOL=ON"

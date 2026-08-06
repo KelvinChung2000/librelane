@@ -248,3 +248,18 @@ def click_odb(function):
     wrapper = click.argument("input_db")(wrapper)
 
     return wrapper
+
+
+# Metrics are emitted through librelane's stdout channel rather than
+# utl.metric_*: OpenROAD's -metrics JSON is written by a Tcl exit handler,
+# which -python mode never runs, so utl-recorded metrics silently vanish.
+def metric(name, value):
+    print(f"%OL_METRIC {name} {value}", flush=True)
+
+
+def metric_integer(name, value):
+    print(f"%OL_METRIC_I {name} {value}", flush=True)
+
+
+def metric_float(name, value):
+    print(f"%OL_METRIC_F {name} {value}", flush=True)

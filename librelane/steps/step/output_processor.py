@@ -150,13 +150,16 @@ class DefaultOutputProcessor(OutputProcessor[dict[str, Any]]):
                 self.current_rpt.close()
             self.current_rpt = None
         elif line.startswith(METRIC_LOCUS):
-            command, name, value = line.split(" ", maxsplit=3)
+            # maxsplit=2: everything after the name is the value, so a string
+            # metric may contain spaces (e.g. design__die__bbox's four
+            # coordinates); int/Decimal values are whitespace-tolerant anyway.
+            command, name, value = line.split(" ", maxsplit=2)
             metric_type: type[str] | type[int] | type[Decimal] = str
             if command.endswith("_I"):
                 metric_type = int
             elif command.endswith("_F"):
                 metric_type = Decimal
-            self.generated_metrics[name] = metric_type(value)
+            self.generated_metrics[name] = metric_type(value.rstrip("\n"))
         elif self.current_rpt is not None:
             # No echo- the timing reports especially can be very large
             # and terminal emulators will slow the flow down.

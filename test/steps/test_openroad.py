@@ -1017,3 +1017,27 @@ def test_psm_error_count_of_an_empty_report_is_zero():
     from librelane.steps.openroad.floorplan import get_psm_error_count
 
     assert get_psm_error_count(io.StringIO("\n")) == 0
+
+
+def test_the_metric_locus_carries_string_values_with_spaces():
+    """The odbpy scripts emit metrics over the %OL_METRIC stdout channel
+    (OpenROAD's -metrics JSON is never written in -python mode), and
+    design__die__bbox's value is four space-separated coordinates."""
+    from types import SimpleNamespace
+
+    from librelane.steps.step.output_processor import DefaultOutputProcessor
+
+    processor = DefaultOutputProcessor(
+        step=SimpleNamespace(step_dir=None), report_dir=".", silent=True
+    )
+    processor.process_line("%OL_METRIC design__die__bbox 0.0 0.0 101.205 111.925\n")
+    processor.process_line("%OL_METRIC_I design__disconnected_pin__count 0\n")
+    processor.process_line("%OL_METRIC_F route__wirelength__max 148.05\n")
+
+    from decimal import Decimal
+
+    assert processor.result() == {
+        "design__die__bbox": "0.0 0.0 101.205 111.925",
+        "design__disconnected_pin__count": 0,
+        "route__wirelength__max": Decimal("148.05"),
+    }

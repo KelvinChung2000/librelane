@@ -17,9 +17,8 @@ from typing import Literal, Optional, Union
 from collections.abc import Sequence
 
 import odb
-import utl
 
-from reader import click, click_odb, OdbReader
+from reader import click, click_odb, OdbReader, metric_integer
 from reader import rich
 from reader import Table
 from rich.console import Console
@@ -296,8 +295,8 @@ def main(
             )
             console.print(full_table)
 
-    utl.metric_integer("design__disconnected_pin__count", disconnected_pin_count)
-    utl.metric_integer(
+    metric_integer("design__disconnected_pin__count", disconnected_pin_count)
+    metric_integer(
         "design__critical_disconnected_pin__count", critical_disconnected_pin_count
     )
 

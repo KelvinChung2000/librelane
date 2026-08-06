@@ -16,10 +16,9 @@ import re
 import pprint
 from collections import namedtuple
 
-from reader import click_odb, click
+from reader import click_odb, click, metric_integer
 
 import odb
-import utl
 
 
 def filter_net(net: odb.dbNet) -> bool:
@@ -86,10 +85,10 @@ def main(reader, corner, checks_report):
     ]
     print("Filtered nets:")
     pprint.pprint(connected_nets)
-    utl.metric_integer(
+    metric_integer(
         f"timing__unannotated_net__count__corner:{corner}", len(reported_nets)
     )
-    utl.metric_integer(
+    metric_integer(
         f"timing__unannotated_net_filtered__count__corner:{corner}",
         len(connected_nets),
     )

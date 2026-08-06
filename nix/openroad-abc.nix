@@ -5,7 +5,6 @@
   lib,
   abc-verifier,
   fetchFromGitHub,
-  zlib,
   abc-namespace-name ? "abc",
   rev ? "d527cfab4ad731b767ea0a2be2021d920d3afece",
   rev-date ? "2026-06-15",
@@ -23,10 +22,6 @@ abc-verifier.overrideAttrs (
       inherit sha256;
     };
 
-    patches = [
-      ./patches/openroad-abc/zlib.patch
-    ];
-
     postPatch = ''
       # utter bazel nonsense
       rm -f BUILD
@@ -34,13 +29,10 @@ abc-verifier.overrideAttrs (
 
     cmakeFlags = [
       "-DREADLINE_FOUND=FALSE"
-      "-DUSE_SYSTEM_ZLIB:BOOL=ON"
       "-DABC_USE_NAMESPACE=${abc-namespace-name}"
       "-DABC_SKIP_TESTS:BOOL=ON"
       "-DABC_USE_STDINT_H:BOOL=ON"
     ];
-
-    buildInputs = [ zlib ];
 
     installPhase = ''
       mkdir -p $out/bin
