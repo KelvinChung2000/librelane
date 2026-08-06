@@ -27,9 +27,11 @@ from abc import abstractmethod, ABC
 from concurrent.futures import Future
 from functools import wraps
 from typing import (
+    TYPE_CHECKING,
     Any,
     ClassVar,
     TypeVar,
+    cast,
 )
 from collections.abc import Sequence, Callable
 
@@ -54,7 +56,11 @@ from librelane.config import (
     Variable,
     model_to_variables,
     universal_flow_config_variables,
+    variables_to_model,
 )
+
+if TYPE_CHECKING:
+    from librelane.config.flow import OptionConfig, PadConfig, PdkConfig, SclConfig
 from librelane.state import State, DesignFormat
 from librelane.steps import Step
 from librelane.flows.spec import FlowSpec
@@ -508,8 +514,29 @@ class Flow(ABC):
     #: over the PDK, so a design always wins. A Python flow declares none.
     values: dict[str, Any] = {}
 
-    class Config(BaseConfigModel):
-        pass
+    if TYPE_CHECKING:
+        # Every flow's configuration includes the flow-common variables, which
+        # reach the runtime model as generated fields rather than declared
+        # ones. Spelling them out for the type checker keeps
+        # ``self.config.DESIGN_NAME`` and friends checked, exactly as
+        # :class:`librelane.steps.Step` does for its own ``Config``.
+        class Config(PdkConfig, SclConfig, OptionConfig, PadConfig):
+            pass
+
+    else:
+
+        class Config(BaseConfigModel):
+            pass
+
+    _config_model_cache: ClassVar[
+        "tuple[tuple[tuple[str, Any, Any], ...], type[Flow.Config]] | None"
+    ] = None
+
+    #: The resolved configuration, as a typed model: ``config.DESIGN_NAME``
+    #: rather than ``config["DESIGN_NAME"]``. Still a ``Mapping``, so
+    #: string-keyed reads keep working where the key is data rather than a
+    #: name written in source.
+    config: Config
 
     step_objects: list[Step] | None = None
 
@@ -559,6 +586,16 @@ class Flow(ABC):
         self.Steps = self.Steps.copy()  # Break global reference
         self.values = dict(self.values)  # Same, for the class-level default
 
+        if isinstance(config, BaseConfigModel):
+            # A typed model is already resolved; give the loader path the
+            # Mapping form it knows, exactly as Step.__init__ does.
+            config = Config(
+                config.to_raw_dict(),
+                meta=config.meta,
+                diagnostics=config.diagnostics,
+                provenance=dict(config.provenance),
+            )
+
         if not isinstance(config, Config):
             config, design_dir = Config.load(
                 config_in=config,
@@ -585,9 +622,51 @@ class Flow(ABC):
                 f"file or mapping instead."
             )
 
-        self.config: Config = config
-        self.design_dir = pathlib.Path(self.config["DESIGN_DIR"])
+        # The same move Step.__init__ makes: the resolved Mapping becomes a
+        # typed model, so flow code reads config.DESIGN_NAME under mypy's eye
+        # rather than config["DESIGN_NAME"] under nobody's. Constructed, not
+        # validated: whoever resolved the configuration -- Config.load above,
+        # or the caller who passed it resolved -- owns validation, and each
+        # step re-validates its own slice regardless.
+        model_type = self._get_config_model()
+        typed_config = model_type.model_construct(
+            **config.to_raw_dict(include_meta=False)
+        )
+        self.config = typed_config.attach_context(
+            diagnostics=config.diagnostics,
+            meta=config.meta,
+            provenance=config.provenance,
+        )
+        self.design_dir = pathlib.Path(self.config.DESIGN_DIR)
         self.progress_bar = FlowProgressBar(self.name)
+
+    def _get_config_model(self) -> "type[Flow.Config]":
+        """
+        The model ``__init__`` validates into: every variable
+        :meth:`get_all_config_variables` reports, as generated fields over
+        this class's declared ``Config``.
+
+        Fingerprint-cached per class, because the variable list is not fixed
+        at class definition: ``self.Steps`` is copied and may be edited per
+        instance.
+        """
+        fingerprint = tuple(
+            (variable.name, variable.type, variable.default)
+            for variable in self.get_all_config_variables()
+        )
+        cached = type(self)._config_model_cache
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        model = cast(
+            "type[Flow.Config]",
+            variables_to_model(
+                f"{type(self).__name__}ResolvedConfig",
+                self.get_all_config_variables(),
+                base=type(self).Config,
+            ),
+        )
+        type(self)._config_model_cache = (fingerprint, model)
+        return model
 
     def get_all_config_variables(self) -> list[Variable]:
         """
@@ -1053,7 +1132,7 @@ class Flow(ABC):
                     default_corner_target_dir = os.path.dirname(target_dir)
                     mkdirp(default_corner_target_dir)
                     if len(default_corner_view) == 1:
-                        target_basename = f"{self.config['DESIGN_NAME']}.{extension}"
+                        target_basename = f"{self.config.DESIGN_NAME}.{extension}"
                         target_path = os.path.join(
                             default_corner_target_dir, target_basename
                         )
@@ -1090,7 +1169,7 @@ class Flow(ABC):
                 return None
             return result[0]
 
-        signoff_dir = os.path.join(path, "signoff", self.config["DESIGN_NAME"])
+        signoff_dir = os.path.join(path, "signoff", self.config.DESIGN_NAME)
         openlane_signoff_dir = os.path.join(signoff_dir, "openlane-signoff")
         mkdirp(openlane_signoff_dir)
 
@@ -1174,7 +1253,7 @@ class Flow(ABC):
                 target_dir = os.path.join(signoff_dir, "sdf", corner)
                 mkdirp(target_dir)
                 shutil.copyfile(
-                    view, os.path.join(target_dir, f"{self.config['DESIGN_NAME']}.sdf")
+                    view, os.path.join(target_dir, f"{self.config.DESIGN_NAME}.sdf")
                 )
 
     class FlowFactory(object):

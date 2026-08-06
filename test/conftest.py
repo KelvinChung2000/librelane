@@ -327,10 +327,14 @@ MOCK_FLOW_VARS = [
         description="x",
         default=False,
     ),
+    # Verbatim from Odb.DiodesOnPorts/Odb.PortDiodePlacement: the flow model
+    # build calls get_all_config_variables even over a resolved Config, which
+    # requires a name shared between the (mocked) universal list and a real
+    # step to be declared identically.
     Variable(
         "DIODE_ON_PORTS",
-        Literal["none", "in"],
-        description="x",
+        Literal["none", "in", "out", "both"],
+        description="Always insert diodes on ports with the specified polarities.",
         default="none",
     ),
     Variable(

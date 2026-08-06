@@ -96,6 +96,7 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
     )
     _diagnostics: DiagnosticSet = PrivateAttr(default_factory=DiagnosticSet)
     _meta: Any = PrivateAttr(default=None)
+    _provenance: Mapping[str, str] = PrivateAttr(default_factory=dict)
     _deprecation_warnings_enabled: ClassVar[bool] = False
 
     @classmethod
@@ -177,16 +178,24 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
     def meta(self) -> Any:
         return self._meta
 
+    @property
+    def provenance(self) -> Mapping[str, str]:
+        """The source that last wrote each key, where the loader recorded one."""
+        return self._provenance
+
     def attach_context(
         self: "BaseConfigModelT",
         *,
         diagnostics: DiagnosticSet | None = None,
         meta: Any = None,
+        provenance: Mapping[str, str] | None = None,
     ) -> "BaseConfigModelT":
         if diagnostics is not None:
             object.__setattr__(self, "_diagnostics", diagnostics)
         if meta is not None:
             object.__setattr__(self, "_meta", meta)
+        if provenance is not None:
+            object.__setattr__(self, "_provenance", provenance)
         return self
 
     def __getitem__(self, key: str) -> Any:

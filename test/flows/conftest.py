@@ -18,6 +18,26 @@ import pytest
 from test.conftest import MockConfTree
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _isolated_step_registry():
+    """
+    The mock ``Test.*`` steps these fixtures register go into the global step
+    factory, which nothing unregisters from -- so they leaked into whichever
+    later test enumerated the registry, most visibly the deliberate-update
+    variable count, which then failed or passed by worker scheduling.
+
+    Module-scoped: registrations made by module-scoped fixtures must survive
+    the tests that share them; only the module's departure sweeps them.
+    """
+    from librelane.steps import Step
+
+    registry = Step.factory._StepFactory__registry
+    snapshot = dict(registry)
+    yield
+    registry.clear()
+    registry.update(snapshot)
+
+
 @pytest.fixture
 def MetricIncrementer():
     """

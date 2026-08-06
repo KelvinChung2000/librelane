@@ -31,6 +31,7 @@ from librelane.common import Filter, get_tpe, slugify
 from librelane.config import (
     AnyConfig,
     AnyConfigs,
+    BaseConfigModel,
     Config,
     Variable,
     universal_flow_config_variables,
@@ -61,7 +62,10 @@ from librelane.flows.spec_validation import validate_against_registry
 #: declares a nested ``Config`` of its own -- the engine's variable model -- so
 #: an annotation written in its class body resolves to that one, and a method
 #: returning resolved configurations has to say which ``Config`` it means.
-_ResolvedConfig = Config
+# What a job runs against: the loader's Mapping for a job with its own
+# 'with' layer, or the flow's typed model otherwise. Both are Mappings that
+# carry .provenance, which is all the engine reads.
+_ResolvedConfig = Union[Config, BaseConfigModel]
 
 #: How many job ids an error message spells out before it counts the rest.
 #: ``classic.yaml`` declares 48 jobs, and a message that prints all of them
@@ -726,7 +730,7 @@ class Workflow(Flow):
         for job_id, job in self.spec.jobs.items():
             if not job.values:
                 continue
-            if isinstance(config, Config):
+            if isinstance(config, (Config, BaseConfigModel)):
                 raise FlowException(
                     f"Job '{job_id}' of flow '{self.spec.name}' declares a "
                     f"'with' block, but this flow was constructed from a "
@@ -802,7 +806,7 @@ class Workflow(Flow):
             gate_schedule = gate_spec.schedule()
             if not gate_schedule:
                 continue
-            if isinstance(config, Config):
+            if isinstance(config, (Config, BaseConfigModel)):
                 raise FlowException(
                     f"The ring gated by '{gate}' of flow '{self.spec.name}' "
                     f"declares 'iterations', but this flow was constructed "
@@ -835,7 +839,7 @@ class Workflow(Flow):
             job_schedule = job_spec.schedule()
             if job_spec.select is None or not job_schedule:
                 continue
-            if isinstance(config, Config):
+            if isinstance(config, (Config, BaseConfigModel)):
                 raise FlowException(
                     f"Sweep job '{job_id}' of flow '{self.spec.name}' "
                     f"declares 'iterations', but this flow was constructed "
@@ -898,7 +902,7 @@ class Workflow(Flow):
         step sequence declaring different variables. So the circularity is the
         same one, and this runs before ``super().__init__``.
         """
-        if isinstance(config, Config):
+        if isinstance(config, (Config, BaseConfigModel)):
             # Already validated, so TOOLS is present and typed -- and its
             # sections were expanded on the way, by the same
             # Config.expand_sources the pre-pass below runs, so this branch has
