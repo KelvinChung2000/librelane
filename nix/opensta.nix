@@ -18,9 +18,9 @@
   eigen,
   ninja,
   gtest,
-  rev ? "a56edf27677801ca8e9bb42fcaa1d5a6e40d5d11",
-  rev-date ? "2026-04-11",
-  sha256 ? "sha256-OA8oRug7keFopBT3s/MA08AzalHadwOmjI9B4A5vJ0c=",
+  rev ? "31e8fffddce247c0000dd1332ad975b69a50f722",
+  rev-date ? "2026-07-22",
+  sha256 ? "sha256-UDJ4/h2OJjgtX7rMMtEs7NpGbZ9oOzqjB2OCFHlxxEE=",
 }:
 clangStdenv.mkDerivation (finalAttrs: {
   name = "opensta";

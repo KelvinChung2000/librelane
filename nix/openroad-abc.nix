@@ -7,9 +7,9 @@
   fetchFromGitHub,
   zlib,
   abc-namespace-name ? "abc",
-  rev ? "17cadca080b33edc5a13c8e6e8e8092f8c350b25",
-  rev-date ? "2026-03-01",
-  sha256 ? "sha256-MZc9YqqpmAJ56ODG19XEo3/NFM+WVOhLz2EboZfQO8Q=",
+  rev ? "d527cfab4ad731b767ea0a2be2021d920d3afece",
+  rev-date ? "2026-06-15",
+  sha256 ? "sha256-LKB+O64nXPN3sR76JzQ6oO8IS5M4AnNdgCSCLe0o7rw=",
 }:
 abc-verifier.overrideAttrs (
   finalAttrs: previousAttrs: {

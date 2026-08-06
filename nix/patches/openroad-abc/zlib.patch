@@ -1,8 +1,7 @@
-diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 918fb79a1..272278b04 100644
---- a/CMakeLists.txt
-+++ b/CMakeLists.txt
-@@ -61,6 +61,11 @@ if( APPLE )
+diff -ruN a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt	2026-08-06 12:47:18
++++ b/CMakeLists.txt	2026-08-06 12:47:19
+@@ -63,6 +63,11 @@
      set(make_env ${CMAKE_COMMAND} -E env SDKROOT=${CMAKE_OSX_SYSROOT})
  endif()
  
@@ -14,7 +13,7 @@ index 918fb79a1..272278b04 100644
  # run make to extract compiler options, linker options and list of source files
  execute_process(
    COMMAND
-@@ -69,6 +74,7 @@ execute_process(
+@@ -71,6 +76,7 @@
          ${ABC_READLINE_FLAGS}
          ${ABC_USE_NAMESPACE_FLAGS}
          ${ABC_USE_STDINT_H_FLAGS}
@@ -22,7 +21,7 @@ index 918fb79a1..272278b04 100644
          ARCHFLAGS_EXE=${CMAKE_CURRENT_BINARY_DIR}/abc_arch_flags_program.exe
          ABC_MAKE_NO_DEPS=1
          CC=${CMAKE_C_COMPILER}
-@@ -98,10 +104,16 @@ if(ABC_USE_NAMESPACE)
+@@ -100,10 +106,16 @@
      set_source_files_properties(${ABC_SRC} PROPERTIES LANGUAGE CXX)
  endif()
  
@@ -39,38 +38,36 @@ index 918fb79a1..272278b04 100644
  endfunction()
  
  set(ABC_MAIN_SRC src/base/main/main.c)
-diff --git a/Makefile b/Makefile
-index 798fb2e7b..be9e01b65 100644
---- a/Makefile
-+++ b/Makefile
-@@ -23,7 +23,7 @@ MODULES := \
+diff -ruN a/Makefile b/Makefile
+--- a/Makefile	2026-08-06 12:47:18
++++ b/Makefile	2026-08-06 12:47:28
+@@ -39,7 +39,7 @@
  	src/map/mapper src/map/mio src/map/super src/map/if src/map/if/acd \
- 	src/map/amap src/map/cov src/map/scl src/map/mpm \
+ 	src/map/amap src/map/cov src/map/scl src/map/mpm src/map/emap \
  	src/misc/extra src/misc/mvc src/misc/st src/misc/util src/misc/nm \
 -	src/misc/vec src/misc/hash src/misc/tim src/misc/bzlib src/misc/zlib \
 +	src/misc/vec src/misc/hash src/misc/tim src/misc/bzlib \
- 	src/misc/mem src/misc/bar src/misc/bbl src/misc/parse \
+ 	src/misc/mem src/misc/bar src/misc/bbl src/misc/parse src/misc/btor \
  	src/opt/cut src/opt/fxu src/opt/fxch src/opt/rwr src/opt/mfs src/opt/sim \
- 	src/opt/ret src/opt/fret src/opt/res src/opt/lpk src/opt/nwk src/opt/rwt \
-@@ -46,6 +46,12 @@ $(ARCHFLAGS_EXE) : arch_flags.c
+ 	src/opt/ret src/opt/fret src/opt/res src/opt/lpk src/opt/nwk src/opt/rwt src/opt/rar \
+@@ -61,6 +61,12 @@
+ 	$(CC) $< -o $(ARCHFLAGS_EXE)
  
  INCLUDES += -I$(ABCSRC)/src
- 
++
 +ifdef ABC_USE_SYSTEM_ZLIB
 +	CFLAGS += -DUSE_SYSTEM_ZLIB
 +else
 +	MODULES += src/misc/zlib
 +endif
-+
+ 
  # Use C99 stdint.h header for platform-dependent types
  ifdef ABC_USE_STDINT_H
-     ARCHFLAGS ?= -DABC_USE_STDINT_H=1
-diff --git a/src/misc/zlib/zlib.h b/src/misc/zlib/zlib.h
-index 46c1a1aec..1667a8cfe 100644
---- a/src/misc/zlib/zlib.h
-+++ b/src/misc/zlib/zlib.h
+diff -ruN a/src/misc/zlib/zlib.h b/src/misc/zlib/zlib.h
+--- a/src/misc/zlib/zlib.h	2026-08-06 12:47:18
++++ b/src/misc/zlib/zlib.h	2026-08-06 12:47:19
 @@ -28,6 +28,10 @@
-   (zlib format), rfc1951.txt (deflate format) and rfc1952.txt (gzip format).
+   (zlib format), rfc1951 (deflate format) and rfc1952 (gzip format).
  */
  
 +#ifdef USE_SYSTEM_ZLIB
@@ -80,7 +77,7 @@ index 46c1a1aec..1667a8cfe 100644
  #ifndef ZLIB_H
  #define ZLIB_H
  
-@@ -1617,3 +1621,4 @@ ZEXTERN int            ZEXPORT inflateUndermine OF((z_streamp, int));
+@@ -2057,3 +2061,4 @@
  ABC_NAMESPACE_HEADER_END
  
  #endif /* ZLIB_H */
