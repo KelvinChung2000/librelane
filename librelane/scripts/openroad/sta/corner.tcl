@@ -82,27 +82,27 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
         source $::env(STA_EXTRA_CORNER_TCL_FILE)
     }
 
-    puts "%OL_CREATE_REPORT $corner_name/min.rpt"
+    lln_report_begin "$corner_name/min.rpt"
     puts "\n==========================================================================="
     puts "report_checks -path_delay min (Hold)"
     puts "============================================================================"
     puts "======================= $corner_name Corner ===================================\n"
     report_checks -sort_by_slack -path_delay min -fields {slew cap input net fanout} -format full_clock_expanded -group_path_count 1000 -corner $corner_name
     puts ""
-    puts "%OL_END_REPORT"
+    lln_report_end
 
 
-    puts "%OL_CREATE_REPORT $corner_name/max.rpt"
+    lln_report_begin "$corner_name/max.rpt"
     puts "\n==========================================================================="
     puts "report_checks -path_delay max (Setup)"
     puts "============================================================================"
     puts "======================= $corner_name Corner ===================================\n"
     report_checks -sort_by_slack -path_delay max -fields {slew cap input net fanout} -format full_clock_expanded -group_path_count 1000 -corner $corner_name
     puts ""
-    puts "%OL_END_REPORT"
+    lln_report_end
 
 
-    puts "%OL_CREATE_REPORT $corner_name/checks.rpt"
+    lln_report_begin "$corner_name/checks.rpt"
     puts "\n==========================================================================="
     puts "report_checks -unconstrained"
     puts "==========================================================================="
@@ -143,11 +143,11 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
     puts "check_setup -verbose -unconstrained_endpoints -multiple_clock -no_clock -no_input_delay -loops -generated_clocks"
     puts "==========================================================================="
     check_setup -verbose -unconstrained_endpoints -multiple_clock -no_clock -no_input_delay -loops -generated_clocks
-    puts "%OL_END_REPORT"
+    lln_report_end
 
 
 
-    puts "%OL_CREATE_REPORT $corner_name/power.rpt"
+    lln_report_begin "$corner_name/power.rpt"
     puts "\n==========================================================================="
     puts " report_power"
     puts "============================================================================"
@@ -169,10 +169,10 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
     }
 
     puts ""
-    puts "%OL_END_REPORT"
+    lln_report_end
 
 
-    puts "%OL_CREATE_REPORT $corner_name/skew.min.rpt"
+    lln_report_begin "$corner_name/skew.min.rpt"
     puts "\n==========================================================================="
     puts "Clock Skew (Hold)"
     puts "============================================================================"
@@ -182,9 +182,9 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
     puts "======================= $corner_name Corner ===================================\n"
     report_clock_skew -corner $corner_name -hold
 
-    puts "%OL_END_REPORT"
+    lln_report_end
 
-    puts "%OL_CREATE_REPORT $corner_name/skew.max.rpt"
+    lln_report_begin "$corner_name/skew.max.rpt"
     puts "\n==========================================================================="
     puts "Clock Skew (Setup)"
     puts "============================================================================"
@@ -194,18 +194,18 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
     puts "======================= $corner_name Corner ===================================\n"
     report_clock_skew -corner $corner_name -setup
 
-    puts "%OL_END_REPORT"
+    lln_report_end
 
-    puts "%OL_CREATE_REPORT $corner_name/ws.min.rpt"
+    lln_report_begin "$corner_name/ws.min.rpt"
     puts "\n==========================================================================="
     puts "Worst Slack (Hold)"
     puts "============================================================================"
     set ws [worst_slack -corner $corner_name -min]
     write_metric_num "timing__hold__ws__corner:$corner_name" $ws
     puts "$corner_name: $ws"
-    puts "%OL_END_REPORT"
+    lln_report_end
 
-    puts "%OL_CREATE_REPORT $corner_name/ws.max.rpt"
+    lln_report_begin "$corner_name/ws.max.rpt"
     puts "\n==========================================================================="
     puts "Worst Slack (Setup)"
     puts "============================================================================"
@@ -213,7 +213,7 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
     set ws [worst_slack -corner $corner_name -max]
     write_metric_num "timing__setup__ws__corner:$corner_name" $ws
     puts "$corner_name: $ws"
-    puts "%OL_END_REPORT"
+    lln_report_end
 
     # The highest frequency this corner would still meet setup at, in MHz, being
     # the clock's own period less the slack left over on the worst setup path.
@@ -238,7 +238,7 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
         }
     }
 
-    puts "%OL_CREATE_REPORT $corner_name/tns.min.rpt"
+    lln_report_begin "$corner_name/tns.min.rpt"
     puts "\n==========================================================================="
     puts "Total Negative Slack (Hold)"
     puts "============================================================================"
@@ -246,18 +246,18 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
     set tns [total_negative_slack -corner $corner_name -min]
     write_metric_num "timing__hold__tns__corner:$corner_name" $tns
     puts "$corner_name: $tns"
-    puts "%OL_END_REPORT"
+    lln_report_end
 
-    puts "%OL_CREATE_REPORT $corner_name/tns.max.rpt"
+    lln_report_begin "$corner_name/tns.max.rpt"
     puts "\n==========================================================================="
     puts "Total Negative Slack (Setup)"
     puts "============================================================================"
     set tns [total_negative_slack -corner $corner_name -max]
     write_metric_num "timing__setup__tns__corner:$corner_name" $tns
     puts "$corner_name: $tns"
-    puts "%OL_END_REPORT"
+    lln_report_end
 
-    puts "%OL_CREATE_REPORT $corner_name/wns.min.rpt"
+    lln_report_begin "$corner_name/wns.min.rpt"
     puts "\n==========================================================================="
     puts "Worst Negative Slack (Hold)"
     puts "============================================================================"
@@ -269,9 +269,9 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
     }
     write_metric_num "timing__hold__wns__corner:$corner_name" $wns
     puts "$corner_name: $wns"
-    puts "%OL_END_REPORT"
+    lln_report_end
 
-    puts "%OL_CREATE_REPORT $corner_name/wns.max.rpt"
+    lln_report_begin "$corner_name/wns.max.rpt"
     puts "\n==========================================================================="
     puts "Worst Negative Slack (Setup)"
     puts "============================================================================"
@@ -283,9 +283,9 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
     }
     write_metric_num "timing__setup__wns__corner:$corner_name" $wns
     puts "$corner_name: $wns"
-    puts "%OL_END_REPORT"
+    lln_report_end
 
-    puts "%OL_CREATE_REPORT $corner_name/violator_list.rpt"
+    lln_report_begin "$corner_name/violator_list.rpt"
     puts "\n==========================================================================="
     puts "Violator List"
     puts "============================================================================"
@@ -375,9 +375,9 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
     write_metric_int "timing__setup_vio__count__corner:$corner_name" $total_setup_vios
     write_metric_num "timing__setup_r2r__ws__corner:$corner_name" $worst_r2r_setup_slack
     write_metric_int "timing__setup_r2r_vio__count__corner:$corner_name" $r2r_setup_vios
-    puts "%OL_END_REPORT"
+    lln_report_end
 
-    puts "%OL_CREATE_REPORT $corner_name/unpropagated.rpt"
+    lln_report_begin "$corner_name/unpropagated.rpt"
 
     foreach clock [all_clocks] {
         if { ![get_property $clock is_propagated] } {
@@ -385,10 +385,10 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
         }
     }
 
-    puts "%OL_END_REPORT"
+    lln_report_end
 
 
-    puts "%OL_CREATE_REPORT $corner_name/clock.rpt"
+    lln_report_begin "$corner_name/clock.rpt"
 
     foreach clock [all_clocks] {
         set source_names ""
@@ -427,7 +427,7 @@ foreach {corner_name corner_object} [lln::get_corner_dict] {
         report_clock_min_period -clocks [get_property $clock name]
     }
 
-    puts "%OL_END_REPORT"
+    lln_report_end
 
     incr corner_index
 }

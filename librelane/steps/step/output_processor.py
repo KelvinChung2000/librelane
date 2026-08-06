@@ -17,8 +17,6 @@ from loguru import logger
 
 import os
 import pathlib
-from decimal import Decimal
-from io import TextIOWrapper
 from abc import abstractmethod, ABC
 from typing import (
     Any,
@@ -33,11 +31,6 @@ if TYPE_CHECKING:
     from librelane.steps.step.core import Step
 
 VT = TypeVar("VT")
-
-
-REPORT_START_LOCUS = "%OL_CREATE_REPORT"
-REPORT_END_LOCUS = "%OL_END_REPORT"
-METRIC_LOCUS = "%OL_METRIC"
 
 
 class OutputProcessor(ABC, Generic[VT]):
@@ -110,21 +103,12 @@ class OutputProcessor(ABC, Generic[VT]):
 
 class DefaultOutputProcessor(OutputProcessor[dict[str, Any]]):
     """
-    An output processor that makes a number of special functions accessible to
-    subprocesses by simply printing keywords in the terminal, such as:
+    Prints each line of subprocess output to the logger.
 
-    * ``%OL_CREATE_REPORT <file>``\\: Starts redirecting all output from
-      standard output to a report file inside the step directory, with the
-      name <file>.
-    * ``%OL_END_REPORT``: Stops redirection behavior.
-    * ``%OL_METRIC <name> <value>``\\: Adds a string metric with the name <name>
-      and the value <value> to this function's returned object.
-    * ``%OL_METRIC_F <name> <value>``\\: Adds a floating-point metric with the
-      name <name> and the value <value> to this function's returned object.
-    * ``%OL_METRIC_I <name> <value>``\\: Adds an integer metric with the name
-      <name> and the value <value> to this function's returned object.
-
-    Otherwise, the line is simply printed to the logger.
+    Nothing else travels over stdout anymore: metrics arrive as JSON records
+    in the ``_LLN_METRICS_JSONL`` sidecar file, read back by
+    ``run_subprocess`` after exit, and reports are written by the
+    subprocess itself into ``_LLN_REPORT_DIR``.
     """
 
     key = "generated_metrics"
@@ -132,39 +116,13 @@ class DefaultOutputProcessor(OutputProcessor[dict[str, Any]]):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.generated_metrics: dict[str, Any] = {}
-        self.current_rpt: TextIOWrapper | None = None
 
     def process_line(self, line: str) -> bool:
         """
         Always returns ``True``, so ``DefaultOutputProcessor`` should always be
         at the end of your list.
         """
-        if self.step.step_dir is not None and line.startswith(REPORT_START_LOCUS):
-            if self.current_rpt is not None:
-                self.current_rpt.close()
-            report_name = line[len(REPORT_START_LOCUS) + 1 :].strip()
-            report_path = self.report_dir / report_name
-            self.current_rpt = report_path.open("w")
-        elif line.startswith(REPORT_END_LOCUS):
-            if self.current_rpt is not None:
-                self.current_rpt.close()
-            self.current_rpt = None
-        elif line.startswith(METRIC_LOCUS):
-            # maxsplit=2: everything after the name is the value, so a string
-            # metric may contain spaces (e.g. design__die__bbox's four
-            # coordinates); int/Decimal values are whitespace-tolerant anyway.
-            command, name, value = line.split(" ", maxsplit=2)
-            metric_type: type[str] | type[int] | type[Decimal] = str
-            if command.endswith("_I"):
-                metric_type = int
-            elif command.endswith("_F"):
-                metric_type = Decimal
-            self.generated_metrics[name] = metric_type(value.rstrip("\n"))
-        elif self.current_rpt is not None:
-            # No echo- the timing reports especially can be very large
-            # and terminal emulators will slow the flow down.
-            self.current_rpt.write(line)
-        elif not self.silent:
+        if not self.silent:
             logger.log("SUBPROCESS", line.rstrip())
         return True
 

@@ -10,9 +10,6 @@ from librelane.steps.step.exceptions import (
 )
 from librelane.steps.step.output_processor import (
     VT,
-    REPORT_START_LOCUS,
-    REPORT_END_LOCUS,
-    METRIC_LOCUS,
     OutputProcessor,
     DefaultOutputProcessor,
 )

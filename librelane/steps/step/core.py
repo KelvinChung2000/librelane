@@ -75,10 +75,6 @@ from librelane.steps.step.subprocess_exec import SubprocessMixin
 VT = TypeVar("VT")
 
 
-REPORT_START_LOCUS = "%OL_CREATE_REPORT"
-REPORT_END_LOCUS = "%OL_END_REPORT"
-METRIC_LOCUS = "%OL_METRIC"
-
 GlobalToolbox = Toolbox(os.fspath(pathlib.Path.cwd() / "librelane_run" / "tmp"))
 ViewsUpdate = dict[DesignFormat, StateElement]
 MetricsUpdate = dict[str, Any]

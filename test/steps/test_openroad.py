@@ -764,8 +764,8 @@ def test_the_corner_script_reports_every_defined_corner():
 
     body = script.split("foreach {corner_name corner_object}")[1]
     assert "\n    break\n" not in body
-    assert "%OL_CREATE_REPORT $corner_name/min.rpt" in body
-    assert "%OL_CREATE_REPORT $corner_name/violator_list.rpt" in body
+    assert 'lln_report_begin "$corner_name/min.rpt"' in body
+    assert 'lln_report_begin "$corner_name/violator_list.rpt"' in body
 
 
 def test_multi_corner_sta_reports_land_where_they_always_have():
@@ -1019,25 +1019,45 @@ def test_psm_error_count_of_an_empty_report_is_zero():
     assert get_psm_error_count(io.StringIO("\n")) == 0
 
 
-def test_the_metric_locus_carries_string_values_with_spaces():
-    """The odbpy scripts emit metrics over the %OL_METRIC stdout channel
-    (OpenROAD's -metrics JSON is never written in -python mode), and
-    design__die__bbox's value is four space-separated coordinates."""
-    from types import SimpleNamespace
-
-    from librelane.steps.step.output_processor import DefaultOutputProcessor
-
-    processor = DefaultOutputProcessor(
-        step=SimpleNamespace(step_dir=None), report_dir=".", silent=True
-    )
-    processor.process_line("%OL_METRIC design__die__bbox 0.0 0.0 101.205 111.925\n")
-    processor.process_line("%OL_METRIC_I design__disconnected_pin__count 0\n")
-    processor.process_line("%OL_METRIC_F route__wirelength__max 148.05\n")
-
+def test_sidecar_metrics_parse_with_real_json_types(tmp_path):
+    """Metrics travel as JSON records in the _LLN_METRICS_JSONL sidecar file,
+    read back after the subprocess exits: integers stay int, floats become
+    Decimal, strings may contain anything (design__die__bbox's four
+    coordinates), Infinity round-trips, and a line truncated by a crash is
+    skipped without losing the records before it."""
+    import json
+    import subprocess
+    import sys
     from decimal import Decimal
 
-    assert processor.result() == {
+    from librelane.steps.step.subprocess_exec import SubprocessMixin
+
+    class Harness(SubprocessMixin):
+        id = "Test.Sidecar"
+        step_dir = str(tmp_path)
+        output_processors = []
+
+        def get_log_path(self):
+            return str(tmp_path / "sidecar-probe.log")
+
+    emitter = tmp_path / "emit.py"
+    emitter.write_text(
+        "import json, os\n"
+        "with open(os.environ['_LLN_METRICS_JSONL'], 'a') as f:\n"
+        "    f.write(json.dumps({'name': 'a__count', 'value': 3}) + '\\n')\n"
+        "    f.write(json.dumps({'name': 'b__area', 'value': 1.5}) + '\\n')\n"
+        "    f.write(json.dumps({'name': 'design__die__bbox',"
+        " 'value': '0.0 0.0 101.205 111.925'}) + '\\n')\n"
+        "    f.write(json.dumps({'name': 'c__slack', 'value': 'Infinity'}) + '\\n')\n"
+        "    f.write('{\"name\": \"truncat')\n"
+    )
+    result = Harness().run_subprocess(
+        [sys.executable, str(emitter)], log_to=tmp_path / "sidecar-probe.log"
+    )
+
+    assert result["generated_metrics"] == {
+        "a__count": 3,
+        "b__area": Decimal("1.5"),
         "design__die__bbox": "0.0 0.0 101.205 111.925",
-        "design__disconnected_pin__count": 0,
-        "route__wirelength__max": Decimal("148.05"),
+        "c__slack": Decimal("Infinity"),
     }

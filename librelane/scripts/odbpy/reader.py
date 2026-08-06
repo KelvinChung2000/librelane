@@ -15,6 +15,7 @@
 import odb
 from openroad import Tech, Design
 
+import os
 import re
 import sys
 import json
@@ -250,16 +251,28 @@ def click_odb(function):
     return wrapper
 
 
-# Metrics are emitted through librelane's stdout channel rather than
-# utl.metric_*: OpenROAD's -metrics JSON is written by a Tcl exit handler,
-# which -python mode never runs, so utl-recorded metrics silently vanish.
+# Metrics are appended to the JSONL sidecar file librelane names in
+# _LLN_METRICS_JSONL, one {"name": ..., "value": ...} object per line, and
+# read back after the process exits -- out-of-band of the log stream, with
+# real JSON types. (Not utl.metric_*: OpenROAD's -metrics JSON is written by
+# a Tcl exit handler, which -python mode never runs.) Outside librelane --
+# a reproducible run by hand -- the metric is simply logged.
+def _emit_metric(name, value):
+    sidecar = os.environ.get("_LLN_METRICS_JSONL")
+    if sidecar is None:
+        print(f"metric {name}: {value}")
+        return
+    with open(sidecar, "a", encoding="utf8") as f:
+        f.write(json.dumps({"name": name, "value": value}) + "\n")
+
+
 def metric(name, value):
-    print(f"%OL_METRIC {name} {value}", flush=True)
+    _emit_metric(name, str(value))
 
 
 def metric_integer(name, value):
-    print(f"%OL_METRIC_I {name} {value}", flush=True)
+    _emit_metric(name, int(value))
 
 
 def metric_float(name, value):
-    print(f"%OL_METRIC_F {name} {value}", flush=True)
+    _emit_metric(name, float(value))

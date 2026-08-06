@@ -106,6 +106,6 @@ estimate_parasitics -placement
 
 write_views
 
-puts "%OL_CREATE_REPORT cts.rpt"
+lln_report_begin "cts.rpt"
 report_cts
-puts "%OL_END_REPORT"
+lln_report_end

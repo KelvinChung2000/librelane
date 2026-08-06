@@ -17,6 +17,18 @@ Section Order
 # Tool Updates
 ## Testing
 ## Misc. Enhancements/Bugfixes
+
+* Retired the `%OL_METRIC`/`%OL_CREATE_REPORT` stdout protocols entirely.
+  Metrics now travel as JSON records in a per-subprocess sidecar file
+  (`_LLN_METRICS_JSONL`), appended by the emitting script and read back
+  after exit -- out-of-band of the log stream, with real JSON types, no
+  magic prefixes, and no line-parsing races. Reports are written by the
+  subprocess itself: the OpenROAD/OpenSTA scripts redirect through
+  `utl::redirectFile*` (or `sta::redirect_file_*` under standalone OpenSTA),
+  both of which capture `puts` and report-command output without echoing;
+  `lln_report_tee_begin` tees instead for reports whose lines are also
+  parsed as alerts (antenna check). Scripts printing the old magic strings
+  are no longer interpreted.
 ## API Breaks
 ## Documentation
 

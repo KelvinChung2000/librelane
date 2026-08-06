@@ -222,14 +222,16 @@ class OpenROADStubs:
             self.output.append(f"  {unit} {scale}")
 
     def reports(self):
-        """The ``%OL_CREATE_REPORT`` blocks the script emitted, by name."""
+        """The ``lln_report_begin``/``lln_report_end`` blocks the script
+        emitted, by name. The stubs installed by :meth:`stub_io_tcl` mark the
+        boundaries in the output stream."""
         collected = {}
         current = None
         for line in self.output:
-            if line.startswith("%OL_CREATE_REPORT "):
+            if line.startswith("__LLN_REPORT_BEGIN__ "):
                 current = line.split(None, 1)[1]
                 collected[current] = []
-            elif line == "%OL_END_REPORT":
+            elif line == "__LLN_REPORT_END__":
                 current = None
             elif current is not None:
                 collected[current].append(line)
@@ -277,6 +279,20 @@ class OpenROADStubs:
 
         self.interpreter.eval("rename source {}")
         self.interpreter.createcommand("source", source)
+        # io.tcl's report redirection, reduced to boundary markers in the
+        # captured output so reports() can carve the blocks back out.
+        self.interpreter.createcommand(
+            "lln_report_begin",
+            lambda name: self.output.append(f"__LLN_REPORT_BEGIN__ {name}"),
+        )
+        self.interpreter.createcommand(
+            "lln_report_tee_begin",
+            lambda name: self.output.append(f"__LLN_REPORT_BEGIN__ {name}"),
+        )
+        self.interpreter.createcommand(
+            "lln_report_end",
+            lambda: self.output.append("__LLN_REPORT_END__"),
+        )
         self.interpreter.eval(f"set ::env(SCRIPTS_DIR) {SCRIPTS.parent}")
         self.interpreter.eval("set ::env(CURRENT_DEF) design.def")
 

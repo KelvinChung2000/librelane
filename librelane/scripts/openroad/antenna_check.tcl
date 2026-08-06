@@ -15,6 +15,8 @@ source $::env(SCRIPTS_DIR)/openroad/common/io.tcl
 read_current_odb
 
 # start checking antennas and generate a detailed report
-puts "%OL_CREATE_REPORT $::env(_ANTENNA_REPORT)"
+# Tee, not redirect: the ANT warnings inside this report are parsed as
+# alerts from the log stream.
+lln_report_tee_begin "$::env(_ANTENNA_REPORT)"
 check_antennas -verbose
-puts "%OL_END_REPORT"
+lln_report_end

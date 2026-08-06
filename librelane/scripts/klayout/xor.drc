@@ -140,4 +140,8 @@ if $gds
   $gds.write($gds_out)
 end
 
-puts "%OL_METRIC_I design__xor_difference__count #{total_xor_differences}"
+# One {"name": ..., "value": ...} JSON object per line, appended to the
+# sidecar file librelane reads back after this process exits.
+File.open(ENV["_LLN_METRICS_JSONL"], "a") do |f|
+  f.puts("{\"name\": \"design__xor_difference__count\", \"value\": #{total_xor_differences}}")
+end

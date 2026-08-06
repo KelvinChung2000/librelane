@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import json
 
 from klayout.rdb import ReportDatabase
@@ -39,7 +40,8 @@ def cli(xml_file, json_file, metric):
     with open(json_file, "w", encoding="utf8") as f:
         json.dump(json_database, f, indent=4)
 
-    print(f"%OL_METRIC_I {metric} {total}")
+    with open(os.environ["_LLN_METRICS_JSONL"], "a", encoding="utf8") as f:
+        f.write(json.dumps({"name": metric, "value": total}) + "\n")
 
 
 if __name__ == "__main__":

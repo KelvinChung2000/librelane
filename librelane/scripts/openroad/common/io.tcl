@@ -631,36 +631,83 @@ proc max {a b} {
     }
 }
 
-set ::metric_count 0
-set ::metrics_file ""
-if { [namespace exists utl] } {
-    proc write_metric_str {metric value} {
-        puts "Writing metric $metric: $value"
-        utl::metric $metric $value
+proc _lln_json_string {value} {
+    set escaped [string map {"\\" "\\\\" "\"" "\\\"" "\n" "\\n" "\t" "\\t"} $value]
+    return "\"$escaped\""
+}
+
+# Metrics are appended to the JSONL sidecar file librelane names in
+# _LLN_METRICS_JSONL, one {"name": ..., "value": ...} object per line, and
+# read back after the process exits -- out-of-band of the log stream, with
+# real JSON types. Outside librelane, the metric is simply logged.
+proc _lln_emit_metric {metric json_value} {
+    if { ![info exists ::env(_LLN_METRICS_JSONL)] } {
+        return
     }
-    proc write_metric_int {metric value} {
-        puts "Writing metric $metric: $value"
-        utl::metric_int $metric $value
+    set f [open $::env(_LLN_METRICS_JSONL) a]
+    puts $f "{\"name\": [_lln_json_string $metric], \"value\": $json_value}"
+    close $f
+}
+
+proc write_metric_str {metric value} {
+    puts "Writing metric $metric: $value"
+    _lln_emit_metric $metric [_lln_json_string $value]
+}
+proc write_metric_int {metric value} {
+    puts "Writing metric $metric: $value"
+    _lln_emit_metric $metric [expr {int($value)}]
+}
+proc write_metric_num {metric value} {
+    puts "Writing metric $metric: $value"
+    if { $value == 1e30 } {
+        _lln_emit_metric $metric [_lln_json_string "Infinity"]
+    } elseif { $value == -1e30 } {
+        _lln_emit_metric $metric [_lln_json_string "-Infinity"]
+    } else {
+        _lln_emit_metric $metric [expr {double($value)}]
     }
-    proc write_metric_num {metric value} {
-        puts "Writing metric $metric: $value"
-        utl::metric_float $metric $value
+}
+
+# Reports redirect through OpenROAD's logger rather than a stdout protocol:
+# utl::redirectFile* captures both Tcl puts and the C-level report commands,
+# writes only to the file (no echo -- timing reports are large), and needs
+# no parsing on librelane's side. _LLN_REPORT_DIR is set by run_subprocess.
+set ::_lln_report_open ""
+proc _lln_report_path {name} {
+    set path [file join $::env(_LLN_REPORT_DIR) $name]
+    file mkdir [file dirname $path]
+    return $path
+}
+proc lln_report_begin {name} {
+    lln_report_end
+    set path [_lln_report_path $name]
+    # OpenROAD's logger redirect where available; standalone OpenSTA
+    # (STAPrePNR) has no utl namespace, and its own redirect captures puts
+    # just the same. Neither echoes: use lln_report_tee_begin for a report
+    # whose lines must also reach the log -- tool alerts are parsed there.
+    if { [info commands utl::redirectFileBegin] != "" } {
+        utl::redirectFileBegin $path
+    } else {
+        sta::redirect_file_begin $path
     }
-} else {
-    proc write_metric_num {metric value} {
-        if { $value == 1e30 } {
-            set value inf
-        } elseif { $value == -1e30 } {
-            set value -inf
+    set ::_lln_report_open redirect
+}
+proc lln_report_tee_begin {name} {
+    lln_report_end
+    utl::teeFileBegin [_lln_report_path $name]
+    set ::_lln_report_open tee
+}
+proc lln_report_end {} {
+    if { $::_lln_report_open == "tee" } {
+        utl::teeFileEnd
+    } elseif { $::_lln_report_open == "redirect" } {
+        if { [info commands utl::redirectFileEnd] != "" } {
+            utl::redirectFileEnd
+        } else {
+            sta::redirect_file_end
         }
-        puts "%OL_METRIC_F $metric $value"
     }
-    proc write_metric_int {metric value} {
-        puts "%OL_METRIC_I $metric $value"
-    }
-    proc write_metric_str {metric value} {
-        puts "%OL_METRIC $metric $value"
-    }
+    set ::_lln_report_open ""
 }
 
 proc exit_unless_gui {{status 0}} {

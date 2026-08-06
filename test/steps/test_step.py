@@ -489,24 +489,21 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
         _no_revalidate_conf=True,
     )
     out_file = "out.txt"
-    report_file = "test.rpt"
     report_data = "Hello World"
     extra_data = "Bye World"
-    new_metric = {"new_metric": 1, "new_float_metric": 2.0}
     subprocess_log_file = "test.log"
+    # Nothing travels over stdout anymore: metrics arrive via the JSONL
+    # sidecar (tested on its own) and reports are written by the subprocess
+    # itself. Output is simply logged.
     subprocess_result = {
         "returncode": 0,
-        "generated_metrics": new_metric,
+        "generated_metrics": {},
         "log_path": subprocess_log_file,
     }
     out_data = textwrap.dedent(
         f"""
-        %OL_CREATE_REPORT {report_file}
         {report_data}
-        %OL_END_REPORT
         {extra_data}
-        %OL_METRIC_I new_metric {new_metric["new_metric"]}
-        %OL_METRIC_F new_float_metric {new_metric["new_float_metric"]}
         """
     ).strip()
 
@@ -519,10 +516,6 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
     actual_out_data = ""
     with open(subprocess_log_file) as f:
         actual_out_data = f.read()
-    actual_report_data = ""
-    with open(report_file) as f:
-        actual_report_data = f.read()
-
     assert actual_result == subprocess_result, (
         ".run_subprocess() generated invalid metrics"
     )
@@ -566,9 +559,6 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
 
     assert owned_files["log"].closed
     assert owned_files["stdin"].closed
-    assert actual_report_data.strip() == report_data, (
-        ".run_subprocess() generated invalid report"
-    )
     assert actual_out_data == out_data, (
         ".run_subprocess() generated mis-matched log file"
     )

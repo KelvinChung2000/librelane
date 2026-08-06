@@ -17,6 +17,7 @@ from loguru import logger
 
 import os
 import json
+from decimal import Decimal
 import psutil
 import signal
 import subprocess
@@ -172,6 +173,20 @@ class SubprocessMixin:
         env = dict(env)
         env.setdefault("COLUMNS", str(console.width))
 
+        # The metrics channel: subprocesses append one JSON object per line
+        # ({"name": ..., "value": ...}) to this file, which is read back
+        # after exit -- out-of-band of the log stream, so values need no
+        # magic prefixes, survive any interleaving, and carry real JSON
+        # types. One file per subprocess (log names are unique within a
+        # step), parsed even when the process fails.
+        metrics_jsonl = log_path.with_suffix(".metrics.jsonl")
+        metrics_jsonl.unlink(missing_ok=True)
+        env["_LLN_METRICS_JSONL"] = str(metrics_jsonl)
+        # Reports, likewise, are written by the subprocess itself (the
+        # openroad scripts redirect through utl::redirectFile*), not parsed
+        # out of its stdout.
+        env["_LLN_REPORT_DIR"] = str(report_dir)
+
         for key, value in env.items():
             if not (
                 isinstance(value, str)
@@ -253,6 +268,27 @@ class SubprocessMixin:
 
         for processor in output_processors:
             result[processor.key] = processor.result()
+
+        if metrics_jsonl.exists():
+            sidecar = result.setdefault("generated_metrics", {})
+            with metrics_jsonl.open(encoding="utf8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line, parse_float=Decimal)
+                        name, value = record["name"], record["value"]
+                    except (ValueError, KeyError, TypeError):
+                        # A crash mid-append can truncate the last line; the
+                        # records before it are still good.
+                        logger.bind(step=self.id).warning(
+                            f"Malformed metrics record ignored: {line!r}"
+                        )
+                        continue
+                    if value in ("Infinity", "-Infinity"):
+                        value = Decimal(value)
+                    sidecar[name] = value
 
         if check and returncode != 0:
             if returncode > 0:

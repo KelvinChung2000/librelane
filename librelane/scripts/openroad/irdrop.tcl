@@ -21,7 +21,7 @@ source $::env(SCRIPTS_DIR)/openroad/common/set_rc.tcl
 read_spef $::env(CURRENT_SPEF_DEFAULT_CORNER)
 
 if { [info exists ::env(VSRC_LOC_FILES)] } {
-    puts "%OL_CREATE_REPORT irdrop.rpt"
+    lln_report_begin "irdrop.rpt"
     foreach {net vsrc_file} "$::env(VSRC_LOC_FILES)" {
         set arg_list [list]
         lappend arg_list -net $net
@@ -29,10 +29,10 @@ if { [info exists ::env(VSRC_LOC_FILES)] } {
         lappend arg_list -vsrc $vsrc_file
         log_cmd analyze_power_grid {*}$arg_list
     }
-    puts "%OL_END_REPORT"
+    lln_report_end
 } else {
     puts "\[INFO\] Using voltage extracted from lib ($::env(LIB_VOLTAGE)V) for power nets and 0V for ground nets…"
-    puts "%OL_CREATE_REPORT irdrop.rpt"
+    lln_report_begin "irdrop.rpt"
     foreach net "$::env(VDD_NETS)" {
         set arg_list [list]
         lappend arg_list -net $net
@@ -47,5 +47,5 @@ if { [info exists ::env(VSRC_LOC_FILES)] } {
         set_pdnsim_net_voltage -net $net -voltage 0
         log_cmd analyze_power_grid {*}$arg_list
     }
-    puts "%OL_END_REPORT"
+    lln_report_end
 }

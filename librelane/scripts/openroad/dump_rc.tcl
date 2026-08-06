@@ -91,10 +91,10 @@ proc resizer_rc_values {header} {
 }
 
 
-puts "%OL_CREATE_REPORT tlef_values.rpt"
+lln_report_begin "tlef_values.rpt"
 report_units
 dblayer_rc_values "== Technology LEF Values =="
-puts "%OL_END_REPORT"
+lln_report_end
 
 source $::env(SCRIPTS_DIR)/openroad/common/set_rc.tcl
 
@@ -104,7 +104,7 @@ source $::env(SCRIPTS_DIR)/openroad/common/set_rc.tcl
 # The report that used to sit here read odb again and was therefore identical
 # to tlef_values.rpt while claiming to show the values after set_rc. Everything
 # set_rc.tcl applied is per-corner, and is in the report below.
-puts "%OL_CREATE_REPORT resizer_values_after.rpt"
+lln_report_begin "resizer_values_after.rpt"
 report_units
 resizer_rc_values "== Resizer RC Values (After Set RC) =="
-puts "%OL_END_REPORT"
+lln_report_end
