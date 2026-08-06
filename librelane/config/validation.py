@@ -221,7 +221,11 @@ def validate_mapping(
         for variable in variables
         for item in variable.deprecated_names
     }
-    for key in sorted(extras):
+    # ``None`` means the caller wants no commentary on the key set at all --
+    # the per-step increment revalidates a full flow configuration against
+    # one step's variables, where "unused by the current flow" would fire
+    # for nearly every key, every step.
+    for key in sorted(extras) if on_unknown_key is not None else []:
         if key in deprecated_names or key in {
             "PDKPATH",
             "DESIGN_DIR",

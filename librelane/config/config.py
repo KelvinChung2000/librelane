@@ -32,7 +32,7 @@ from typing import (
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 
-from librelane.config.legacy import Variable, MissingRequiredVariable
+from librelane.config.legacy import Variable
 from librelane.config.diagnostics import Diagnostic, DiagnosticSet, Severity
 from librelane.config.loading import (
     CoercionSyntax,
@@ -504,14 +504,15 @@ class Config(GenericImmutableDict[str, Any]):
         mutable.update(self)
         mutable.update(other_inputs)
 
-        processed, design_warnings, design_errors, renames = (
-            Config.__process_variable_list(
-                mutable,
-                config_vars,
-                removed_variables,
-                on_unknown_key=None,
-            )
+        processed, increment_diagnostics, renames = validate_mapping(
+            mutable,
+            list(config_vars),
+            permissive=False,
+            on_unknown_key=None,
+            removed=removed_variables,
         )
+        design_warnings = increment_diagnostics.rendered_warnings()
+        design_errors = increment_diagnostics.rendered_errors()
 
         if len(design_errors) != 0:
             raise InvalidConfig(
@@ -649,14 +650,15 @@ class Config(GenericImmutableDict[str, Any]):
 
         raw.update(kwargs)
 
-        processed, design_warnings, design_errors, renames = (
-            Config.__process_variable_list(
-                raw,
-                flow_common_variables,
-                removed_variables,
-                on_unknown_key="error",
-            )
+        processed, interactive_diagnostics, renames = validate_mapping(
+            raw,
+            list(flow_common_variables),
+            permissive=False,
+            on_unknown_key="error",
+            removed=removed_variables,
         )
+        design_warnings = interactive_diagnostics.rendered_warnings()
+        design_errors = interactive_diagnostics.rendered_errors()
 
         if len(design_errors) != 0:
             raise InvalidConfig("default configuration", design_warnings, design_errors)
@@ -1015,7 +1017,7 @@ class Config(GenericImmutableDict[str, Any]):
         if _load_pdk_configs:
             pdk_root = Self.__resolve_pdk_root(pdk_root)
 
-            mutable, pdkpath, scl, pad, pdk_provenance = Self.__get_pdk_config(
+            pdk_values, pdkpath, scl, pad, pdk_provenance = Self.__get_pdk_config(
                 pdk=pdk,
                 scl=scl,
                 pad=pad,
@@ -1023,6 +1025,7 @@ class Config(GenericImmutableDict[str, Any]):
                 full_pdk_warnings=full_pdk_warnings,
                 flow_pdk_vars=list(flow_pdk_vars),
             )
+            mutable = GenericDict(pdk_values)
         else:
             if pdk_root is not None:
                 pdkpath = os.path.join(pdk_root, mutable["PDK"])
@@ -1443,7 +1446,7 @@ class Config(GenericImmutableDict[str, Any]):
         pdk_root: str,
         flow_pdk_vars: list[Variable] | None = None,
         full_pdk_warnings: bool | None = False,
-    ) -> tuple[GenericDict[str, Any], str, str, str | None, dict[str, str]]:
+    ) -> tuple[dict[str, Any], str, str, str | None, dict[str, str]]:
         """
         Returns
         -------
@@ -1471,17 +1474,17 @@ class Config(GenericImmutableDict[str, Any]):
             pdk_root, pdk, scl, pad
         )
         if flow_pdk_vars is None or len(flow_pdk_vars) == 0:
-            return (GenericDict(), pdkpath, scl, pad, {})
+            return ({}, pdkpath, scl, pad, {})
 
-        raw: GenericDict[str, Any] = GenericDict(frozen)  # microwave
-        processed, pdk_warnings, pdk_errors, pdk_renames = (
-            Config.__process_variable_list(
-                raw,
-                flow_pdk_vars,
-                on_unknown_key=None,
-                permissive_typing=True,
-            )
+        processed, pdk_diagnostics, pdk_renames = validate_mapping(
+            frozen,
+            list(flow_pdk_vars),
+            permissive=True,
+            on_unknown_key=None,
+            provenance=origins,
         )
+        pdk_warnings = pdk_diagnostics.rendered_warnings()
+        pdk_errors = pdk_diagnostics.rendered_errors()
 
         if len(pdk_errors) != 0:
             raise InvalidConfig("PDK configuration files", pdk_warnings, pdk_errors)
@@ -1528,131 +1531,3 @@ class Config(GenericImmutableDict[str, Any]):
             {key: attributed[key] for key in processed if key in attributed},
         )
 
-    def __process_variable_list(
-        mutable: GenericDict[str, Any],
-        variables: Sequence["Variable"],
-        removed: Mapping[str, str] | None = None,
-        *,
-        on_unknown_key: Literal["error", "warn"] | None = "warn",
-        permissive_typing: bool = False,
-        missing_ok: bool = False,
-    ) -> tuple[GenericDict[str, Any], list[str], list[str], dict[str, str]]:
-        """
-        Verifies a configuration object against a list of variables, returning
-        an object with the variables normalized according to their types.
-
-        Parameters
-        ----------
-        config
-            The input, raw configuration object.
-        variables : Sequence["Variable"]
-            A sequence or some other iterable of variables.
-        removed : Mapping[str, str] | None
-            A dictionary of variables that may have existed at a point in
-            time, but then have gotten removed. Useful to give feedback to the user.
-
-        Returns
-        -------
-        tuple[GenericDict[str, Any], list[str], list[str], dict[str, str]]
-            A tuple of:
-            [0] A final, processed configuration.
-            [1] A list of warnings.
-            [2] A list of errors.
-            [3] Each variable that took its value from one of its deprecated
-                names, mapped to the name it took it from.
-
-            If the third element is non-empty, the first object is invalid.
-
-            The fourth element is reported for the same reason
-            :func:`librelane.config.validation.translate_deprecated_names`
-            reports its own: this is a rename, and a caller tracking where each
-            value came from has to move the origin with the value.
-            :meth:`Variable.compile` is the only place that knows both names --
-            it prefers a deprecated name over the current one and emits under
-            the current one, so no diff of the mapping across this call can
-            recover the pairing.
-        """
-        if removed is None:
-            removed = {}
-        warnings: list[str] = []
-        errors = []
-        final: GenericDict[str, Any] = GenericDict()
-        translated_from: dict[str, str] = {}
-
-        # Special Deprecation Behaviors
-        if (
-            mutable.get("DIODE_INSERTION_STRATEGY") is not None
-        ):  # Can't use := because 0 is a valid value
-            dis = mutable["DIODE_INSERTION_STRATEGY"]
-            del mutable["DIODE_INSERTION_STRATEGY"]
-            try:
-                dis = int(dis)
-            except ValueError:
-                pass
-            if not isinstance(dis, int) or dis in [1, 2, 5] or dis > 6:
-                errors.append(
-                    f"DIODE_INSERTION_STRATEGY '{dis}' is not available in LibreLane 2.0 or higher. See 'Migrating DIODE_INSERTION_STRATEGY' in the docs for more info."
-                )
-            else:
-                warnings.append(
-                    "The DIODE_INSERTION_STRATEGY variable has been deprecated. See 'Migrating DIODE_INSERTION_STRATEGY' in the docs for more info."
-                )
-
-                mutable["GRT_REPAIR_ANTENNAS"] = False
-                mutable["RUN_HEURISTIC_DIODE_INSERTION"] = False
-                mutable["DIODE_ON_PORTS"] = "none"
-                if dis in [3, 6]:
-                    mutable["GRT_REPAIR_ANTENNAS"] = True
-                if dis in [4, 6]:
-                    mutable["RUN_HEURISTIC_DIODE_INSERTION"] = True
-                    mutable["DIODE_ON_PORTS"] = "in"
-
-        for variable in variables:
-            try:
-                key, value_processed = variable.compile(
-                    mutable_config=mutable,
-                    warning_list_ref=warnings,
-                    values_so_far=final,
-                    permissive_typing=permissive_typing,
-                )
-                if key is not None:
-                    del mutable[key]
-                    if key != variable.name:
-                        translated_from[variable.name] = key
-                final[variable.name] = value_processed
-            except MissingRequiredVariable as e:
-                if not missing_ok:
-                    errors.append(str(e))
-            except ValueError as e:
-                errors.append(str(e))
-            if variable.name in mutable:
-                del mutable[variable.name]
-
-        for key in sorted(mutable.keys()):
-            assert isinstance(key, str)
-
-            if key in vars(SpecialKeys).values():
-                continue
-            if key in removed:
-                warnings.append(f"'{key}' has been removed: {removed[key]}")
-            elif (
-                "_OPT" not in key
-                and not key.startswith("//")
-                and not key.startswith("#")
-            ):
-                if on_unknown_key == "error":
-                    if key in Variable.known_variable_names:
-                        warnings.append(
-                            f"Key '{key}' provided is unused by the current flow."
-                        )
-                    else:
-                        errors.append(f"Unknown key '{key}' provided.")
-                elif on_unknown_key == "warn":
-                    if key in Variable.known_variable_names:
-                        warnings.append(
-                            f"Key '{key}' provided is unused by the current flow."
-                        )
-                    else:
-                        warnings.append(f"An unknown key '{key}' was provided.")
-
-        return (final, warnings, errors, translated_from)

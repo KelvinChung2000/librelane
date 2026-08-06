@@ -6,7 +6,15 @@ Section Order
 ## CLI
 ## Steps
 ## Flows
-## Tool Updates
+#* The configuration loader now validates every layer through the same
+  model-based path (`validate_mapping`): the PDK layer, the per-step
+  increment, and interactive mode migrated off `Variable.compile`, which no
+  longer participates in loading. One alignment: the current variable name
+  now outranks a deprecated one at every layer; `compile` used to invert
+  that at the PDK layer only. openlane-era PDKs write only the old names
+  (and `pdk_compat` migrates them), so shipped PDKs resolve identically.
+
+# Tool Updates
 ## Testing
 ## Misc. Enhancements/Bugfixes
 ## API Breaks

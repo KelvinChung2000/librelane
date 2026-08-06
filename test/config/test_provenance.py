@@ -455,15 +455,17 @@ def test_a_pdk_value_under_a_deprecated_name_is_attributed_to_the_pdk(
     assert provenance["TEST_PDK_RENAMED"] == "<pdk>"
 
 
-def test_a_deprecated_pdk_name_outranks_the_current_one_in_the_map_too(
+def test_the_current_pdk_name_outranks_a_deprecated_one_in_the_map_too(
     tiny_pdk, tmp_path
 ):
     """
-    The wrong-origin half. The SCL writes the deprecated name and the PDK the
-    current one, so ``compile`` takes the SCL's value while the PDK's entry
-    for the current name survives untouched. The map then names a real layer
-    that did not supply the value, which is harder to disbelieve than being
-    told ``default``.
+    The SCL writes the deprecated name and the PDK the current one. Since the
+    PDK layer moved onto the same model-based validation as the design layer,
+    one precedence rule holds everywhere: the current name wins, and the map
+    names the layer that wrote it. (Variable.compile used to invert this at
+    the PDK layer only, preferring the deprecated name.) Real openlane-era
+    PDKs write only the old names, which pdk_compat migrates before this
+    question can arise.
     """
     from librelane.config import Config
 
@@ -475,8 +477,8 @@ def test_a_deprecated_pdk_name_outranks_the_current_one_in_the_map_too(
         pdk_root=tiny_pdk,
     )
 
-    assert resolved["TEST_PDK_ALIAS_LAYERED"] == "from the scl"
-    assert resolved.provenance["TEST_PDK_ALIAS_LAYERED"] == "<scl>"
+    assert resolved["TEST_PDK_ALIAS_LAYERED"] == "from the pdk"
+    assert resolved.provenance["TEST_PDK_ALIAS_LAYERED"] == "<pdk>"
 
 
 def test_a_design_value_under_a_deprecated_name_is_attributed_to_the_design(
