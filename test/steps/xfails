@@ -1,1 +1,3 @@
-odb.applydeftemplate/002-bad_def # fails randomly on Nix/aarch64-darwin
+# Expected-failure step-test cases, one per line, as by_id-relative paths
+# (e.g. openroad.somestep/001-case). Comments start with '#'. Currently empty:
+# every known failure has been fixed forward rather than excused here.

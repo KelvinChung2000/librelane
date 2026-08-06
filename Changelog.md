@@ -29,6 +29,17 @@ Style Notes
 
 ## Steps
 
+* Created `OpenROAD.Synthesis`: a `synthesis` job provider using OpenROAD's
+  integrated synthesis module -- slang elaborates the SystemVerilog sources
+  (`sv_elaborate`) and the built-in mapper implements them with the standard
+  cell library (`synthesize`), all inside OpenROAD's own database. Select it
+  with `TOOLS: {synthesis: openroad}`. It is not Yosys; note the upstream
+  limitations: no latch mapping, unconditional flattening, and macro
+  instance names are not preserved, so `SYNTH_HIERARCHY_MODE: keep` and
+  `MACROS` designs should stay on the `yosys` provider, and documents whose
+  power-connection steps need the Yosys JSON header cannot select it.
+  Added `SYNTH_REDUCE_NAME_LOSS` and `SYNTH_NAMING_THRESHOLD`.
+
 * Created `OpenROAD.RTLMacroPlacer`: automatic macro placement using
   OpenROAD's hierarchical RTL macro placer (RTL-MP). Opt-in via the new
   `RUN_RTLMP` variable; runs in the `macro_placement` job after
@@ -104,12 +115,31 @@ Style Notes
   1.5.320 behavior change: flattening no longer removes a pinless
   placeholder cell -- `LVS_IGNORE_CELLS` is the working semantics, and the
   LVS reproducibles migrated accordingly.
+* Fixed the last xfail, `odb.applydeftemplate/002-bad_def`: its handler
+  asserted on `caplog`, racing the live log pump the subprocess output goes
+  through -- under load (Nix CI on aarch64-darwin) the DEF parser's message
+  had not always been drained when the handler ran. It now reads the step's
+  log file, which is written before the exception propagates. The `xfails`
+  file is empty.
 * Sealed a test-ordering flake: mock `Test.*` steps registered by the flow
   fixtures leaked into the global step factory, so registry-enumerating
   tests passed or failed by worker scheduling; the flows conftest now
   restores the registry per module.
 
 ## Tool Updates
+
+* Removed every OpenROAD-related nix patch; the shipped binaries are now
+  vanilla upstream:
+  * `python_metrics_flush.patch` is unnecessary because the odbpy scripts
+    now emit their metrics over librelane's own `%OL_METRIC` stdout channel
+    instead of `utl.metric_*` -- upstream's `-metrics` JSON is written by a
+    Tcl exit handler that `-python` mode never runs, so utl-recorded metrics
+    silently vanish there. The channel's parser now also carries string
+    values with spaces (`design__die__bbox`). The `-metrics` flag is still
+    passed and merged when the file appears (Tcl mode).
+  * The abc `zlib.patch` was configured as a no-op (its option name never
+    matched the flag the flake passed), so abc builds with its vendored
+    zlib, as it always effectively did.
 
 * Updated OpenROAD to `2026-08-05` (`b9a38929`), OpenSTA to `2026-07-22`
   (`31e8fff`, OpenSTA 3) and OpenROAD's abc fork to `2026-06-15`
