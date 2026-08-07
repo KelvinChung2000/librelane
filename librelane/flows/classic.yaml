@@ -12,17 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# The Classic flow, written as a graph of jobs.
-#
-# It replaces a Python class that held a flat list of steps beside a separate
-# table mapping step id to gating variable. Each job below carries its own
-# steps and its own 'if', so what were two declarations are one.
-#
-# Place and route is a chain and is written as one: each of those jobs really
-# does read the view the job before it wrote. The signoff tail is not. Six
-# branches leave the last stream-out together and meet again at final_checks,
-# which is the flow's single sink, and the order the Python flow listed them in
-# was an artefact of a list having no way to say "independent".
+# The Classic flow, written as a graph of jobs. Place and route is a chain;
+# the signoff tail fans out after check_antenna_properties and meets again at
+# final_checks, the flow's single sink.
 name: Classic
 description: >-
   The flow most similar to the original OpenLane flow, running the Verilog RTL
@@ -159,23 +151,15 @@ config:
       VHDLClassic, which does not run that job.
     deprecated_names: [RUN_VERILATOR]
 
-# No job carries a 'source' key, and that is a property of the graph rather
-# than an omission: no join in this document has two branches that write the
-# same view or metric, so there is nothing to tie-break. The one place a
-# conflict would arise is the pair of stream-outs, and the comment on
-# klayout_streamout says why they are not parallel.
+# No job needs a 'source': no join here has two branches writing the same
+# view or metric. The one near-conflict, the stream-out pair, is kept in
+# series (see klayout_streamout).
 jobs:
   lint:
     uses: lint
     if: RUN_LINTER
-  # No provider is pinned, so this job takes the synthesis template's default,
-  # yosys. Only vhdl_classic.yaml pins one, because only it needs the other.
-  #
-  # It is not what makes the job selectable. TOOLS re-points a job whether or
-  # not its 'uses' names a provider -- a pin is this document's default, not a
-  # lock -- so 'TOOLS: {synthesis: yosys_vhdl}' works here and would work just
-  # the same had this said 'synthesis/yosys'. See docs/source/usage/
-  # swapping_tools.md for what that particular selection then breaks.
+  # Takes the synthesis template's default provider (yosys). A pin here would
+  # only set the default; TOOLS re-points the job either way.
   synthesis:
     needs: [lint]
     uses: synthesis
@@ -189,9 +173,8 @@ jobs:
     needs: [floorplan]
     steps: [OpenROAD.RMP]
     if: RUN_RMP
-  # A plain step rather than part of the floorplan job, because it
-  # hard-requires the Verilog header only Verilog synthesis emits. A flow whose
-  # synthesis frontend cannot produce one omits this job.
+  # Not part of the floorplan job: it requires the Verilog header only
+  # Verilog synthesis emits, so vhdl_classic.yaml omits this job.
   set_power_connections:
     needs: [rmp]
     steps: [Odb.SetPowerConnections]
@@ -208,24 +191,15 @@ jobs:
   io_placement:
     needs: [power_grid]
     uses: io_placement
-  # Before global placement, deliberately: the port buffers exist by the time
-  # placement runs, so the logic is placed around them (#917).
-  #
-  # A job of its own rather than a member of global_placement's provider,
-  # unlike the odb-editing steps folded into their neighbours: chip.yaml runs
-  # global placement and deliberately does not run this, because a chip's
-  # ports are the pad ring's bumps and the pad cells have buffered them
-  # already. So this one really is the flow's choice.
+  # Before global placement, so the logic is placed around the port buffers
+  # (#917). Its own job because chip.yaml skips it: pad cells already buffer
+  # a chip's ports.
   add_buffer:
     needs: [io_placement]
     steps: [OpenROAD.AddBuffer]
   global_placement:
     needs: [add_buffer]
     uses: global_placement
-  # What the flow does once the cells have a global position: hand the netlist
-  # to whatever reads a Verilog header later, and take a timing snapshot. Two
-  # steps, one job, because neither is gated and no tool selection reaches
-  # either.
   post_gpl_checks:
     needs: [global_placement]
     steps:
@@ -259,10 +233,8 @@ jobs:
     needs: [global_routing]
     uses: post_grt_repair
     if: RUN_POST_GRT_DESIGN_REPAIR
-  # The antenna_repair job's three steps, one job each. Splitting it is what
-  # lets a job-level 'if' say what the gating table said: the middle step
-  # carries the job's gate and its own, which is exactly the two-variable list
-  # the Python flow expanded for Odb.HeuristicDiodeInsertion.
+  # The antenna-repair steps as one job each, so the middle one can carry its
+  # own extra gate.
   diodes_on_ports:
     needs: [post_grt_repair]
     steps: [Odb.DiodesOnPorts]
@@ -310,53 +282,26 @@ jobs:
     needs: [signoff_sta]
     uses: ir_drop
     if: RUN_IRDROP_REPORT
-  # One job per streamout provider. A job runs one provider, so two tools for
-  # one phase is two jobs -- and that is also what makes the two independent
-  # booleans expressible, since a job-level 'if' is one condition. Likewise
-  # drc, below.
+  # One job per stream-out provider: a job runs one provider, and two
+  # independent gates need two 'if's. Likewise drc, below.
   magic_streamout:
     needs: [ir_drop]
     uses: streamout/magic
     if: RUN_MAGIC_STREAMOUT
-  # In series with magic_streamout, and this is the one edge in the signoff
-  # tail that is not relaxed. Neither stream-out writes the neutral 'gds'
-  # unconditionally: each writes it if its own tool is
-  # PRIMARY_GDSII_STREAMOUT_TOOL, or if nothing has written one yet. In series
-  # that reproduces "the primary tool owns 'gds'" exactly, including on a
-  # magic-primary PDK, which is every sky130 and gf180mcu configuration. In
-  # parallel both would see an empty incoming 'gds', both would write one, and
-  # the join would need a 'source' to choose. A 'source' names a job, so no
-  # static entry can say "whichever tool the PDK named", and either choice
-  # would silently change what the five later consumers of 'gds' read on half
-  # the PDKs.
+  # Deliberately in series: each stream-out writes the neutral 'gds' only if
+  # its tool is PRIMARY_GDSII_STREAMOUT_TOOL or nothing wrote one yet, which
+  # in series reproduces "the primary tool owns 'gds'". In parallel both would
+  # write it, and no static 'source' can say "whichever tool the PDK named".
   klayout_streamout:
     needs: [magic_streamout]
     uses: streamout/klayout
     if: RUN_KLAYOUT_STREAMOUT
-  # Not part of either streamout job: KLayout.Render's inputs are optional and
-  # its outputs are empty, so it satisfies no part of the job's 'gds' contract
-  # and carries no view across the job boundary. It is also ungated, where
-  # KLayout.StreamOut is gated.
-  #
-  # render, write_lef and check_antenna_properties stay on the chain in flow
-  # order, and the fan-out is below them rather than here. Partly a real data
-  # edge (see check_antenna_properties below), partly framework metrics no
-  # contract declares: every Tcl-mode OpenROAD invocation rewrites
-  # 'flow__warnings__count', 'flow__errors__count' and
-  # 'flow__warnings__type_count' into the '-metrics' JSON
-  # OpenROADStep.get_command passes unconditionally. ir_drop is the last such
-  # job; keeping this cheap tail chained keeps every branch of the fan-out
-  # descending from it, so no branch carries fresher counts than its siblings
-  # -- a JoinConflictError at final_checks on the first real run otherwise. A
-  # 'source' cannot settle it either: _check_sources_can_deliver rejects a
-  # 'source' naming a key no declared contract in the producer's branch
-  # mentions. (odbpy invocations write no framework metrics: the '-metrics'
-  # JSON is written by a Tcl exit handler '-python' mode never runs, so
-  # Odb.CheckDesignAntennaProperties rewrites nothing here.)
-  #
-  # The rule this encodes, which is not local to Classic: every branch of a
-  # fan-out must descend from the last OpenROADStep-backed step, so that no
-  # branch writes a framework metric its siblings do not have.
+  # render, write_lef and check_antenna_properties stay chained so the
+  # fan-out below descends from ir_drop, the last Tcl-mode OpenROAD job:
+  # every such invocation rewrites the undeclared flow__warnings/errors
+  # framework metrics, and a branch rewriting them beside siblings that did
+  # not would make the join at final_checks conflict. General rule: every
+  # branch of a fan-out must descend from the last OpenROADStep-backed job.
   render:
     needs: [klayout_streamout]
     steps: [KLayout.Render]
@@ -364,17 +309,12 @@ jobs:
     needs: [render]
     steps: [Magic.WriteLEF]
     if: RUN_MAGIC_WRITE_LEF
-  # Also a real data edge: Odb.CheckDesignAntennaProperties consumes 'lef', and
-  # Magic.WriteLEF is the only step in Classic that produces one.
+  # Also a data edge: it consumes the 'lef' only Magic.WriteLEF produces.
   check_antenna_properties:
     needs: [write_lef]
     steps: [Odb.CheckDesignAntennaProperties]
-  # The fan-out point. The four jobs below it are the heavy ones; render and
-  # write_lef are cheap, so keeping them on the chain costs almost nothing.
-  #
-  # A three-variable conjunction, because KLayout.XOR genuinely consumes
-  # mag_gds from one stream-out and klayout_gds from the other and cannot run
-  # unless both fired.
+  # The fan-out point. XOR consumes both stream-outs' GDS, hence the
+  # three-variable gate.
   xor:
     needs: [check_antenna_properties]
     steps: [KLayout.XOR]
@@ -391,23 +331,15 @@ jobs:
     needs: [check_antenna_properties]
     uses: lvs
     if: RUN_LVS
-  # An ordering edge, not a data edge, and deliberately not moved to
-  # 'synthesis'. Yosys.EQY consumes 'nl', and the last writer of 'nl' before it
-  # is OpenROAD.FillInsertion: it compares the RTL against the
-  # post-place-and-route netlist, not the synthesised one.
+  # Yosys.EQY compares the RTL against the post-place-and-route netlist, not
+  # the synthesised one, so it belongs this late.
   formal_equivalence:
     needs: [lvs]
     uses: formal_equivalence
     if: RUN_EQY
-  # Every leaf, so that the flow has one sink. Misc.ReportManufacturability
-  # reads the LVS, DRC and antenna metrics out of state_in.metrics and warns
-  # for each one it cannot find, so a narrower 'needs' would turn the
-  # manufacturability report into five warnings. render and
-  # check_antenna_properties are not named here because they are no longer
-  # leaves: both are ancestors of all four jobs below, so their metrics arrive
-  # anyway. Making this the only sink also means the flow's final state is the
-  # state the linear flow ended with, which is what runs/<tag>/final snapshots,
-  # and it costs nothing: final_checks ran last anyway.
+  # Needs every leaf, so the flow has one sink: the manufacturability report
+  # warns for each LVS/DRC/antenna metric it cannot find, and the single sink
+  # is what runs/<tag>/final snapshots.
   final_checks:
     needs:
       - xor
