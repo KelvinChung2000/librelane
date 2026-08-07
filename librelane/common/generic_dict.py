@@ -217,29 +217,6 @@ class GenericDict(Mapping[KT, VT]):
             kwargs["indent"] = 4
         return json.dumps(self.to_raw_dict(), cls=self.get_encoder(), **kwargs)
 
-    def check(self, key: KT, /) -> tuple[KT | None, VT | None]:
-        """
-        Checks if a key exists and returns a tuple in the form ``(key, value)``.
-
-        Parameters
-        ----------
-        key : KT
-            The key in question
-
-        Returns
-        -------
-        tuple[KT | None, VT | None]
-            If the key does not exist, the value of ``key`` will be ``None`` and so will
-            ``value``. If the key exists, ``key`` will be the key being checked for
-            existence and ``value`` will be the value assigned to said key in the
-            GenericDict object.
-
-            Do note ``None`` is a valid value for some keys, so simply
-            checking if the second element ``is not None`` is insufficient to check
-            whether a key exists.
-        """
-        return (key if key in self.__data else None, self.get(key))
-
     def update(self, incoming: "Mapping[KT, VT]"):
         """
         A convenience function to update multiple values in the GenericDict object

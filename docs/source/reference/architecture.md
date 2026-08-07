@@ -121,14 +121,16 @@ one of your own.
 
 ### Objects
 
-Configuration objects are a thoroughly-validated dictionary of values assigned
-to various configuration variables throughout a flow.
+Steps and flows declare their configuration variables as fields of a nested
+`Config` [Pydantic](https://docs.pydantic.dev/) model, and read the validated
+values as attributes: `self.config.DESIGN_NAME`, checked against the
+declaration by type checkers.
 
-A flow's configuration variables in an aggregate of all its incorporate steps.
+A flow's configuration variables are an aggregate of all its incorporated
+steps'.
 
-The configuration object supports Python's basic scalars (except for `float`),
-`Decimal`, `List` and `Dict`, the latter two infinitely nestable. Steps are
-given this configuration object as an input.
+Configuration values support Python's basic scalars (except for `float`),
+`Decimal`, `list` and `dict`, the latter two infinitely nestable.
 
 ### Builder
 
@@ -142,4 +144,5 @@ input, which can be one more of:
 
 and then validates this configuration, resolving paths, fixing types and other
 such tasks along the way, returning the {class}`librelane.config.Config` class
-which is essentially a validated and immutable string dictionary.
+-- a validated and immutable mapping the flow then turns into its typed
+`Config` model.

@@ -16,8 +16,8 @@
 The Step Module
 ---------------
 
-This modules includes various functions for importing and/or generating LibreLane
-configuration objects. Configuration objects are the primary input to a flow.
+The Step abstract base class and every step implementation shipped with
+LibreLane, organized by the underlying utility or tool.
 """
 
 from librelane.steps.step import (

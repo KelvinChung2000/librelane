@@ -127,7 +127,7 @@ class BaseConfigModel(BaseModel, Mapping[str, Any]):
         permissive = bool(context.get("permissive"))
         syntaxes: Mapping[str, CoercionSyntax] = context.get("syntaxes") or {}
         # A key no source is recorded for is one this model was handed
-        # directly: the PDK's compiled values, the flow's own additions, an API
+        # directly: the PDK's validated values, the flow's own additions, an API
         # caller's mapping. Those arrive typed, except under the whole-document
         # permissive mode, where every string is openlane-era Tcl text.
         fallback = CoercionSyntax.TCL if permissive else CoercionSyntax.TYPED

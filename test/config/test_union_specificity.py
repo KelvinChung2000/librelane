@@ -2,9 +2,9 @@
 """Union member order under permissive (Tcl) typing -- issue 993.
 
 The five ``KLAYOUT_*_OPTIONS`` variables are ``pdk=True``, so they are
-compiled by :class:`librelane.config.Variable` with ``permissive_typing=True``
-straight out of a PDK's ``config.tcl``, where every value is a string. The
-member order of their unions is therefore the entire resolution rule for them.
+validated permissively straight out of a PDK's ``config.tcl``, where every
+value is a string. The member order of their unions is therefore the entire
+resolution rule for them.
 """
 
 from decimal import Decimal
@@ -12,8 +12,21 @@ from typing import get_args
 
 import pytest
 
-from librelane.common import GenericDict
 from librelane.config import Variable
+from librelane.config.loading.sources import CoercionSyntax
+from librelane.config.validation import validate_mapping
+
+
+def _validated(variable, raw, permissive=True, syntax=CoercionSyntax.TCL):
+    values, diagnostics, _ = validate_mapping(
+        {variable.name: raw},
+        [variable],
+        permissive=permissive,
+        syntaxes={variable.name: syntax},
+        on_unknown_key=None,
+    )
+    assert not diagnostics.rendered_errors(), diagnostics.rendered_errors()
+    return values[variable.name]
 
 
 def _declared_variable(step_id: str, name: str) -> Variable:
@@ -71,11 +84,7 @@ def _klayout_option_variables() -> list[Variable]:
 def test_klayout_options_resolve_to_the_narrowest_member(raw, expected):
     """A Tcl ``1`` is the number one, not ``True``."""
     for variable in _klayout_option_variables():
-        _, compiled = variable.compile(
-            GenericDict({variable.name: raw}),
-            warning_list_ref=[],
-            permissive_typing=True,
-        )
+        compiled = _validated(variable, raw)
         assert compiled == expected, f"{variable.name} coerced {raw!r} wrongly"
         for key, value in expected.items():
             assert type(compiled[key]) is type(value), (
@@ -98,22 +107,25 @@ def test_klayout_option_unions_declare_int_before_bool_and_str_last():
 def test_a_boolean_is_never_a_quantity(numeric_type, permissive):
     """``int(True)`` is 1, which would let ``bool`` be swallowed by ``int``."""
     variable = Variable("N", numeric_type, "a number")
-    with pytest.raises(ValueError, match="Refusing to convert"):
-        variable.compile(
-            GenericDict({"N": True}),
-            warning_list_ref=[],
-            permissive_typing=permissive,
-        )
+    _, diagnostics, _ = validate_mapping(
+        {"N": True},
+        [variable],
+        permissive=permissive,
+        on_unknown_key=None,
+    )
+    errors = diagnostics.rendered_errors()
+    assert errors, f"True was accepted for {numeric_type.__name__}"
 
 
 def test_a_boolean_still_wins_the_union_over_int():
     """With ``int`` declared first, a real ``bool`` must still stay a ``bool``."""
     variable = _declared_variable("KLayout.DRC", "KLAYOUT_DRC_OPTIONS")
     for permissive in (True, False):
-        _, compiled = variable.compile(
-            GenericDict({variable.name: {"feol": True, "seal": 3}}),
-            warning_list_ref=[],
-            permissive_typing=permissive,
+        compiled = _validated(
+            variable,
+            {"feol": True, "seal": 3},
+            permissive=permissive,
+            syntax=CoercionSyntax.TYPED,
         )
         assert compiled == {"feol": True, "seal": 3}
         assert type(compiled["feol"]) is bool

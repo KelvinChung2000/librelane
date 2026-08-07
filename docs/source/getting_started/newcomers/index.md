@@ -161,8 +161,8 @@ and `pm32.v`.
 #### Configuration
 
 Designs in LibreLane have configuration files. A configuration file contains
-values set by the user for various {py:class}`librelane.config.Variable`(s). With
-them, you control the flows. This is the configuration file for the
+values set by the user for the configuration variables the steps and flows
+declare. With them, you control the flows. This is the configuration file for the
 `pm32` design:
 
 ````{dropdown} config.json

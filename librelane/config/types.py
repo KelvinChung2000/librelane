@@ -4,7 +4,7 @@ import json
 import types
 from collections.abc import Mapping
 from enum import Enum
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Union, get_args, get_origin
 
 from pydantic import TypeAdapter
@@ -153,6 +153,37 @@ def _sole_member(candidates: list, description: str, value: Any) -> Any:
     return candidates[0]
 
 
+def _narrow_tcl_scalar(text: str, members: list) -> Any:
+    """Resolve Tcl text to the first declared scalar member it reads as.
+
+    Members the loop does not know how to read from text -- enums, paths --
+    are skipped, and text no member claims is returned unchanged for
+    Pydantic to reject with the member list in hand.
+    """
+    for member in members:
+        member = unwrap_annotated(member)
+        if member is int:
+            try:
+                return int(text)
+            except ValueError:
+                continue
+        if member is Decimal:
+            try:
+                return Decimal(text)
+            except InvalidOperation:
+                continue
+        if member is bool:
+            lowered = text.lower()
+            if lowered in ("1", "true", "yes", "on"):
+                return True
+            if lowered in ("0", "false", "no", "off"):
+                return False
+            continue
+        if member is str:
+            return text
+    return text
+
+
 def _shape_union(value: Any, args: tuple, syntax: CoercionSyntax) -> Any:
     """
     Shape a value towards the member of a union it was written as.
@@ -179,6 +210,13 @@ def _shape_union(value: Any, args: tuple, syntax: CoercionSyntax) -> Any:
     members = [member for member in args if member is not type(None)]
     products = [member for member in members if _product_origin(member)]
     if not products:
+        if isinstance(value, str) and syntax is CoercionSyntax.TCL:
+            # Under Tcl every value is text, so a scalar-only union resolves
+            # by member order -- the entire resolution rule for the
+            # KLAYOUT_*_OPTIONS values, which declare int before bool with
+            # str last (issue 993). Left to Pydantic's smart union, the text
+            # would stay a string whenever str is declared at all.
+            return _narrow_tcl_scalar(value, members)
         # Nothing in the union has a syntax, so every member takes the value as
         # its source wrote it and the choice is Pydantic's to make.
         return value
@@ -305,11 +343,15 @@ def _shape(value: Any, annotation: Any, syntax: CoercionSyntax) -> Any:
                 return annotation[value]
             except KeyError:
                 pass
+    elif annotation in (int, Decimal) and isinstance(value, bool):
+        # Booleans are ints in Python, but a boolean is never a quantity;
+        # lax validation would otherwise happily read True as 1.
+        raise CoercionError(
+            f"refusing to convert a boolean to {annotation.__name__}"
+        )
     elif annotation is Decimal and isinstance(value, (int, float)):
         # Preserve the legacy compiler's exact float-to-Decimal conversion.
-        # Booleans are ints in Python, but a boolean is never a quantity.
-        if not isinstance(value, bool):
-            return Decimal(value)
+        return Decimal(value)
     return value
 
 

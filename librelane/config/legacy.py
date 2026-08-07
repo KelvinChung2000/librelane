@@ -13,7 +13,7 @@
 # limitations under the License.
 import inspect
 from enum import Enum
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from dataclasses import (
     MISSING,
     asdict,
@@ -25,45 +25,25 @@ from dataclasses import (
 import types
 import textwrap
 import pathlib
-from itertools import chain, repeat
 from typing import (
     ClassVar,
     Literal,
     Union,
     Any,
-    cast,
     get_origin,
     get_args,
 )
-from collections.abc import Iterable, Mapping, Callable
+from collections.abc import Iterable, Callable
 from librelane.state import DesignFormat, State
 from librelane.common import (
-    GenericDict,
     Path,
-    TclUtils,
-    is_path_annotation,
-    is_string_like,
     Number,
     slugify,
     unwrap_annotated,
-    validate_path,
 )
 
 # Scalar = Union[Type[str], Type[Decimal], Type[Path], Type[bool]]
 # VType = Union[Scalar, List[Scalar]]
-
-
-class MissingRequiredVariable(ValueError):
-    def __init__(self, variable: "Variable", pdk: bool = False) -> None:
-        self.variable = variable
-        if self.variable.pdk:
-            super().__init__(
-                f"Required PDK variable '{self.variable.name}' did not get a specified value. This PDK may be incompatible with your flow."
-            )
-        else:
-            super().__init__(
-                f"Required variable '{self.variable.name}' did not get a specified value."
-            )
 
 
 class Orientation(str, Enum):
@@ -307,13 +287,21 @@ class Macro:
                         f"Macro cannot be made out of input state: View {macro_field.name} is missing"
                     )
                 continue
+            # Late import: validation.py imports Variable from this module.
+            from librelane.config.validation import validate_mapping
+
             var_name = f"{Self.__name__}.{macro_field.name}"
-            _, final = Variable(var_name, macro_field.type, "").compile(
-                GenericDict({var_name: views}),
-                warning_list_ref=[],
-                permissive_typing=True,
+            values, diagnostics, _ = validate_mapping(
+                {var_name: views},
+                [Variable(var_name, macro_field.type, "")],
+                permissive=True,
+                on_unknown_key=None,
             )
-            kwargs[macro_field.name] = final
+            if errors := diagnostics.rendered_errors():
+                raise ValueError(
+                    f"Macro cannot be made out of input state: " + "; ".join(errors)
+                )
+            kwargs[macro_field.name] = values[var_name]
 
         return Self(**kwargs)  # type: ignore
 
@@ -401,12 +389,14 @@ def repr_type(t: type[Any], for_document: bool = False) -> str:  # pragma: no co
 @dataclass
 class Variable:
     """
-    An object encapsulating metadata on an LibreLane configuration variable, which
-    is used to name, document and validate values supplied to
-    :class:`librelane.steps.Step`\\s or :class:`librelane.flows.Flow`\\s.
+    An object encapsulating metadata on a LibreLane configuration variable:
+    its name, type, description and defaults.
 
-    Values supplied for configuration variables are the primary interface by
-    which users configure LibreLane flows.
+    Variables are *declared* as fields of a step's or flow's nested ``Config``
+    Pydantic model; ``Variable`` survives as the declaration interchange those
+    models are bridged to for the loader's signature, documentation and JSON
+    schema generation. Validation itself is the model's job
+    (:mod:`librelane.config.validation`).
 
     Parameters
     ----------
@@ -660,355 +650,6 @@ class Variable:
             result += "</tbody></table></div>\n"
         return result
 
-    def __process(
-        self,
-        key_path: str,
-        value: Any,
-        validating_type: type[Any],
-        default: Any = None,
-        explicitly_specified: bool = True,
-        permissive_typing: bool = False,
-        depth: int = 0,
-    ):
-        # Path is an Annotated alias and Pydantic hands back both spellings --
-        # stripped at the top level of a field, intact inside list[...] and
-        # Optional[...] -- so normalise once and let everything below compare
-        # against pathlib.Path.
-        validating_type = unwrap_annotated(validating_type)
-
-        if value is None:
-            if explicitly_specified:
-                # User explicitly specified "null" for this value: only error if
-                # value is not optional
-                if not is_optional(validating_type):
-                    raise ValueError(
-                        f"Non-optional variable '{key_path}' explicitly assigned a null value."
-                    )
-                else:
-                    return None
-            else:
-                # User did not specify a value for this variable: couple outcomes
-                if default is not None:
-                    return self.__process(
-                        key_path=key_path,
-                        value=default,
-                        validating_type=validating_type,
-                        permissive_typing=permissive_typing,
-                        depth=depth + 1,
-                    )
-                elif not is_optional(validating_type):
-                    if depth == 0:
-                        raise MissingRequiredVariable(self, self.pdk)
-                    else:
-                        raise ValueError(f"'{key_path}' must be non-null.")
-                else:
-                    return None
-
-        if is_optional(validating_type):
-            validating_type = unwrap_annotated(some_of(validating_type))
-
-        type_origin = get_origin(validating_type)
-        type_args = get_args(validating_type)
-
-        if type_origin in [list, tuple]:
-            return_value = list()
-            raw = value
-            if isinstance(raw, list) or isinstance(raw, tuple):
-                # HACK: Allow multiple globs within Path variables
-                if (
-                    type_origin is list
-                    and len(type_args) == 1
-                    and is_path_annotation(type_args[0])
-                ):
-                    if any(isinstance(item, list) for item in raw):
-                        Variable.__flatten_list(value)
-                pass  # do nothing, can be used as is
-            elif is_string_like(raw):
-                if not permissive_typing:
-                    raise ValueError(
-                        f"Refusing to automatically convert string at '{key_path}' to list"
-                    )
-                # The splits below are str operations; a path reaching here has
-                # to be read as the text it names.
-                raw = str(raw)
-                if "," in raw:
-                    raw = raw.split(",")
-                elif ";" in raw:
-                    raw = raw.split(";")
-                else:
-                    raw = TclUtils.split(raw)
-                if len(raw) and raw[-1] == "":
-                    raw.pop()  # Trailing commas
-            else:
-                raise ValueError(
-                    f"List provided for variable '{key_path}' is invalid: {value}"
-                )
-
-            if type_origin is tuple:
-                if len(raw) != len(type_args):
-                    raise ValueError(
-                        f"Value provided for variable '{key_path}' of type {validating_type} is invalid: ({len(raw)}/{len(type_args)}) tuple entries provided"
-                    )
-
-            for i, (item, value_type) in enumerate(
-                zip(raw, chain(type_args, repeat(type_args[0])))
-            ):
-                return_value.append(
-                    self.__process(
-                        key_path=f"{key_path}[{i}]",
-                        value=item,
-                        validating_type=value_type,
-                        permissive_typing=permissive_typing,
-                        depth=depth + 1,
-                    )
-                )
-
-            if type_origin is tuple:
-                return tuple(return_value)
-
-            return return_value
-        elif type_origin is dict:
-            raw = value
-            key_type, value_type = type_args
-            if isinstance(raw, dict):
-                pass
-            elif isinstance(raw, list) or is_string_like(raw):
-                if not permissive_typing:
-                    raise ValueError(
-                        f"Refusing to automatically convert string at '{key_path}' to dict"
-                    )
-                components = raw
-                if is_string_like(raw):
-                    components = TclUtils.split(str(raw))
-                assert isinstance(components, list)
-                # Assuming Tcl format:
-                if len(components) % 2 != 0:
-                    raise ValueError(
-                        f"Tcl-style flat dictionary provided for variable '{key_path}' is invalid: uneven number of components ({len(components)})"
-                    )
-                raw = {}
-                for i in range(0, len(components) // 2):
-                    key = components[2 * i]
-                    val = components[2 * i + 1]
-                    raw[key] = val
-            else:
-                raise ValueError(
-                    f"Value provided for variable '{key_path}' of type {validating_type} is invalid: '{value}'"
-                )
-
-            processed = {}
-            for key, val in raw.items():
-                key_validated = self.__process(
-                    key_path=key_path,
-                    value=key,
-                    validating_type=key_type,
-                    permissive_typing=permissive_typing,
-                    depth=depth + 1,
-                )
-                value_validated = self.__process(
-                    key_path=f"{key_path}.{key_validated}",
-                    value=val,
-                    validating_type=value_type,
-                    permissive_typing=permissive_typing,
-                    depth=depth + 1,
-                )
-                processed[key_validated] = value_validated
-
-            return processed
-        elif type_origin is Union or type_origin is types.UnionType:
-            final_value = None
-            errors = []
-            for arg in type_args:
-                try:
-                    final_value = self.__process(
-                        key_path=key_path,
-                        value=value,
-                        validating_type=arg,
-                        permissive_typing=permissive_typing,
-                        depth=depth + 1,
-                    )
-                    if final_value is not None:
-                        return final_value
-                except ValueError as e:
-                    errors.append(f"\t{str(e)}")
-            raise ValueError(
-                "\n".join(
-                    [
-                        f"Value for '{key_path}' is invalid for union {repr_type(validating_type)}:"
-                    ]
-                    + errors
-                )
-            )
-        elif type_origin == Literal:
-            if value in type_args:
-                return value
-            else:
-                raise ValueError(
-                    f"Value for '{key_path}' is invalid for {repr_type(validating_type)}: '{value}'"
-                )
-        elif is_dataclass(validating_type):
-            dataclass_type = cast(type[Any], validating_type)
-            if isinstance(value, dataclass_type):
-                # Do not validate further
-                return value
-
-            raw = value
-            if not isinstance(raw, dict):
-                raise ValueError(
-                    f"Value provided for deserializable class {validating_type} at '{key_path}' is not a dictionary."
-                )
-            raw = value.copy()
-            kwargs_dict = {}
-            for current_field in fields(dataclass_type):
-                key = current_field.name
-                subtype: type[Any] = current_field.type  # type: ignore
-                explicitly_specified = False
-                if key in raw:
-                    explicitly_specified = True
-                field_value = raw.get(key)
-                field_default = None
-                if (
-                    current_field.default is not None
-                    and current_field.default != MISSING
-                ):
-                    field_default = current_field.default
-                if current_field.default_factory != MISSING:
-                    field_default = current_field.default_factory()
-                value__processed = self.__process(
-                    key_path=f"{key_path}.{key}",
-                    value=field_value,
-                    explicitly_specified=explicitly_specified,
-                    default=field_default,
-                    validating_type=subtype,  # type: ignore
-                    permissive_typing=permissive_typing,
-                    depth=depth + 1,
-                )
-                kwargs_dict[key] = value__processed
-                if explicitly_specified:
-                    del raw[key]
-            if len(raw):
-                raise ValueError(
-                    f"One or more keys unrecognized for dataclass {dataclass_type.__qualname__}: {' '.join(raw.keys())}"
-                )
-            return dataclass_type(**kwargs_dict)
-        elif is_path_annotation(validating_type):
-            # Handle one-file globs
-            if isinstance(value, list) and len(value) == 1:
-                value = value[0]
-            # Validated as text, before pathlib normalises it: os.path.exists("")
-            # is False, but pathlib.Path("") is ".", which exists.
-            validate_path(
-                str(value), f"Path provided for variable '{key_path}' is invalid"
-            )
-            return pathlib.Path(value)
-        elif validating_type is bool:
-            if not permissive_typing and not isinstance(value, bool):
-                raise ValueError(
-                    f"Refusing to automatically convert '{value}' at '{key_path}' to a Boolean"
-                )
-            if value in ["1", "true", "True", 1, True]:
-                return True
-            elif value in ["0", "false", "False", 0, False]:
-                return False
-            else:
-                raise ValueError(
-                    f"Value provided for variable '{key_path}' of type {validating_type.__name__} is invalid: '{value}'"
-                )
-        elif issubclass(validating_type, Enum):
-            if type(value) is validating_type:
-                return value
-            try:
-                return validating_type[value]
-            except KeyError:
-                raise ValueError(
-                    f"Variable provided for variable '{key_path}' of enumerated type {validating_type.__name__} is invalid: '{value}'"
-                )
-        elif issubclass(validating_type, str):
-            if not is_string_like(value):
-                raise ValueError(
-                    f"Refusing to automatically convert value at '{key_path}' to a string"
-                )
-            return str(value)
-        elif issubclass(validating_type, Decimal) or issubclass(validating_type, int):
-            # Booleans are ints in Python, but a boolean is never a quantity.
-            # Without this, ``int(True)`` is 1 and a numeric member of a union
-            # silently swallows every boolean ahead of the boolean member.
-            # ``config/types.py``'s ``_shape`` states the same rule for the
-            # Pydantic path.
-            if isinstance(value, bool):
-                raise ValueError(
-                    f"Refusing to convert the Boolean at '{key_path}' to a {validating_type.__name__}"
-                )
-            try:
-                final = validating_type(value)
-            except (InvalidOperation, TypeError):
-                raise ValueError(
-                    f"Value provided for variable '{key_path}' of type {validating_type.__name__} is invalid: '{value}'"
-                )
-            if not permissive_typing and not (
-                isinstance(value, int)
-                or isinstance(value, float)
-                or isinstance(value, Decimal)
-            ):
-                raise ValueError(
-                    f"Refusing to automatically convert value at '{key_path}' to a {validating_type.__name__}"
-                )
-            return final
-
-        else:
-            try:
-                return validating_type(value)
-            except ValueError as e:
-                raise ValueError(
-                    f"Value provided for variable '{key_path}' of type {validating_type.__name__} is invalid: '{value}' {e}"
-                )
-
-    def compile(
-        self,
-        mutable_config: GenericDict[str, Any],
-        warning_list_ref: list[str],
-        values_so_far: Mapping[str, Any] | None = None,
-        permissive_typing: bool = False,
-    ) -> tuple[str | None, Any]:
-        user_specified_key: str | None = None
-        value: Any | None = None
-
-        i = 0
-        while (
-            user_specified_key is None
-            and self.deprecated_names is not None
-            and i < len(self.deprecated_names)
-        ):
-            deprecated_name = self.deprecated_names[i]
-            deprecated_callable = lambda x: x
-            if not isinstance(deprecated_name, str):
-                deprecated_name, deprecated_callable = deprecated_name
-            user_specified_key, value = mutable_config.check(deprecated_name)
-            if user_specified_key is not None:
-                warning_list_ref.append(
-                    f"The configuration variable '{deprecated_name}' is deprecated. Please check the docs for the usage on the replacement variable '{self.name}'."
-                )
-            if value is not None:
-                value = deprecated_callable(value)
-            i = i + 1
-
-        if user_specified_key is None:
-            user_specified_key, value = mutable_config.check(self.name)
-
-        processed = self.__process(
-            key_path=self.name,
-            value=value,
-            default=self.default,
-            validating_type=self.type,
-            explicitly_specified=user_specified_key is not None,
-            permissive_typing=permissive_typing,
-        )
-
-        if user_specified_key is not None:
-            processed = self.validator(self, processed, warning_list_ref)
-
-        return (user_specified_key, processed)
-
     def _get_docs_identifier(self, parent: str | None = None) -> str:
         identifier = f"var-{self.name.lower()}"
         if parent is not None:
@@ -1026,16 +667,3 @@ class Variable:
             and self.type == rhs.type
             and self.default == rhs.default
         )
-
-    # Flatten list. Note: Must modify value, not return a new list.
-    @staticmethod
-    def __flatten_list(value: list):
-        new_list = []
-        for item in value:
-            if isinstance(item, list):
-                for sub_item in item:
-                    new_list.append(sub_item)
-            else:
-                new_list.append(item)
-
-        value[:] = new_list

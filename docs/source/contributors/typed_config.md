@@ -46,9 +46,10 @@ String-keyed access remains correct in exactly two situations:
    one model-based path: `validate_mapping` composes a model from the
    requested variables and validates with per-key coercion syntaxes. The
    design layer always worked this way; the PDK layer, the per-step
-   increment, and interactive mode migrated onto it too, retiring
-   `Variable.compile` from the loader (it survives only inside `Macro`'s
-   own field handling). One behavioral alignment came with this: the
+   increment, and interactive mode migrated onto it too. `Variable.compile`
+   and its ~380-line type walker are deleted outright — `Macro.from_state`,
+   the last caller, coerces its views through `validate_mapping` like
+   everything else. One behavioral alignment came with the migration: the
    current variable name now outranks a deprecated one at *every* layer,
    where `compile` used to invert that at the PDK layer only. What remains
    of `legacy.py` is `Variable` as the declaration interchange — steps

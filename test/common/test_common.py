@@ -108,15 +108,6 @@ def test_generic_dict():
     assert test_dict["a"] == "b", "Copying in constructor not working properly"
     assert test_dict["c"] == "e", "Overrides not working properly"
 
-    assert test_dict.check("c") == (
-        "c",
-        "e",
-    ), ".check not finding existing key/value pair"
-    assert test_dict.check("f") == (
-        None,
-        None,
-    ), ".check not finding existing key/value pair"
-
     test_dict.update({"a": "g"})
     assert test_dict["a"] == "g", ".update not updating values"
 

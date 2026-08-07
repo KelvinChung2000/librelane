@@ -102,7 +102,7 @@ There are some conventions to writing these variables.
     this exact Unicode codepoint: `µ`
 * Variables may be declared as `pdk`, which determines the compatibility of a
   PDK with your step. If you use a PDK that does not declare one of your
-  declared PDK variables, the configuration will not compile and the step will
+  declared PDK variables, the configuration will not validate and the step will
   raise a {class}`librelane.steps.StepException`.
   * PDK variables should generally avoid having default values other than
     `None`. An exception is when a quantity may be defined by some PDKs, but

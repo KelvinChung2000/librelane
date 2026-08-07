@@ -178,8 +178,12 @@ class Step(ReportingMixin, SubprocessMixin, ABC):
         :class:`Step` subclasses without the ``outputs`` class property declared
         are considered abstract and cannot be initialized or used in a :class:`Flow`.
     config_vars : ClassVar[list[Variable]]
-        A list of configuration :class:`librelane.config.Variable` objects
-        to be used to alter the behavior of this Step.
+        The step's configuration variables as a flat list of
+        :class:`librelane.config.Variable` objects, derived automatically
+        from the nested ``Config`` model -- the only declaration surface an
+        author writes. Read-only: assigning ``config_vars`` in a class body
+        raises a ``TypeError``. Used for introspection and documentation
+        generation.
     gates : ClassVar[Sequence[Gate]]
         Limits this step raises against the metrics it measures, checked by
         :meth:`start` once :meth:`run` has returned. Every configuration

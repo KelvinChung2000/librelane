@@ -147,7 +147,7 @@ def validate_mapping(
         Each key mapped to the syntax the source that last wrote it writes its
         strings in, which is what decides how a string reaching a list- or
         dictionary-typed variable is read. A key absent from it was not written
-        by a source at all -- the PDK's compiled values, an API caller's
+        by a source at all -- the PDK's validated values, an API caller's
         mapping -- and is taken to have arrived typed.
 
     Returns

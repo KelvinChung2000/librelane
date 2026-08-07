@@ -241,19 +241,29 @@ def test_a_typed_source_refuses_a_string_no_member_can_hold():
     assert "a b" in str(raised.value)
 
 
-# --- unions with no product member are untouched ----------------------------
+# --- unions with no product member ------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "syntax",
-    [CoercionSyntax.TCL, CoercionSyntax.JSON, CoercionSyntax.TYPED],
+    ("value", "expected"),
+    [("1", 1), ("true", True), ("a b", "a b"), ('["a"]', '["a"]')],
 )
+def test_tcl_text_narrows_a_scalar_union_by_member_order(value, expected):
+    """
+    Under Tcl every value is text, so ``KLAYOUT_*_OPTIONS``' ``int | bool |
+    str`` resolves by member order -- the whole resolution rule for it
+    (issue 993). Left to Pydantic's smart union, ``str`` would claim
+    everything.
+    """
+    narrowed = _shape(value, Union[int, bool, str], CoercionSyntax.TCL)
+    assert narrowed == expected
+    assert type(narrowed) is type(expected)
+
+
+@pytest.mark.parametrize("syntax", [CoercionSyntax.JSON, CoercionSyntax.TYPED])
 @pytest.mark.parametrize("value", ["1", "a b", '["a"]'])
-def test_a_union_of_scalars_is_left_for_pydantic(value, syntax):
-    """
-    ``KLAYOUT_*_OPTIONS``' ``int | bool | str`` has nothing to parse into, so
-    member order stays the whole resolution rule for it (issue 993).
-    """
+def test_a_scalar_union_is_left_for_pydantic_outside_tcl(value, syntax):
+    """A JSON or typed source wrote the string as a string."""
     assert _shape(value, Union[int, bool, str], syntax) == value
 
 

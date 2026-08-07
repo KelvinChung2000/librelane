@@ -277,7 +277,7 @@ class ExpandedSources:
     pdkpath : str
         The directory the PDK lives in.
     values : GenericDict[str, Any]
-        The PDK layer's own values, compiled against whichever variables the
+        The PDK layer's own values, validated against whichever variables the
         caller asked for. Empty when the caller asked for none.
     provenance : Mapping[str, str]
         Each key of ``values`` mapped to ``<pdk>``, ``<scl>`` or ``<pad>``.
@@ -675,8 +675,8 @@ class Config(GenericImmutableDict[str, Any]):
             **{key: _API_OVERRIDE for key in kwargs},
         }
         # A keyword argument may name a variable by one of its deprecated
-        # names, in which case it, and not the PDK's value under the current
-        # name, is what 'compile' took.
+        # names; validation records the value under the variable's current
+        # name, so its provenance entry has to follow it there.
         _follow_renames(provenance, renames)
         Config.current_interactive = Config(
             processed,
@@ -967,11 +967,11 @@ class Config(GenericImmutableDict[str, Any]):
         flow_pdk_vars : Sequence[Variable]
             The PDK-supplied variables to compile the PDK layer against. A
             caller that only needs the process selection passes none, which
-            skips the compilation but not the read: the PDK's configuration
+            skips the validation but not the read: the PDK's configuration
             files are evaluated either way, and memoized, so the caller that
             does need them pays for the evaluation once.
         full_pdk_warnings : bool
-            Report every warning the PDK layer's compilation raises.
+            Report every warning the PDK layer's validation raises.
 
         Raises
         ------
@@ -1501,26 +1501,20 @@ class Config(GenericImmutableDict[str, Any]):
         processed["PDK"] = pdk
 
         # A second rename pass, entirely separate from the one
-        # '__get_pdk_raw' attributes across: 'compile' checks each variable's
-        # deprecated names before its current one and emits under the current
-        # one, so 'origins' -- keyed by the names the '.tcl' files wrote --
-        # describes forty-two of sky130A's keys under names 'processed' does
-        # not have. Following the renames before the filter below is what keeps
-        # CELL_LEFS, MAGIC_TECH, WELLTAP_CELL and the whole PDN_* family from
-        # reading as declared defaults for values plainly inside the PDK tree.
-        #
-        # It also moves an origin that was not merely missing but wrong: where
-        # the SCL's file writes the deprecated name and the PDK's the current
-        # one, 'compile' takes the SCL's value while the PDK's entry for the
-        # current name survives, and the map names a layer that did not supply
-        # the value.
+        # '__get_pdk_raw' attributes across: validation emits every value
+        # under its variable's current name, so 'origins' -- keyed by the
+        # names the '.tcl' files wrote -- describes forty-two of sky130A's
+        # keys under names 'processed' does not have. Following the renames
+        # before the filter below is what keeps CELL_LEFS, MAGIC_TECH,
+        # WELLTAP_CELL and the whole PDN_* family from reading as declared
+        # defaults for values plainly inside the PDK tree.
         #
         # 'origins' is memoized inside '__get_pdk_raw', so it is copied rather
         # than written through.
         attributed = dict(origins)
         _follow_renames(attributed, pdk_renames)
 
-        # Only the variables that survived compilation. A key of the raw
+        # Only the variables that survived validation. A key of the raw
         # environment that no flow variable claims is dropped from 'processed',
         # so attributing it would name an origin for a value nothing carries.
         return (
