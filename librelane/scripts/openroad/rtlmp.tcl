@@ -33,12 +33,7 @@ set report_dir $::env(STEP_DIR)/reports
 file mkdir $report_dir
 
 set arg_list [list]
-if { [string length [namespace which set_macro_base_halo]] != 0 } {
-    log_cmd set_macro_base_halo $::env(RTLMP_HALO_WIDTH) $::env(RTLMP_HALO_HEIGHT)
-} else {
-    lappend arg_list -halo_width $::env(RTLMP_HALO_WIDTH)
-    lappend arg_list -halo_height $::env(RTLMP_HALO_HEIGHT)
-}
+log_cmd set_macro_base_halo $::env(RTLMP_HALO_WIDTH) $::env(RTLMP_HALO_HEIGHT)
 lappend arg_list -report_directory $report_dir
 append_if_exists_argument arg_list RTLMP_MAX_LEVEL -max_num_level
 append_if_exists_argument arg_list RTLMP_TARGET_UTIL -target_util

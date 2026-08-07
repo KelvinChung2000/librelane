@@ -151,12 +151,11 @@ Style Notes
 * Removed every OpenROAD-related nix patch; the shipped binaries are now
   vanilla upstream:
   * `python_metrics_flush.patch` is unnecessary because the odbpy scripts
-    now emit their metrics over librelane's own `%OL_METRIC` stdout channel
-    instead of `utl.metric_*` -- upstream's `-metrics` JSON is written by a
-    Tcl exit handler that `-python` mode never runs, so utl-recorded metrics
-    silently vanish there. The channel's parser now also carries string
-    values with spaces (`design__die__bbox`). The `-metrics` flag is still
-    passed and merged when the file appears (Tcl mode).
+    now emit their metrics over librelane's own channel (the
+    `_LLN_METRICS_JSONL` sidecar file) instead of `utl.metric_*`
+    -- upstream's `-metrics` JSON is written by a Tcl exit handler that
+    `-python` mode never runs, so utl-recorded metrics silently vanish
+    there.
   * The abc `zlib.patch` was configured as a no-op (its option name never
     matched the flag the flake passed), so abc builds with its vendored
     zlib, as it always effectively did.

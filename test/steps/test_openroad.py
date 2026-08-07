@@ -734,10 +734,6 @@ def test_sta_midpnr_reports_every_sta_corner(mocker, tmp_path):
         "nom_tt_025C_1v80",
         "nom_ss_100C_1v60",
     ]
-    # The output processor opens the report files; it does not create the
-    # directories the script names.
-    for corner in instance.config.STA_CORNERS:
-        assert (tmp_path / corner).is_dir()
 
 
 def test_sta_midpnr_corners_are_overridable(mocker, tmp_path):
@@ -770,8 +766,8 @@ def test_the_corner_script_reports_every_defined_corner():
 
 def test_multi_corner_sta_reports_land_where_they_always_have():
     """
-    The script now names its reports '<corner>/<report>', so the per-corner
-    step has to hand the output processor the step directory, not the corner
+    The script names its reports '<corner>/<report>', so the per-corner
+    step has to point _LLN_REPORT_DIR at the step directory, not the corner
     directory, or the reports move a level deeper.
     """
     import inspect

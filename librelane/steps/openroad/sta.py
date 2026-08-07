@@ -88,11 +88,6 @@ class STAMidPNR(OpenROADStep):
         kwargs, env = self.extract_env(kwargs)
         corners = self.config.STA_MIDPNR_CORNERS or self.config.STA_CORNERS
 
-        # The script writes one report directory per corner, and the output
-        # processor opens the report files without creating directories.
-        for corner in corners:
-            mkdirp(os.path.join(self.step_dir, corner))
-
         return super().run(state_in, corners=corners, env=env, **kwargs)
 
 

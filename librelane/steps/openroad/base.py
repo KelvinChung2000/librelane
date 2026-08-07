@@ -177,7 +177,10 @@ class OpenROADAlertMixin:
 
     ignored_alert_codes: ClassVar[frozenset[str]] = frozenset()
 
-    output_processors = [OpenROADOutputProcessor, DefaultOutputProcessor]
+    output_processors: ClassVar[list[type[OutputProcessor]]] = [
+        OpenROADOutputProcessor,
+        DefaultOutputProcessor,
+    ]
 
     alerts: list[OpenROADAlert] | None = None
 

@@ -1,6 +1,6 @@
 """OpenDB-backed implementation steps."""
 
-from librelane.steps.odb.base import OdbpyStep, inf_rx
+from librelane.steps.odb.base import OdbpyStep
 from librelane.steps.odb.reports import (
     CheckMacroAntennaProperties,
     CheckDesignAntennaProperties,

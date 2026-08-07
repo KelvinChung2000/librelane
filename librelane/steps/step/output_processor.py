@@ -15,8 +15,6 @@ from __future__ import annotations
 
 from loguru import logger
 
-import os
-import pathlib
 from abc import abstractmethod, ABC
 from typing import (
     Any,
@@ -43,9 +41,6 @@ class OutputProcessor(ABC, Generic[VT]):
     ----------
     step : Step
         The step object instantiating this output processor
-    report_dir : str | os.PathLike[str]
-        The report directory for this instantiation of
-        ``run_subprocess``.
     silent : bool
         Whether the ``run_subprocess`` was called with ``silent`` or
         not.
@@ -62,11 +57,9 @@ class OutputProcessor(ABC, Generic[VT]):
     def __init__(
         self,
         step: Step,
-        report_dir: str | os.PathLike[str],
         silent: bool,
     ) -> None:
         self.step = step
-        self.report_dir = pathlib.Path(report_dir)
         self.silent: bool = silent
 
     @abstractmethod
@@ -113,10 +106,6 @@ class DefaultOutputProcessor(OutputProcessor[dict[str, Any]]):
 
     key = "generated_metrics"
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.generated_metrics: dict[str, Any] = {}
-
     def process_line(self, line: str) -> bool:
         """
         Always returns ``True``, so ``DefaultOutputProcessor`` should always be
@@ -128,6 +117,8 @@ class DefaultOutputProcessor(OutputProcessor[dict[str, Any]]):
 
     def result(self) -> dict[str, Any]:
         """
-        A dictionary of all generated metrics.
+        Always empty: it seeds the ``generated_metrics`` key of the
+        ``run_subprocess`` result, which the sidecar reader then merges
+        into.
         """
-        return self.generated_metrics
+        return {}

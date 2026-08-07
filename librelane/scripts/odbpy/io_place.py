@@ -38,17 +38,19 @@ def grid_to_tracks(origin, count, step):
     return tracks
 
 
-def min_area_dbu2(layer, dbu_per_micron):
+def min_area_dbu2(layer):
     """
     The layer's minimum-area rule in DBU².
 
-    ``dbTechLayer.getArea`` returns µm² as a float on OpenROAD versions up to
-    early 2026 and DBU² as an integer on newer ones; the type is the only
-    signal distinguishing the two.
+    ``dbTechLayer.getArea`` has returned DBU² as an integer since early 2026;
+    it returned µm² as a float before that, and mistaking one for the other
+    inflates the default pin length by dbu² and places pins off-die.
     """
     area = layer.getArea()
-    if isinstance(area, float):
-        return area * dbu_per_micron * dbu_per_micron
+    assert not isinstance(area, float), (
+        "dbTechLayer.getArea returned a float, which historically meant µm²; "
+        "io_place assumes DBU²"
+    )
     return area
 
 
@@ -281,7 +283,7 @@ def io_place(
         H_LENGTH = int(micron_in_units * hor_length)
     else:
         H_LENGTH = max(
-            int(math.ceil(min_area_dbu2(H_LAYER, micron_in_units) / H_WIDTH)),
+            int(math.ceil(min_area_dbu2(H_LAYER) / H_WIDTH)),
             H_WIDTH,
         )
 
@@ -289,7 +291,7 @@ def io_place(
         V_LENGTH = int(micron_in_units * ver_length)
     else:
         V_LENGTH = max(
-            int(math.ceil(min_area_dbu2(V_LAYER, micron_in_units) / V_WIDTH)),
+            int(math.ceil(min_area_dbu2(V_LAYER) / V_WIDTH)),
             V_WIDTH,
         )
 

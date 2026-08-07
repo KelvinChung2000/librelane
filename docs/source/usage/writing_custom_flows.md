@@ -462,11 +462,11 @@ sdc_load = OpenROAD.CheckSDCFiles(
 ```
 
 While you may not modify the configuration object (in `self.config`),
-you can slightly modify the configuration used by each step using the config object's
-{py:meth}`librelane.config.Config.copy` method, which allows you to supply overrides as follows:
+you can slightly modify the configuration used by each step using the model's
+`model_copy` method, which accepts overrides as follows:
 
 ```python3
-config_altered = config.copy(FP_CORE_UTIL=9)
+config_altered = self.config.model_copy(update={"FP_CORE_UTIL": 9})
 ```
 
 Which will create a new configuration object with one or more attributes modified.
@@ -535,7 +535,9 @@ class TryTwoUtilizations(Flow):
         attempts = [
             self.start_step_async(
                 OpenROAD.Floorplan(
-                    config=self.config.copy(FP_CORE_UTIL=utilization),
+                    config=self.config.model_copy(
+                        update={"FP_CORE_UTIL": utilization}
+                    ),
                     state_in=synthesized,
                     id=f"floorplan-{utilization}",
                 ),

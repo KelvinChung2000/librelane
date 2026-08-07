@@ -111,7 +111,6 @@ from loguru import logger
 
 from librelane.jobs import JobRegistry, JobResolutionError
 from librelane.state import DesignFormat, State
-from librelane.steps.odb.base import OdbpyStep
 from librelane.steps.openroad.base import OpenROADStep
 
 from librelane.flows.job import ResolvedJob, resolve_jobs
@@ -119,11 +118,12 @@ from librelane.flows.predicates import MetricTerm, config_terms, metric_terms
 from librelane.flows.spec import FlowSpec
 from librelane.flows.spec_graph import ancestors, topological_order
 
-#: The metrics every OpenROAD invocation writes and nothing declares.
+#: The metrics every Tcl-mode OpenROAD invocation writes and nothing declares.
 #:
-#: :meth:`librelane.steps.openroad.base.OpenROADStep.get_command` and
-#: :meth:`librelane.steps.odb.base.OdbpyStep.get_command` both pass an
-#: unconditional ``-metrics``, and OpenROAD's logger fills these in. No step, job
+#: :meth:`librelane.steps.openroad.base.OpenROADStep.get_command` passes an
+#: unconditional ``-metrics``, and OpenROAD's logger fills these in. (odbpy
+#: steps write none: the ``-metrics`` JSON comes from a Tcl exit handler that
+#: ``-python`` mode never runs.) No step, job
 #: template or registration mentions them -- ``grep`` across ``librelane`` finds
 #: nothing -- so every check reasoning from declared contracts is blind to them,
 #: and :mod:`librelane.flows.join` is what discovers the disagreement, on the
@@ -652,7 +652,8 @@ def produced_keys(
       ``magic_streamout``, ``spice`` from ``lvs``. Declaring less than you write
       is allowed (``Step.outputs`` is a permission, not an obligation), so the
       contract is a floor;
-    * :data:`FRAMEWORK_METRICS`, if any step is OpenROAD-backed.
+    * :data:`FRAMEWORK_METRICS`, if any step is an ``OpenROADStep`` (a
+      Tcl-mode OpenROAD invocation).
 
     Modelling only the first would make this a subset of the rule it exists to
     enforce, which is the mistake that produced two of the defects it now
@@ -675,7 +676,7 @@ def produced_keys(
         )
         for step in job.steps:
             keys.update(view.id for view in step.outputs)
-        if any(issubclass(step, (OpenROADStep, OdbpyStep)) for step in job.steps):
+        if any(issubclass(step, OpenROADStep) for step in job.steps):
             keys.update(FRAMEWORK_METRICS)
         produced[job_id] = keys
     return produced

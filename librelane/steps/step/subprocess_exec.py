@@ -28,7 +28,6 @@ from typing import (
     Any,
     ClassVar,
     TYPE_CHECKING,
-    TypeVar,
     cast,
 )
 from collections.abc import Callable, Sequence
@@ -44,8 +43,6 @@ from librelane.steps.step.process_stats import ProcessStatsThread
 
 if TYPE_CHECKING:
     from librelane.steps.step.core import Step
-
-VT = TypeVar("VT")
 
 
 class SubprocessMixin:
@@ -108,8 +105,9 @@ class SubprocessMixin:
             If specified, the subprocess does not print anything to
             the terminal. Useful when running multiple processes simultaneously.
         report_dir : str | os.PathLike | None
-            An optional override for where reports by output
-            processors
+            An optional override for the directory the subprocess writes
+            its reports into (exported as ``_LLN_REPORT_DIR``); defaults
+            to the step directory.
         check : bool
             Whether to raise ``subprocess.CalledProcessError`` in
             the event of a non-zero exit code. Set to ``False`` if you'd like
@@ -201,7 +199,7 @@ class SubprocessMixin:
             output_processing = self.output_processors
         output_processors = []
         for cls in output_processing:
-            output_processors.append(cls(cast("Step", self), report_dir, silent))
+            output_processors.append(cls(cast("Step", self), silent))
 
         hyperlinks = (
             os.getenv(

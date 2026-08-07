@@ -159,24 +159,35 @@ Otherwise, you're basically free to write any logic you desire, with one excepti
 * If you're running a terminal subprocess you'd like to have LibreLane manage the
   logs for, please use {meth}`librelane.steps.Step.run_subprocess`,
   passing \*args and \*\*kwargs. It will manage
-  I/O for the process, and allow the creation of report files straight from the
-  logs- more on that later.
+  I/O for the process and hand it the environment described below for reports
+  and metrics.
 
 In the end, add any views updated to the first dictionary in the returned tuple,
 and any metrics updated to the second dictionary in the returned tuple.
 
 ## Creating Reports
 
-You can create report files manually in Python, but if you're running a subprocess,
-you can also write `%OL_CREATE_REPORT <name>.rpt` to stdout and everything until
-`%OL_END_REPORT` (or another `%OL_CREATE_REPORT`) will be forwarded to a file called
-`<name>.rpt` in the step dir automatically.
+You can create report files manually in Python, but a subprocess can also write
+them itself: {meth}`librelane.steps.Step.run_subprocess` exports the report
+directory to the subprocess as the `_LLN_REPORT_DIR` environment variable. The
+OpenROAD/OpenSTA scripts wrap this in the `lln_report_begin <name>` /
+`lln_report_end` Tcl procs (`common/io.tcl`), which redirect everything the tool
+prints — including plain `puts` — into `<name>` under that directory without
+echoing it to the log. Use `lln_report_tee_begin` instead when the report's
+lines must also reach the log, e.g. when they carry tool warnings that
+LibreLane parses as alerts.
 
 ## Creating Metrics
 
-Likewise, if you're running a subprocess, you can have {meth}`librelane.steps.Step.run_subprocess`
-capture them for you automatically by using `%OL_METRIC`. See the documentation
-of {meth}`librelane.steps.Step.run_subprocess` for more info.
+A subprocess reports metrics by appending JSON records to the sidecar file
+named in the `_LLN_METRICS_JSONL` environment variable, one
+`{"name": ..., "value": ...}` object per line.
+{meth}`librelane.steps.Step.run_subprocess` reads the file back after the
+process exits and returns the metrics under the `generated_metrics` key.
+Emitters already exist for the common interpreters: `write_metric_str`/
+`write_metric_int`/`write_metric_num` in the OpenROAD/OpenSTA Tcl scripts
+(`common/io.tcl`) and `metric`/`metric_integer`/`metric_float` in the odbpy
+`reader` module.
 
 ```{note}
 Metrics generated using this method will not be automatically added to the

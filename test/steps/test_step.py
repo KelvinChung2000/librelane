@@ -489,8 +489,8 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
         _no_revalidate_conf=True,
     )
     out_file = "out.txt"
-    report_data = "Hello World"
-    extra_data = "Bye World"
+    first_line = "Hello World"
+    second_line = "Bye World"
     subprocess_log_file = "test.log"
     # Nothing travels over stdout anymore: metrics arrive via the JSONL
     # sidecar (tested on its own) and reports are written by the subprocess
@@ -502,8 +502,8 @@ def test_run_subprocess(mock_run, caplog, monkeypatch):
     }
     out_data = textwrap.dedent(
         f"""
-        {report_data}
-        {extra_data}
+        {first_line}
+        {second_line}
         """
     ).strip()
 

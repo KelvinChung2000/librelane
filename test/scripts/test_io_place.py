@@ -14,10 +14,12 @@
 """
 ``min_area_dbu2`` is the one place io_place.py depends on the *type* of an odb
 return value: ``dbTechLayer.getArea`` returned µm² as a float until OpenROAD
-early 2026 and DBU² as an integer since. Getting the branch wrong inflates the
-default pin length by dbu² (10⁶ at the usual 1000 DBU/µm), which placed I/O
-pins hundreds of millimetres off-die — every port net then failed slew/cap
-checks and repair_design buffered the design past 100% utilization.
+early 2026 and DBU² as an integer since. Mistaking one for the other inflates
+the default pin length by dbu² (10⁶ at the usual 1000 DBU/µm), which placed
+I/O pins hundreds of millimetres off-die — every port net then failed slew/cap
+checks and repair_design buffered the design past 100% utilization. The µm²
+branch is gone with the toolchain that needed it; a type guard remains so the
+unit flipping again fails loudly instead of off-die.
 """
 import runpy
 import sys
@@ -52,19 +54,14 @@ def layer_with_area(area):
     return SimpleNamespace(getArea=lambda: area)
 
 
-def test_a_float_area_is_um2_and_scales_by_dbu_squared(io_place_module):
-    # sky130 met2: 0.0676 µm² at 1000 DBU/µm.
-    min_area_dbu2 = io_place_module["min_area_dbu2"]
-    assert min_area_dbu2(layer_with_area(0.0676), 1000) == pytest.approx(67600)
-
-
 def test_an_integer_area_is_already_dbu2_and_passes_through(io_place_module):
     min_area_dbu2 = io_place_module["min_area_dbu2"]
-    assert min_area_dbu2(layer_with_area(67600), 1000) == 67600
+    assert min_area_dbu2(layer_with_area(67600)) == 67600
 
 
-def test_the_integer_branch_does_not_rescale_large_areas(io_place_module):
-    # The regression shape: treating an already-DBU² integer as µm² would
-    # return 6.76e10 here, the ~2×10⁸-DBU pin length seen off-die.
+def test_a_float_area_trips_the_unit_guard(io_place_module):
+    # A float historically meant µm²; silently accepting one re-inflates the
+    # default pin length by dbu² — the ~2×10⁸-DBU off-die regression.
     min_area_dbu2 = io_place_module["min_area_dbu2"]
-    assert min_area_dbu2(layer_with_area(67600), 1000) < 1_000_000
+    with pytest.raises(AssertionError, match="µm²"):
+        min_area_dbu2(layer_with_area(0.0676))

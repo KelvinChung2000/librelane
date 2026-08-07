@@ -339,21 +339,24 @@ jobs:
   # KLayout.StreamOut is gated.
   #
   # render, write_lef and check_antenna_properties stay on the chain in flow
-  # order, and the fan-out is below them rather than here. The reason is
-  # framework metrics no contract declares: every OpenROAD invocation writes
+  # order, and the fan-out is below them rather than here. Partly a real data
+  # edge (see check_antenna_properties below), partly framework metrics no
+  # contract declares: every Tcl-mode OpenROAD invocation rewrites
   # 'flow__warnings__count', 'flow__errors__count' and
-  # 'flow__warnings__type_count' into its '-metrics' JSON, which
-  # OpenROADStep.get_command and OdbpyStep.get_command pass unconditionally.
-  # check_antenna_properties runs Odb.CheckDesignAntennaProperties and so
-  # rewrites all three. Fanned out here, it would be one branch carrying fresh
-  # counts while its siblings carried ir_drop's, and the join at final_checks
-  # would raise JoinConflictError on the first real run. A 'source' cannot
-  # settle it either: _check_sources_can_deliver rejects a 'source' naming a
-  # key no declared contract in the producer's branch mentions.
+  # 'flow__warnings__type_count' into the '-metrics' JSON
+  # OpenROADStep.get_command passes unconditionally. ir_drop is the last such
+  # job; keeping this cheap tail chained keeps every branch of the fan-out
+  # descending from it, so no branch carries fresher counts than its siblings
+  # -- a JoinConflictError at final_checks on the first real run otherwise. A
+  # 'source' cannot settle it either: _check_sources_can_deliver rejects a
+  # 'source' naming a key no declared contract in the producer's branch
+  # mentions. (odbpy invocations write no framework metrics: the '-metrics'
+  # JSON is written by a Tcl exit handler '-python' mode never runs, so
+  # Odb.CheckDesignAntennaProperties rewrites nothing here.)
   #
   # The rule this encodes, which is not local to Classic: every branch of a
-  # fan-out must descend from the last OpenROAD-backed step, so that no branch
-  # writes a framework metric its siblings do not have.
+  # fan-out must descend from the last OpenROADStep-backed step, so that no
+  # branch writes a framework metric its siblings do not have.
   render:
     needs: [klayout_streamout]
     steps: [KLayout.Render]
@@ -366,9 +369,8 @@ jobs:
   check_antenna_properties:
     needs: [write_lef]
     steps: [Odb.CheckDesignAntennaProperties]
-  # The fan-out point: the last OpenROAD-backed job in the flow, and the four
-  # jobs below it are the heavy ones. render and write_lef are cheap, so
-  # keeping them on the chain costs almost nothing.
+  # The fan-out point. The four jobs below it are the heavy ones; render and
+  # write_lef are cheap, so keeping them on the chain costs almost nothing.
   #
   # A three-variable conjunction, because KLayout.XOR genuinely consumes
   # mag_gds from one stream-out and klayout_gds from the other and cannot run

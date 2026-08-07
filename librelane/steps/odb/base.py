@@ -17,10 +17,7 @@
 from importlib.resources import files
 import os
 import re
-import json
 import pathlib
-from math import inf
-from decimal import Decimal
 from abc import abstractmethod
 
 from librelane.common import aggregate_metrics
@@ -34,9 +31,6 @@ from librelane.steps.step import (
     StepException,
     ViewsUpdate,
 )
-
-inf_rx = re.compile(r"\b(-?)inf\b")
-
 
 class OdbpyStep(OpenROADAlertMixin, Step):
     inputs = [DesignFormat.ODB]
@@ -118,23 +112,11 @@ class OdbpyStep(OpenROADAlertMixin, Step):
                     step_exception_message += f" Please check the logs in {repr(self.step_dir)} and unless you wrote the step yourself, file an issue."
                 raise StepException(step_exception_message)
         # 2. Metrics
-        metrics_path = os.path.join(self.step_dir, "or_metrics_out.json")
-        if os.path.exists(metrics_path):
-            or_metrics_out = json.loads(open(metrics_path).read(), parse_float=Decimal)
-            for key, value in or_metrics_out.items():
-                if value == "Infinity":
-                    or_metrics_out[key] = inf
-                elif value == "-Infinity":
-                    or_metrics_out[key] = -inf
-            generated_metrics.update(or_metrics_out)
-
         metric_updates_with_aggregates = aggregate_metrics(generated_metrics)
 
         return views_updates, metric_updates_with_aggregates
 
     def get_command(self) -> list[str]:
-        metrics_path = os.path.join(self.step_dir, "or_metrics_out.json")
-
         tech_lefs = self.toolbox.filter_views(self.config, self.config.TECH_LEFS)
         if len(tech_lefs) != 1:
             raise StepException(
@@ -163,8 +145,9 @@ class OdbpyStep(OpenROADAlertMixin, Step):
                 self.get_openroad_path(),
                 "-exit",
                 "-no_splash",
-                "-metrics",
-                str(metrics_path),
+                # No -metrics here: its JSON is written by a Tcl exit
+                # handler that -python mode never runs. The odbpy scripts
+                # emit metrics over the _LLN_METRICS_JSONL sidecar instead.
                 "-python",
                 self.get_script_path(),
             ]

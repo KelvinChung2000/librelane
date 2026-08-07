@@ -75,8 +75,8 @@ class MagicOutputProcessor(OutputProcessor):
 
     key = "magic_output"
 
-    def __init__(self, step: Step, report_dir: str, silent: bool) -> None:
-        super().__init__(step, report_dir, silent)
+    def __init__(self, step: Step, silent: bool) -> None:
+        super().__init__(step, silent)
         self.fatal_error_count = 0
 
     def process_line(self, line: str) -> bool:

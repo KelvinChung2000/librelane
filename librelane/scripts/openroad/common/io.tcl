@@ -28,51 +28,27 @@ namespace eval lln {
         return $name
     }
     proc get_corner_names {} {
-        # returns: names as a Tcl list, compatible with both OpenSTA 2 and 3
-        if {[string length [namespace which sta::scenes]] != 0} {
-            set result [list]
-            foreach scene [sta::scenes] {
-                lappend result [scene_name $scene]
-            }
-            return $result
-        } else {
-            # corners are not bridged as strings
-            set result [list]
-            foreach corner [sta::corners] {
-                lappend result [$corner name]
-            }
-            return $result
+        # returns: names as a Tcl list
+        set result [list]
+        foreach scene [sta::scenes] {
+            lappend result [scene_name $scene]
         }
+        return $result
     }
     proc get_corner_dict {} {
-        # returns: Tcl dictionary from corner names to whatever object is
-        # interpreted as a corner for internal commands that expect corners:
-        # - in OpenSTA 3, the scene as bridged by sta::scenes (an object on
-        #   current revisions, previously the scene's name)
-        # - in OpenSTA 2, an opaque Tcl pointer
+        # returns: Tcl dictionary from corner names to the scene as bridged
+        # by sta::scenes (an object on current revisions, previously the
+        # scene's name), for internal commands that expect one
         set result [dict create]
-        if {[string length [namespace which sta::scenes]] != 0} {
-            foreach scene [sta::scenes] {
-                dict set result [scene_name $scene] $scene
-            }
-        } else {
-            foreach corner [sta::corners] {
-                dict set result [$corner name] $corner
-            }
+        foreach scene [sta::scenes] {
+            dict set result [scene_name $scene] $scene
         }
         return $result
     }
 
     proc set_sta_cmd_corner {corner_name} {
-        if {[string length [namespace which sta::set_scene]] != 0} {
-            # resolves the name and calls sta::set_cmd_scene
-            sta::set_scene $corner_name
-        } elseif {[string length [namespace which sta::set_cmd_scene]] != 0} {
-            sta::set_cmd_scene $corner_name
-        } else {
-            set corner_object [sta::find_corner $corner_name]
-            sta::set_cmd_corner $corner_object
-        }
+        # resolves the name and calls sta::set_cmd_scene
+        sta::set_scene $corner_name
     }
 };
 
@@ -613,12 +589,7 @@ proc write_libs {} {
         foreach corner_name [lln::get_corner_names] {
             set target $::env(_LIB_SAVE_DIR)/$::env(DESIGN_NAME)__$corner_name.lib
             puts "Writing timing models for the $corner_name corner to $target…"
-            # OpenSTA 2 and 3 compatibility
-            if {[string length [namespace which sta::scenes]] != 0} {
-                write_timing_model -scene $corner_name $target
-            } else {
-                write_timing_model -corner $corner_name $target
-            }
+            write_timing_model -scene $corner_name $target
         }
     }
 }
