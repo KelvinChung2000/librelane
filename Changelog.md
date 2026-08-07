@@ -6,29 +6,9 @@ Section Order
 ## CLI
 ## Steps
 ## Flows
-#* The configuration loader now validates every layer through the same
-  model-based path (`validate_mapping`): the PDK layer, the per-step
-  increment, and interactive mode migrated off `Variable.compile`, which no
-  longer participates in loading. One alignment: the current variable name
-  now outranks a deprecated one at every layer; `compile` used to invert
-  that at the PDK layer only. openlane-era PDKs write only the old names
-  (and `pdk_compat` migrates them), so shipped PDKs resolve identically.
-
-# Tool Updates
+## Tool Updates
 ## Testing
 ## Misc. Enhancements/Bugfixes
-
-* Retired the `%OL_METRIC`/`%OL_CREATE_REPORT` stdout protocols entirely.
-  Metrics now travel as JSON records in a per-subprocess sidecar file
-  (`_LLN_METRICS_JSONL`), appended by the emitting script and read back
-  after exit -- out-of-band of the log stream, with real JSON types, no
-  magic prefixes, and no line-parsing races. Reports are written by the
-  subprocess itself: the OpenROAD/OpenSTA scripts redirect through
-  `utl::redirectFile*` (or `sta::redirect_file_*` under standalone OpenSTA),
-  both of which capture `puts` and report-command output without echoing;
-  `lln_report_tee_begin` tees instead for reports whose lines are also
-  parsed as alerts (antenna check). Scripts printing the old magic strings
-  are no longer interpreted.
 ## API Breaks
 ## Documentation
 
@@ -177,6 +157,62 @@ Style Notes
     and every click-based odbpy script terminates) ever invoked. The patch
     registers `Tcl_Finalize` with `atexit`, covering both paths. This
     restores the metrics of every `Odb.*` step under the new binary.
+
+## Misc. Enhancements/Bugfixes
+
+* The configuration loader now validates every layer through the same
+  model-based path (`validate_mapping`): the PDK layer, the per-step
+  increment, and interactive mode migrated off `Variable.compile`, which no
+  longer participates in loading. One alignment: the current variable name
+  now outranks a deprecated one at every layer; `compile` used to invert
+  that at the PDK layer only. openlane-era PDKs write only the old names
+  (and `pdk_compat` migrates them), so shipped PDKs resolve identically.
+
+* Retired the `%OL_METRIC`/`%OL_CREATE_REPORT` stdout protocols entirely.
+  Metrics now travel as JSON records in a per-subprocess sidecar file
+  (`_LLN_METRICS_JSONL`), appended by the emitting script and read back
+  after exit -- out-of-band of the log stream, with real JSON types, no
+  magic prefixes, and no line-parsing races. Reports are written by the
+  subprocess itself: the OpenROAD/OpenSTA scripts redirect through
+  `utl::redirectFile*` (or `sta::redirect_file_*` under standalone OpenSTA),
+  both of which capture `puts` and report-command output without echoing;
+  `lln_report_tee_begin` tees instead for reports whose lines are also
+  parsed as alerts (antenna check). Scripts printing the old magic strings
+  are no longer interpreted. `write_metric_*`'s log echo is suppressed
+  while a report redirect is open, so it lands in the log, never inside a
+  report file.
+
+* Fixed a silent regression of issue 993: when the PDK layer moved to
+  `validate_mapping`, scalar-only unions lost member-order narrowing, so
+  `KLAYOUT_*_OPTIONS` values written as Tcl text (`1`, `true`) stayed
+  strings. Tcl text reaching a scalar-only union now resolves to the first
+  declared member that reads it. Also closed a lax-validation hole where
+  `True` was accepted as `1` for scalar `int` variables.
+
+* `Odb` (odbpy) steps no longer pass `-metrics`: upstream writes that JSON
+  from a Tcl exit handler `-python` mode never runs, so the flag was dead
+  weight; the scripts emit over the sidecar. Framework metrics
+  (`flow__warnings__count` et al.) are accordingly modelled as written by
+  Tcl-mode OpenROAD invocations only.
+
+* Swept out compatibility branches for toolchains the flake can no longer
+  produce: the OpenSTA 2 fallbacks in the shared Tcl helpers
+  (`sta::corners`, `sta::set_cmd_corner`, `write_timing_model -corner`),
+  the pre-`set_macro_base_halo` RTL-MP arguments, and io_place's µm²
+  reading of `dbTechLayer.getArea` (a type guard remains: the unit
+  flipping again fails loudly instead of placing pins off-die).
+
+## API Breaks
+
+* Deleted `Variable.compile` and with it `MissingRequiredVariable` and
+  `GenericDict.check`; validation happens exclusively through the
+  model-based `validate_mapping`. `Macro.from_state` coerces its views
+  through the same path.
+
+* `OutputProcessor.__init__` no longer takes a `report_dir` parameter:
+  processors stopped writing reports when the subprocess-side redirect
+  replaced the stdout protocol. Subclasses override `__init__(step,
+  silent)` now.
 
 # 3.0.5
 
