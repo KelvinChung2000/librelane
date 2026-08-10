@@ -1,6 +1,8 @@
 [submodule "test/designs"]
 	path = test/designs
 	url = ../librelane-ci-designs.git
+	branch = librelane-unstalbe
 [submodule "test/steps/all"]
 	path = test/steps/all
 	url = ../librelane-step-unit-tests.git
+	branch = librelane-unstalbe
